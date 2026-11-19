@@ -1,0 +1,63 @@
+{
+  "suite": "nudges",
+  "behaviour": "a meeting moved to 6:15 AM ET is reminded of for 12:15 Madrid, never after it",
+  "origin": "hunt repro: a moved meeting kept its old time",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Ravi",
+              "text": "omar@client.example Laura Pine Tom myself for meeting at 5:15 AM ET Today — can you set it up pls"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Montar la reunión con omar@client.example, Laura Pine y Tom\",\"detail\":\"Ravi pidió por Slack montar la reunión.\",\"who\":\"Ravi\",\"due\":\"2026-11-16 05:15\",\"tz\":\"America/New_York\",\"check\":\"zoomMeeting\",\"hints\":[\"omar@client.example\",\"Laura Pine\",\"Tom\"]}],\"closes\":[]}"
+      },
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:36",
+              "who": "Ravi",
+              "text": "can we make it 6:15 instead?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Montar la reunión con omar@client.example, Laura Pine y Tom\",\"detail\":\"Ravi pidió por Slack montar la reunión.\",\"who\":\"Ravi\",\"due\":\"2026-11-16 06:15\",\"tz\":\"America/New_York\",\"check\":\"zoomMeeting\",\"hints\":[\"omar@client.example\",\"Laura Pine\",\"Tom\"],\"same\":\"{{loop1}}\"}],\"closes\":[]}"
+      }
+    ],
+    "timeline": {
+      "until": "2026-11-16 14:00"
+    }
+  },
+  "expect": {
+    "cards": [
+      {
+        "from": "2026-11-16 09:40",
+        "to": "2026-11-16 10:30",
+        "has": [
+          "6:15 AM ET",
+          "12:15 Madrid"
+        ],
+        "hasNot": [
+          "11:15"
+        ]
+      },
+      {
+        "from": "2026-11-16 11:00",
+        "to": "2026-11-16 12:15",
+        "has": [
+          "Not long now",
+          "12:15 Madrid"
+        ]
+      }
+    ]
+  }
+}

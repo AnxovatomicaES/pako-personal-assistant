@@ -1,0 +1,11 @@
+{
+  "suite": "intents",
+  "behaviour": "«How is Pako doing?» is Pako's health",
+  "origin": "plain words (src/intents.ts)",
+  "input": {
+    "text": "How is Pako doing?"
+  },
+  "expect": {
+    "view": "health"
+  }
+}

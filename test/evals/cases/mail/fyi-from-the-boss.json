@@ -1,0 +1,16 @@
+{
+  "suite": "mail",
+  "behaviour": "an FYI from the boss with nothing asked is Important: no ask line, no message now (the brief tells it)",
+  "origin": "a work email, written for the set",
+  "input": {
+    "from": "Marc Vidal <marc@work.example>",
+    "subject": "FYI: new travel policy",
+    "text": "Team, for your information: from December, travel over 500 EUR needs pre-approval in the tool. Nothing to do now. Marc",
+    "recorded": "IMPORTANT\nWHY: Marc shares the new travel policy, nothing to do\nFrom December, travel over 500 EUR needs pre-approval."
+  },
+  "expect": {
+    "category": "important",
+    "ask": false,
+    "notify": false
+  }
+}

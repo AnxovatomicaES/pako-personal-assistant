@@ -1,0 +1,8 @@
+#!/bin/bash
+# `claude` stand-in: auth status takes 2 s (as a real one may, with codesign and a keychain look before it), never signed in.
+case "$1 $2" in
+  "--version "*) echo "2.1.325 (Claude Code)" ;;
+  "auth status") sleep 2; echo '{"loggedIn":false,"authMethod":"none"}'; exit 1 ;;
+  "auth login") echo "auth login started at $(date +%s)" >> "$(dirname "$0")/login-started.txt"
+    echo "visit: https://claude.ai/oauth/authorize?code=true"; printf "Paste code here if prompted > "; sleep 30 ;;
+esac

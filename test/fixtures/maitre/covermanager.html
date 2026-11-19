@@ -1,0 +1,106 @@
+<!doctype html>
+<!-- A hand-made CoverManager module for Maître's tests, shaped on the real one read on 2026-11-18 (restaurante-barmut, English):
+     a jQuery UI calendar (td[data-handler=selectDay][data-month][data-year] a[data-date]), the party and time selects, the
+     update_hour_people JSON call, the details form and #btn-validate. The restaurant's slug picks the case: fixture, zone, full,
+     captcha, card, code, expired. -->
+<html>
+<head><meta charset="utf-8"><title>Reservation module</title>
+<style>.hidden{display:none} body{font-family:sans-serif} td a{display:inline-block;width:28px}</style></head>
+<body>
+<h3>Book a table</h3>
+<div id="people-box"><label for="people-box-select">Number of people</label>
+<select id="people-box-select"><option value="1">1 person</option><option value="2" selected>2 people</option><option value="3">3 people</option><option value="4">4 people</option><option value="5">5 people</option><option value="6">6 people</option><option value="8">8 people</option></select></div>
+<div id="calendar" class="ui-datepicker-inline"></div>
+<div id="hour-box"><label for="hour-box-select">Time</label><select id="hour-box-select"><option value="-1" disabled selected>Select</option></select></div>
+<div id="zone-box" class="hidden"><label>Area</label><select id="extra-box-select"><option value="-1">Select</option><option value="7">Terraza</option></select></div>
+<input type="button" class="reservarButton step1" value="Book">
+<div id="details" class="hidden">
+  <p id="summary"></p>
+  <input id="user_first_name"> <input id="user_last_name"> <input id="user_email">
+  <select id="int_call_code"><option value="44">+44</option><option value="34" selected>+34</option><option value="1">+1</option></select> <input id="user_phone">
+  <label><input type="radio" name="food" id="no_food_restrictions"> No</label><label><input type="radio" name="food" id="has_food_restrictions"> Yes</label>
+  <textarea id="commentary"></textarea>
+  <label><input type="checkbox" id="consentimiento_legal"> I accept</label>
+  <label><input type="checkbox" id="subscribe_newsletter" checked> Newsletter</label>
+  <div id="gate"></div>
+  <button id="btn-validate" class="reservarButton step2">Reserve</button>
+</div>
+<div id="code-box" class="hidden"><input id="search_email_client"><input id="email_client_code" placeholder="6-digit code"><button id="button_verify_code">Verify</button></div>
+<script>
+const slug = location.pathname.split('/')[3];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const today = new Date();
+let shown = { y: today.getFullYear(), m: today.getMonth() };
+let picked = null;
+function draw() {
+  const first = new Date(shown.y, shown.m, 1);
+  const days = new Date(shown.y, shown.m + 1, 0).getDate();
+  let rows = '';
+  for (let d = 1; d <= days; d++) {
+    const at = new Date(shown.y, shown.m, d);
+    const past = at < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    // Mondays are closed, like many restaurants: no link, as the real module draws them.
+    const open = !past && at.getDay() !== 1;
+    rows += open
+      ? `<td data-handler="selectDay" data-event="click" data-month="${shown.m}" data-year="${shown.y}"><a class="ui-state-default" href="#" data-date="${d}">${d}</a></td>`
+      : `<td class="ui-datepicker-unselectable"><span class="ui-state-default">${d}</span></td>`;
+  }
+  document.getElementById('calendar').innerHTML =
+    `<div class="ui-datepicker-header"><a class="ui-datepicker-prev" data-handler="prev" title="Prev"><span>Prev</span></a>` +
+    `<a class="ui-datepicker-next" data-handler="next" title="Next" href="#"><span>Next</span></a>` +
+    `<div class="ui-datepicker-title"><span class="ui-datepicker-month">${MONTHS[shown.m]}</span>&nbsp;<span class="ui-datepicker-year">${shown.y}</span></div></div>` +
+    `<table class="ui-datepicker-calendar"><tr>${rows}</tr></table>`;
+  first.getDay();
+}
+document.addEventListener('click', async (e) => {
+  const next = e.target.closest('a.ui-datepicker-next');
+  if (next) { e.preventDefault(); shown.m++; if (shown.m > 11) { shown.m = 0; shown.y++; } draw(); return; }
+  const day = e.target.closest('td[data-handler="selectDay"] a');
+  if (day) {
+    e.preventDefault();
+    const td = day.parentElement;
+    picked = { y: Number(td.dataset.year), m: Number(td.dataset.month), d: Number(day.dataset.date) };
+    await refresh();
+  }
+});
+async function refresh() {
+  if (!picked) return;
+  const party = document.getElementById('people-box-select').value;
+  const date = `${picked.y}-${String(picked.m + 1).padStart(2, '0')}-${String(picked.d).padStart(2, '0')}`;
+  const r = await fetch(`/reservation/update_hour_people/0?slug=${slug}`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: `date=${date}&people=${party}` });
+  const j = await r.json();
+  document.getElementById('hour-box').innerHTML = j.hour_box;
+}
+document.getElementById('people-box-select').addEventListener('change', refresh);
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'hour-box-select' && slug === 'zone') document.getElementById('zone-box').classList.remove('hidden');
+});
+document.querySelector('input.step1').addEventListener('click', () => {
+  if (slug === 'code') { document.getElementById('code-box').classList.remove('hidden'); return; }
+  const h = document.getElementById('hour-box-select').value;
+  if (!picked || h === '-1') return;
+  const dmy = `${String(picked.d).padStart(2, '0')}-${String(picked.m + 1).padStart(2, '0')}-${picked.y}`;
+  const zone = slug === 'zone' ? ' at Terraza' : '';
+  document.getElementById('summary').textContent = `${dmy} | ${h} hrs | ${document.getElementById('people-box-select').value} people${zone}`;
+  document.getElementById('details').classList.remove('hidden');
+});
+document.getElementById('btn-validate').addEventListener('click', async () => {
+  // An empty phone blocks Reserve silently, as on the real module.
+  if (!document.getElementById('user_phone').value || !document.getElementById('consentimiento_legal').checked) return;
+  if (slug === 'captcha') { document.getElementById('gate').innerHTML = '<div class="g-recaptcha" style="width:304px;height:78px;border:1px solid #ccc">I am not a robot</div>'; return; }
+  if (slug === 'card') { document.getElementById('gate').innerHTML = '<div id="insert-card" style="width:300px;height:60px">Card details</div><button id="pay_button">Pay</button>'; return; }
+  if (slug === 'expired') { document.body.insertAdjacentHTML('beforeend', '<p>Sorry, your time to complete the reserve is up</p>'); return; }
+  const h = document.getElementById('hour-box-select').value;
+  const party = document.getElementById('people-box-select').value;
+  const body = new URLSearchParams({ slug, date: document.getElementById('summary').textContent.slice(0, 10), time: h, party,
+    first: document.getElementById('user_first_name').value, last: document.getElementById('user_last_name').value,
+    email: document.getElementById('user_email').value, phone: document.getElementById('int_call_code').value + document.getElementById('user_phone').value,
+    newsletter: String(document.getElementById('subscribe_newsletter').checked), notes: document.getElementById('commentary').value });
+  const r = await fetch('/reservation/submit', { method: 'POST', body });
+  const j = await r.json();
+  location.href = `/gracias-por-su-reserva?date=${document.getElementById('summary').textContent.slice(0, 10)}&time=${h}&pax=${party}&id=${j.id}`;
+});
+draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "suite": "redflags",
+  "behaviour": "«I can't breathe» from an English owner in the UK: 999 first",
+  "origin": "the companion's red-flag table (src/health.ts)",
+  "input": {
+    "text": "I can't breathe properly",
+    "country": "GB"
+  },
+  "expect": {
+    "flag": "emergency",
+    "lang": "en",
+    "number": "999"
+  }
+}

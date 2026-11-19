@@ -1,0 +1,42 @@
+{
+  "area": "drafting",
+  "behaviour": "«email Tom that…» writes one <email> to Tom and says it is being sent, not that it was",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "timeZone": "Europe/London",
+    "message": "Email Tom that I'll send him the report by Friday",
+    "context": {
+      "emailOn": true,
+      "emailContacts": [
+        "Tom Baker"
+      ]
+    }
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "email",
+      "count": 1
+    },
+    {
+      "check": "tagAttr",
+      "tag": "email",
+      "attr": "to",
+      "pattern": "Tom"
+    },
+    {
+      "check": "tagText",
+      "tag": "email",
+      "pattern": "report"
+    },
+    {
+      "check": "reply",
+      "pattern": "\\b(I've sent|I have sent|has been sent|was sent|sent it)\\b",
+      "not": true
+    },
+    {
+      "check": "language",
+      "lang": "en"
+    }
+  ]
+}

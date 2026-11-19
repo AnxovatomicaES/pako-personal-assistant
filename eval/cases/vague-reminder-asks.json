@@ -1,0 +1,18 @@
+{
+  "area": "ambiguous",
+  "behaviour": "«recuérdame lo de mañana» with nothing to go on sets nothing and asks",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "Recuérdame lo de mañana"
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "remind",
+      "count": 0
+    },
+    {
+      "check": "asks"
+    }
+  ]
+}

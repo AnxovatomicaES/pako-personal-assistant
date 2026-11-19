@@ -1,0 +1,80 @@
+/* Pako · panel: the WhatsApp card (src/panel/whatsapp.js). Uses the page's own colours (app.css). */
+.wa-card { --wa: #25d366; }
+.wa-pill { font-size: 12px; font-weight: 650; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--text-2); }
+.wa-pill.half { color: var(--accent-2); border-color: currentColor; }
+.wa-pill.on { color: var(--wa); border-color: currentColor; animation: wa-pop .5s cubic-bezier(.5, 1.6, .4, 1); }
+.wa-progress { height: 4px; border-radius: 4px; background: var(--line); overflow: hidden; margin: -4px 0 14px; }
+.wa-progress-fill { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--wa));
+  transition: width .8s cubic-bezier(.3, 1.2, .4, 1); }
+.wa-lead { margin: 0 0 12px; color: var(--text-2); line-height: 1.5; }
+.wa-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.wa-step { border: 1px solid var(--line); border-radius: 14px; transition: border-color .3s, background .3s; }
+.wa-step.open { border-color: var(--line-strong); background: var(--card-hover); }
+.wa-step-head { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 14px; cursor: pointer; }
+.wa-step-head:disabled { cursor: default; opacity: .55; }
+.wa-step-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 14px; }
+.wa-step-title { flex: 1; font-weight: 650; }
+.wa-dot { width: 28px; height: 28px; flex: none; display: grid; place-items: center; border-radius: 50%; font-size: 13px; font-weight: 700;
+  border: 1px solid var(--line-strong); transition: background .3s, color .3s; }
+.wa-step.open .wa-dot { background: var(--accent); color: #fff; border-color: transparent; box-shadow: 0 0 0 6px rgba(139, 123, 255, .15); }
+.wa-step.done .wa-dot { background: var(--wa); color: #fff; border-color: transparent; animation: wa-pop .45s cubic-bezier(.5, 1.6, .4, 1); }
+.wa-dot svg.lucide { width: 16px; height: 16px; }
+.wa-body { padding: 0 14px 14px 54px; animation: wa-in .35s ease-out; }
+.wa-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.wa-fine { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; color: var(--text-2); line-height: 1.45; margin: 8px 0 0; }
+.wa-fine svg.lucide { width: 15px; height: 15px; flex: none; margin-top: 2px; }
+.wa-foot { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); }
+.wa-foot .btn { margin-top: 10px; }
+
+/* Meta's pages, drawn small: the line to act on lights up, one after the other. */
+.wa-mock { border: 1px solid var(--line-strong); border-radius: 12px; overflow: hidden; background: var(--card-solid); }
+.wa-mock-bar { display: flex; gap: 5px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.wa-mock-bar span { width: 8px; height: 8px; border-radius: 50%; background: var(--line-strong); }
+.wa-mock ol { list-style: none; margin: 0; padding: 6px; display: grid; gap: 4px; }
+.wa-mock li { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 9px; line-height: 1.4;
+  animation: wa-glow 8s infinite; }
+.wa-mock li[data-i="1"] { animation-delay: 1.6s; }
+.wa-mock li[data-i="2"] { animation-delay: 3.2s; }
+.wa-mock li[data-i="3"] { animation-delay: 4.8s; }
+.wa-mock li[data-i="4"] { animation-delay: 6.4s; }
+.wa-mock-n { width: 20px; height: 20px; flex: none; display: grid; place-items: center; border-radius: 6px; font-size: 11.5px; font-weight: 700;
+  background: rgba(37, 211, 102, .16); color: var(--wa); }
+
+.wa-form { display: grid; gap: 10px; }
+.wa-field label { display: block; font-weight: 600; font-size: 13.5px; margin-bottom: 4px; }
+.wa-field input { width: 100%; box-sizing: border-box; }
+
+/* The tunnel's stages. */
+.wa-pipe { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.wa-pipe li { display: flex; gap: 10px; align-items: center; color: var(--text-2); }
+.wa-pipe li.now { color: var(--text); font-weight: 600; }
+.wa-pipe li.done { color: var(--text); }
+.wa-pipe-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line-strong); flex: none; }
+.wa-pipe li.now .wa-pipe-dot { border-color: var(--accent); animation: wa-ping 1.2s infinite; }
+.wa-pipe li.done .wa-pipe-dot { background: var(--wa); border-color: var(--wa); animation: wa-pop .4s cubic-bezier(.5, 1.6, .4, 1); }
+.wa-url { display: flex; gap: 8px; align-items: center; margin: 12px 0 0; font-size: 13px; overflow-wrap: anywhere; }
+.wa-url svg.lucide { width: 16px; height: 16px; color: var(--wa); flex: none; }
+
+/* Waiting for the owner's "hola". */
+.wa-wait { display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 12px; background: rgba(37, 211, 102, .08); font-weight: 600; }
+.wa-phone { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; background: var(--wa); color: #fff;
+  animation: wa-buzz 1.6s infinite; }
+.wa-done { display: flex; gap: 14px; align-items: center; }
+.wa-done p { margin: 2px 0 0; }
+.wa-big-check { width: 48px; height: 48px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--wa); color: #fff;
+  animation: wa-pop .6s cubic-bezier(.5, 1.6, .4, 1); box-shadow: 0 0 0 8px rgba(37, 211, 102, .15); }
+.wa-tpl { display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line-strong); font-weight: 600; }
+.wa-tpl.approved { color: var(--wa); border-color: currentColor; }
+.wa-tpl.pending { color: var(--accent-2); border-color: currentColor; }
+.wa-tpl.rejected { color: #ff6b6b; border-color: currentColor; }
+
+@keyframes wa-pop { 0% { transform: scale(.4); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+@keyframes wa-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+@keyframes wa-glow { 0%, 22%, 100% { background: transparent; } 4%, 18% { background: rgba(37, 211, 102, .1); } }
+@keyframes wa-ping { 0% { box-shadow: 0 0 0 0 rgba(139, 123, 255, .5); } 100% { box-shadow: 0 0 0 10px rgba(139, 123, 255, 0); } }
+@keyframes wa-buzz { 0%, 70%, 100% { transform: none; } 75% { transform: rotate(-8deg); } 85% { transform: rotate(8deg); } 95% { transform: rotate(-4deg); } }
+
+@media (max-width: 560px) { .wa-body { padding-left: 14px; } }
+@media (prefers-reduced-motion: reduce) {
+  .wa-card *, .wa-pill { animation: none !important; transition: none !important; }
+}

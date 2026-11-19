@@ -1,0 +1,54 @@
+{
+  "suite": "followups",
+  "behaviour": "a re-ping answered as a brand new loop is caught: the owner would hear the same thing twice",
+  "origin": "hunt repro: the re-ping made a duplicate loop",
+  "label": "fail",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Ravi",
+              "text": "omar@client.example Laura Pine Tom myself for meeting at 5:15 AM ET Today — can you set it up pls"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Set up the meeting with omar@client.example, Laura Pine and Tom\",\"detail\":\"Ravi asked on Slack to set up the meeting.\",\"who\":\"Ravi\",\"due\":\"2026-11-16 05:15\",\"tz\":\"America/New_York\",\"check\":\"zoomMeeting\",\"hints\":[\"omar@client.example\",\"Laura Pine\",\"Tom\"]}],\"closes\":[]}"
+      },
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:20",
+              "who": "Ravi",
+              "text": "any news on the setup?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Responder a Ravi sobre la reunión\",\"detail\":\"Ravi asked on Slack to set up the meeting.\",\"who\":\"Ravi\",\"due\":\"2026-11-16 05:15\",\"tz\":\"America/New_York\",\"check\":\"slackReply\",\"hints\":[\"omar@client.example\",\"Laura Pine\",\"Tom\"]}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "open": [
+      {
+        "kind": "request_to_owner",
+        "who": "Ravi",
+        "titleHas": [
+          "meeting",
+          "Laura"
+        ],
+        "dueLocal": "2026-11-16 11:15",
+        "tz": "America/New_York",
+        "check": "zoomMeeting"
+      }
+    ]
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "suite": "brief",
+  "behaviour": "a to-do that cites a real fact but says what the fact does not (another person, another time) is caught",
+  "origin": "one-job audit §3: the citation check was an id check, not a support check",
+  "label": "fail",
+  "input": {
+    "timeZone": "Europe/London",
+    "now": "2026-11-16 08:00",
+    "read": [
+      "slack",
+      "zoom",
+      "calendar"
+    ],
+    "facts": [
+      {
+        "id": "L1",
+        "kind": "loop",
+        "icon": "slack",
+        "ref": "a1a1a1a1a1",
+        "label": "Slack · Ravi (DM), 16/11 09:30",
+        "at": "2026-11-16 11:15",
+        "text": "Follow-up (asked of you) · Ravi on Slack (DM), Monday 09:30: set up the meeting with Laura Pine and Tom · by 6:15 AM ET (11:15 London) · Pako checked: not on your Zoom"
+      },
+      {
+        "id": "E1",
+        "kind": "event",
+        "icon": "calendar",
+        "label": "Calendar",
+        "at": "2026-11-16 10:00",
+        "end": "2026-11-16 10:30",
+        "title": "Standup",
+        "text": "Event today 10:00–10:30 London: Standup"
+      },
+      {
+        "id": "S1",
+        "kind": "slack",
+        "icon": "slack",
+        "label": "Slack · Nadia (DM), 15/11 18:40",
+        "text": "Slack · Nadia (DM), Sunday 18:40: could you review my draft of the proposal before Wednesday?"
+      }
+    ],
+    "recorded": "{\"opening\": \"One meeting to set up and one draft to read.\", \"todos\": [{\"title\": \"Set up the meeting with Laura and Tom\", \"context\": \"Ravi asked on Slack, for 11:15 London.\", \"checked\": \"Not on your Zoom.\", \"sources\": [\"L1\"], \"loopId\": \"L1\"}, {\"title\": \"Review Nadia's proposal with Omar by 16:00\", \"context\": \"She asked on Sunday, before Wednesday.\", \"checked\": \"\", \"sources\": [\"S1\"]}], \"updates\": [], \"day\": [{\"time\": \"10:00\", \"end\": \"10:30\", \"title\": \"Standup\", \"confirmed\": true, \"note\": \"\", \"sources\": [\"E1\"]}]}",
+    "lang": "en"
+  },
+  "expect": {
+    "todos": 2,
+    "todoHas": [
+      [
+        "meeting",
+        "Laura"
+      ],
+      [
+        "Nadia",
+        "proposal"
+      ]
+    ],
+    "day": [
+      {
+        "time": "10:00",
+        "titleHas": [
+          "Standup"
+        ],
+        "confirmed": true
+      }
+    ]
+  }
+}

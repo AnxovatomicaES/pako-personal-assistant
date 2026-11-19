@@ -1,0 +1,16 @@
+{
+  "suite": "mail",
+  "behaviour": "a thread the owner already answered (their reply is the latest) is not Needs you",
+  "origin": "a work thread, written for the set",
+  "input": {
+    "from": "Luis Gómez <luis@partner.example>",
+    "subject": "Re: Re: meeting next week",
+    "text": "Perfect, Tuesday at 10 works, see you then.\n\n> On Mon, you wrote: Tuesday at 10 is good for me.\n> On Mon, Luis wrote: Can we meet next week?",
+    "recorded": "IMPORTANT\nWHY: Luis confirms Tuesday at 10, nothing more to do\nLuis confirmed the meeting on Tuesday at 10."
+  },
+  "expect": {
+    "category": "important",
+    "ask": false,
+    "notify": false
+  }
+}

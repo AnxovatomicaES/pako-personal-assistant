@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pako · Privacy</title>
+  <meta name="description" content="Pako's privacy notice: the Pako project receives none of your data; what Pako keeps on your computer and what goes to the services you connect.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg: #f7f5f1; --ink: #1c1b22; --ink-2: #4b4a57; --line: #e3dfd6; --accent: #5b46ff; color-scheme: light; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #0b0d14; --ink: #eef0fa; --ink-2: #a9b0cf; --line: #232741; --accent: #8b7bff; color-scheme: dark; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.65 "Inter Tight", ui-sans-serif, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    main { max-width: 760px; margin: 0 auto; padding: 56px 20px 80px; }
+    a { color: var(--accent); }
+    .back { font-size: 15px; text-decoration: none; }
+    h1 { font-family: "Instrument Serif", Georgia, serif; font-weight: 400; font-size: clamp(42px, 8vw, 64px); line-height: 1.05; margin: 24px 0 8px; }
+    h2 { font-size: 20px; margin: 40px 0 10px; letter-spacing: -0.01em; }
+    p, li { color: var(--ink-2); }
+    strong { color: var(--ink); }
+    .lead { font-size: 19px; color: var(--ink); }
+    .box { border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; margin: 18px 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 15px; margin: 12px 0; }
+    th, td { text-align: left; vertical-align: top; padding: 9px 8px; border-bottom: 1px solid var(--line); }
+    th { color: var(--ink); font-weight: 600; }
+    .fine { font-size: 14px; }
+    @media (max-width: 560px) { table, thead, tbody, tr, th, td { display: block; } thead { display: none; } td { border: 0; padding: 2px 0; } tr { border-bottom: 1px solid var(--line); padding: 10px 0; } }
+  </style>
+</head>
+<body>
+  <main>
+    <a class="back" href="./">← Pako</a>
+    <h1>Privacy</h1>
+    <p class="fine">Version of 17 November 2026. Changes are versioned in Pako's repository.</p>
+
+    <p class="lead"><strong>The Pako project receives none of your data.</strong> Pako is software you run on your own computer. There is no Pako
+      account, no Pako server, no telemetry, no analytics and no project-owned keys. You, the person who installed it, decide what it connects to.</p>
+    <div class="box">If you use Pako for work, your employer's rules apply to the work data it reads (mail, Slack, Zoom, calendars). Ask your IT or
+      privacy team first, and use a Claude Team or Enterprise plan or an API key: in the EU, Anthropic's consumer plans are for personal use.</div>
+
+    <h2>1. What Pako keeps on your computer</h2>
+    <p>Everything Pako keeps is in one folder, <code>~/.pako</code>, readable only by your user account: your notes and reminders, lists and
+      tasks, the people in your life you told it about, the chat, what it read for you (short summaries, never whole emails), its activity log,
+      and the secrets of the connections you set up. Each kind of item has a set lifetime and is deleted by itself after it (from 30 minutes for
+      one-time codes to about a year for your notes). The full table is in
+      <a href="https://github.com/AnxovatomicaES/pako-personal-assistant/blob/main/docs/privacy.md">docs/privacy.md</a>, and the panel's <strong>Privacy and your
+      data</strong> card shows it on your own computer. We recommend turning on FileVault on a Mac.</p>
+
+    <h2>2. What leaves your computer, and to whom</h2>
+    <p>Only for the parts you turn on, and under each provider's own terms and privacy policy:</p>
+    <table>
+      <thead><tr><th>Provider</th><th>What it receives</th><th>When</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Anthropic</strong> (Claude, through Claude Code on your computer)</td><td>Your messages and the context needed to answer them (notes, the day's agenda, short summaries). Your training setting in Claude applies. <a href="https://www.anthropic.com/legal/privacy">Anthropic's privacy policy</a></td><td>Always: Claude is Pako's brain</td></tr>
+        <tr><td><strong>Telegram</strong> (your own bot)</td><td>Messages, voice notes and photos between you and your bot</td><td>If you connect Telegram</td></tr>
+        <tr><td><strong>Meta</strong> (WhatsApp Cloud API, your own app)</td><td>Messages between you and your number</td><td>If you connect WhatsApp</td></tr>
+        <tr><td><strong>Your mail and calendar providers</strong>, <strong>Slack</strong>, <strong>Zoom</strong></td><td>Nothing new: Pako reads them read-only with the access you gave</td><td>If you connect them</td></tr>
+        <tr><td><strong>AgentMail</strong></td><td>Pako's own inbox, and the emails you approve (to a restaurant, to a contact)</td><td>If you give Pako an inbox</td></tr>
+        <tr><td><strong>Google</strong> (Places)</td><td>The search for restaurants: what and where</td><td>If you turn on table booking</td></tr>
+        <tr><td><strong>Retell, LiveKit</strong> and their speech providers</td><td>The voices, numbers and transcript of a call you approved</td><td>If you set up the phone line</td></tr>
+        <tr><td><strong>Cloudflare</strong></td><td>WhatsApp's webhook traffic through the tunnel</td><td>If you turn the tunnel on</td></tr>
+      </tbody>
+    </table>
+    <p class="fine">Several of these are companies in the United States; each one's terms state how it transfers data from the EU (the EU–US Data
+      Privacy Framework or standard contractual clauses).</p>
+
+    <h2>3. The health diary (Labs, off by default)</h2>
+    <p><strong>Pako is not a medical device.</strong> Its health diary is a personal notebook: it stores and summarizes what you write so you can
+      remember it and show it to your doctor. It does not diagnose, assess, monitor or treat any condition, and it does not replace a doctor. If
+      you think you may have an emergency, call your local emergency number. The diary stays on your computer and is never written to a log; when Claude reads it to
+      answer you, that part goes to Anthropic. <code>FORGET MY HEALTH</code> deletes it.</p>
+
+    <h2>4. Other people</h2>
+    <p>Pako notes what you tell it about people in your life, and what it reads in your own mail, calendar, Slack and Zoom (names and the
+      addresses they wrote from, never what they wrote, beyond short summaries for you). Every call and every email Pako sends for you says it
+      comes from your AI assistant. Anyone can ask you to delete what Pako noted about them: <code>FORGET PERSON</code> does it.</p>
+
+    <h2>5. Keeping and deleting</h2>
+    <p>In the panel's Privacy card: <strong>Export my data</strong> (one file with everything, no secrets) and <strong>Delete everything</strong>.
+      What each provider keeps on its side (for example Claude Code's own history in <code>~/.claude</code>, or provider logs) follows that
+      provider's rules.</p>
+
+    <h2>6. Your rights</h2>
+    <p>Your local copy is yours to read, export and delete at any time. Towards each provider you have the rights their policies and the GDPR
+      give you (access, deletion, objection). You can complain to your local data protection authority (in Spain, the
+      <a href="https://www.aepd.es">AEPD</a>).</p>
+
+    <h2>7. Security and contact</h2>
+    <p>How Pako protects your data and how to report a problem: <a href="https://github.com/AnxovatomicaES/pako-personal-assistant/blob/main/SECURITY.md">SECURITY.md</a>.
+      Questions about this notice: open an issue in Pako's repository, without personal data.</p>
+
+    <p class="fine">Pako is an independent open-source project, not made or endorsed by Anthropic, Meta, Telegram, Google or any other company named here.</p>
+  </main>
+</body>
+</html>

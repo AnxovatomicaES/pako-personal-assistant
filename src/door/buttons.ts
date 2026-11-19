@@ -1,0 +1,135 @@
+// What each button press means: the owner's answer to a card, routed by the button's id.
+
+import { CLAUDE_BUTTON } from "../claude-connect.ts";
+import { pausedText } from "../control.ts";
+import { FOLLOWUP_BUTTON } from "../followups.ts";
+import { PROACTIVE_BUTTON } from "../proactive.ts";
+import { PENDING_CALL_MS } from "./shared.ts";
+import { CALENDAR_BUTTON } from "./calendar-cards.ts";
+import type { Door } from "./door.ts";
+
+export function mountButtons(door: Door): Pick<Door, "pressed" | "NO" | "SEND_YES"> {
+  const { d, now, lang, tx, connectorCards, cardEnds, endCard, note, sendText, answerAsk, answerSend, answerCall, pressedAutonomy } = door;
+  /** `by`: the press's own message id (an undo remembers it, so the same press delivered again cannot undo twice). */
+  const pressed = async (buttonId: string, by = ""): Promise<void> => {
+    const cal = CALENDAR_BUTTON.exec(buttonId);
+    if (cal) {
+      await door.pressedCalendar(cal[1] === "1", cal[2]!);
+      return;
+    }
+    const undo = /^u1:([0-9a-f]{10})$/.exec(buttonId);
+    if (undo) {
+      await door.undoNow({ id: undo[1]! }, by);
+      return;
+    }
+    if (CLAUDE_BUTTON.test(buttonId)) {
+      await sendText(d.claudeSignIn ? await d.claudeSignIn() : tx("expired"));
+      return;
+    }
+    const thumbs = d.quality ? await d.quality.press(buttonId) : null;
+    if (thumbs !== null) {
+      await sendText(thumbs);
+      return;
+    }
+    const pr = PROACTIVE_BUTTON.exec(buttonId);
+    if (pr) {
+      await sendText(d.life ? await d.life.press(pr[1] as "1" | "2" | "3", pr[2]!) : tx("expired"));
+      return;
+    }
+    const same = /^n([01]):([0-9a-f]{10})$/.exec(buttonId);
+    if (same) {
+      await sendText(await door.answerSame(same[2]!, same[1] === "1"));
+      return;
+    }
+    const fu = FOLLOWUP_BUTTON.exec(buttonId);
+    if (fu) {
+      await sendText(d.followups ? await d.followups.press(fu[1] as "1" | "2" | "3", fu[2]!) : tx("expired"));
+      return;
+    }
+    const rem = /^r([123]):([0-9a-f]{10})$/.exec(buttonId);
+    if (rem) {
+      await door.answerReminder(rem[2]!, rem[1] === "1" ? "done" : rem[1] === "2" ? "snooze" : "tomorrow");
+      return;
+    }
+    const auto = /^(a0|e[01]|w[01x]):([0-9a-f]{10})$/.exec(buttonId);
+    if (auto) {
+      await pressedAutonomy(auto[1]!, auto[2]!);
+      return;
+    }
+    const held = /^q([01]):([0-9a-f]{10})$/.exec(buttonId);
+    if (held) {
+      await door.answerHeld(held[2]!, held[1] === "1");
+      return;
+    }
+    const bk = /^b([01]):([0-9a-f]{10})$/.exec(buttonId);
+    if (bk && d.booking) {
+      await door.deliverBooking(await d.booking.press(bk[2]!, bk[1] === "1"));
+      return;
+    }
+    // Undo on a booking's receipt (src/maitre/): cancelled on the engine's own page.
+    const bu = /^bu:([0-9a-f]{10})$/.exec(buttonId);
+    if (bu && d.booking) {
+      await sendText(await d.booking.undo(bu[1]!));
+      return;
+    }
+    const k = /^k([01]):([0-9a-f]{10})$/.exec(buttonId);
+    if (k) {
+      const id = k[2]!;
+      const yes = k[1] === "1";
+      const c = connectorCards.get(id);
+      if (c && now() - c.at >= PENDING_CALL_MS) {
+        connectorCards.delete(id);
+        endCard(id, "expired");
+        c.ask.closed("expired");
+        note(tx("noteAskExpired", { name: c.ask.name }));
+      }
+      const live = connectorCards.get(id);
+      if (!live) {
+        const ended = cardEnds.get(id);
+        await sendText(tx(
+          ended === "answered" ? "cardAnswered"
+          : ended === "replaced" ? "cardReplaced"
+          : ended === "stopped" ? "cardStopped"
+          : ended === "renewed" ? "cardRenewed"
+          : ended === "lost" ? "cardLost"
+          : yes ? "cardExpiredAsk" : "cardExpired",
+        ));
+        return;
+      }
+      // Taken before anything waits: a second tap, or the same press delivered twice, finds it answered.
+      connectorCards.delete(id);
+      endCard(id, "answered");
+      // Paused (STOP, the panel's switch, or Pako's own pause for its store): a Call ends the card here, so it cannot place the call after a
+      // RESUME either. Cancel is a no.
+      const pause = yes && d.control ? await d.control.state() : null;
+      if (pause && pause.paused !== null) {
+        endCard(id, "stopped");
+        live.ask.closed("stopped");
+        note(tx("noteAskPaused", { name: live.ask.name }));
+        await sendText(tx("pausedNoCall", { paused: pausedText(pause.why, lang()), name: live.ask.name }));
+        return;
+      }
+      await answerAsk(id, live, yes);
+      return;
+    }
+    const m = /^([cs])([01]):([0-9a-f]{10})$/.exec(buttonId);
+    const p = m?.[1] === "s" ? door.pendingSend : door.pendingCall;
+    if (!m || !p || p.id !== m[3] || now() - p.at >= PENDING_CALL_MS) {
+      await sendText(tx("expired"));
+      return;
+    }
+    if (m[1] === "s") await answerSend(p as NonNullable<typeof door.pendingSend>, m[2] === "1");
+    else await answerCall(p as NonNullable<typeof door.pendingCall>, m[2] === "1", "yes");
+  };
+
+  // A typed no, in English like the card it answers (a typed yes is isYes).
+  const NO = new RegExp(
+    "^(no|nope|nah|cancel|cancel it|don['’]?t|do not|no,? thanks|no,? thank you|never ?mind|don['’]?t (?:call|send|do it|send it))[\\s.!]*$",
+    "i",
+  );
+
+  // English's own yes to "Send it?": said of the card that sends a message only, never of a call.
+  const SEND_YES = /^send(?: it)?[\s.!]*$/i;
+
+  return { pressed, NO, SEND_YES };
+}

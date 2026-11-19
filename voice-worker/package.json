@@ -1,0 +1,29 @@
+{
+  "name": "pako-voice-worker",
+  "version": "0.1.0",
+  "description": "LiveKit voice worker for the personal caller: dials through the owner's SIP trunk and talks with a realtime speech model. Placed from the main server's call_me when the engine is livekit.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc -p . && node scripts/slim.mjs",
+    "typecheck": "tsc --noEmit -p .",
+    "start": "node dist/agent.js start",
+    "inbound:setup": "node --disable-warning=ExperimentalWarning scripts/setup-inbound.ts"
+  },
+  "dependencies": {
+    "@google/genai": "^2.32.0",
+    "@livekit/agents": "^1.9.5",
+    "@livekit/agents-plugin-google": "^1.9.5",
+    "@livekit/protocol": "^1.53.4",
+    "@livekit/rtc-node": "^1.2.2",
+    "livekit-server-sdk": "^2.19.3",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.0"
+  }
+}

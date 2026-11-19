@@ -1,0 +1,11 @@
+{
+  "suite": "intents",
+  "behaviour": "«¿Cómo va el proyecto de Ana?» is about something else",
+  "origin": "plain words (src/intents.ts)",
+  "input": {
+    "text": "¿Cómo va el proyecto de Ana?"
+  },
+  "expect": {
+    "view": null
+  }
+}

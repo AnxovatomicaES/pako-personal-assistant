@@ -1,0 +1,36 @@
+{
+  "suite": "brief",
+  "behaviour": "a meeting set in Hong Kong time is written with both times, the Madrid one the fact's",
+  "origin": "the owner's real case: a 4:30 PM Hong Kong call",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-16 08:00",
+    "read": [
+      "zoom"
+    ],
+    "facts": [
+      {
+        "id": "Q1",
+        "kind": "zoom",
+        "icon": "zoom",
+        "label": "Zoom",
+        "at": "2026-11-16 09:30",
+        "title": "Sync Hong Kong",
+        "text": "Zoom hoy 9:30 Madrid (4:30 PM Hong Kong): Sync Hong Kong"
+      }
+    ],
+    "recorded": "{\"opening\":\"Empiezas pronto, con Hong Kong.\",\"todos\":[],\"updates\":[],\"day\":[{\"time\":\"09:30\",\"title\":\"Sync Hong Kong\",\"confirmed\":true,\"note\":\"4:30 PM Hong Kong time (9:30 Madrid)\",\"prep\":true,\"sources\":[\"Q1\"]}]}",
+    "lang": "es"
+  },
+  "expect": {
+    "day": [
+      {
+        "time": "09:30",
+        "titleHas": [
+          "Hong Kong"
+        ],
+        "confirmed": true
+      }
+    ]
+  }
+}

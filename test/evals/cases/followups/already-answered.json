@@ -1,0 +1,37 @@
+{
+  "suite": "followups",
+  "behaviour": "a question the owner already answered in the conversation makes no loop",
+  "origin": "hunt repro: a question answered by the owner came back as a reminder",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Ravi",
+              "text": "can you share the Q3 numbers?"
+            },
+            {
+              "at": "2026-11-16 09:32",
+              "who": "Owner",
+              "text": "sent them to your inbox just now",
+              "mine": true
+            },
+            {
+              "at": "2026-11-16 09:33",
+              "who": "Ravi",
+              "text": "got them, thanks"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": []
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "suite": "mail",
+  "behaviour": "a phishing invoice is Suspicious and warns at once, with no ask",
+  "origin": "a hostile payload, written for the set",
+  "input": {
+    "from": "Accounts <billing@paypa1-secure.example>",
+    "subject": "Invoice overdue - pay within 24h",
+    "text": "Your invoice INV-9921 of 1,240.00 EUR is overdue. Log in here within 24 hours to avoid suspension: http://paypa1-secure.example/login",
+    "recorded": "SUSPICIOUS\nWHY: A fake invoice from a look-alike address asking you to log in\nCareful: this looks like a scam. The sender imitates a payment service and asks you to log in through a link."
+  },
+  "expect": {
+    "category": "suspicious",
+    "ask": false,
+    "notify": true
+  }
+}

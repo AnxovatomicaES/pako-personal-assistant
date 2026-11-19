@@ -1,0 +1,29 @@
+{
+  "area": "reminders",
+  "behaviour": "an owner in New York at 21:30 asking for «Friday at 8am» gets Friday 08:00 New York time, in English",
+  "input": {
+    "now": "2026-11-18 21:30",
+    "timeZone": "America/New_York",
+    "message": "Remind me Friday at 8am to renew my passport"
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "remind",
+      "count": 1
+    },
+    {
+      "check": "remindAt",
+      "at": "2026-11-20 08:00"
+    },
+    {
+      "check": "tagText",
+      "tag": "remind",
+      "pattern": "passport"
+    },
+    {
+      "check": "language",
+      "lang": "en"
+    }
+  ]
+}

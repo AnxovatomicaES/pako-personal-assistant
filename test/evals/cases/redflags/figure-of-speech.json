@@ -1,0 +1,12 @@
+{
+  "suite": "redflags",
+  "behaviour": "«me muero de risa» is a figure of speech: no red flag",
+  "origin": "the companion's red-flag table (src/health.ts)",
+  "input": {
+    "text": "me muero de risa con el vídeo",
+    "country": "ES"
+  },
+  "expect": {
+    "flag": null
+  }
+}

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0c13" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f4f2ee" media="(prefers-color-scheme: light)">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Pako · Connect your things</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%238b7bff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/panel/assets/figure.css">
+  <link rel="stylesheet" href="/panel/assets/settings.css">
+  <script src="/panel/assets/lucide.min.js" defer></script>
+  <script type="module" src="/panel/assets/settings.js"></script>
+  <script type="module" src="/panel/assets/privacy.js"></script>
+  <script type="module" src="/panel/assets/move.js"></script>
+  <script type="module" src="/panel/assets/autostart.js"></script>
+  <script type="module" src="/panel/assets/whatsapp.js"></script>
+  <script type="module" src="/panel/assets/acts.js"></script>
+  <script type="module" src="/panel/assets/health.js"></script>
+</head>
+<body>
+  <a class="skip" href="#cards-title" data-t="skip">Skip to the connections</a>
+  <div class="glow" aria-hidden="true"><span></span><span></span></div>
+  <header class="top">
+    <a class="back" href="/panel" data-t="backPanel">← Panel</a>
+    <span class="brand"><span class="brand-orb" data-pako-twin aria-hidden="true"></span>Pako</span>
+  </header>
+  <nav class="tabbar" id="tabs" role="tablist" aria-label="Settings sections"></nav>
+  <main id="main">
+   <div class="tab-panel" id="tab-connections" role="tabpanel" aria-labelledby="tab-btn-connections">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-words">
+        <h1 id="hero-title" data-t="heroTitle">Connect your things</h1>
+        <p class="lead" data-t="heroLead">The more you connect, the more Pako can help. Each one takes a couple of minutes, and everything stays on this computer.</p>
+        <div class="next" id="next" aria-live="polite"></div>
+      </div>
+      <div class="ring" id="ring" role="img" aria-label="">
+        <svg viewBox="0 0 120 120" aria-hidden="true">
+          <defs>
+            <linearGradient id="ring-grad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#8b7bff"/><stop offset=".55" stop-color="#39d0ff"/><stop offset="1" stop-color="#4ff2b0"/>
+            </linearGradient>
+          </defs>
+          <circle class="ring-track" cx="60" cy="60" r="52" pathLength="100"></circle>
+          <circle class="ring-fill" id="ring-fill" cx="60" cy="60" r="52" pathLength="100"></circle>
+        </svg>
+        <div class="ring-text"><span class="ring-n" id="ring-n">0</span><span class="ring-of" id="ring-of"></span><span class="ring-label" data-t="ringLabel">connected</span></div>
+      </div>
+    </section>
+
+    <section class="discover" id="discover" aria-live="polite"></section>
+
+    <section aria-labelledby="cards-title">
+      <h2 class="section-title" id="cards-title" tabindex="-1" data-t="cardsTitle">Your connections</h2>
+      <ul class="cards" id="cards"></ul>
+    </section>
+
+    <section class="advanced" aria-labelledby="advanced-title">
+      <h2 class="section-title" id="advanced-title" data-t="advancedTitle">Advanced</h2>
+      <p class="section-note" data-t="advancedNote">Optional. WhatsApp, Slack and Zoom need an app of your own on Meta, Slack or Zoom; the rest of Pako works without them.</p>
+      <ul class="cards" id="cards-advanced"></ul>
+    </section>
+
+    <section class="known" aria-labelledby="known-title">
+      <h2 class="section-title" id="known-title" data-t="knownTitle">What Pako knows about this Mac</h2>
+      <div id="known"></div>
+    </section>
+   </div>
+   <!-- Mail: how the mailbox is read. The mail categories' switches and learned sender rules mount at #mail-categories when they exist. -->
+   <div class="tab-panel" id="tab-mail" role="tabpanel" aria-labelledby="tab-btn-mail" hidden>
+    <p class="section-note" data-t="mailTab.lead"></p>
+    <ul class="cards" id="cards-mail"></ul>
+    <div id="mail-categories" data-mount="mail-categories"></div>
+   </div>
+   <!-- How Pako acts (src/panel/acts.js): what Pako may do by itself. Table bookings and mail notices are chosen in their own cards. -->
+   <div class="tab-panel" id="tab-acts" role="tabpanel" aria-labelledby="tab-btn-acts" hidden>
+    <p class="section-note" data-t="acts.lead"></p>
+    <div class="mount" data-mount="acts"></div>
+   </div>
+   <!-- Privacy & your data (src/panel/privacy.js): what Pako keeps, what leaves, export, delete everything. -->
+   <div class="tab-panel" id="tab-privacy" role="tabpanel" aria-labelledby="tab-btn-privacy" hidden>
+    <div class="mount" data-mount="privacy"></div>
+   </div>
+   <!-- Move & import (src/panel/move.js): import from another Pako. -->
+   <div class="tab-panel" id="tab-move" role="tabpanel" aria-labelledby="tab-btn-move" hidden>
+    <div class="mount" data-mount="move"></div>
+   </div>
+   <!-- General: starting with this computer (src/panel/autostart.js), updates, and how Pako is doing (src/panel/health.js, one component). -->
+   <div class="tab-panel" id="tab-general" role="tabpanel" aria-labelledby="tab-btn-general" hidden>
+    <p class="section-note" data-t="general.lead"></p>
+    <div class="mount" data-mount="autostart"></div>
+    <p class="section-note" data-t="general.updates"></p>
+    <p class="section-note" data-t="general.name"></p>
+    <div class="mount" data-mount="health"></div>
+   </div>
+  </main>
+  <footer class="foot"><p data-t="footer">Keys and what Pako finds are kept on this computer only (~/.pako), never shown in full, and you can delete them any time.</p></footer>
+  <div class="sr-only" id="live" role="status" aria-live="polite"></div>
+</body>
+</html>

@@ -1,0 +1,46 @@
+{
+  "area": "drafting",
+  "behaviour": "«dile a Ana por WhatsApp…» prepares a WhatsApp for the owner to send, and never says it was sent",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "Dile a Ana por WhatsApp que llego 10 minutos tarde",
+    "context": {
+      "contacts": [
+        "Ana"
+      ]
+    }
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "message",
+      "count": 1
+    },
+    {
+      "check": "tagAttr",
+      "tag": "message",
+      "attr": "to",
+      "pattern": "^Ana$"
+    },
+    {
+      "check": "tagText",
+      "tag": "message",
+      "pattern": "10|diez"
+    },
+    {
+      "check": "tag",
+      "tag": "call",
+      "count": 0
+    },
+    {
+      "check": "tag",
+      "tag": "send",
+      "count": 0
+    },
+    {
+      "check": "reply",
+      "pattern": "\\b(he enviado|lo he enviado|ya (est[aá]|ha sido) enviado|se lo he (mandado|enviado)|mensaje enviado)\\b",
+      "not": true
+    }
+  ]
+}

@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # 22.18 is the oldest version with type stripping on by default (the engines minimum).
+        node: ["22.18", "22", "24"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  voice-worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: voice-worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: voice-worker/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: node --disable-warning=ExperimentalWarning --test test/*.test.ts
+
+  smoke-local:
+    # `npm install && npm start` for someone who has set nothing up: local mode answers on this computer only.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --omit=dev
+      - name: Start and check /health and the panel
+        env:
+          PORT: "8798"
+          PAKO_HOME: ${{ runner.temp }}/pako-home
+          PAKO_NAME: CI
+          PAKO_NO_OPEN: "1"
+        run: |
+          npm start > server.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8798/health; then break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8798/panel | grep -q "Panel de Pako" || { cat server.log; exit 1; }
+          grep -q "Pako is running" server.log || { cat server.log; exit 1; }
+
+  smoke:
+    # The same install and start as the Render deploy: production dependencies only, hosted (RENDER set, WhatsApp's settings given).
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --omit=dev
+      - name: Start and check /health
+        env:
+          PORT: "8799"
+          RENDER: "true"
+          PERSONAL_OWNER_NAME: CI
+          PERSONAL_OWNER_NUMBER: "+34600111222"
+          PERSONAL_CALLER_TOKEN: ci-personal-caller-token-0123456789
+          ASSISTANT_BRIDGE_TOKEN: ci-bridge-token-0123456789abcdef0123456789
+          WHATSAPP_ACCESS_TOKEN: EAAB_ci_access_token_value
+          WHATSAPP_PHONE_NUMBER_ID: "109876543210"
+          WHATSAPP_APP_SECRET: 0123456789abcdef0123456789abcdef
+          WHATSAPP_VERIFY_TOKEN: ci_verify_token_0123456789
+        run: |
+          npm start > server.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8799/health; then break; fi
+            sleep 1
+          done
+          # Meta's own handshake: proves the hosted door is mounted, not just that something answers.
+          test "$(curl -fsS 'http://localhost:8799/whatsapp/webhook?hub.mode=subscribe&hub.verify_token=ci_verify_token_0123456789&hub.challenge=12345')" = "12345" || { cat server.log; exit 1; }
+          grep -q "assistant listening on port" server.log || { cat server.log; exit 1; }

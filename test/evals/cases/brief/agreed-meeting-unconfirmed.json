@@ -1,0 +1,57 @@
+{
+  "suite": "brief",
+  "behaviour": "an agreed meeting that is on no calendar is on the day at its time, never shown as confirmed",
+  "origin": "hunt repro: an agreed meeting showed as confirmed",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-16 08:00",
+    "read": [
+      "slack",
+      "zoom",
+      "calendar",
+      "mail"
+    ],
+    "facts": [
+      {
+        "id": "E1",
+        "kind": "event",
+        "icon": "calendar",
+        "label": "Calendario",
+        "at": "2026-11-16 10:00",
+        "end": "2026-11-16 10:30",
+        "title": "Standup",
+        "text": "Evento hoy 10:00–10:30 Madrid: Standup"
+      },
+      {
+        "id": "L2",
+        "kind": "loop",
+        "icon": "slack",
+        "ref": "b2b2b2b2b2",
+        "label": "Slack · Laura (privado), 13/11 12:00",
+        "at": "2026-11-16 16:30",
+        "agreed": true,
+        "text": "Reunión acordada · con Laura por Slack (privado), viernes 12:00: revisar el lanzamiento · para las 16:30 Madrid · no está en tu calendario"
+      }
+    ],
+    "recorded": "{\"opening\":\"Dos cosas hoy.\",\"todos\":[],\"updates\":[],\"day\":[{\"time\":\"10:00\",\"title\":\"Standup\",\"confirmed\":true,\"note\":\"\",\"sources\":[\"E1\"]},{\"time\":\"16:30\",\"title\":\"Revisar el lanzamiento con Laura\",\"confirmed\":true,\"note\":\"Acordada por Slack, no está en tu calendario.\",\"sources\":[\"L2\"]}]}",
+    "lang": "es"
+  },
+  "expect": {
+    "day": [
+      {
+        "time": "16:30",
+        "titleHas": [
+          "Laura"
+        ],
+        "confirmed": false
+      },
+      {
+        "time": "10:00",
+        "titleHas": [
+          "Standup"
+        ],
+        "confirmed": true
+      }
+    ]
+  }
+}

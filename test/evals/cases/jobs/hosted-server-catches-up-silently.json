@@ -1,0 +1,36 @@
+{
+  "suite": "jobs",
+  "behaviour": "a hosted server is always on: down at 08:00 and back at 10:00, the brief comes at 10:00 with no note about a sleeping computer",
+  "origin": "hosted keeps the noon catch-up",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "briefAt": "08:00",
+    "sleeps": false,
+    "start": "2026-11-16 22:00",
+    "steps": [
+      {
+        "awake": [
+          "2026-11-16 22:00",
+          "2026-11-16 23:00"
+        ]
+      },
+      {
+        "awake": [
+          "2026-11-17 10:00",
+          "2026-11-17 10:30"
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "briefs": [
+      {
+        "at": "2026-11-17 10:00",
+        "hasNot": [
+          "Late:",
+          "asleep"
+        ]
+      }
+    ]
+  }
+}

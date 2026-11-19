@@ -1,0 +1,21 @@
+{
+  "suite": "mail",
+  "behaviour": "a real request with a deadline is Needs you, notifies, and its ask line says what and by when",
+  "origin": "a work email, written for the set",
+  "input": {
+    "from": "Ana Ruiz <ana@client.example>",
+    "subject": "Budget sign-off",
+    "text": "Hi, could you approve the Q1 budget by Friday? Finance needs it before the board meeting. Thanks, Ana",
+    "recorded": "NEEDS_YOU\nWHY: Ana asks you to approve the Q1 budget by Friday\nASK: decide | Ana asks you to approve the Q1 budget by Friday\nLOOP: Approve the Q1 budget | Ana Ruiz | 2026-11-20\nAna asks you to approve the Q1 budget by Friday, before the board meeting."
+  },
+  "expect": {
+    "category": "needs_you",
+    "ask": true,
+    "askHas": [
+      "approve",
+      "budget",
+      "Friday"
+    ],
+    "notify": true
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "suite": "nudges",
+  "behaviour": "a cancelled meeting is never reminded of",
+  "origin": "the owner's real case: «nvm, Tom set it up»",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Ravi",
+              "text": "omar@client.example Laura Pine Tom myself for meeting at 5:15 AM ET Today — can you set it up pls"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Montar la reunión con omar@client.example, Laura Pine y Tom\",\"detail\":\"Ravi pidió por Slack montar la reunión.\",\"who\":\"Ravi\",\"due\":\"2026-11-16 05:15\",\"tz\":\"America/New_York\",\"check\":\"zoomMeeting\",\"hints\":[\"omar@client.example\",\"Laura Pine\",\"Tom\"]}],\"closes\":[]}"
+      },
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:35",
+              "who": "Ravi",
+              "text": "nvm, Tom set it up already"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[],\"closes\":[\"{{loop1}}\"]}"
+      }
+    ],
+    "timeline": {
+      "until": "2026-11-16 13:00"
+    }
+  },
+  "expect": {
+    "cards": []
+  }
+}

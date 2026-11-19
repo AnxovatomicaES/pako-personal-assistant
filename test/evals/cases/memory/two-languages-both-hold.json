@@ -1,0 +1,57 @@
+{
+  "suite": "memory",
+  "behaviour": "two values that hold together (two languages): the judge says compatible, both stay current, the card shows both with the relation",
+  "origin": "the judge's other side: not every new value is a change",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "start": "2026-11-17 10:00",
+    "people": [
+      {
+        "name": "Ana",
+        "relation": "mi hermana"
+      }
+    ],
+    "turns": [
+      {
+        "at": "2026-11-17 10:00",
+        "message": "Ana habla inglés.",
+        "recorded": "Apuntado. <know who=\"Ana\" key=\"idioma\">inglés</know>"
+      },
+      {
+        "at": "2026-11-17 10:03",
+        "message": "Ana también habla francés.",
+        "recorded": "¡Bien! <know who=\"Ana\" key=\"idioma\">francés</know>",
+        "judge": "{\"contradicts\":[],\"compatible\":[\"{{old}}\"]}"
+      }
+    ],
+    "ask": {
+      "at": "2026-11-17 10:05",
+      "message": "what do you know about Ana?"
+    }
+  },
+  "expect": {
+    "holds": [
+      {
+        "who": "Ana",
+        "key": "idioma",
+        "value": "inglés"
+      },
+      {
+        "who": "Ana",
+        "key": "idioma",
+        "value": "francés"
+      }
+    ],
+    "card": {
+      "has": [
+        "Ana",
+        "mi hermana",
+        "inglés",
+        "francés"
+      ],
+      "title": "Ana"
+    },
+    "noChanges": true,
+    "judged": 1
+  }
+}

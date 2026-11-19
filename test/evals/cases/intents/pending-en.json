@@ -1,0 +1,11 @@
+{
+  "suite": "intents",
+  "behaviour": "«What do I have pending?» opens the follow-ups",
+  "origin": "plain words (src/intents.ts)",
+  "input": {
+    "text": "What do I have pending?"
+  },
+  "expect": {
+    "view": "followups"
+  }
+}

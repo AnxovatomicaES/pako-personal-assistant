@@ -1,0 +1,37 @@
+{
+  "area": "reminders",
+  "behaviour": "«quita ese recordatorio» deletes that pending reminder, not the other, and sets none",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "Ya no hace falta lo de la factura de Marta, quita ese recordatorio",
+    "context": {
+      "reminders": [
+        "2026-11-19 09:00 enviar la factura a Marta",
+        "2026-11-20 18:00 comprar pilas"
+      ]
+    }
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "unremind",
+      "min": 1
+    },
+    {
+      "check": "tagText",
+      "tag": "unremind",
+      "pattern": "factura"
+    },
+    {
+      "check": "tagText",
+      "tag": "unremind",
+      "pattern": "pilas",
+      "not": true
+    },
+    {
+      "check": "tag",
+      "tag": "remind",
+      "count": 0
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "suite": "jobs",
+  "behaviour": "a laptop asleep at 08:00 gives the brief when it wakes at 09:30, says why, and says the meeting moved last night",
+  "origin": "the durable jobs with the memory: the late brief still carries what changed",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "briefAt": "08:00",
+    "start": "2026-11-16 07:55",
+    "steps": [
+      {
+        "awake": [
+          "2026-11-16 07:55",
+          "2026-11-16 08:05"
+        ]
+      },
+      {
+        "told": {
+          "at": "2026-11-16 12:00",
+          "who": "Rohan",
+          "key": "reunión semanal",
+          "value": "martes 10:00"
+        }
+      },
+      {
+        "told": {
+          "at": "2026-11-16 20:00",
+          "who": "Rohan",
+          "key": "reunión semanal",
+          "value": "jueves 10:00"
+        }
+      },
+      {
+        "awake": [
+          "2026-11-16 22:00",
+          "2026-11-16 23:00"
+        ]
+      },
+      {
+        "awake": [
+          "2026-11-17 09:30",
+          "2026-11-17 10:30"
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "briefs": [
+      {
+        "at": "2026-11-16 08:00",
+        "hasNot": [
+          "Late:"
+        ]
+      },
+      {
+        "at": "2026-11-17 09:30",
+        "has": [
+          "Late:",
+          "08:00",
+          "Changed since yesterday",
+          "martes 10:00",
+          "jueves 10:00"
+        ]
+      }
+    ],
+    "slots": {
+      "brief:2026-11-16": "done",
+      "brief:2026-11-17": "done"
+    }
+  }
+}

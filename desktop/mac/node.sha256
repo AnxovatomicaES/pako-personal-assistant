@@ -1,0 +1,8 @@
+# The Node.js runtime bundled in Pako.app (desktop/mac/package.sh): the version, then the SHA-256 of each official tarball, as nodejs.org's
+# SHASUMS256.txt for that version lists them. The build checks every download against these lines AND against SHASUMS256.txt, so a new
+# version shows up here as a reviewed diff. To move to a newer Node.js 22 LTS: read https://nodejs.org/dist/index.json (newest v22.x with
+# "lts"), copy its two darwin lines from https://nodejs.org/dist/<version>/SHASUMS256.txt, and if you have gpg, check that file's
+# signature first (SHASUMS256.txt.sig, the release keys listed in https://github.com/nodejs/node#release-keys).
+version v22.23.5
+e7131995759b61a0170b646010d2ad35a5d37b4cb0d471f3e8317eac6f742f3d  node-v22.23.5-darwin-arm64.tar.gz
+c53383238206b9ae4db23c5d8a63645e2e753bec8ab51a49cc81939aa64e9422  node-v22.23.5-darwin-x64.tar.gz

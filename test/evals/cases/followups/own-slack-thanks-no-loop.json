@@ -1,0 +1,27 @@
+{
+  "suite": "followups",
+  "behaviour": "the owner's own «thanks, got it» makes no loop",
+  "origin": "one-job audit §1: reading the owner's own messages must not turn chit-chat into loops",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0ANA",
+          "label": "Ana (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:05",
+              "who": "Owner",
+              "text": "thanks, got it!",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": []
+  }
+}

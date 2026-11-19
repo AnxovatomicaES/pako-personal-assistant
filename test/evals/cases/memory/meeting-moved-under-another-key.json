@@ -1,0 +1,63 @@
+{
+  "suite": "memory",
+  "label": "fail",
+  "behaviour": "the new day told under another key: Tuesday and Thursday would both hold, caught",
+  "origin": "a known-bad answer: the change written as a new attribute, so nothing closes",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "start": "2026-11-17 10:00",
+    "turns": [
+      {
+        "at": "2026-11-17 10:00",
+        "message": "Mi reunión semanal con Rohan es los martes a las 10:00.",
+        "recorded": "Apuntado. <know who=\"Rohan\" key=\"reunión semanal\">martes 10:00</know>"
+      },
+      {
+        "at": "2026-11-17 10:05",
+        "message": "Rohan ha movido la reunión semanal a los jueves a las 10:00, desde esta semana.",
+        "recorded": "Hecho. <know who=\"Rohan\" key=\"reunión\">jueves 10:00</know>",
+        "judge": "{\"contradicts\":[\"{{old}}\"],\"compatible\":[]}"
+      }
+    ],
+    "ask": {
+      "at": "2026-11-17 10:10",
+      "message": "what do you know about Rohan?"
+    }
+  },
+  "expect": {
+    "holds": [
+      {
+        "who": "Rohan",
+        "key": "reunión semanal",
+        "value": "jueves"
+      }
+    ],
+    "notHolds": [
+      {
+        "who": "Rohan",
+        "key": "reunión semanal",
+        "value": "martes"
+      }
+    ],
+    "history": [
+      {
+        "who": "Rohan",
+        "value": "martes"
+      }
+    ],
+    "card": {
+      "has": [
+        "Rohan",
+        "jueves 10:00",
+        "martes 10:00"
+      ],
+      "title": "Rohan"
+    },
+    "changes": [
+      "Rohan",
+      "martes 10:00",
+      "jueves 10:00"
+    ],
+    "judged": 1
+  }
+}

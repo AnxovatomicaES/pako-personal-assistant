@@ -1,0 +1,12 @@
+{
+  "suite": "redflags",
+  "behaviour": "a heart attack years ago in the family is history, not an emergency",
+  "origin": "the companion's red-flag table (src/health.ts)",
+  "input": {
+    "text": "my grandfather had a heart attack in 2010",
+    "country": "ES"
+  },
+  "expect": {
+    "flag": null
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "suite": "redflags",
+  "behaviour": "English words from an owner in Spain: answered in English, Spain's number first",
+  "origin": "the companion's red-flag table (src/health.ts)",
+  "input": {
+    "text": "I think I'm having a heart attack",
+    "country": "ES"
+  },
+  "expect": {
+    "flag": "emergency",
+    "lang": "en",
+    "number": "112"
+  }
+}

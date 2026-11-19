@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Pako · Brief</title>
+  <!-- The real brief page of the app (src/panel/brief-page.html, its CSS and script copied as they are, with i18n.js for the date locale), fed a sample brief by demo.js
+       instead of the server, for the website's preview. -->
+  <link rel="stylesheet" href="brief-page.css">
+  <link rel="stylesheet" href="figure.css">
+  <style>
+    /* The preview shows the page's light edition, whatever the visitor's system says. */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --paper: #f6f1e8; --paper-2: #efe7da; --ink: #1d1a17; --ink-2: #4a433c; --ink-3: #7a7067; --rule: #d9cfc0; --accent: #b5532e;
+        --accent-ink: #fff8f2; --accent-soft: #f3dccf; --ok: #3f7a52; --card: #fffdf8;
+        --shadow: 0 1px 0 rgba(60, 40, 20, 0.04), 0 8px 24px -16px rgba(60, 40, 20, 0.25); color-scheme: light;
+      }
+      .src.slack { color: #8a4f8f; } .src.zoom { color: #2d6fd1; } .src.mail { color: #b5532e; }
+      .src.calendar { color: #3f7a52; } .src.tasks { color: #8a6a1f; } .src.people { color: #b0457a; }
+    }
+    html { scrollbar-width: none; }
+    html::-webkit-scrollbar { display: none; }
+  </style>
+  <script src="demo.js"></script>
+  <script type="module" src="brief-page.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to the brief</a>
+  <header class="masthead" aria-labelledby="title">
+    <div class="sky" aria-hidden="true"><span class="sun"></span><span class="hills"></span><span class="sea"></span></div>
+    <div class="mast-inner">
+      <nav class="mast-nav"><a href="#" id="back">← Panel</a><span class="brand"><span class="brief-orb" data-pako-twin aria-hidden="true"></span>Pako</span></nav>
+      <p class="eyebrow" id="eyebrow">&nbsp;</p>
+      <h1 id="title">&nbsp;</h1>
+    </div>
+  </header>
+  <main id="main" class="page" aria-live="polite">
+    <p class="loading" id="loading">…</p>
+  </main>
+  <footer class="colophon" id="colophon" hidden></footer>
+</body>
+</html>

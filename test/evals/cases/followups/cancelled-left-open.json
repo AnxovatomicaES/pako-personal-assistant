@@ -1,0 +1,43 @@
+{
+  "suite": "followups",
+  "behaviour": "a cancellation that leaves the loop open is caught: Pako would keep reminding of a meeting someone else set up",
+  "origin": "the owner's real case: a cancellation after the request",
+  "label": "fail",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Ravi",
+              "text": "omar@client.example Laura Pine Tom myself for meeting at 5:15 AM ET Today — can you set it up pls"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Set up the meeting with omar@client.example, Laura Pine and Tom\",\"detail\":\"Ravi asked on Slack to set up the meeting.\",\"who\":\"Ravi\",\"due\":\"2026-11-16 05:15\",\"tz\":\"America/New_York\",\"check\":\"zoomMeeting\",\"hints\":[\"omar@client.example\",\"Laura Pine\",\"Tom\"]}],\"closes\":[]}"
+      },
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:05",
+              "who": "Ravi",
+              "text": "nvm, Tom set it up already"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "closed": 1,
+    "open": []
+  }
+}

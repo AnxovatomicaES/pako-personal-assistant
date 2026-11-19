@@ -1,0 +1,49 @@
+{
+  "suite": "memory",
+  "behaviour": "with the computer away no judge runs: the owner's new city wins at once and the old one is history",
+  "origin": "the judge's fallback (src/memory-facts.ts)",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "start": "2026-11-16 09:00",
+    "turns": [
+      {
+        "at": "2026-11-16 09:00",
+        "message": "Vivo en Madrid.",
+        "recorded": "Anotado. <know key=\"ciudad\">Madrid</know>"
+      },
+      {
+        "at": "2026-11-17 09:00",
+        "away": true,
+        "message": "Me he mudado a Valencia.",
+        "recorded": "¡Qué bien! <know key=\"ciudad\">Valencia</know>"
+      }
+    ]
+  },
+  "expect": {
+    "holds": [
+      {
+        "who": "",
+        "key": "ciudad",
+        "value": "Valencia"
+      }
+    ],
+    "notHolds": [
+      {
+        "who": "",
+        "key": "ciudad",
+        "value": "Madrid"
+      }
+    ],
+    "history": [
+      {
+        "who": "",
+        "value": "Madrid"
+      }
+    ],
+    "changes": [
+      "Madrid",
+      "Valencia"
+    ],
+    "judged": 0
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "suite": "jobs",
+  "behaviour": "a skipped brief and no BRIEF asked for: the next morning's brief tells what changed since the last brief given, two days back",
+  "origin": "the brief's window follows the last brief given, not the calendar day",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "briefAt": "08:00",
+    "start": "2026-11-16 07:55",
+    "steps": [
+      {
+        "awake": [
+          "2026-11-16 07:55",
+          "2026-11-16 08:05"
+        ]
+      },
+      {
+        "told": {
+          "at": "2026-11-16 12:00",
+          "who": "Priya",
+          "key": "oficina",
+          "value": "Lisboa"
+        }
+      },
+      {
+        "told": {
+          "at": "2026-11-16 20:00",
+          "who": "Priya",
+          "key": "oficina",
+          "value": "Berlín"
+        }
+      },
+      {
+        "awake": [
+          "2026-11-16 22:00",
+          "2026-11-16 23:00"
+        ]
+      },
+      {
+        "awake": [
+          "2026-11-17 13:00",
+          "2026-11-17 14:00"
+        ]
+      },
+      {
+        "awake": [
+          "2026-11-18 07:55",
+          "2026-11-18 08:05"
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "briefs": [
+      {
+        "at": "2026-11-16 08:00"
+      },
+      {
+        "at": "2026-11-18 08:00",
+        "has": [
+          "since the last brief",
+          "Lisboa",
+          "Berlín"
+        ],
+        "hasNot": [
+          "Late:"
+        ]
+      }
+    ],
+    "slots": {
+      "brief:2026-11-17": "missed",
+      "brief:2026-11-18": "done"
+    }
+  }
+}

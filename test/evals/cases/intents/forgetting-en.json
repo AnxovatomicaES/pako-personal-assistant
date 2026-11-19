@@ -1,0 +1,11 @@
+{
+  "suite": "intents",
+  "behaviour": "«What am I forgetting?» opens the follow-ups",
+  "origin": "plain words (src/intents.ts)",
+  "input": {
+    "text": "What am I forgetting?"
+  },
+  "expect": {
+    "view": "followups"
+  }
+}

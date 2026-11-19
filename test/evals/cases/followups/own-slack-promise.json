@@ -1,0 +1,37 @@
+{
+  "suite": "followups",
+  "behaviour": "the owner's own Slack message «I'll send you the Q4 deck by Friday» becomes their promise, with the person and the day",
+  "origin": "one-job audit §1: the owner's own Slack messages were dropped at intake",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0ANA",
+          "label": "Ana (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:05",
+              "who": "Owner",
+              "text": "I'll send you the Q4 deck by Friday 17:00",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"owner_promise\",\"title\":\"Send Ana the Q4 deck\",\"detail\":\"You told Ana on Slack you'd send the Q4 deck by Friday.\",\"who\":\"Ana\",\"due\":\"2026-11-20 17:00\",\"tz\":\"Europe/Madrid\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "owner_promise",
+        "who": "Ana",
+        "titleHas": [
+          "deck"
+        ],
+        "dueLocal": "2026-11-20 17:00",
+        "check": "none"
+      }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "suite": "mail",
+  "behaviour": "a receipt is Updates, silent, no ask",
+  "origin": "a shop receipt, written for the set",
+  "input": {
+    "from": "Books Shop <noreply@books.example>",
+    "subject": "Your receipt #10422",
+    "text": "Thanks for your order. Total paid: 23.90 EUR. Your book will ship in 2 days.",
+    "recorded": "UPDATES\nWHY: A receipt for a book you ordered\nYou paid 23.90 EUR; it ships in two days."
+  },
+  "expect": {
+    "category": "updates",
+    "ask": false,
+    "notify": false
+  }
+}

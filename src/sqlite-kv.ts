@@ -1,0 +1,274 @@
+// The store on a computer: one SQLite file (kv.db) through Node's own node:sqlite, no dependency. Same surface as the JSON file store it
+// replaced (fileKv, before): every module still sees a Kv. What changes is underneath: each write is on disk when set() returns, in a
+// transaction, instead of the whole file being rewritten a moment later; a crash loses nothing that was written. It is also the ground for
+// tables that are not key/value (facts that close, people by identifier, commitments: docs/roadmap.md).
+//
+// A first start after an update finds kv.json and no kv.db: every live entry is copied in one transaction, read back and compared, and only
+// then is kv.json deleted. A copy that did not match keeps it aside as kv.json.migrated.
+
+import { createRequire } from "node:module";
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import type { FileKv } from "./local.ts";
+import type { StoreLost } from "./store-guard.ts";
+import { createLog } from "./log.ts";
+
+const log = createLog("pako");
+
+/** The files of the store, in the Pako folder. */
+export const STORE_FILES = {
+  db: "kv.db",
+  made: "kv.db.made",
+  bad: "kv.db.bad",
+  /** The JSON store an older Pako kept, and what it becomes once copied in. */
+  legacy: "kv.json",
+  legacyMade: "kv.json.made",
+  legacyBad: "kv.json.bad",
+  migrated: "kv.json.migrated",
+} as const;
+
+// The subset of node:sqlite used here: typed by hand so the module loads (and type-checks) on any Node the project supports.
+interface Statement {
+  run(...params: (string | number)[]): unknown;
+  get(...params: (string | number)[]): Record<string, unknown> | undefined;
+  all(...params: (string | number)[]): Record<string, unknown>[];
+}
+interface Database {
+  exec(sql: string): void;
+  prepare(sql: string): Statement;
+  close(): void;
+}
+
+let DatabaseSync: (new (path: string) => Database) | undefined;
+/**
+ * node:sqlite, loaded on first use. On Node 22 it prints an "experimental" warning when it loads: that one warning is held back (the person
+ * would read it at every start and think something broke); any other warning goes through as usual.
+ */
+function sqlite(): new (path: string) => Database {
+  if (DatabaseSync) return DatabaseSync;
+  const emit = process.emitWarning;
+  process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
+    const text = typeof warning === "string" ? warning : warning.message;
+    if (/SQLite is an experimental feature/i.test(text)) return;
+    return (emit as (...a: unknown[]) => void).call(process, warning, ...rest);
+  }) as typeof process.emitWarning;
+  try {
+    DatabaseSync = (createRequire(import.meta.url)("node:sqlite") as { DatabaseSync: new (path: string) => Database }).DatabaseSync;
+  } finally {
+    process.emitWarning = emit;
+  }
+  return DatabaseSync;
+}
+
+/** Opens the file and checks it is a sound SQLite database with the store's table; throws when it is not. */
+function open(path: string): Database {
+  // Made empty first with the folder's private mode: SQLite keeps an existing file's mode, and gives its journal the same one.
+  if (!existsSync(path)) writeFileSync(path, "", { mode: 0o600 });
+  const Db = sqlite();
+  const db = new Db(path);
+  try {
+    db.exec("PRAGMA synchronous = FULL");
+    // What is deleted (an expired transcript, everything at "delete everything") is overwritten in the file, not left in free pages.
+    db.exec("PRAGMA secure_delete = ON");
+    const check = db.prepare("PRAGMA quick_check").get();
+    if (!check || Object.values(check)[0] !== "ok") throw new Error("quick_check failed");
+    db.exec("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL, exp INTEGER NOT NULL) WITHOUT ROWID");
+    return db;
+  } catch (err) {
+    db.close();
+    throw err;
+  }
+}
+
+const move = (from: string, to: string): void => {
+  try {
+    rmSync(to, { force: true });
+    renameSync(from, to);
+  } catch {
+    /* left where it is: the next start sees it again */
+  }
+};
+
+/**
+ * The store in `dir`. `lost` says why it started empty, as the JSON store did: its file was gone although one had been made here (kv.db.made, or an
+ * older Pako's kv.json.made, remembers that), or it was damaged and kept aside (kv.db.bad, or kv.json.bad for an old JSON file). Null when
+ * it was read, migrated, or never made.
+ */
+export function sqliteKv(dir: string, now: () => number = Date.now): FileKv {
+  const p = (name: keyof typeof STORE_FILES): string => join(dir, STORE_FILES[name]);
+  let lost: StoreLost | null = null;
+  let legacy: Record<string, { v: string; exp: number }> | null = null;
+
+  if (existsSync(p("db"))) {
+    try {
+      open(p("db")).close();
+    } catch (err) {
+      lost = "damaged";
+      log.error(`${p("db")} is damaged (${(err as Error).message}): kept as ${p("bad")}, starting with an empty one`);
+      move(p("db"), p("bad"));
+      rmSync(`${p("db")}-journal`, { force: true });
+    }
+  } else if (existsSync(p("legacy"))) {
+    try {
+      const raw = JSON.parse(readFileSync(p("legacy"), "utf8")) as Record<string, { v?: unknown; exp?: unknown }>;
+      legacy = {};
+      for (const [k, e] of Object.entries(raw ?? {})) if (typeof e?.v === "string" && typeof e.exp === "number") legacy[k] = { v: e.v, exp: e.exp };
+    } catch {
+      lost = "damaged";
+      log.error(`${p("legacy")} is not valid JSON: kept as ${p("legacyBad")}, starting with an empty store`);
+      move(p("legacy"), p("legacyBad"));
+    }
+  } else if (existsSync(p("made")) || existsSync(p("legacyMade"))) lost = "missing";
+
+  const db = open(p("db"));
+  const live = (exp: number): boolean => !(exp > 0 && exp < now());
+  const q = {
+    get: db.prepare("SELECT v, exp FROM kv WHERE k = ?"),
+    put: db.prepare("INSERT INTO kv (k, v, exp) VALUES (?, ?, ?) ON CONFLICT(k) DO UPDATE SET v = excluded.v, exp = excluded.exp"),
+    del: db.prepare("DELETE FROM kv WHERE k = ?"),
+    purge: db.prepare("DELETE FROM kv WHERE exp > 0 AND exp < ?"),
+    all: db.prepare("SELECT k, v, exp FROM kv WHERE exp = 0 OR exp >= ? ORDER BY k"),
+    clear: db.prepare("DELETE FROM kv"),
+  };
+  const tx = <T>(work: () => T): T => {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const out = work();
+      db.exec("COMMIT");
+      return out;
+    } catch (err) {
+      try {
+        db.exec("ROLLBACK");
+      } catch {
+        /* already rolled back by SQLite */
+      }
+      throw err;
+    }
+  };
+
+  let marked = false;
+  const markMade = (): void => {
+    if (marked) return;
+    try {
+      if (!existsSync(p("made"))) writeFileSync(p("made"), "Pako keeps kv.db in this folder; if it goes missing, Pako starts paused and says so.\n", { mode: 0o600 });
+      marked = true;
+    } catch {
+      /* tried again at the next write */
+    }
+  };
+
+  if (legacy) {
+    // One transaction: either everything is copied, or kv.json stays as it is and the next start tries again.
+    tx(() => {
+      for (const [k, e] of Object.entries(legacy!)) if (live(e.exp)) q.put.run(k, e.v, e.exp);
+    });
+    // Read every live key back from kv.db and compare. Only an exact copy lets the old plaintext file go: a leftover copy of the person's
+    // things is a privacy cost, so it is not kept "just in case". If anything differs (which would be a bug), the old file is kept aside as
+    // kv.json.migrated, listed on the privacy page and removed by "delete everything".
+    const copied = Object.entries(legacy).filter(([, e]) => live(e.exp));
+    const exact = copied.every(([k, e]) => {
+      const r = q.get.get(k);
+      return !!r && String(r.v) === e.v && Number(r.exp) === e.exp;
+    });
+    if (exact) {
+      rmSync(p("legacy"), { force: true });
+      log.info(`the store moved from ${STORE_FILES.legacy} to ${STORE_FILES.db} (${copied.length} entries, each checked); the old file is deleted`);
+    } else {
+      move(p("legacy"), p("migrated"));
+      log.error(`the store moved to ${STORE_FILES.db}, but the copy did not match ${STORE_FILES.legacy}: the old file is kept as ${STORE_FILES.migrated}`);
+    }
+    rmSync(p("legacyMade"), { force: true });
+  }
+  // A store read now (or just copied in) was made here: from now on, losing it can be told from a first run.
+  if (existsSync(p("made")) || legacy || lost || q.all.all(0).length > 0) markMade();
+  // An entry whose time has run out is not kept (docs/privacy.md: each one is deleted by itself), read again or not.
+  q.purge.run(now());
+  let purged = now();
+
+  let saved: ((ok: boolean, detail?: string) => void) | null = null;
+  /** Set by wipe: nothing is written any more, until the process starts again. */
+  let sealed = false;
+  let closed = false;
+  const write = (work: () => void): boolean => {
+    if (sealed || closed) return false;
+    try {
+      work();
+      if (now() - purged > 60_000) {
+        q.purge.run(now());
+        purged = now();
+      }
+      markMade();
+      saved?.(true);
+      return true;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? (err as Error).message;
+      log.error(`could not save to ${p("db")}: ${(err as Error).message}`);
+      saved?.(false, String(code));
+      return false;
+    }
+  };
+  const ttl = (seconds: number): number => (seconds > 0 ? now() + seconds * 1000 : 0);
+  process.on("exit", () => {
+    if (closed) return;
+    closed = true;
+    try {
+      db.close();
+    } catch {
+      /* the process is ending */
+    }
+  });
+
+  return {
+    lost,
+    onSave: (report) => {
+      saved = report;
+    },
+    entries: () =>
+      q.all.all(now()).map((r) => ({ key: String(r.k), value: String(r.v), expires: Number(r.exp) > 0 ? Number(r.exp) : null })),
+    wipe: (keep = []) => {
+      sealed = true;
+      try {
+        tx(() => {
+          q.clear.run();
+          for (const k of keep) q.put.run(k.key, k.value, ttl(k.ttlSeconds));
+        });
+        saved?.(true);
+        return true;
+      } catch (err) {
+        log.error(`could not empty ${p("db")}: ${(err as Error).message}`);
+      }
+      // A full disk can still remove a file: the next start must not read back what was just deleted. Without .made it starts as a first run.
+      try {
+        if (!closed) {
+          closed = true;
+          db.close();
+        }
+        for (const f of [p("db"), `${p("db")}-journal`, p("made")]) rmSync(f, { force: true, recursive: true });
+        return true;
+      } catch (err) {
+        log.error(`could not remove ${p("db")} either: ${(err as Error).message}`);
+        return false;
+      }
+    },
+    get: async (k) => {
+      if (closed) return null;
+      const r = q.get.get(k);
+      if (!r) return null;
+      if (!live(Number(r.exp))) {
+        write(() => q.del.run(k));
+        return null;
+      }
+      return String(r.v);
+    },
+    set: async (k, v, ttlSeconds) => {
+      write(() => q.put.run(k, v, ttl(ttlSeconds)));
+    },
+    // One process holds this folder (the home's lock), and the read and the write run with no await between them: atomic here.
+    add: async (k, v, ttlSeconds) => {
+      if (sealed || closed) return false;
+      const r = q.get.get(k);
+      if (r && live(Number(r.exp))) return false;
+      return write(() => q.put.run(k, v, ttlSeconds > 0 ? ttl(ttlSeconds) : 0));
+    },
+  };
+}

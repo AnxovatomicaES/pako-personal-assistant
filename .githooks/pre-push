@@ -1,0 +1,15 @@
+#!/bin/sh
+# Blocks a push when the gate fails (bin/gate.sh). Set up once per clone with: git config core.hooksPath .githooks
+# PAKO_SKIP_GATE=1 skips it for one push (say why in the PR).
+[ "$PAKO_SKIP_GATE" = "1" ] && { echo "pre-push: gate skipped (PAKO_SKIP_GATE=1)"; exit 0; }
+# git gives a hook GIT_DIR and friends: the tests run git in their own throwaway repositories, which must not resolve to this one
+# (a test pushing to its fake origin would reach the real one). The gate runs with none of them.
+for v in $(env | sed -n 's/^\(GIT_[A-Z_]*\)=.*/\1/p'); do unset "$v"; done
+echo "pre-push: running the gate (type checks and every test)…"
+if ! sh "$(git rev-parse --show-toplevel)/bin/gate.sh" > /tmp/pako-gate-$$.log 2>&1; then
+  grep -E "^not ok|error TS|^# (tests|pass|fail)" /tmp/pako-gate-$$.log | head -30
+  echo "pre-push: the gate failed; nothing was pushed. Full log: /tmp/pako-gate-$$.log"
+  exit 1
+fi
+grep -E "^# (tests|pass|fail)" /tmp/pako-gate-$$.log
+rm -f /tmp/pako-gate-$$.log

@@ -1,0 +1,33 @@
+{
+  "suite": "autonomy",
+  "behaviour": "Pako's own initiative (a routine's run) asks with a card even for a known contact",
+  "origin": "the autonomy door: initiative",
+  "input": {
+    "message": "[Rutina] Recuerda a Ana lo de la cena",
+    "owner": [],
+    "initiative": true,
+    "emailContacts": [
+      {
+        "name": "Ana López",
+        "address": "ana@example.com"
+      },
+      {
+        "name": "Luis Prado",
+        "address": "luis@example.com"
+      }
+    ],
+    "recorded": "<email to=\"Ana\" subject=\"Cena\">Te recuerdo la cena del viernes.</email>"
+  },
+  "expect": {
+    "actions": [
+      {
+        "type": "email",
+        "outcome": "confirm",
+        "reasons": [
+          "initiative"
+        ]
+      }
+    ],
+    "direct": 0
+  }
+}

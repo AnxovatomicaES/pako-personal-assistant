@@ -1,0 +1,28 @@
+{
+  "area": "language",
+  "behaviour": "an English message gets an English answer even when the owner's own data (a list) is in Spanish",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "Can you tell me what's on my shopping list?",
+    "context": {
+      "lists": [
+        "compra: leche; huevos; pan"
+      ]
+    }
+  },
+  "checks": [
+    {
+      "check": "language",
+      "lang": "en"
+    },
+    {
+      "check": "reply",
+      "pattern": "leche|milk"
+    },
+    {
+      "check": "tag",
+      "tag": "lists",
+      "count": 0
+    }
+  ]
+}

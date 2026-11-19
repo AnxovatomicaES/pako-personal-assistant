@@ -1,0 +1,26 @@
+{
+  "suite": "followups",
+  "behaviour": "thanks and an FYI make no loop",
+  "origin": "the extraction's rule: when in doubt, no loop",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Ravi",
+              "text": "thanks for yesterday! fyi the deck is in the shared drive"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": []
+  }
+}

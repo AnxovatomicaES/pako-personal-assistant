@@ -1,0 +1,31 @@
+{
+  "suite": "autonomy",
+  "behaviour": "«dile a Ana por correo que llego tarde» in the owner's own words goes without a card",
+  "origin": "the autonomy door's main case",
+  "input": {
+    "message": "Dile a Ana por correo que llego 15 minutos tarde",
+    "owner": [
+      "Dile a Ana por correo que llego 15 minutos tarde"
+    ],
+    "emailContacts": [
+      {
+        "name": "Ana López",
+        "address": "ana@example.com"
+      },
+      {
+        "name": "Luis Prado",
+        "address": "luis@example.com"
+      }
+    ],
+    "recorded": "Hecho, se lo digo a Ana.<email to=\"Ana\" subject=\"Llego tarde\">Hola Ana, llego unos 15 minutos tarde. Un abrazo.</email>"
+  },
+  "expect": {
+    "actions": [
+      {
+        "type": "email",
+        "outcome": "direct"
+      }
+    ],
+    "exact": true
+  }
+}

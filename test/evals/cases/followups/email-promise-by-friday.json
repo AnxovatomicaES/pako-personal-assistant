@@ -1,0 +1,30 @@
+{
+  "suite": "followups",
+  "behaviour": "someone's promise in an email («I'll send the signed contract by Friday») is their loop, due Friday",
+  "origin": "an email summary, rewritten",
+  "input": {
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-16 09:30",
+          "ref": "m1",
+          "label": "correo de Nadia",
+          "text": "Nadia (nadia@vendor.example): I'll send you the signed contract by Friday."
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"other_promise\",\"title\":\"Receive the signed contract from Nadia\",\"detail\":\"Nadia promised by email to send the signed contract.\",\"who\":\"Nadia\",\"due\":\"2026-11-20\",\"tz\":\"Europe/Madrid\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "other_promise",
+        "who": "Nadia",
+        "titleHas": [
+          "contract"
+        ],
+        "check": "none"
+      }
+    ]
+  }
+}

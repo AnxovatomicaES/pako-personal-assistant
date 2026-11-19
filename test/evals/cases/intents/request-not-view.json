@@ -1,0 +1,11 @@
+{
+  "suite": "intents",
+  "behaviour": "a request («Escribe a Juan por Slack…») is for Claude, not a view",
+  "origin": "plain words (src/intents.ts)",
+  "input": {
+    "text": "Escribe a Juan por Slack que llego tarde"
+  },
+  "expect": {
+    "view": null
+  }
+}

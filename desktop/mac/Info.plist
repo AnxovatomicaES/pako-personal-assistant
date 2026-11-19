@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Pako.app's Info.plist. build.sh fills in the version (package.json) and the build number (PAKO_BUILD, else the commit count), the
+     update feed (PAKO_UPDATE_FEED; empty: no update check), and only for a developer build (PAKO_DEV_BUILD=1) PakoRepoPath, the Pako folder
+     it was built from. The bundle identifier is final: it keys the app's settings, its WebKit store (the panel's cookie), its login item and
+     its notarization history, so it never changes after the first public build. -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Pako</string>
+	<key>CFBundleDisplayName</key>
+	<string>Pako</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.anxovatomicaes.pako</string>
+	<key>CFBundleExecutable</key>
+	<string>Pako</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.0.0</string>
+	<key>CFBundleVersion</key>
+	<string>0.0.0</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+	</array>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>LSUIElement</key>
+	<false/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.productivity</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2026 Pako contributors. MIT License.</string>
+	<!-- Plain http to this computer only (the panel at 127.0.0.1 / localhost); everything else keeps App Transport Security. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+			<key>127.0.0.1</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
+	<!-- Why macOS asks (discovery, Discovery.swift): shown in its prompts, in Spanish from es.lproj/InfoPlist.strings (build.sh copies
+	     InfoPlist.es.strings and InfoPlist.en.strings there). Nothing is asked before the person says yes in the panel. -->
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Pako reads the calendars you choose to keep your agenda in view. It all stays on this Mac.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Pako reads the calendars you choose to keep your agenda in view. It all stays on this Mac.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Pako imports your contacts' names, emails and phones only when you confirm it. It all stays on this Mac.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Pako asks Mail and Outlook which accounts you have (only their addresses, never your mail) to help you connect one.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Pako looks for Zoom's recordings in Documents/Zoom (only the folder names) to offer you their transcripts.</string>
+	<!-- https only, JSON {"version", "url", "notes"}; checked at most once a day, nothing is sent but a plain request (App.swift). -->
+	<key>PakoUpdateFeed</key>
+	<string></string>
+	<!-- Help > Pako Help: https only (build.sh sets it, PAKO_HELP_URL). -->
+	<key>PakoHelpURL</key>
+	<string></string>
+</dict>
+</plist>

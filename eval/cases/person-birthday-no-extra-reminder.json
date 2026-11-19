@@ -1,0 +1,35 @@
+{
+  "area": "memory",
+  "behaviour": "a sister's birthday and taste go in <person>, with no <remind> of its own (the server sets the yearly one)",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "Mi hermana Lucía cumple años el 14 de marzo y le encanta el jazz",
+    "context": {
+      "people": []
+    }
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "people",
+      "count": 1
+    },
+    {
+      "check": "tagAttr",
+      "tag": "people",
+      "attr": "name",
+      "pattern": "^Luc[ií]a"
+    },
+    {
+      "check": "tagAttr",
+      "tag": "people",
+      "attr": "birthday",
+      "pattern": "03-14"
+    },
+    {
+      "check": "tag",
+      "tag": "remind",
+      "count": 0
+    }
+  ]
+}
