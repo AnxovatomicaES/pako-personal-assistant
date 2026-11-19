@@ -1,0 +1,28 @@
+{
+  "suite": "followups",
+  "behaviour": "a known-bad answer: the newsletter's «register by Friday» made a loop, and it is caught",
+  "origin": "a mailing, not a person",
+  "label": "fail",
+  "input": {
+    "timeZone": "America/Chicago",
+    "ownerName": "Sam",
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-17 06:30",
+          "ref": "m-news",
+          "from": "Revenue Ops Digest <news@revopsdigest.example>",
+          "to": "Sam <sam@northwind.example>",
+          "subject": "Your weekly digest + summit seats closing",
+          "category": "important",
+          "messageId": "<d-91@revopsdigest.example>",
+          "body": "Good morning,\n\nThis week: forecasting playbooks, a teardown of three pricing pages, and the best of the community threads.\n\nSeats for the Pipeline Summit are almost gone: register by Friday to lock in the early-bird price!\n\nYou are receiving this because you subscribed. Manage preferences or unsubscribe."
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"deadline\",\"title\":\"Register for the Pipeline Summit\",\"detail\":\"The digest says register by Friday.\",\"who\":\"Revenue Ops Digest\",\"due\":\"2026-11-20\",\"tz\":\"America/Chicago\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": []
+  }
+}

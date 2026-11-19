@@ -15,12 +15,12 @@
       {
         "at": "2026-11-17 10:00",
         "message": "Ana habla inglés.",
-        "recorded": "Apuntado. <know who=\"Ana\" key=\"idioma\">inglés</know>"
+        "recorded": "Apuntado. <know who=\"Ana\" key=\"language\">inglés</know>"
       },
       {
         "at": "2026-11-17 10:03",
         "message": "Ana también habla francés.",
-        "recorded": "¡Bien! <know who=\"Ana\" key=\"idioma\">francés</know>",
+        "recorded": "¡Bien! <know who=\"Ana\" key=\"language\">francés</know>",
         "judge": "{\"contradicts\":[],\"compatible\":[\"{{old}}\"]}"
       }
     ],
@@ -33,12 +33,12 @@
     "holds": [
       {
         "who": "Ana",
-        "key": "idioma",
+        "key": "language",
         "value": "inglés"
       },
       {
         "who": "Ana",
-        "key": "idioma",
+        "key": "language",
         "value": "francés"
       }
     ],

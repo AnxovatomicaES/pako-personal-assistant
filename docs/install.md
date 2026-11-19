@@ -5,8 +5,8 @@ when you log in. It is plain `sh` (it also runs under dash, bash and zsh), a lit
 
 ## What you need
 
-- **A computer that stays on** while you want Pako to answer and to remind you (macOS or Linux; Windows 10 or 11 too, not yet tried on a real
-  Windows machine).
+- **A computer that stays on** while you want Pako to answer and to remind you (macOS or Linux; Windows 10 or 11 too, with
+  [its own line](install-windows.md)).
 - **[Node.js](https://nodejs.org) 22.18 or newer**, and git.
 - **Claude**, one of two ways:
   - [Claude Code](https://claude.com/claude-code) installed and signed in to your own Claude plan (run `claude` once). This is the default.
@@ -29,9 +29,13 @@ Piping it straight into `sh` (`curl -fsSL .../install.sh | sh`) works too, but r
 
 On Windows, use the PowerShell line in [install-windows.md](install-windows.md) instead.
 
+**Try the demo first.** When the panel opens, press **Try with a demo week**: Pako runs on an invented week (people, mail, Slack, a calendar,
+follow-ups) in its own folder, `~/.pako/demo`, with every connection off and nothing sent. The banner's **Leave demo** deletes that folder
+and brings back your own setup. `PAKO_DEMO=1 npm start` (or `npm start -- --demo`) starts it from the terminal.
+
 The address is `https://raw.githubusercontent.com/OWNER/REPO/BRANCH/install.sh`, with OWNER/REPO from the `repository` field of
-`package.json` (the same one both installers clone) and BRANCH the published repository's default branch. The repository is not public
-yet: when it is published, check OWNER, REPO and BRANCH here, in `docs/install-windows.md`, in `README.md` and in both scripts
+`package.json` (the same one both installers clone) and BRANCH the published repository's default branch. A fork or a move of the
+repository changes OWNER, REPO and BRANCH here, in `docs/install-windows.md`, in `README.md` and in both scripts
 (`test/autostart.test.ts` checks that they all agree with `package.json`).
 
 Run it as your normal user. It refuses to run as root, and it never calls `sudo` itself.

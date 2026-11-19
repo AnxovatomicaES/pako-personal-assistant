@@ -1,0 +1,27 @@
+{
+  "suite": "autonomy",
+  "behaviour": "a known-bad answer: the promise kept for Friday instead of Thursday is caught",
+  "origin": "catching the owner's own promises in the chat",
+  "label": "fail",
+  "input": {
+    "message": "I told Omar I'd send him the revised quote by Thursday 5pm",
+    "owner": [
+      "I told Omar I'd send him the revised quote by Thursday 5pm"
+    ],
+    "now": "2026-11-17 18:20",
+    "recorded": "Noted.<promise who=\"Omar\" due=\"2026-11-20 17:00\">send Omar the revised quote</promise>"
+  },
+  "expect": {
+    "actions": [],
+    "exact": true,
+    "promises": [
+      {
+        "who": "Omar",
+        "has": [
+          "quote"
+        ],
+        "due": "2026-11-19 17:00"
+      }
+    ]
+  }
+}

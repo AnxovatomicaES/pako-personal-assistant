@@ -1,0 +1,66 @@
+{
+  "suite": "brief",
+  "behaviour": "a person fact (N) from the owner's memory is cited beside the follow-up it adds to, and the name it holds (Lena, Sofia's assistant) is a known name",
+  "origin": "people memory in the brief (src/person-context.ts): one N fact per person of the day, never an item of its own",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-18 08:00",
+    "read": [
+      "calendar",
+      "mail",
+      "people"
+    ],
+    "facts": [
+      {
+        "id": "L1",
+        "kind": "loop",
+        "icon": "mail",
+        "label": "Email, Mon 16/11 18:10",
+        "ref": "c000000001",
+        "text": "you promised · Email, Mon 16/11 18:10 · due: today 17:00 CET · Send Sofia the revised quote · who: Sofia Okafor",
+        "at": "2026-11-18 17:00"
+      },
+      {
+        "id": "E1",
+        "kind": "event",
+        "icon": "calendar",
+        "label": "today 11:00–11:30 · Renewal call",
+        "title": "Renewal call",
+        "text": "today 11:00–11:30 · Renewal call",
+        "at": "2026-11-18 11:00",
+        "end": "2026-11-18 11:30"
+      },
+      {
+        "id": "N1",
+        "kind": "person",
+        "icon": "people",
+        "label": "People · Sofia Okafor",
+        "text": "what Pako knows of Sofia Okafor: relation: client at Initech (since 1 Jun) · last agreed: «Q4 renewal», 12 Nov: you agreed to send the revised quote by Friday · assistant: Lena Park books her meetings (since 3 Nov)"
+      }
+    ],
+    "recorded": "{\"opening\":\"A client day.\",\"todos\":[{\"title\":\"Send Sofia the revised quote before 17:00\",\"context\":\"You agreed it at the Q4 renewal on 12 Nov. Lena Park books her meetings if you need time with her first.\",\"sources\":[\"L1\",\"N1\"]}],\"day\":[{\"time\":\"11:00\",\"title\":\"Renewal call\",\"sources\":[\"E1\",\"N1\"]}]}"
+  },
+  "expect": {
+    "todoHas": [
+      [
+        "Sofia",
+        "quote"
+      ]
+    ],
+    "todoCites": [
+      [
+        "L1",
+        "N1"
+      ]
+    ],
+    "day": [
+      {
+        "time": "11:00",
+        "titleHas": [
+          "Renewal"
+        ],
+        "confirmed": true
+      }
+    ]
+  }
+}

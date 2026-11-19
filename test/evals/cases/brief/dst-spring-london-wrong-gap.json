@@ -1,0 +1,50 @@
+{
+  "suite": "brief",
+  "behaviour": "a known-bad answer: the call written as 20:00 (the usual five-hour gap) is caught",
+  "origin": "DST in the brief",
+  "label": "fail",
+  "input": {
+    "timeZone": "Europe/London",
+    "now": "2027-03-17 07:30",
+    "read": [
+      "slack",
+      "zoom",
+      "calendar",
+      "mail"
+    ],
+    "facts": [
+      {
+        "id": "Q1",
+        "kind": "zoom",
+        "icon": "zoom",
+        "label": "Zoom · today 19:00 · Boston team call",
+        "text": "today 19:00 · scheduled Zoom meeting “Boston team call (3:00 PM New York)”",
+        "at": "2027-03-17 19:00",
+        "title": "Boston team call (3:00 PM New York)"
+      },
+      {
+        "id": "E1",
+        "kind": "event",
+        "icon": "calendar",
+        "label": "today 09:30 · Weekly planning",
+        "text": "today 09:30–10:00 · Weekly planning",
+        "at": "2027-03-17 09:30",
+        "end": "2027-03-17 10:00",
+        "title": "Weekly planning"
+      }
+    ],
+    "recorded": "{\"opening\":\"A late one tonight with Boston.\",\"todos\":[],\"updates\":[],\"day\":[{\"time\":\"09:30\",\"end\":\"10:00\",\"title\":\"Weekly planning\",\"confirmed\":true,\"note\":\"\",\"sources\":[\"E1\"]},{\"time\":\"19:00\",\"title\":\"Boston team call\",\"confirmed\":true,\"note\":\"3:00 PM New York, so 20:00 for you\",\"sources\":[\"Q1\"]}]}",
+    "lang": "en"
+  },
+  "expect": {
+    "day": [
+      {
+        "time": "19:00",
+        "titleHas": [
+          "Boston"
+        ],
+        "confirmed": true
+      }
+    ]
+  }
+}

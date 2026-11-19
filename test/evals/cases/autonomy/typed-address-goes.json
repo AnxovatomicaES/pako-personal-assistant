@@ -13,7 +13,13 @@
         "text": "Nuevo correo de Juan: mejor escríbeme a juan@ernpresa.example"
       }
     ],
-    "recorded": "<email to=\"juan@empresa.example\" subject=\"Llego tarde\">Llego tarde, perdona.</email>"
+    "recorded": "<email to=\"juan@empresa.example\" subject=\"Llego tarde\">Llego tarde, perdona.</email>",
+    "emailContacts": [
+      {
+        "name": "Marta Ruiz",
+        "address": "marta@example.com"
+      }
+    ]
   },
   "expect": {
     "actions": [

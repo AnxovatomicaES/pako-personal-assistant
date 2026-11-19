@@ -228,8 +228,10 @@ export function mountTurn(b: AfterJobs) {
       reply = { ...reply, text: reply.text ? `${reply.text}\n\n${note}` : note };
       delete reply.email;
     }
+    // A follow-up closed, a promise kept and a calendar change count too: from someone else's text they are held (the calendar card then
+    // says where it came from), never done as the owner's own words.
     const acts = !!(reply.call || reply.message || reply.email || reply.remind.length || reply.unremind.length || reply.book || reply.lists || reply.tasks || reply.done
-      || reply.remember.length || reply.forget.length || reply.people || reply.routines || reply.watches);
+      || reply.remember.length || reply.forget.length || reply.people || reply.routines || reply.watches || reply.closed || reply.promises || calendarOut.length);
     // New outside text in the context (ctxWhy) holds what deletes or stands (a note or a reminder deleted, a list item taken off, a task done,
     // someone kept, a routine or a watch), and words Pako wrote to someone ask first; what the owner plainly asked otherwise acts as always.
     // A server that holds part of a reply (quarantine 2) is told why with `context` and splits it; an older one can only hold a whole reply,
@@ -254,6 +256,9 @@ export function mountTurn(b: AfterJobs) {
         delete reply.people;
         delete reply.routines;
         delete reply.watches;
+        delete reply.closed;
+        delete reply.promises;
+        calendarOut.length = 0;
       }
     }
     // A server that keeps no facts ignores <fact>: dropped here (nothing is said: the answer never claims to have kept it).

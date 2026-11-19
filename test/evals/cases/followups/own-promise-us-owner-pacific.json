@@ -1,0 +1,44 @@
+{
+  "suite": "followups",
+  "behaviour": "a US owner in Los Angeles promises Mei on Slack «I'll get you the pricing model by Thursday 5pm»: their promise, due Thursday 17:00 Pacific",
+  "origin": "a busy day in the US, invented names; the owner's own Slack messages are read",
+  "input": {
+    "timeZone": "America/Los_Angeles",
+    "ownerName": "Jordan",
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0MEI",
+          "label": "Mei Tanaka (private)",
+          "msgs": [
+            {
+              "at": "2026-11-17 13:55",
+              "who": "Mei Tanaka",
+              "text": "Hey, any chance I could see the pricing model before the exec review?"
+            },
+            {
+              "at": "2026-11-17 14:10",
+              "who": "Jordan",
+              "text": "Sure, I'll get you the pricing model by Thursday 5pm",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"owner_promise\",\"title\":\"Send Mei the pricing model\",\"detail\":\"You told Mei on Slack you'd send the pricing model by Thursday 5pm.\",\"who\":\"Mei\",\"due\":\"2026-11-19 17:00\",\"tz\":\"America/Los_Angeles\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "owner_promise",
+        "who": "Mei",
+        "titleHas": [
+          "pricing model"
+        ],
+        "dueLocal": "2026-11-19 17:00",
+        "check": "none"
+      }
+    ]
+  }
+}

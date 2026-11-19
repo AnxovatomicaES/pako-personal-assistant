@@ -11,6 +11,8 @@
 //   for ASSISTANT_UNCHANGED_MIN (120 by default) without a run.
 // - Claude's limit: when a run (any run, the owner's too) says the plan's limit was reached, background work stops until the reset the CLI
 //   names ("resets 9pm", or an epoch after a "|"), or for half an hour when it names none. A later run that works ends the pause early.
+// - The model: the writing kinds (the morning brief, a draft) run on the writing model (ASSISTANT_WRITING_MODEL), the rest on the general one.
+//   The day's runs are counted by the model that answered too, and a writing model the account cannot use is set aside until the next day.
 //
 // A job that is refused here never fails: bridge.ts gives each kind its answer without Claude (an email kept with its first lines, an empty
 // review so the server sends Zoom's own summary, "nothing to say", an empty brief so the server sends the brief it builds by itself).
@@ -25,16 +27,20 @@ import { join } from "node:path";
 /** What a run of Claude is for. */
 export type RunKind =
   | "message" | "routine" | "paper" | "slack" | "task" | "rehearsal"
+  /** A draft for one follow-up (a reply, an email: src/brief-v2.ts draftFor), asked by the owner: a "task" written on the writing model. */
+  | "draft"
   | "email" | "meeting" | "review" | "followup" | "proactive" | "judge" | "brief"
   /** The catch-up of a newly connected mailbox: its own one-time allowance, paced by the server (src/backfill.ts), never the day's cap. */
   | "backfill";
 
 /** The owner's own: counted, never refused. */
-const OWNER: ReadonlySet<RunKind> = new Set<RunKind>(["message", "routine", "paper", "slack", "task", "rehearsal"]);
+const OWNER: ReadonlySet<RunKind> = new Set<RunKind>(["message", "routine", "paper", "slack", "task", "rehearsal", "draft"]);
 /** Background kinds that stop at half the cap. */
 const LOW: ReadonlySet<RunKind> = new Set<RunKind>(["proactive", "judge"]);
 /** Background kinds whose answer is a short verdict: they get the lighter effort (ASSISTANT_BACKGROUND_EFFORT). */
 export const LIGHT: ReadonlySet<RunKind> = new Set<RunKind>(["email", "proactive", "judge", "backfill"]);
+/** The kinds whose words the owner reads as written: they run on the writing model (BridgeConfig.writingModel). */
+export const WRITING: ReadonlySet<RunKind> = new Set<RunKind>(["brief", "draft"]);
 /** Counted apart from the day's background runs and never refused here: the server gives them out one a minute, up to their own allowance. */
 const APART: ReadonlySet<RunKind> = new Set<RunKind>(["backfill"]);
 
@@ -60,6 +66,10 @@ export interface Usage {
   skipped: { cap: number; paused: number; same: number };
   /** Runs by kind (today). */
   kinds: Partial<Record<RunKind, number>>;
+  /** Runs by the model that answered (today), when the bridge named one. */
+  models: Record<string, number>;
+  /** Models set aside for today: the account could not use them, so their runs went to the general model. */
+  modelsOff: string[];
   /** Background work waits until this time (ms) for Claude's limit; 0 when it does not. */
   pausedUntil: number;
   perDay: number;
@@ -135,6 +145,8 @@ export function materialKey(kind: RunKind, material: string): string {
 interface Saved {
   day: string;
   kinds: Partial<Record<RunKind, number>>;
+  models: Record<string, number>;
+  modelsOff: string[];
   skipped: Usage["skipped"];
   pausedUntil: number;
 }
@@ -150,7 +162,7 @@ export function createBudget(o: { config: BudgetConfig; stateDir?: string; now?:
   const now = o.now ?? Date.now;
   const log = o.log ?? (() => undefined);
   const path = o.stateDir ? join(o.stateDir, "budget.json") : "";
-  const fresh = (day: string): Saved => ({ day, kinds: {}, skipped: { cap: 0, paused: 0, same: 0 }, pausedUntil: 0 });
+  const fresh = (day: string): Saved => ({ day, kinds: {}, models: {}, modelsOff: [], skipped: { cap: 0, paused: 0, same: 0 }, pausedUntil: 0 });
   let s: Saved = ((): Saved => {
     if (!path) return fresh(localDay(now()));
     try {
@@ -158,9 +170,14 @@ export function createBudget(o: { config: BudgetConfig; stateDir?: string; now?:
       const n = (x: unknown): number => (typeof x === "number" && Number.isFinite(x) && x >= 0 ? x : 0);
       const kinds: Saved["kinds"] = {};
       for (const [k, c] of Object.entries(v.kinds ?? {})) kinds[k as RunKind] = n(c);
+      const models: Saved["models"] = {};
+      for (const [k, c] of Object.entries(v.models ?? {})) if (/^[A-Za-z0-9-]{1,80}$/.test(k)) models[k] = n(c);
+      const modelsOff = (Array.isArray(v.modelsOff) ? v.modelsOff : []).filter((m): m is string => typeof m === "string").slice(0, 10);
       return {
         day: typeof v.day === "string" ? v.day : localDay(now()),
         kinds,
+        models,
+        modelsOff,
         skipped: { cap: n(v.skipped?.cap), paused: n(v.skipped?.paused), same: n(v.skipped?.same) },
         pausedUntil: n(v.pausedUntil),
       };
@@ -242,6 +259,25 @@ export function createBudget(o: { config: BudgetConfig; stateDir?: string; now?:
       x.kinds[kind] = (x.kinds[kind] ?? 0) + 1;
       save();
     },
+    /** The model that answered a run: counted for the day's numbers. */
+    answeredBy(model: string): void {
+      if (!model) return;
+      const x = today();
+      x.models[model] = (x.models[model] ?? 0) + 1;
+      save();
+    },
+    /** A model this account cannot use now: set aside until the day ends. True the first time today (the caller says it once). */
+    modelOff(model: string): boolean {
+      const x = today();
+      if (x.modelsOff.includes(model)) return false;
+      x.modelsOff.push(model);
+      save();
+      return true;
+    },
+    /** Whether a model was set aside today (modelOff). */
+    isModelOff(model: string): boolean {
+      return today().modelsOff.includes(model);
+    },
     /** A background run's answer, kept for the same material within the coalescing window. */
     answered(kind: RunKind, key: string, text: string): void {
       if (OWNER.has(kind) || !text.trim()) return;
@@ -275,6 +311,7 @@ export function createBudget(o: { config: BudgetConfig; stateDir?: string; now?:
       const interactive = Object.entries(x.kinds).reduce((n, [k, c]) => n + (OWNER.has(k as RunKind) ? (c ?? 0) : 0), 0);
       return {
         day: x.day, interactive, background: backgroundToday(x), skipped: { ...x.skipped }, kinds: { ...x.kinds },
+        models: { ...x.models }, modelsOff: [...x.modelsOff],
         pausedUntil: x.pausedUntil > now() ? x.pausedUntil : 0, perDay: o.config.perDay,
       };
     },
@@ -288,5 +325,7 @@ export function usageLine(u: Usage): string {
   const skipped = u.skipped.cap + u.skipped.paused + u.skipped.same;
   return `claude today: ${u.interactive + u.background} runs (${u.interactive} yours, ${u.background}/${u.perDay} background), ${skipped} background jobs answered without a run`
     + (skipped ? ` (${u.skipped.same} unchanged or coalesced, ${u.skipped.cap} over the cap, ${u.skipped.paused} during the limit)` : "")
-    + (u.pausedUntil ? `; background paused until ${new Date(u.pausedUntil).toISOString()}` : "");
+    + (u.pausedUntil ? `; background paused until ${new Date(u.pausedUntil).toISOString()}` : "")
+    + (Object.keys(u.models ?? {}).length ? `; by model: ${Object.entries(u.models).map(([m, n]) => `${m} ${n}`).join(", ")}` : "")
+    + (u.modelsOff?.length ? `; set aside today: ${u.modelsOff.join(", ")}` : "");
 }

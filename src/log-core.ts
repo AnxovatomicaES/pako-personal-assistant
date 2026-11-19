@@ -105,7 +105,8 @@ const KEY_SHAPES = new RegExp(
     String.raw`\bAKIA[0-9A-Z]{16}\b`,
     String.raw`\bAIza[0-9A-Za-z_-]{35}`,
     String.raw`\b[rsp]k_(?:live|test)_[A-Za-z0-9]{10,}`,
-    String.raw`\b\d{6,12}:[A-Za-z0-9_-]{30,}`,
+    // A bot token also inside its API address, where "bot" comes right before it (https://api.telegram.org/bot123456:ABC.../getUpdates).
+    String.raw`(?:\b|(?<=bot))\d{6,12}:[A-Za-z0-9_-]{30,}`,
     String.raw`\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,}`,
   ].join("|"),
   "g",

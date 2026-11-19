@@ -131,8 +131,18 @@ export function mountFacts(door: Door): Pick<Door, "withRecall" | "learnKnow" | 
     // A record that is not one of the owner's people (only seen in mail or Slack) never borrows the relation of another person of that name.
     const own = g?.personId ? list.find((x) => x.id === g!.personId) : g ? undefined : findPerson(list, name);
     const names = g ? [g.name, ...g.aliases] : own ? [own.name] : [name];
-    const holds = currentAbout(all, names).filter((f) => !(f.origin && ownAttribute(f) === "relation"));
-    if (!g && !own && !holds.length) return null;
+    // The relation goes in the header: the one that holds now, told or from PEOPLE (newest learnt first). A relation the owner corrected by
+    // telling closed the one PEOPLE still keeps, which is never shown as current. A record that is not one of the owner's people never
+    // borrows the PEOPLE relation of another person of that name.
+    const current = currentAbout(all, names);
+    // Told in Spanish too ("relación"): the same attribute as Pako's own English word (src/memory-facts.ts).
+    const isRelation = (f: Fact): boolean => ["relation", "relacion"].includes(fold(ownAttribute(f)));
+    const mirrored = own ? `person:${own.id}:relation` : null;
+    const header = current.find((f) => isRelation(f) && (!f.origin || f.origin === mirrored));
+    // A store of facts that does not mirror PEOPLE (none of its facts has that origin): PEOPLE's relation, as before.
+    const relation = header?.value ?? (own?.relation && !all.some((f) => f.origin === mirrored) ? own.relation : undefined);
+    const holds = current.filter((f) => f !== header && !(f.origin && isRelation(f)));
+    if (!g && !own && !holds.length && !header) return null;
     const at = now();
     // Known only from told facts: the name as it was told ("Rohan"), not as the command was read ("rohan").
     const told = holds.find((f) => f.subject)?.subject;
@@ -141,7 +151,7 @@ export function mountFacts(door: Door): Pick<Door, "withRecall" | "learnKnow" | 
     await sendText(cardText(person, {
       facts: holds.map((f) => factLine(f, lang(), d.timeZone)),
       changes: changesSince(mine, at - CHANGES_DAYS * 24 * 3600_000, lang(), d.timeZone, 4),
-      ...(own?.relation ? { relation: own.relation } : {}),
+      ...(relation ? { relation } : {}),
       lang: lang(),
       timeZone: d.timeZone,
     }));

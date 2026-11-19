@@ -19,6 +19,7 @@ test("config: needs the server address and the token, refuses a tool that runs c
   assert.deepEqual(c.tools, ["WebSearch"]);
   assert.deepEqual([c.runTimeoutMs, c.rotateAfter, c.claudeBin, c.model], [180_000, 30, "claude", "claude-sonnet-5-5"], "Sonnet 5.5 unless told otherwise");
   assert.equal(loadBridgeConfig({ ...ENV, ASSISTANT_MODEL: "claude-opus-5-5" }).model, "claude-opus-5-5", "and a setting wins");
+  assert.equal(loadBridgeConfig({ ...ENV, ASSISTANT_MODEL: "off" }).model, "claude-sonnet-5-5", "off: the default");
   assert.deepEqual(loadBridgeConfig({ ...ENV, ASSISTANT_TOOLS: "" }).tools, [], "no tools at all is allowed");
   assert.equal(loadBridgeConfig({ ASSISTANT_SERVER_URL: "http://localhost:3000", ASSISTANT_BRIDGE_TOKEN: TOKEN }).server, "http://localhost:3000");
   assert.throws(() => loadBridgeConfig({}), (e: Error) => /ASSISTANT_SERVER_URL/.test(e.message) && /ASSISTANT_BRIDGE_TOKEN/.test(e.message));

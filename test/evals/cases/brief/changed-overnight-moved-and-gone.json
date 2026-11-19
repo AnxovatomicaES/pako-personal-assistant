@@ -1,0 +1,93 @@
+{
+  "suite": "brief",
+  "behaviour": "a Chicago owner's calendar changed overnight: the brief says first what moved (pipeline review to 11:00) and what is gone (the vendor demo), keeps the gone demo off the day, and ties the promise to it",
+  "origin": "changed overnight (C facts); US owner, invented names",
+  "input": {
+    "timeZone": "America/Chicago",
+    "now": "2026-11-18 07:30",
+    "read": [
+      "slack",
+      "zoom",
+      "calendar",
+      "mail"
+    ],
+    "facts": [
+      {
+        "id": "C1",
+        "kind": "change",
+        "icon": "calendar",
+        "label": "Calendar · Pipeline review",
+        "text": "calendar change since your last brief: MOVED Pipeline review, from Thu 14:00 to today 11:00",
+        "title": "Pipeline review"
+      },
+      {
+        "id": "C2",
+        "kind": "change",
+        "icon": "calendar",
+        "label": "Calendar · Vendor demo (Fabrikam)",
+        "text": "calendar change since your last brief: GONE Vendor demo (Fabrikam), which was today 15:00 (cancelled, deleted or declined)",
+        "title": "Vendor demo (Fabrikam)"
+      },
+      {
+        "id": "E1",
+        "kind": "event",
+        "icon": "calendar",
+        "label": "today 11:00 · Pipeline review",
+        "text": "today 11:00–11:45 · Pipeline review",
+        "at": "2026-11-18 11:00",
+        "end": "2026-11-18 11:45",
+        "title": "Pipeline review"
+      },
+      {
+        "id": "E2",
+        "kind": "event",
+        "icon": "calendar",
+        "label": "today 09:00 · Team standup",
+        "text": "today 09:00–09:15 · Team standup",
+        "at": "2026-11-18 09:00",
+        "end": "2026-11-18 09:15",
+        "title": "Team standup"
+      },
+      {
+        "id": "L1",
+        "kind": "loop",
+        "icon": "slack",
+        "label": "Slack · Kai Nakamura (private), Mon 16/11 16:20",
+        "text": "you promised · Slack · Kai Nakamura (private), Mon 16:20 · due: today 15:00 · Send Kai the questions for the Fabrikam vendor demo · who: Kai Nakamura · what Pako checked: no message from you there yet",
+        "ref": "c1c1c1c1c1",
+        "at": "2026-11-18 15:00"
+      }
+    ],
+    "recorded": "{\"opening\":\"Your pipeline review jumped to this morning and the vendor demo is off.\",\"todos\":[{\"title\":\"Tell Kai whether the demo questions are still needed\",\"context\":\"You promised Kai the questions for the Fabrikam demo by 15:00, but the demo is gone from your calendar.\",\"checked\":\"Pako sees no message from you to Kai yet.\",\"sources\":[\"L1\",\"C2\"],\"loopId\":\"L1\"}],\"updates\":[{\"title\":\"Pipeline review moved, vendor demo gone\",\"tag\":\"Since your last brief\",\"text\":\"Pipeline review moved from Thursday 14:00 to today 11:00. The Fabrikam vendor demo at 15:00 is gone.\",\"sources\":[\"C1\",\"C2\"]}],\"day\":[{\"time\":\"09:00\",\"end\":\"09:15\",\"title\":\"Team standup\",\"confirmed\":true,\"note\":\"\",\"sources\":[\"E2\"]},{\"time\":\"11:00\",\"end\":\"11:45\",\"title\":\"Pipeline review\",\"confirmed\":true,\"note\":\"Moved from Thursday\",\"prep\":true,\"sources\":[\"E1\",\"C1\"]}]}",
+    "lang": "en"
+  },
+  "expect": {
+    "todoHas": [
+      [
+        "Kai",
+        "questions"
+      ]
+    ],
+    "updateCites": [
+      [
+        "C1",
+        "C2"
+      ]
+    ],
+    "day": [
+      {
+        "time": "11:00",
+        "titleHas": [
+          "Pipeline"
+        ],
+        "confirmed": true
+      },
+      {
+        "titleHas": [
+          "Vendor demo"
+        ],
+        "absent": true
+      }
+    ]
+  }
+}

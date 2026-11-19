@@ -1,0 +1,40 @@
+{
+  "suite": "followups",
+  "behaviour": "a known-bad answer: the ET time written as London's own (15:00) is caught",
+  "origin": "DST and zones",
+  "label": "fail",
+  "input": {
+    "timeZone": "Europe/London",
+    "ownerName": "Harriet",
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0NATE",
+          "label": "Nate Brooks (private)",
+          "msgs": [
+            {
+              "at": "2027-03-15 14:00",
+              "who": "Nate Brooks",
+              "text": "Can you set up a call with the Boston team on Wednesday at 3pm ET? Me, you and dana@partner.example"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Set up the call with the Boston team and dana@partner.example\",\"detail\":\"Nate asked on Slack.\",\"who\":\"Nate\",\"due\":\"2027-03-17 15:00\",\"tz\":\"Europe/London\",\"check\":\"zoomMeeting\",\"hints\":[\"Boston\"]}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Nate",
+        "titleHas": [
+          "Boston"
+        ],
+        "dueLocal": "2027-03-17 19:00",
+        "tz": "America/New_York",
+        "check": "zoomMeeting"
+      }
+    ]
+  }
+}

@@ -51,9 +51,11 @@ export function mountDigests(door: Door): void {
    * What the Mac made of an email: its summary, and (a newer bridge) the triage's verdict: its category, why, ask and loop lines
    * (src/mail-categories.ts). The answer says whether the owner is told now, by the category and the owner's switches (the bridge sends that
    * message itself through /assistant/reply); an older bridge decided by itself and sends only `notify` and `scam`.
-   * Needs you and Waiting on others become loops of the follow-ups straight from the triage's LOOP line (no second run of Claude); a Needs you
-   * mail without one goes to the follow-ups' own reading of its summary, as every told email did before. Any new email from someone the owner
-   * is waiting on closes what they owed.
+   * Needs you, Waiting on others, Important and Personal mail (told or not; never a scam or mail sent to a list) is read whole by the
+   * follow-ups: its cleaned words, with the rest of its thread's new mail, in one job (src/mail-followups.ts). When they do not take it (off,
+   * or the day's email jobs spent), Needs you and Waiting on others become loops straight from the triage's LOOP line (no second run of
+   * Claude), and a Needs you mail without one goes to the follow-ups' reading of its summary. Any new email from someone the owner is waiting
+   * on closes what they owed.
    */
   app.post("/assistant/mail-summary", failed, bridge, json, async (req, res) => {
     const b = (req.body ?? {}) as {
@@ -85,10 +87,18 @@ export function mountDigests(door: Door): void {
         if (mail && category !== "suspicious" && fu.answered) {
           void fu.answered({ who: [senderName(mail.from), senderAddress(mail.from)], ref: id }).catch(() => undefined);
         }
+        // The email's own words, read whole: one reading of it, so the triage's loop line is left out when the follow-ups take it.
+        const whole = d.mail.followups && category !== "suspicious"
+          ? await d.mail.followups(id, { category, ...(scam === undefined ? {} : { scam }), ...(replied ? { closed: true } : {}) }).catch(() => false)
+          : false;
         const loop = verdict ? loopFromVerdict(verdict, mail ? senderName(mail.from) : "") : null;
-        if (loop && fu.fromMail) {
-          void fu.fromMail({ ref: id, label: mail ? `${label} · ${senderName(mail.from)}` : label, at: mail?.at ?? now(), loops: [loop], ...(replied ? { closed: true } : {}) })
-            .catch(() => undefined);
+        if (whole) {
+          // Taken: its thread's job will come.
+        } else if (loop && fu.fromMail) {
+          void fu.fromMail({
+            ref: id, label: mail ? `${label} · ${senderName(mail.from)}` : label, at: mail?.at ?? now(), loops: [loop], ...(replied ? { closed: true } : {}),
+            ...(mail?.thread ? { thread: mail.thread } : {}),
+          }).catch(() => undefined);
         } else if (category === "needs_you" && summary) {
           void fu.offer({ source: "mail", ref: id, label, text: summary, ...(replied ? { closed: true } : {}) }).catch(() => undefined);
         }

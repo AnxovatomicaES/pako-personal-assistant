@@ -98,6 +98,8 @@ export interface PanelDeps {
   lang?: () => Lang;
   /** Local mode: the person's own choices, and the route that changes them. Absent on a server (its settings are its environment). */
   settings?: PanelSettings;
+  /** Local mode: whether the demo week runs (src/demo.ts), and whether Claude is signed in to run it live. Absent on a server. */
+  demo?: { on: boolean; live: () => boolean };
   now?: () => number;
 }
 
@@ -148,6 +150,8 @@ export interface Overview {
   name: string;
   /** On a computer: what the person can choose in the panel (a setting decides the rest). Null on a server. */
   choose: { name: boolean } | null;
+  /** On a computer: the demo week (on, and live with Claude); null on a server, where there is none. */
+  demo: { on: boolean; live: boolean } | null;
 }
 
 const safe = <T>(p: Promise<T>, fallback: T): Promise<T> => p.catch(() => fallback);
@@ -202,6 +206,7 @@ export async function overview(d: PanelDeps): Promise<Overview> {
     firstVisit: !!d.settings && !d.settings.welcomed(),
     name: d.settings ? d.settings.name() : d.ownerName,
     choose: d.settings ? { name: !d.settings.fixed.name } : null,
+    demo: d.demo ? { on: d.demo.on, live: d.demo.on && d.demo.live() } : null,
   };
 }
 
@@ -232,6 +237,7 @@ PAGES["tasks.js"] = "text/javascript";
 PAGES["people.js"] = "text/javascript"; // the people in the owner's life (src/people.ts)
 PAGES["routines.js"] = "text/javascript"; // routines and watches (src/routines.ts)
 PAGES["autostart.js"] = "text/javascript"; // the "start with this computer" switch (src/autostart-panel.ts)
+PAGES["demo.js"] = "text/javascript"; // the demo week's Settings card and banner (src/demo.ts)
 PAGES["privacy.js"] = "text/javascript"; // what Pako keeps, the export, deleting everything (src/data-panel.ts)
 PAGES["papers.js"] = "text/javascript"; // a photo or a PDF put in the chat (src/papers-panel.ts)
 PAGES["meetings.js"] = "text/javascript"; // the meetings reviewed (src/meeting-review.ts)

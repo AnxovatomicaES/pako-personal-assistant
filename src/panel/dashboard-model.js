@@ -72,7 +72,8 @@ export function hideWhenEmpty(el, hasContent, { keep = false } = {}) {
 /** Whether a card has real content: an item that is not the "nothing here" placeholder. */
 export function cardHasContent(card) {
   if (!card) return false;
-  return card.querySelectorAll("li:not(.empty), .ev, .note, .item:not(.empty), .svc, [data-content]").length > 0;
+  // .tl-event and .pill: the agenda's timed and all-day events (a calendar with only meetings in it is not an empty card).
+  return card.querySelectorAll("li:not(.empty), .ev, .tl-event, .pill, .note, .item:not(.empty), .svc, [data-content]").length > 0;
 }
 
 /** Everything empty (a brand-new install): the page shows only the welcome block. */

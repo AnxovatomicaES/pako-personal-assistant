@@ -1,0 +1,25 @@
+{
+  "suite": "followups",
+  "behaviour": "an automated tracker digest («3 issues assigned to you») is a notice, not a person asking: no loop",
+  "origin": "an automated notice in the inbox, filed Important",
+  "input": {
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-18 07:05",
+          "ref": "m-jira",
+          "from": "Tracker <noreply@tracker.example>",
+          "to": "Alex <alex@acme.example>",
+          "subject": "[Tracker] Daily digest: 3 issues assigned to you",
+          "category": "important",
+          "messageId": "<dig-778@tracker.example>",
+          "body": "Daily digest for Alex\n\nAssigned to you:\n- OPS-1182 Rotate staging certificates (due Fri)\n- OPS-1190 Update runbook for failover\n- OPS-1201 Review alert thresholds\n\nThis is an automated message. Do not reply."
+        },
+        "recorded": "{\"loops\":[],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": []
+  }
+}

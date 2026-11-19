@@ -1,0 +1,53 @@
+{
+  "suite": "followups",
+  "behaviour": "after the owner pressed Not mine on a #sales pricing request, a similar pricing request from someone else in #sales makes no loop",
+  "origin": "learning from corrections: Not mine becomes a lesson the next extraction reads (src/lessons.ts)",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "C0SALES",
+          "label": "#sales",
+          "direct": false,
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Stan",
+              "text": "@Alex can you send the pricing sheet to Initech today?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send the pricing sheet to Initech\",\"detail\":\"Stan asked in #sales for the pricing sheet to go to Initech today.\",\"who\":\"Stan\",\"due\":\"2026-11-16\",\"tz\":\"Europe/Madrid\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      },
+      {
+        "press": {
+          "loop": 1,
+          "button": "3"
+        }
+      },
+      {
+        "slack": {
+          "channel": "C0SALES",
+          "label": "#sales",
+          "direct": false,
+          "msgs": [
+            {
+              "at": "2026-11-17 10:10",
+              "who": "Maria",
+              "text": "@Alex could you send the pricing for Globex by Thursday?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "jobHas": [
+      "Owner's corrections",
+      "Send the pricing sheet to Initech",
+      "make no follow-up like it"
+    ]
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "suite": "brief",
+  "behaviour": "a known-bad answer: beside «your Sent folder», a person the facts never named (Priyanka in finance) is still caught",
+  "origin": "the invented-name judge: the fix for UI words keeps the guard",
+  "label": "fail",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-18 08:00",
+    "read": [
+      "slack",
+      "zoom",
+      "calendar",
+      "mail"
+    ],
+    "facts": [
+      {
+        "id": "L1",
+        "kind": "loop",
+        "icon": "mail",
+        "label": "Email, Mon 16/11 09:10",
+        "text": "asked of you · Email, Mon 16/11 09:10 · due: today 17:00 · Send Ana the signed SOW · who: Ana Ruiz · what Pako checked: Pako cannot read your outgoing mail",
+        "ref": "f1f1f1f1f1",
+        "at": "2026-11-18 17:00"
+      },
+      {
+        "id": "E1",
+        "kind": "event",
+        "icon": "calendar",
+        "label": "today 10:00 · Standup",
+        "text": "today 10:00–10:15 · Standup",
+        "at": "2026-11-18 10:00",
+        "end": "2026-11-18 10:15",
+        "title": "Standup"
+      }
+    ],
+    "recorded": "{\"opening\":\"A quiet Wednesday with one thing owed.\",\"todos\":[{\"title\":\"Send Ana the signed SOW\",\"context\":\"Ana asked by email for it by 17:00. Check your Sent folder, and ask Priyanka in finance for the countersigned copy.\",\"checked\":\"Pako cannot read your outgoing mail.\",\"sources\":[\"L1\"],\"loopId\":\"L1\"}],\"updates\":[],\"day\":[{\"time\":\"10:00\",\"end\":\"10:15\",\"title\":\"Standup\",\"confirmed\":true,\"note\":\"\",\"sources\":[\"E1\"]}]}",
+    "lang": "en"
+  },
+  "expect": {
+    "todoHas": [
+      [
+        "Ana",
+        "SOW"
+      ]
+    ]
+  }
+}

@@ -62,9 +62,9 @@
 	<!-- Why macOS asks (discovery, Discovery.swift): shown in its prompts, in Spanish from es.lproj/InfoPlist.strings (build.sh copies
 	     InfoPlist.es.strings and InfoPlist.en.strings there). Nothing is asked before the person says yes in the panel. -->
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Pako reads the calendars you choose to keep your agenda in view. It all stays on this Mac.</string>
+	<string>Pako reads the calendars you choose to keep your agenda in view, and adds, moves or removes an event only after your yes. It all stays on this Mac.</string>
 	<key>NSCalendarsUsageDescription</key>
-	<string>Pako reads the calendars you choose to keep your agenda in view. It all stays on this Mac.</string>
+	<string>Pako reads the calendars you choose to keep your agenda in view, and adds, moves or removes an event only after your yes. It all stays on this Mac.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>Pako imports your contacts' names, emails and phones only when you confirm it. It all stays on this Mac.</string>
 	<key>NSAppleEventsUsageDescription</key>

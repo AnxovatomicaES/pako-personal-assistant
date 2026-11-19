@@ -27,7 +27,8 @@ function rig(events: CalEvent[], o: { loops?: Loop[] } = {}) {
   const asked: { title: string; at: number; facts: PrepFact[] }[] = [];
   const prep = createMeetingPrep({
     kv: memKv().kv, now: () => clock.now, timeZone: "Europe/London", events: async () => events,
-    loops: async () => o.loops ?? [], about: async (names) => names.includes("Ana Ruiz") ? [{ label: "Ana Ruiz", text: "Ana prefers numbers first" }] : [],
+    loops: async () => o.loops ?? [], about: async (people) =>
+      people.includes("Ana Ruiz <ana.ruiz@client.example>") ? [{ label: "Ana Ruiz", text: "Ana prefers numbers first" }] : [],
     self: () => ["ME@acme.example"], prep: async (x) => (asked.push(x), { status: "pending" }), clock: () => "09:40",
   });
   return { prep, asked, clock };
@@ -77,4 +78,12 @@ test("brief: prepMeeting asks the prep run with the meeting's facts first, once 
   assert.match(queued[0]!.brief!.text, /\nP1 · The meeting: Q4 review/);
   assert.equal((await v2.prepMeeting({ title: "Q4 review", at: T0 + 40 * MIN, facts: [{ label: "x", text: "y" }] }))!.id, task.id);
   assert.ok(store.m.get(BRIEF_V2_KEY));
+});
+
+test("the owner's own address written with capitals by the calendar (Outlook does) is still the owner: a meeting alone gets no note", async () => {
+  const r = rig([ev("c", "Focus time", T0 + 35 * MIN, { attendees: [{ email: "Me@Acme.example", name: "Me" }] })]);
+  assert.deepEqual(await r.prep.tick(), []);
+  const f = rig([ev("d", "With Ana", T0 + 35 * MIN, { attendees: [{ email: "Me@ACME.example" }, { email: "ana.ruiz@client.example", name: "Ana Ruiz" }] })]);
+  assert.deepEqual(await f.prep.tick(), ["With Ana"]);
+  assert.match(f.asked[0]!.facts[0]!.text, /Who is invited: Ana Ruiz\./);
 });

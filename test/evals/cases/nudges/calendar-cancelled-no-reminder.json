@@ -1,0 +1,41 @@
+{
+  "suite": "nudges",
+  "behaviour": "an agreed meeting called off on the calendar before its time: no reminder at all",
+  "origin": "a cancelled meeting, from the calendar",
+  "input": {
+    "timeZone": "Europe/London",
+    "ownerName": "Harriet",
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0PIA",
+          "label": "Pia Lund (private)",
+          "msgs": [
+            {
+              "at": "2026-11-18 09:00",
+              "who": "Pia Lund",
+              "text": "Great, budget walkthrough today at 16:00 then, I'll book the room"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"agreed_meeting\",\"title\":\"Budget walkthrough with Pia\",\"detail\":\"Pia agreed on Slack.\",\"who\":\"Pia\",\"due\":\"2026-11-18 16:00\",\"tz\":\"Europe/London\",\"check\":\"calendarEvent\",\"hints\":[\"budget\",\"Pia\"]}],\"closes\":[]}"
+      },
+      {
+        "calendar": [
+          {
+            "kind": "cancelled",
+            "title": "Budget walkthrough",
+            "start": "2026-11-18 16:00",
+            "at": "2026-11-18 09:20"
+          }
+        ]
+      }
+    ],
+    "timeline": {
+      "until": "2026-11-18 17:00"
+    }
+  },
+  "expect": {
+    "cards": []
+  }
+}

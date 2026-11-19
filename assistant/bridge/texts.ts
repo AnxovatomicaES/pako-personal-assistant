@@ -14,6 +14,9 @@ export const T = texts(
       + "If you're already signed in, your Claude Code may not use the sign-in for background answers (\"bare\" mode): put your ANTHROPIC_API_KEY in ~/.pako/.env or update Pako.",
     limit: "I've hit Claude's usage limit for now. I'll try again in a while.",
     other: "I couldn't work out an answer just now. Try again in a moment.",
+    // The panel's words for the same trouble (src/panel/app.js BANNERS.missing), and its one button (src/claude-connect.ts).
+    missing: "Pako needs Claude to think, and Claude Code isn't on this computer (or Pako can't find it). In Pako's panel, open Settings and press "
+      + "“Connect your Claude account”: it installs Claude and signs you in. Then send your message again.",
     moment: "One moment…",
     noWhisper: "You sent me a voice note, but this computer can't listen to them yet (Whisper is missing: assistant/README.md, “Voice notes”). Could you type it?",
     notHeard: "I couldn't make out anything in that voice note. Could you say it again, or type it?",

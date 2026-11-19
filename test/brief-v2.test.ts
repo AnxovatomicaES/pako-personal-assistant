@@ -435,6 +435,7 @@ test("engine: «Draft it» on a follow-up's to-do and DRAFT from the chat: isola
   assert.equal(task.kind, "draft");
   const job = r.queued.at(-1)!;
   assert.equal(job.brief?.kind, "do", "the bridge knows do and prep: a draft goes as do");
+  assert.equal(job.brief?.draft, true, "marked a draft: the bridge writes it on its writing model");
   assert.match(job.brief!.text, /OWNER'S REQUEST: Write the message I send for this to-do/);
   assert.equal((await r.v2.ask("draft", loopTodo))!.id, task.id, "asked twice: the same job");
   await r.v2.result(jobId(job), "Reply in Slack, Rohan (private):\nDone, invite sent for 11:15.\n(Sources: L1)");
@@ -442,6 +443,7 @@ test("engine: «Draft it» on a follow-up's to-do and DRAFT from the chat: isola
   const chat = (await r.v2.draftFor({ title: "Send Ana the Q4 deck", facts: [{ label: "Slack · Ana", text: "The owner promised: Send Ana the Q4 deck" }, { label: "Ana", text: "Ana prefers short notes" }] }))!;
   assert.equal(chat.kind, "draft");
   const material = r.queued.at(-1)!.brief!.text;
+  assert.deepEqual([r.queued.at(-1)!.brief!.kind, r.queued.at(-1)!.brief!.draft], ["do", true]);
   assert.match(material, /OWNER'S REQUEST: Write the message I send to close the follow-up in fact D1/);
   assert.match(material, /\nD1 · The owner promised: Send Ana the Q4 deck/);
   assert.match(material, /\nD2 · Ana prefers short notes/);

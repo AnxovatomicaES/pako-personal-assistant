@@ -28,3 +28,6 @@ voice-worker/dist/
 # Large media live in a GitHub release, not in git (site/media.json, bin/fetch-site-media.mjs): the site fetches them at build time
 /site/social/ig/*.mp4
 /site/**/*.mp4
+
+# The live and weekly eval reports and the drafts from feedback (docs/testing.md): each run's own, never tracked
+/.claude/evals/

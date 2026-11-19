@@ -49,7 +49,10 @@ export function createRelayClient(d: {
   /** One sync; false when the relay did not answer (the laptop then sends its reminders itself, as without a relay). */
   const sync = async (): Promise<boolean> => {
     const t = now();
-    const list = (await d.reminders()).filter((r) => !r.held && r.at < t + WEEK_MS).map(occurrence);
+    // What is due now is left out: this computer is awake and sends it itself (src/door/reminders-due.ts, right after this sync). Sent
+    // to the relay, it would fire there too (its sync runs a tick at once, and another comes within 30 s) before the next sync takes it
+    // back: the owner would get it twice. One the relay already fired comes back in this answer, and the laptop marks it sent instead.
+    const list = (await d.reminders()).filter((r) => !r.held && r.at > t && r.at < t + WEEK_MS).map(occurrence);
     try {
       const r = await f(`${d.config.url}/relay/sync`, {
         method: "POST",

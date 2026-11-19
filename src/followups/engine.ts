@@ -7,6 +7,7 @@ import { today } from "../lists.ts";
 import { mountChecks } from "./checks.ts";
 import { mountJobs } from "./jobs.ts";
 import { mountMailLoops } from "./mail.ts";
+import { mountMailJobs } from "./mail-jobs.ts";
 import { mountMatching } from "./matching.ts";
 import { mountNudges } from "./nudges.ts";
 import { mountOwner } from "./owner.ts";
@@ -26,18 +27,21 @@ export function createFollowups(d: FollowupsDeps) {
   Object.assign(fu, mountStore(fu));
   Object.assign(fu, mountWords(fu));
   Object.assign(fu, mountJobs(fu));
+  Object.assign(fu, mountMailJobs(fu));
   Object.assign(fu, mountMatching(fu));
   Object.assign(fu, mountChecks(fu));
   Object.assign(fu, mountNudges(fu));
   Object.assign(fu, mountOwner(fu));
   Object.assign(fu, mountRehearse(fu));
-  const { observeSlack, offer, result, ingest, tick, press, command, context, open, read, dueText, sourceText, draft, dryAnswer } = fu;
+  const { observeSlack, observeMail, offer, result, ingest, tick, press, command, context, open, read, dueText, sourceText, draft, dryAnswer } = fu;
   const { closeByWords, calendarChanged, reopenClosed, forDraft, draftFacts, fromChat, dropFromChat } = fu;
   // Loops from the mail triage, and the panel's Done on a mail (src/followups/mail.ts).
   const mail = mountMailLoops(fu);
 
   return {
     observeSlack,
+    /** An email the server chose (src/mail-followups.ts), read whole with its thread's other new mail (src/followups/mail-jobs.ts). */
+    observeMail,
     offer,
     result,
     ingest,

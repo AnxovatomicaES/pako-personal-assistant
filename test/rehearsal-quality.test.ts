@@ -151,7 +151,7 @@ test("rehearsal (engine): a draft is the real job's text; its dry answer says wh
     source: "slack", channel: "D0ROHAN", where: { type: "slack_dm", label: "Rohan (privado)", channel: "D0ROHAN" },
     msgs: [{ ts: String(T0 / 1000), at: T0, who: "Rohan", text: ASK }],
   });
-  assert.match(text, /Now: 2026-11-16 09:30 \(Europe\/Madrid\)/);
+  assert.match(text, /Now: 2026-11-16 09:30, Monday \(Europe\/Madrid\)/);
   assert.match(text, /\* \[2026-11-16 09:30\] Rohan: samir@acmeco\.example/);
   assert.equal(r.queued.length, 0, "nothing queued");
   const before = r.store.m.get(FOLLOWUPS_KEY);

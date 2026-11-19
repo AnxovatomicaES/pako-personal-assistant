@@ -1,0 +1,37 @@
+{
+  "suite": "followups",
+  "behaviour": "«by Friday 16:00» said on a Friday morning is today, not next week",
+  "origin": "the ambiguous Friday: said on that same weekday it is today",
+  "input": {
+    "timeZone": "Europe/London",
+    "ownerName": "Harriet",
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0OWEN",
+          "label": "Owen Hart (private)",
+          "msgs": [
+            {
+              "at": "2026-11-20 09:15",
+              "who": "Owen Hart",
+              "text": "Morning! Can you get me the updated slides by Friday 16:00? Client wants them before the weekend"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send Owen the updated slides\",\"detail\":\"Owen asked on Slack.\",\"who\":\"Owen\",\"due\":\"2026-11-20 16:00\",\"tz\":\"Europe/London\",\"check\":\"slackReply\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Owen",
+        "titleHas": [
+          "slides"
+        ],
+        "dueLocal": "2026-11-20 16:00"
+      }
+    ]
+  }
+}

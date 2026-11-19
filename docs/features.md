@@ -21,6 +21,17 @@ Everything Pako does, in detail. The short version is on the [front page](../REA
 - 🔌 **Plug in your platforms and it stays on top of them:** mail, calendar, Slack, Zoom and your contacts. It does the chores you do
   not want to do, and you keep the last word: **STOP** halts everything, and every change comes with **Undo**.
 
+## Try it on a demo week
+
+Before you connect anything, press **Try with a demo week** in the panel's welcome (or in Settings, General; or **Try the demo week** in the
+Mac app's Connect window; or `PAKO_DEMO=1`). Pako starts again on an invented week: twelve people with their relations and birthdays,
+Slack messages with promises both ways, eight emails (a newsletter, and one you already answered, which closed its follow-up), a calendar
+with one meeting moved and one cancelled overnight, follow-ups in every state, a draft, a meeting prep and a lesson. Tick a to-do, press
+Done or Not mine, ask “what did I promise Ana?”. With Claude signed in, the brief and the chat run on it for real; without, recorded ones
+show under “Connect Claude to see it live”. It lives in `~/.pako/demo`, apart from your data: every connection is off, any email or
+calendar change only says “Demo: nothing was sent”, the export refuses, and nothing it learns reaches your own setup. **Leave demo**
+deletes it.
+
 ## Who it is for, and who it is not
 
 **For you if** you want one assistant for yourself, on a machine you control, you already pay for Claude (a Pro plan or higher, or an Anthropic API
@@ -205,9 +216,10 @@ commitment you may be missing, a contradiction, a deadline, or the result of a c
 - Your Zoom meetings: one starting near the agreed time, or one whose topic names those people.
 - Your calendar, in the same way.
 - Your own posts in that Slack conversation after the ask: a reply, or your Zoom link.
+- Your Sent mail, when your mailbox is connected by IMAP: a reply in that thread closes what it answers.
 
 **What it cannot see, and says so instead of guessing.**
-- Mail you sent from your work account.
+- Mail you sent from an account that is not connected (for example a work account you did not add).
 - Phone calls and WhatsApp chats with other people.
 - Slack channels where you were not mentioned.
 - Zoom meetings someone else hosted, and notes typed in Zoom Docs.
@@ -229,12 +241,19 @@ never from the model. A follow-up never acts: it never posts, schedules, books o
 | `FOLLOWUP_MAX_PER_DAY` | `6` | At most this many reminders a day. |
 | `FOLLOWUP_BATCH_MIN` | `3` | A Slack conversation's messages are gathered this long and read together. |
 | `FOLLOWUP_QUIET_HOURS` | your `SLACK_QUIET_HOURS` | No reminders in these hours. |
+| `FOLLOWUP_MAIL_JOBS_PER_DAY` | `40` | Email threads read whole a day (your mail and your sent mail); `0` reads only the triage's lines. |
 | `ZOOM_REVIEW` | `on` | `off` sends Zoom's summary as it is, as before. |
 | `ZOOM_REVIEW_WAIT_MIN` | `120` | Minutes to wait for the review before Zoom's summary goes as it is. |
 | `BRIEF_SMART` | `on` | `off` keeps only the old brief. |
 | `BRIEF_WAIT_MIN` | `15` | Minutes to wait for the written brief before the old one goes. |
 
 **Not mine** teaches Pako. It keeps a short rule (that person, that place, that kind of thing), and the next reading follows it.
+
+**Pako learns from every correction.** Not mine, an Undo, a 👎 on a reminder or on an item of the brief, and a draft you changed before
+sending it (Pako compares its draft with what you then posted in that Slack conversation or sent to that address: shorter, no greeting,
+no sign-off, another language) each become a short, dated lesson. The next follow-up reading, draft and brief get the most relevant ones
+(that person's and that place's first, eight at most). Only your own actions teach it, never someone else's message. See and delete them in
+Settings › How Pako acts, under "What Pako learned from you".
 
 **Your own promises count too.** What you write in Slack (a DM, a group DM, a thread, or a channel post that names someone) is read for
 what you promise, "I'll send you the deck by Friday" included; Pako never tells you your own messages back. Say it in the chat with Pako
@@ -246,7 +265,8 @@ Only your yes makes the Mac change it, through Apple Calendar, so iCloud, Google
 has **Undo**, which puts it back. Pako never tells the people invited. Without the Mac app, Pako writes out the change for you to make.
 
 **Ready before the meeting.** About 40 minutes before a meeting with someone else on it, Pako sends a short prep note: who is coming,
-what is still open with those people (your follow-ups, both ways), what you told it about them, and what to raise. Never for all-day or
+what is still open with those people (your follow-ups, both ways), what you told it about them, what you last agreed with them
+in a meeting (each reviewed meeting leaves a dated "last meeting" note on everyone it names), and what to raise. Never for all-day or
 declined events or when you are alone; a repeating meeting only when something is open with its people; six a day at most
 (`MEETING_PREP=off` turns it off).
 

@@ -35,7 +35,7 @@ const DATA: ToolData = {
 // Each action as a tag and as a tool call: the same fields of the reply, so the server sees one thing whichever way the model wrote it.
 const SAME: { tag: string; name: string; input: Record<string, unknown>; field: string }[] = [
   { tag: "<remember>le gusta  el té</remember>", name: "remember", input: { text: "le gusta  el té" }, field: "remember" },
-  { tag: "<forget>té</forget>", name: "forget", input: { words: "té" }, field: "forget" },
+  { tag: "<forget>el té</forget>", name: "forget", input: { words: "el té" }, field: "forget" },
   { tag: '<call to="Ana" direct="true">que llego tarde</call>', name: "propose_call", input: { to: "Ana", message: "que llego tarde", direct: true }, field: "call" },
   { tag: '<call to="Ana">que llego tarde</call>', name: "propose_call", input: { to: "Ana", message: "que llego tarde" }, field: "call" },
   { tag: '<message to="Ana">hola\n  ¿cenamos?</message>', name: "draft_whatsapp", input: { to: "Ana", text: "hola\n  ¿cenamos?" }, field: "message" },

@@ -99,16 +99,27 @@ export function sqliteKv(dir: string, now: () => number = Date.now): FileKv {
   let lost: StoreLost | null = null;
   let legacy: Record<string, { v: string; exp: number }> | null = null;
 
+  // A kv.db with nothing in it beside an older Pako's kv.json is a copy that did not finish (the process stopped inside the transaction,
+  // which SQLite rolled back, or the disk was full): kv.json is still the store, and is copied in again now.
+  let unfinished = false;
   if (existsSync(p("db"))) {
     try {
-      open(p("db")).close();
+      const db = open(p("db"));
+      try {
+        unfinished = existsSync(p("legacy")) && !db.prepare("SELECT 1 FROM kv LIMIT 1").get();
+      } finally {
+        db.close();
+      }
     } catch (err) {
       lost = "damaged";
       log.error(`${p("db")} is damaged (${(err as Error).message}): kept as ${p("bad")}, starting with an empty one`);
       move(p("db"), p("bad"));
       rmSync(`${p("db")}-journal`, { force: true });
     }
-  } else if (existsSync(p("legacy"))) {
+  }
+  if (lost) {
+    /* said above */
+  } else if (unfinished || (!existsSync(p("db")) && existsSync(p("legacy")))) {
     try {
       const raw = JSON.parse(readFileSync(p("legacy"), "utf8")) as Record<string, { v?: unknown; exp?: unknown }>;
       legacy = {};
@@ -118,7 +129,7 @@ export function sqliteKv(dir: string, now: () => number = Date.now): FileKv {
       log.error(`${p("legacy")} is not valid JSON: kept as ${p("legacyBad")}, starting with an empty store`);
       move(p("legacy"), p("legacyBad"));
     }
-  } else if (existsSync(p("made")) || existsSync(p("legacyMade"))) lost = "missing";
+  } else if (!existsSync(p("db")) && (existsSync(p("made")) || existsSync(p("legacyMade")))) lost = "missing";
 
   const db = open(p("db"));
   const live = (exp: number): boolean => !(exp > 0 && exp < now());

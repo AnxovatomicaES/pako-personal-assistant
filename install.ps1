@@ -184,7 +184,7 @@ function Install-Pako {
       }
       if ($ready) {
         & $nodeExe (Join-Path $dir 'bin\panel.cjs')
-        Say "Pako sigue en marcha aunque cierres esta ventana. Otro enlace al panel: cd `"$dir`"; npm run panel" "Pako keeps running if you close this window. Another link to the panel: cd `"$dir`"; npm run panel"
+        Say "Pako sigue en marcha aunque cierres esta ventana. Otro enlace al panel: cd `"$dir`"; npm.cmd run panel" "Pako keeps running if you close this window. Another link to the panel: cd `"$dir`"; npm.cmd run panel"
       } else {
         Say 'Pako tarda en arrancar. Mira qu^e dice en:' 'Pako is slow to start. See what it says in:'
         Write-Host ('      ' + (Join-Path $pakoHome 'logs\pako.err.log'))
@@ -194,7 +194,7 @@ function Install-Pako {
     }
 
     # ---- No autostart (or it could not be made): Pako runs in this window, which prints the panel's address and opens the browser.
-    Say 'Pako se queda en marcha en esta ventana: si la cierras, se para. Para volver a arrancarlo: cd a su carpeta y npm start.' 'Pako runs in this window: closing it stops Pako. To start it again: cd to its folder and npm start.'
+    Say 'Pako se queda en marcha en esta ventana: si la cierras, se para. Para volver a arrancarlo: cd a su carpeta y npm.cmd start.' 'Pako runs in this window: closing it stops Pako. To start it again: cd to its folder and npm.cmd start.'
     Run-Native { & $npm start }
   } finally {
     Pop-Location

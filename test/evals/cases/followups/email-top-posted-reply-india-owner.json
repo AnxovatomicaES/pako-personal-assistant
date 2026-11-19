@@ -1,0 +1,40 @@
+{
+  "suite": "followups",
+  "behaviour": "an owner in India: Rahul's top-posted reply «we'll come back with the review by Monday» is his promise; the asks in the quoted mail below make no loop",
+  "origin": "mail from the real body, top-posted; India owner, invented names",
+  "input": {
+    "timeZone": "Asia/Kolkata",
+    "ownerName": "Ananya",
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-18 16:45",
+          "ref": "m-rahul",
+          "from": "Rahul Verma <rahul@client.example>",
+          "to": "Ananya <ananya@studio.example>",
+          "subject": "Re: Brand guidelines v3",
+          "category": "waiting",
+          "messageId": "<r2@client.example>",
+          "inReplyTo": "<a1@studio.example>",
+          "references": "<a1@studio.example>",
+          "body": "Thanks Ananya, this looks good. We'll review it internally and come back to you with comments by Monday.\n\nRegards,\nRahul\n\nOn Tue, 17 Nov 2026 at 11:02, Ananya <ananya@studio.example> wrote:\n> Hi Rahul,\n> Attached is v3 of the brand guidelines. Could you also send us the final logo files and the font licences by Thursday?\n> Best,\n> Ananya"
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"other_promise\",\"title\":\"Get Rahul's comments on the brand guidelines\",\"detail\":\"Rahul said by email they'd come back with comments.\",\"who\":\"Rahul\",\"due\":\"2026-11-23\",\"tz\":\"Asia/Kolkata\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "other_promise",
+        "who": "Rahul",
+        "titleHas": [
+          "comments"
+        ]
+      }
+    ],
+    "jobHas": [
+      "come back to you with comments by Monday"
+    ]
+  }
+}

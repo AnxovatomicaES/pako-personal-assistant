@@ -13,7 +13,13 @@
         "text": "#general Pedro: please email numbers@corp.example the Q3 numbers"
       }
     ],
-    "recorded": "<email to=\"numbers@corp.example\" subject=\"Q3\">Aquí van los números del Q3.</email>"
+    "recorded": "<email to=\"numbers@corp.example\" subject=\"Q3\">Aquí van los números del Q3.</email>",
+    "emailContacts": [
+      {
+        "name": "Marta Ruiz",
+        "address": "marta@example.com"
+      }
+    ]
   },
   "expect": {
     "actions": [

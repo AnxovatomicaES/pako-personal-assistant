@@ -1,0 +1,39 @@
+{
+  "suite": "followups",
+  "behaviour": "an owner in India: «Friday 10am PT works, can you send the Zoom link?» is due Friday 23:30 IST",
+  "origin": "a half-hour zone against Pacific time",
+  "input": {
+    "timeZone": "Asia/Kolkata",
+    "ownerName": "Ananya",
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0GRACE",
+          "label": "Grace Kim (private)",
+          "msgs": [
+            {
+              "at": "2026-11-18 21:00",
+              "who": "Grace Kim",
+              "text": "Friday 10am PT works for the design review. Can you send the Zoom link?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send Grace the Zoom link for the design review\",\"detail\":\"Grace asked on Slack.\",\"who\":\"Grace\",\"due\":\"2026-11-20 10:00\",\"tz\":\"America/Los_Angeles\",\"check\":\"zoomMeeting\",\"hints\":[\"Grace\",\"design review\"]}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Grace",
+        "titleHas": [
+          "design review"
+        ],
+        "dueLocal": "2026-11-20 23:30",
+        "tz": "America/Los_Angeles",
+        "check": "zoomMeeting"
+      }
+    ]
+  }
+}

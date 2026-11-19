@@ -1,0 +1,37 @@
+{
+  "suite": "followups",
+  "behaviour": "a London owner gets a Spanish email asking for the signed contract before Thursday: one loop, its title in English",
+  "origin": "a non-English sender: the loop follows the owner's language, not the sender's",
+  "input": {
+    "timeZone": "Europe/London",
+    "ownerName": "Harriet",
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-16 10:20",
+          "ref": "m-lucia",
+          "from": "Lucía Ferrer <lucia@agencia.example>",
+          "to": "Harriet <harriet@brightside.example>",
+          "subject": "Contrato de colaboración",
+          "category": "needs_you",
+          "messageId": "<lf1@agencia.example>",
+          "body": "Hola Harriet,\n\n¿Nos puedes enviar el contrato firmado antes del jueves a las 12:00? Así podemos empezar la campaña el lunes.\n\nUn saludo,\nLucía"
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send Lucía the signed contract\",\"detail\":\"Lucía asked by email for the signed collaboration contract.\",\"who\":\"Lucía\",\"due\":\"2026-11-19 12:00\",\"tz\":\"Europe/London\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Lucía",
+        "titleHas": [
+          "contract"
+        ],
+        "dueLocal": "2026-11-19 12:00"
+      }
+    ]
+  },
+  "rubric": "Is the loop's title written in English?"
+}

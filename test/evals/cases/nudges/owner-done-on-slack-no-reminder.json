@@ -1,0 +1,45 @@
+{
+  "suite": "nudges",
+  "behaviour": "the owner promised the contract by 14:00 and wrote «sent!» at 10:30: no reminder",
+  "origin": "the owner's own words close their promise before any nudge",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0LENA",
+          "label": "Lena Fischer (private)",
+          "msgs": [
+            {
+              "at": "2026-11-18 09:00",
+              "who": "Alex",
+              "text": "I'll send you the signed contract by 14:00",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"owner_promise\",\"title\":\"Send Lena the signed contract\",\"detail\":\"You told Lena on Slack.\",\"who\":\"Lena\",\"due\":\"2026-11-18 14:00\",\"tz\":\"Europe/Madrid\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      },
+      {
+        "slack": {
+          "channel": "D0LENA",
+          "label": "Lena Fischer (private)",
+          "msgs": [
+            {
+              "at": "2026-11-18 10:30",
+              "who": "Alex",
+              "text": "sent! check your inbox",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[],\"closes\":[\"{{loop1}}\"]}"
+      }
+    ],
+    "timeline": {
+      "until": "2026-11-18 15:00"
+    }
+  },
+  "expect": {
+    "cards": []
+  }
+}

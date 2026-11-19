@@ -2,11 +2,14 @@
 // the bridge's answer is read with too.
 
 import { randomBytes } from "node:crypto";
-import { BATCH_MSGS_MAX, BATCHES_MAX, DETAIL_MAX, JOBS_MAX, LOOPS_MAX, RULES_MAX, TITLE_MAX, WHO_MAX } from "./limits.ts";
+import {
+  BATCH_MSGS_MAX, BATCHES_MAX, DETAIL_MAX, JOBS_MAX, LOOPS_MAX, MAIL_BATCH_MAX, MAIL_BATCHES_MAX, MAIL_READ_MAX, RULES_MAX, TITLE_MAX, WHO_MAX,
+} from "./limits.ts";
 import { isZone } from "./time.ts";
+import { MAIL_BODY_MAX, MAIL_THREAD } from "../mail-body.ts";
 import {
   LOOP_KINDS, type Batch, type BatchMsg, type Check, type FollowupsState, type Job, type LearnedRule, type Loop, type LoopKind, type LoopSource,
-  type Where,
+  type MailBatch, type MailSeen, type Where,
 } from "./types.ts";
 
 export const HEX10 = /^[0-9a-f]{10}$/;
@@ -24,7 +27,8 @@ export const whereOf = (v: unknown): Where | null => {
   if (type !== "slack_dm" && type !== "slack_channel" && type !== "zoom_meeting" && type !== "mail" && type !== "chat") return null;
   const channel = typeof v.channel === "string" && CHANNEL.test(v.channel) ? v.channel : undefined;
   const thread = channel && typeof v.thread === "string" && TS.test(v.thread) ? v.thread : undefined;
-  return { type, label: str(v.label, 120), ...(channel ? { channel } : {}), ...(thread ? { thread } : {}) };
+  const mailThread = type === "mail" && typeof v.mailThread === "string" && MAIL_THREAD.test(v.mailThread) ? v.mailThread : undefined;
+  return { type, label: str(v.label, 120), ...(channel ? { channel } : {}), ...(thread ? { thread } : {}), ...(mailThread ? { mailThread } : {}) };
 };
 
 export const threadOf = (v: unknown): { thread?: string } => (typeof v === "string" && TS.test(v) ? { thread: v } : {});
@@ -111,18 +115,39 @@ const batchOf = (v: unknown): Batch | null => {
   return msgs.length ? { channel: v.channel, ...threadOf(v.thread), where, firstAt: v.firstAt, msgs: msgs.slice(-BATCH_MSGS_MAX) } : null;
 };
 
+/** One email waiting in a batch, checked; its words cut to what the reading takes. */
+const mailSeenOf = (v: unknown): MailSeen | null =>
+  isObject(v) && typeof v.ref === "string" && v.ref && typeof v.thread === "string" && MAIL_THREAD.test(v.thread) && typeof v.at === "number"
+    && typeof v.body === "string"
+    ? {
+        ref: v.ref.slice(0, 200), thread: v.thread, at: v.at, from: str(v.from, 200), to: str(v.to, 200), cc: str(v.cc, 200), subject: str(v.subject, 300),
+        body: v.body.slice(0, MAIL_BODY_MAX), ...(v.mine === true ? { mine: true } : {}), ...(v.closed === true ? { closed: true } : {}),
+      }
+    : null;
+
+const mailBatchOf = (v: unknown): MailBatch | null => {
+  if (!isObject(v) || typeof v.thread !== "string" || !MAIL_THREAD.test(v.thread) || typeof v.firstAt !== "number") return null;
+  const where = whereOf(v.where);
+  const mails = (Array.isArray(v.mails) ? v.mails : []).map(mailSeenOf).filter((x): x is MailSeen => x !== null && x.thread === v.thread);
+  return where && mails.length ? { thread: v.thread, where, firstAt: v.firstAt, mails: mails.slice(-MAIL_BATCH_MAX) } : null;
+};
+
 /** The stored record, every part checked (what the brief and the Zoom review read from FOLLOWUPS_KEY). */
 export function stateOf(raw: unknown): FollowupsState {
   const o = isObject(raw) ? raw : {};
   const rules = (Array.isArray(o.rules) ? o.rules : []).flatMap((r): LearnedRule[] =>
     isObject(r) && typeof r.at === "number" ? [{ at: r.at, who: str(r.who, WHO_MAX), where: str(r.where, 120), title: str(r.title, TITLE_MAX) }] : []);
   const b = isObject(o.budget) ? o.budget : {};
+  const mb = isObject(o.mailBudget) ? o.mailBudget : {};
   return {
     loops: (Array.isArray(o.loops) ? o.loops : []).map(loopOf).filter((x): x is Loop => x !== null).slice(-LOOPS_MAX),
     rules: rules.slice(-RULES_MAX),
     jobs: (Array.isArray(o.jobs) ? o.jobs : []).map(jobOf).filter((x): x is Job => x !== null).slice(-JOBS_MAX),
     batches: (Array.isArray(o.batches) ? o.batches : []).map(batchOf).filter((x): x is Batch => x !== null).slice(-BATCHES_MAX),
     budget: { day: str(b.day, 10), n: num(b.n) ?? 0 },
+    mailBatches: (Array.isArray(o.mailBatches) ? o.mailBatches : []).map(mailBatchOf).filter((x): x is MailBatch => x !== null).slice(-MAIL_BATCHES_MAX),
+    mailRead: strs(o.mailRead, MAIL_READ_MAX * 2, 200).slice(-MAIL_READ_MAX),
+    mailBudget: { day: str(mb.day, 10), n: num(mb.n) ?? 0 },
   };
 }
 

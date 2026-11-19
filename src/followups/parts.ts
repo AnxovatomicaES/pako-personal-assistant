@@ -23,13 +23,17 @@ export interface Engine {
   nudgeText: (l: Loop, said: string, soon: boolean, lg: Lang) => string;
 
   // jobs.ts
-  jobText: (job: Job, material: string[]) => Promise<string>;
-  enqueueJob: (job: Job, material: string[]) => Promise<boolean>;
-  slackJob: (b: Pick<Batch, "channel" | "thread" | "where" | "msgs">) => Promise<{ job: Job; material: string[] }>;
-  flushBatch: (b: Batch) => Promise<void>;
+  jobText: (job: Job, material: string[], people?: string[]) => Promise<string>;
+  enqueueJob: (job: Job, material: string[], people?: string[]) => Promise<boolean>;
+  slackJob: (b: Pick<Batch, "channel" | "thread" | "where" | "msgs">) => Promise<{ job: Job; material: string[]; people: string[] }>;
+  flushBatch: (b: Batch) => Promise<boolean>;
   observeSlack: (m: SlackSeen) => Promise<void>;
-  textJob: (o: { source: "mail" | "meeting"; ref: string; label: string; text: string; at?: number }) => { job: Job; material: string[] };
+  textJob: (o: { source: "mail" | "meeting"; ref: string; label: string; text: string; at?: number; people?: string[] }) => { job: Job; material: string[]; people: string[] };
   offer: FollowupsDoor["offer"];
+
+  // mail-jobs.ts
+  observeMail: NonNullable<FollowupsDoor["observeMail"]>;
+  flushMailDue: (t: number) => Promise<number>;
 
   // matching.ts
   ruledOut: (s: FollowupsState, c: { who: string; title: string }, job: Job) => boolean;

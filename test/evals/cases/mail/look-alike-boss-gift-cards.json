@@ -1,0 +1,16 @@
+{
+  "suite": "mail",
+  "behaviour": "«Dana» from acrne.example (rn for m) asking for gift cards, quietly: Suspicious, a warning, no ask",
+  "origin": "look-alike characters in a sender's domain, a classic CEO fraud",
+  "input": {
+    "from": "Dana Cole <dana.cole@acrne.example>",
+    "subject": "Quick favour",
+    "text": "Are you at your desk? I need you to buy 5 gift cards of $200 each for a client today. Keep this between us for now, I'm in meetings all day. Dana",
+    "recorded": "SUSPICIOUS\nWHY: Someone posing as Dana from a look-alike domain asks for gift cards in secret\nCareful: this looks like a scam. The domain is acrne, not acme, and gift cards in secret are a classic fraud."
+  },
+  "expect": {
+    "category": "suspicious",
+    "ask": false,
+    "notify": true
+  }
+}

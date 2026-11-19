@@ -1,0 +1,39 @@
+{
+  "suite": "drafts",
+  "behaviour": "the owner took the greeting and the sign-off out of a draft to Tom: the next draft to Tom opens with no greeting",
+  "origin": "learning from corrections: a draft the owner changed before sending (src/lessons.ts draftChanges)",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-18 11:00",
+    "lang": "en",
+    "before": [
+      {
+        "at": "2026-11-17 16:00",
+        "who": "Tom",
+        "where": "Tom (private)",
+        "channel": "D0TOM",
+        "draft": "A reply in your Slack conversation with Tom\nHi Tom,\nThe Q3 report is in the shared folder, with the numbers from the board pack and the regional split you asked for.\nBest,\nAlex",
+        "sent": "The Q3 report is in the shared folder, with the numbers from the board pack and the regional split you asked for."
+      }
+    ],
+    "loop": {
+      "title": "Send Tom the hiring plan",
+      "who": "Tom",
+      "where": "Tom (private)",
+      "channel": "D0TOM",
+      "facts": [
+        {
+          "label": "Slack · Tom (private)",
+          "text": "Follow-up (you were asked) · Tom on Slack (private), Wednesday 10:20: send Tom the hiring plan for Q1 · Pako checked: no reply from you there yet"
+        }
+      ]
+    },
+    "recorded": "A reply in your Slack conversation with Tom\nThe Q1 hiring plan is in the shared folder: [blank] roles, with the budget in the last tab."
+  },
+  "expect": {
+    "lesson": [
+      "no greeting"
+    ],
+    "noGreeting": true
+  }
+}

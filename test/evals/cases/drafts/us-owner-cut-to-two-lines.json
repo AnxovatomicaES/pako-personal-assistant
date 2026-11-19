@@ -1,0 +1,40 @@
+{
+  "suite": "drafts",
+  "behaviour": "a US owner cut a chatty 60-word draft to Mei down to two lines with no greeting: the next draft to Mei is short and opens straight away",
+  "origin": "learning from corrections: an edited draft (src/lessons.ts ownSent); US owner",
+  "input": {
+    "timeZone": "America/Los_Angeles",
+    "now": "2026-11-18 09:00",
+    "lang": "en",
+    "before": [
+      {
+        "at": "2026-11-16 15:00",
+        "who": "Mei",
+        "where": "Mei Tanaka (private)",
+        "channel": "D0MEI",
+        "draft": "A reply in your Slack conversation with Mei\nHi Mei! Hope your week is off to a great start. Just a quick note to say that I've reviewed the pricing assumptions you shared and they look solid to me overall; I left two small comments on the enterprise tier. Let me know if anything is unclear. Thanks so much!",
+        "sent": "Reviewed the pricing assumptions, look solid. Two comments on the enterprise tier."
+      }
+    ],
+    "loop": {
+      "title": "Send Mei the pricing model",
+      "who": "Mei",
+      "where": "Mei Tanaka (private)",
+      "channel": "D0MEI",
+      "facts": [
+        {
+          "label": "Slack · Mei Tanaka (private)",
+          "text": "Follow-up (you promised) · Mei on Slack (private), Tuesday 14:10: send Mei the pricing model by Thursday 17:00 · Pako checked: no message from you there yet"
+        }
+      ]
+    },
+    "recorded": "A reply in your Slack conversation with Mei\nPricing model attached, numbers as of [blank]. Shout if the enterprise tier looks off."
+  },
+  "expect": {
+    "lesson": [
+      "Mei"
+    ],
+    "maxWords": 30,
+    "noGreeting": true
+  }
+}

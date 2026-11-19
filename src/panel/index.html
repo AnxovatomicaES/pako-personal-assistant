@@ -64,6 +64,14 @@
     </div>
   </header>
 
+  <!-- The demo week (src/demo.ts): across the panel while it runs, with the one way out. "Connect Claude" only while its answers are recorded. -->
+  <div class="demo-banner" id="demo-banner" role="status" hidden>
+    <i data-lucide="flask-conical"></i>
+    <span class="demo-text"><b data-i18n="demo.banner">Demo week: invented data.</b>
+      <a class="demo-live" id="demo-live" href="/panel/settings" data-i18n="demo.live" hidden>Connect Claude to see it live</a></span>
+    <button type="button" class="demo-leave" id="demo-leave" data-i18n="demo.leave">Leave demo</button>
+  </div>
+
   <!-- At most two quiet lines: a channel that stopped working (reminders would stop arriving), and the one most useful thing to connect. -->
   <div class="notices" id="notices" aria-live="polite"></div>
   <main class="grid" id="grid">
@@ -237,6 +245,19 @@
     </div>
     <p class="sr-only" id="w-progress"></p>
 
+
+    <!-- The first step on a new computer: the demo week (src/demo.ts), or straight on with the person's own. -->
+    <section class="w-step" data-step="start" hidden>
+      <h2 id="w-title-start" tabindex="-1" data-i18n="w.start.title">How do you want to start?</h2>
+      <p class="w-lead" data-i18n="w.start.lead">See Pako on a realistic week before you connect anything, or set it up with your own.</p>
+      <div class="w-try" role="group" aria-labelledby="w-title-start">
+        <button type="button" class="w-choice" id="w-demo"><i data-lucide="flask-conical"></i>
+          <span><b data-i18n="w.start.demo">Try with a demo week</b><small data-i18n="w.start.demoNote">Invented people, mail and meetings. Nothing is sent.</small></span></button>
+        <button type="button" class="w-choice" id="w-own"><i data-lucide="user"></i>
+          <span><b data-i18n="w.start.own">Start with my own</b><small data-i18n="w.start.ownNote">Your name first, then connect what you like.</small></span></button>
+      </div>
+      <p class="w-note" id="w-start-note" role="status"></p>
+    </section>
 
     <section class="w-step" data-step="name" hidden>
       <h2 id="w-title-name" tabindex="-1" data-i18n="w.name.title">What should I call you?</h2>

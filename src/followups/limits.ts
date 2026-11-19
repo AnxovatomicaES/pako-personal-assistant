@@ -6,8 +6,16 @@ export const JOBS_MAX = 40;
 export const BATCHES_MAX = 30;
 export const BATCH_MSGS_MAX = 20;
 export const LOOPS_PER_JOB = 3;
-/** A meeting's review may leave more: the owner's to-dos, others' promises and the meetings agreed. */
-export const REVIEW_LOOPS_MAX = 10;
+/** Email threads waiting to become jobs, the newest emails of each kept, and the emails remembered as read (none is read twice). */
+export const MAIL_BATCHES_MAX = 30;
+export const MAIL_BATCH_MAX = 5;
+export const MAIL_READ_MAX = 600;
+/** All the emails of one job together: each one's words are cut to its share (and to src/mail-body.ts MAIL_BODY_MAX). */
+export const MAIL_JOB_CHARS = 12_000;
+/** Email reading jobs a day when FOLLOWUP_MAIL_JOBS_PER_DAY is not set. */
+export const MAIL_JOBS_PER_DAY = 40;
+/** A meeting's review may leave more: the owner's to-dos, others' promises and the meetings agreed (6 + 5 + 3, src/meeting-review.ts), all kept. */
+export const REVIEW_LOOPS_MAX = 14;
 /** A job the bridge never answered (an older bridge, a computer off for days) is forgotten after this. */
 export const JOB_KEEP_MS = 2 * 24 * 3600_000;
 /** An open loop nobody closed goes after this; a closed one is kept this long (the brief, an undo of a press). */

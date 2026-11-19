@@ -1,7 +1,7 @@
 // Every run of Claude goes through here: counted by kind, held back by the budget, and how Claude is doing reported to the server.
 
-import { LIGHT, usageLine, type RunKind, type Usage } from "../budget.ts";
-import { ClaudeError, type ClaudeResult, type RunConfig } from "./claude.ts";
+import { LIGHT, usageLine, WRITING, type RunKind, type Usage } from "../budget.ts";
+import { ClaudeError, modelUnavailable, type ClaudeResult, type RunConfig } from "./claude.ts";
 import type { ClaudeHealth } from "./core.ts";
 import type { AfterCore } from "./parts.ts";
 
@@ -83,23 +83,48 @@ export function mountRuns(b: AfterCore) {
   /**
    * Every run of Claude (an answer, an email, a meeting, a Slack search) says whether Claude is signed in and within its limit, and is counted
    * by kind. The owner's turns of their conversation go to the process kept up for it (createWarmClaude), the rest to a run of their own.
+   * The writing kinds (the brief, a draft) run on the writing model; when the account cannot use it (not in the plan, not there, its own
+   * limit), the same run goes again on the general model at once, and the writing model is set aside for the rest of the day, said once.
    */
   const run = async (kind: RunKind, prompt: string, c: RunConfig, sessionId?: string): Promise<ClaudeResult> => {
     budget.started(kind);
+    const once = (rc: RunConfig): Promise<ClaudeResult> =>
+      warm && (kind === "message" || kind === "routine") ? warm.run(prompt, rc, sessionId) : runOnce(prompt, rc, sessionId);
     try {
-      const result = await (warm && (kind === "message" || kind === "routine") ? warm.run(prompt, c, sessionId) : runOnce(prompt, c, sessionId));
+      const strong = writingModel(kind, c.model);
+      let result: ClaudeResult | null = null;
+      let model = c.model;
+      if (strong) {
+        try {
+          result = await once({ ...c, model: strong });
+          model = strong;
+        } catch (err) {
+          if (!(err instanceof ClaudeError) || !modelUnavailable(err.message, strong)) throw err;
+          if (budget.modelOff(strong)) {
+            log(`${kind}: ${strong} is not available to this account (${err.message.slice(0, 120)}): ${c.model || "the default model"} runs instead until tomorrow`);
+          }
+        }
+      }
+      result ??= await once(c);
       health = "ok";
       loginFails = 0;
       budget.working();
-      return result;
+      budget.answeredBy(model);
+      return strong ? { ...result, model } : result;
     } catch (err) {
-      if (err instanceof ClaudeError && err.kind !== "other") health = err.kind;
+      // A missing command is not reported as the health: the server finds that itself (src/local.ts, BridgeStatus "missing").
+      if (err instanceof ClaudeError && (err.kind === "login" || err.kind === "limit")) health = err.kind;
       // Any run that finds the limit (the owner's too) stops the background work until it resets.
       if (err instanceof ClaudeError && err.kind === "limit") budget.limited(err.message);
       throw err;
     } finally {
       if (health !== reported) await reportHealth();
     }
+  };
+  /** The writing model for this kind of run, when it has one that differs from the general model and was not set aside today. */
+  const writingModel = (kind: RunKind, general: string): string | null => {
+    const w = config.writingModel ?? "";
+    return WRITING.has(kind) && w && w !== general && !budget.isModelOff(w) ? w : null;
   };
   /**
    * A background job's run, when the budget lets it: its answer, the same answer as a job with the same material a moment ago, or why there is
@@ -108,7 +133,7 @@ export function mountRuns(b: AfterCore) {
    */
   const background = async (
     kind: RunKind, material: string, prompt: string, c: RunConfig,
-  ): Promise<{ text: string; costUsd: number; reused?: true } | { skipped: "cap" | "paused"; until: number }> => {
+  ): Promise<{ text: string; costUsd: number; reused?: true; model?: string } | { skipped: "cap" | "paused"; until: number }> => {
     const a = budget.admit(kind, material);
     if (!a.go) {
       void reportUsage();
@@ -122,7 +147,7 @@ export function mountRuns(b: AfterCore) {
     const result = await run(kind, prompt, light ? { ...c, effort: config.backgroundEffort } : c);
     budget.answered(kind, a.key, result.text);
     void reportUsage();
-    return { text: result.text, costUsd: result.costUsd };
+    return { text: result.text, costUsd: result.costUsd, ...(result.model ? { model: result.model } : {}) };
   };
   /** A rehearsal's job (src/rehearsal.ts, ids rh: and rb:) is the owner's own request: counted apart, never held back by the budget. */
   const rehearsal = (id: string): boolean => /^r[hb]:/.test(id);

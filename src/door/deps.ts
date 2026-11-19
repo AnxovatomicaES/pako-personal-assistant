@@ -11,13 +11,15 @@ import type { Booking } from "../booking.ts";
 import type { LocalChannel } from "../local.ts";
 import type { ListStore } from "../lists.ts";
 import type { FollowupsDoor } from "../followups.ts";
-import type { Verdict } from "../mail-categories.ts";
+import type { MailCategory, Verdict } from "../mail-categories.ts";
 import type { LifeDoor } from "../proactive.ts";
 import type { ReviewDoor } from "../meeting-review.ts";
 import type { AutonomyConfig, AutonomySettings } from "../autonomy.ts";
 import type { PeopleStore } from "../people.ts";
 import type { Companion } from "../companion.ts";
 import type { FactStore } from "../memory-facts.ts";
+import type { Lessons } from "../lessons.ts";
+import type { PersonBlock } from "../person-context.ts";
 import type { PeopleGraph } from "../people-graph.ts";
 import type { WatchSources } from "../routines.ts";
 import type { HealthReport } from "../watchdog.ts";
@@ -119,7 +121,17 @@ export interface WhatsappDeps {
     enqueue: (w: Omit<CalendarWrite, "status" | "queuedAt">) => Promise<boolean>;
     get: (id: string) => Promise<CalendarWrite | null>;
   };
-  draftFor?: (o: { title: string; facts: { label: string; text: string; at?: number }[]; mailRef?: string }) => Promise<{ status: string } | null>;
+  draftFor?: (o: {
+    title: string; facts: { label: string; text: string; at?: number }[]; mailRef?: string; about?: { who?: string; where?: string; channel?: string };
+    allow?: string[];
+  }) => Promise<{ status: string } | null>;
+  /**
+   * What the owner's memory says about one person (src/person-context.ts about): a draft to them reads who they are to the owner, what was
+   * last agreed and what is open. Absent: built from the door's own facts and people graph (no follow-ups, no lessons).
+   */
+  personContext?: (who: string, o?: { exclude?: string[] }) => Promise<PersonBlock | null>;
+  /** What Pako learned from the owner's corrections (src/lessons.ts): an undo, and a held action stopped, are kept as lessons. */
+  lessons?: Pick<Lessons, "undone">;
   /** A mailbox's catch-up (src/backfill.ts): each verdict on its mail, for its "Caught up" line. */
   backfillAnswered?: (id: string, o: { worth: boolean; replied: boolean }) => Promise<boolean>;
   /** Proactive Pako (src/proactive.ts): the facts a reply learnt, its buttons, topics in plain words, the context lines, the bridge's answers. */
@@ -162,8 +174,13 @@ export interface WhatsappDeps {
     replied?: (id: string) => Promise<unknown>;
     /** Whether this email is told to the owner now (its category and the owner's switches; a VIP always). */
     notifies?: (id: string) => Promise<boolean>;
-    /** The email as kept (its sender and time, for the loops it makes). */
-    get?: (id: string) => Promise<{ from: string; at: number; subject: string } | null>;
+    /** The email as kept (its sender and time, for the loops it makes; its thread, for the triage's loop). */
+    get?: (id: string) => Promise<{ from: string; at: number; subject: string; thread?: string } | null>;
+    /**
+     * The email read whole by the follow-ups when its category is one they read (src/mail-followups.ts inbox). True when they took it: the
+     * triage's own LOOP line is then left out (one reading of it, not two).
+     */
+    followups?: (id: string, o: { category?: MailCategory; scam?: boolean; closed?: boolean }) => Promise<boolean>;
     digest?: () => Promise<string>;
   };
   /**

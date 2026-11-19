@@ -1,0 +1,32 @@
+{
+  "suite": "followups",
+  "behaviour": "a German supplier writes «Ich schicke Ihnen das Angebot bis Mittwoch 15:00»: his promise, due Wednesday 15:00",
+  "origin": "a non-English sender's promise, read from the email's own words",
+  "input": {
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-16 14:00",
+          "ref": "m-jonas",
+          "from": "Jonas Weber <j.weber@maschinen.example>",
+          "to": "Alex <alex@acme.example>",
+          "subject": "Ihre Anfrage",
+          "category": "waiting",
+          "messageId": "<jw1@maschinen.example>",
+          "body": "Guten Tag,\n\nvielen Dank für Ihre Anfrage. Ich schicke Ihnen das Angebot bis Mittwoch 15:00.\n\nMit freundlichen Grüßen\nJonas Weber"
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"other_promise\",\"title\":\"Receive the quote from Jonas\",\"detail\":\"Jonas promised by email to send the quote.\",\"who\":\"Jonas\",\"due\":\"2026-11-18 15:00\",\"tz\":\"Europe/Madrid\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "other_promise",
+        "who": "Jonas",
+        "dueLocal": "2026-11-18 15:00",
+        "check": "none"
+      }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "suite": "mail",
+  "behaviour": "a German industry newsletter with a «last chance» line is Read later, no ask",
+  "origin": "a mailing in another language that sounds urgent",
+  "input": {
+    "from": "Lager Rundbrief <newsletter@lager-rundbrief.example>",
+    "subject": "Letzte Chance: Frühbucherrabatt endet Freitag",
+    "text": "Die Themen dieser Woche: Lieferketten 2027, neue Zollregeln und drei Fallstudien. Letzte Chance: der Frühbucherrabatt für unseren Kongress endet am Freitag! Abmelden",
+    "recorded": "READ_LATER\nWHY: A logistics newsletter you subscribed to\nThis week's logistics newsletter: supply chains in 2027, new customs rules and three case studies, plus an early-bird offer ending Friday."
+  },
+  "expect": {
+    "category": "read_later",
+    "ask": false,
+    "notify": false
+  }
+}

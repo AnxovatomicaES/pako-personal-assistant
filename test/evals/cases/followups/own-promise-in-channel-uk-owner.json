@@ -1,0 +1,44 @@
+{
+  "suite": "followups",
+  "behaviour": "a London owner promises Tom in #launch «I'll draft the press release and share it here by tomorrow noon»: their promise to Tom, due Wednesday 12:00",
+  "origin": "the owner's own promise in a channel, not a DM; UK owner, invented names",
+  "input": {
+    "timeZone": "Europe/London",
+    "ownerName": "Harriet",
+    "turns": [
+      {
+        "slack": {
+          "channel": "C0LAUNCH",
+          "label": "#launch",
+          "msgs": [
+            {
+              "at": "2026-11-17 16:20",
+              "who": "Tom Ellery",
+              "text": "We still need copy for the announcement, who's on it?"
+            },
+            {
+              "at": "2026-11-17 16:24",
+              "who": "Harriet",
+              "text": "@Tom I'll draft the press release and share it here by tomorrow noon",
+              "mine": true
+            }
+          ],
+          "direct": false
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"owner_promise\",\"title\":\"Draft the press release and share it in #launch\",\"detail\":\"You told Tom in #launch you'd share the press release draft.\",\"who\":\"Tom\",\"due\":\"2026-11-18 12:00\",\"tz\":\"Europe/London\",\"check\":\"slackPost\",\"contains\":[\"press release\"]}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "owner_promise",
+        "who": "Tom",
+        "titleHas": [
+          "press release"
+        ],
+        "dueLocal": "2026-11-18 12:00"
+      }
+    ]
+  }
+}

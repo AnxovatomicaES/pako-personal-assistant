@@ -1,5 +1,6 @@
 // The follow-ups' settings from the environment (FOLLOWUPS, FOLLOWUP_*).
 
+import { MAIL_JOBS_PER_DAY } from "./limits.ts";
 import type { FollowupsConfig } from "./types.ts";
 
 type Env = Record<string, string | undefined>;
@@ -14,7 +15,8 @@ const hhmm = (s: string): number | null => {
 
 /**
  * Null when FOLLOWUPS=off. FOLLOWUP_DELAY_MIN (1-240, default 10), FOLLOWUP_MAX_PER_DAY (0-50, default 6), FOLLOWUP_BATCH_MIN (0-30, default 3),
- * FOLLOWUP_QUIET_HOURS (like 23:00-08:00 or off; default SLACK_QUIET_HOURS, else 23:00-08:00). A wrong value is reported and its default used.
+ * FOLLOWUP_QUIET_HOURS (like 23:00-08:00 or off; default SLACK_QUIET_HOURS, else 23:00-08:00), FOLLOWUP_MAIL_JOBS_PER_DAY (0-200, default 40:
+ * the email threads read whole a day; 0 reads only the triage's lines). A wrong value is reported and its default used.
  */
 export function loadFollowupsConfig(env: Env): { config: FollowupsConfig | null; problems: string[] } {
   const problems: string[] = [];
@@ -32,6 +34,7 @@ export function loadFollowupsConfig(env: Env): { config: FollowupsConfig | null;
   const delayMs = num("FOLLOWUP_DELAY_MIN", env.FOLLOWUP_DELAY_MIN, 10, 1, 240) * 60_000;
   const maxPerDay = num("FOLLOWUP_MAX_PER_DAY", env.FOLLOWUP_MAX_PER_DAY, 6, 0, 50);
   const batchMs = num("FOLLOWUP_BATCH_MIN", env.FOLLOWUP_BATCH_MIN, 3, 0, 30) * 60_000;
+  const mailPerDay = num("FOLLOWUP_MAIL_JOBS_PER_DAY", env.FOLLOWUP_MAIL_JOBS_PER_DAY, MAIL_JOBS_PER_DAY, 0, 200);
   const rawQuiet = (env.FOLLOWUP_QUIET_HOURS ?? env.SLACK_QUIET_HOURS ?? "23:00-08:00").trim();
   let quiet: FollowupsConfig["quiet"] = { start: 23 * 60, end: 8 * 60 };
   if (rawQuiet === "off") quiet = null;
@@ -42,5 +45,5 @@ export function loadFollowupsConfig(env: Env): { config: FollowupsConfig | null;
     if (start === null || end === null || start === end) problems.push("FOLLOWUP_QUIET_HOURS must be like 23:00-08:00, or off (23:00-08:00 is used)");
     else quiet = { start, end };
   }
-  return { config: { delayMs, maxPerDay, batchMs, quiet }, problems };
+  return { config: { delayMs, maxPerDay, batchMs, quiet, mailPerDay }, problems };
 }

@@ -634,6 +634,7 @@ function renderSystem() {
 }
 
 function render() {
+  renderDemo();
   renderHeader();
   renderKpis();
   renderAgenda();
@@ -1324,10 +1325,14 @@ function placeTg(slot) {
 
 const welcome = { open: false, first: false, steps: [], i: 0, watch: "", replySig: "", finishing: false, saving: Promise.resolve(true) };
 
-/** The steps this time: what a setting already decides is not asked (overview.choose), and Telegram only where the server has it. */
+/**
+ * The steps this time: on the first visit, the demo week or the person's own (where the server offers the demo); what a setting already
+ * decides is not asked (overview.choose), and Telegram only where the server has it.
+ */
 function welcomeSteps(first) {
   const c = data?.choose ?? { name: false };
-  return [...(c.name ? ["name"] : []), ...(first ? ["try", ...(tg.available ? ["phone"] : [])] : [])];
+  const start = first && data?.demo && !data.demo.on ? ["start"] : [];
+  return [...start, ...(c.name ? ["name"] : []), ...(first ? ["try", ...(tg.available ? ["phone"] : [])] : [])];
 }
 
 /** `first`: the first visit (everything, and it ends the welcome for good); otherwise from the footer, for the name. */
@@ -1380,6 +1385,8 @@ function showStep(i) {
   if (animate()) gsap().fromTo(step, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" });
   // The focus goes to what this step asks for (the name); otherwise to its title, so a screen reader says where it is.
   const target = name === "name" ? $("#w-name") : $(`#w-title-${name}`);
+  // The start step is a choice of its own: its two buttons, no Continue.
+  $("#w-next").hidden = name === "start";
   target?.focus();
 }
 
@@ -1519,8 +1526,77 @@ async function trySay(button) {
   }
 }
 
+// ---------- the demo week (src/demo.ts) ----------
+
+/** The banner across the panel while the demo runs; "Connect Claude" while its answers are recorded. */
+function renderDemo() {
+  const d = data?.demo;
+  $("#demo-banner").hidden = !d?.on;
+  $("#demo-live").hidden = !d?.on || d.live;
+  document.body.classList.toggle("demo", !!d?.on);
+}
+
+/** Waits for Pako to stop and come back (the demo's start or end restarts it), then reloads. False when it did not come back in a minute. */
+async function waitForRestart() {
+  const start = Date.now();
+  let down = false;
+  while (Date.now() - start < 60_000) {
+    await new Promise((r) => setTimeout(r, 700));
+    let up = false;
+    try {
+      up = (await fetch("/health", { cache: "no-store" })).ok;
+    } catch {
+      up = false;
+    }
+    if (!up) down = true;
+    else if (down || Date.now() - start > 8_000) {
+      location.reload();
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Starts the demo week ("start") or leaves it ("leave"): Pako starts again on the other folder, and the page reloads. */
+async function demoSwitch(kind, say) {
+  try {
+    const r = await fetch(`/panel/api/demo/${kind}`, { method: "POST", credentials: "same-origin", headers: { "x-pako": "1" } });
+    if (r.status === 401) return void location.reload();
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    say(t(kind === "start" ? "demo.starting" : "demo.leaving"));
+    tellApp({ demo: kind === "start" });
+    if (!j.restarting) return void location.reload();
+    if (!(await waitForRestart())) say(t("demo.notBack"));
+  } catch (err) {
+    console.warn("demo", err);
+    say(t("demo.failed"));
+  }
+}
+
+/** "Try with a demo week" in the welcome (and from the Mac app's Connect window, window.pakoTryDemo). */
+async function tryDemo() {
+  const b = $("#w-demo");
+  if (b.getAttribute("aria-disabled") === "true") return;
+  for (const x of [b, $("#w-own")]) x.setAttribute("aria-disabled", "true");
+  await demoSwitch("start", (text) => (welcome.open ? ($("#w-start-note").textContent = text) : toast(text)));
+  for (const x of [b, $("#w-own")]) x.removeAttribute("aria-disabled");
+}
+window.pakoTryDemo = () => void tryDemo();
+
+function wireDemo() {
+  $("#demo-leave").addEventListener("click", (e) => {
+    const b = e.currentTarget;
+    if (b.disabled) return;
+    b.disabled = true;
+    void demoSwitch("leave", (text) => toast(text)).finally(() => (b.disabled = false));
+  });
+}
+
 function wireWelcome() {
   const dlg = $("#welcome");
+  $("#w-demo").addEventListener("click", () => void tryDemo());
+  $("#w-own").addEventListener("click", () => void welcomeNext());
   // Enter on the name goes on, as in a form (a real form here would hold Telegram's own inside it).
   dlg.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.isComposing && e.target.id === "w-name") {
@@ -1572,6 +1648,7 @@ function start() {
   setInterval(tickClock, 1000);
   wire();
   wireWelcome();
+  wireDemo();
   pointerGlow();
   tgReady = tgLoad();
   load();

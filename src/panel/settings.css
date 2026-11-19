@@ -495,6 +495,11 @@ body.ready .card-slot:nth-child(8) { animation-delay: 280ms; } body.ready .card-
   margin-bottom: 14px; }
 .tab-panel .mount h2 { font-size: 1.05rem; display: flex; gap: 8px; align-items: center; margin: 0 0 8px; }
 .tab-panel .mount details > summary { cursor: pointer; margin: 8px 0; }
+/* How Pako acts › "What Pako learned from you" (acts.js): one lesson a line, its delete button at the end. */
+.acts li.lesson { margin: 0 0 6px; }
+.acts li.lesson .ic { margin-left: 4px; padding: 2px; border: 0; background: none; color: var(--text-3); cursor: pointer; vertical-align: middle; }
+.acts li.lesson .ic svg.lucide { width: 14px; height: 14px; }
+.acts li.lesson .ic:hover, .acts li.lesson .ic:focus-visible { color: var(--text); }
 
 /* ---------- what each connection is: its details, above its wizard ---------- */
 .details { border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin: 4px 0 16px; background: var(--card-2); }
@@ -513,3 +518,20 @@ body.ready .card-slot:nth-child(8) { animation-delay: 280ms; } body.ready .card-
 .src-head .btn { margin-left: auto; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; }
 .btn.danger { color: var(--danger); }
+
+/* The demo week's banner (src/panel/demo.js): across the page while it runs. */
+.demo-banner { position: sticky; top: 0; z-index: 30; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 auto; padding: 10px 16px;
+  border-bottom: 1px solid rgba(139, 123, 255, .5); background: #2a2550; color: #fff; font-size: 14px; }
+.demo-banner[hidden] { display: none; }
+.demo-banner .demo-text { flex: 1 1 220px; }
+.demo-banner .demo-live { margin-left: 6px; color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.demo-banner .demo-leave { flex: none; padding: 6px 14px; border: 1px solid rgba(255, 255, 255, .45); border-radius: 999px; background: transparent; color: inherit;
+  font: 600 13px/1.2 inherit; font-family: inherit; cursor: pointer; }
+.demo-banner .demo-leave:hover, .demo-banner .demo-leave:focus-visible { background: rgba(255, 255, 255, .12); }
+
+/* The demo week: no connection cards to press (connecting is refused while it runs), the note above says why. */
+.demo-on #tab-connections > :not([data-mount="demo-connect"]), .demo-on #cards-mail { display: none; }
+.demo-connect { margin: 0 0 18px; padding: 18px 20px; border: 1px solid rgba(139, 123, 255, .45); border-radius: 18px;
+  background: rgba(139, 123, 255, .08); }
+.demo-connect h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 18px; }
+.demo-connect p { margin: 0 0 12px; }

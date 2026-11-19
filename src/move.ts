@@ -44,6 +44,7 @@ export const MOVE_KEYS: Readonly<Record<string, "json" | "text">> = {
   "assistant-people": "json",
   "assistant-routines": "json",
   "followups": "json",
+  "lessons": "json", // what Pako learned from the owner's corrections (src/lessons.ts)
   "feedback": "json", // the 👍/👎 and what was pressed on each nudge (src/quality.ts): the Calidad card's week comes along
   "meeting-reviews": "json",
   "brief-state": "json", // the day of the last brief: not sent twice on the day of the move

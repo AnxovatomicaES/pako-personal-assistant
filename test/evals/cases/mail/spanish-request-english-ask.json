@@ -1,0 +1,21 @@
+{
+  "suite": "mail",
+  "behaviour": "a Spanish client asks an English owner to confirm the budget before Friday: Needs you, with the ask line in English",
+  "origin": "a non-English sender: the ask and WHY lines are English",
+  "input": {
+    "from": "Lucía Ferrer <lucia@agencia.example>",
+    "subject": "Presupuesto campaña",
+    "text": "Hola Harriet, ¿puedes confirmarnos el presupuesto de la campaña antes del viernes? Sin eso no podemos reservar los medios. Gracias, Lucía",
+    "lang": "en",
+    "recorded": "NEEDS_YOU\nWHY: Lucía asks you to confirm the campaign budget before Friday\nASK: decide | Lucía asks you to confirm the campaign budget before Friday\nLOOP: Confirm the campaign budget | Lucía Ferrer | 2026-11-20\nLucía asks you to confirm the campaign budget before Friday so they can book the media."
+  },
+  "expect": {
+    "category": "needs_you",
+    "ask": true,
+    "askHas": [
+      "budget",
+      "Friday"
+    ],
+    "notify": true
+  }
+}

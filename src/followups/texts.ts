@@ -78,6 +78,12 @@ export const T = texts(
     owner: "Owner's name: {name} (YOU in a conversation)",
     material: "Text:",
     openHead: "Open loops of this conversation (id: what):",
+    mailThread: "Email thread (oldest first; * marks the new emails, all of them here; From: YOU is an email the owner sent; quoted history and "
+      + "signatures were removed, older emails of the thread are not repeated):",
+    mailFrom: "From: {from}",
+    mailTo: "To: {to}",
+    mailCc: "Cc: {cc}",
+    mailSubject: "Subject: {subject}",
     openLine: "- {id}: {title} ({who})",
     me: "YOU",
   },

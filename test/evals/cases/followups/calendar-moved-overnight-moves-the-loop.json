@@ -1,0 +1,55 @@
+{
+  "suite": "followups",
+  "behaviour": "an agreed forecast review on Thursday 14:00 moved overnight on the calendar to Friday 11:00: the open loop follows it",
+  "origin": "changed overnight: the calendar's move reaches the follow-up (src/followups/owner.ts calendarChanged)",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0YUKI",
+          "label": "Yuki Sato (private)",
+          "msgs": [
+            {
+              "at": "2026-11-17 16:00",
+              "who": "Yuki Sato",
+              "text": "Let's go over the forecast Thursday 14:00, I'll send the invite"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"agreed_meeting\",\"title\":\"Forecast review with Yuki\",\"detail\":\"Yuki agreed on Slack and said she'd send the invite.\",\"who\":\"Yuki\",\"due\":\"2026-11-19 14:00\",\"tz\":\"Europe/Madrid\",\"check\":\"calendarEvent\",\"hints\":[\"forecast\",\"Yuki\"]}],\"closes\":[]}"
+      },
+      {
+        "calendar": [
+          {
+            "kind": "moved",
+            "title": "Forecast review",
+            "start": "2026-11-20 11:00",
+            "was": "2026-11-19 14:00",
+            "at": "2026-11-18 06:30"
+          }
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "agreed_meeting",
+        "who": "Yuki",
+        "titleHas": [
+          "forecast"
+        ]
+      }
+    ],
+    "open": [
+      {
+        "kind": "agreed_meeting",
+        "who": "Yuki",
+        "titleHas": [
+          "forecast"
+        ],
+        "dueLocal": "2026-11-20 11:00"
+      }
+    ]
+  }
+}

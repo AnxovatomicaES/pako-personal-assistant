@@ -19,6 +19,11 @@ final class ConnectWindow: NSObject {
     private let openAgain = NSButton(title: "", target: nil, action: nil)
     private let connections = NSButton(title: "", target: nil, action: nil)
     private let useKey = NSButton(title: "", target: nil, action: nil)
+    /// "Try the demo week" (src/demo.ts): on the first run, beside Connect, for someone who wants to see Pako before signing in.
+    private let demo = NSButton(title: "", target: nil, action: nil)
+    /// Whether the demo is offered (the app's first run, before Claude was ever connected).
+    var offerDemo = false
+    var onDemo: () -> Void = {}
     /// The raw output behind a failure, shown only on request: the window speaks in the person's words first (Texts.connectFailure).
     private let detailsToggle = NSButton(title: "", target: nil, action: nil)
     private var detailsOpen = false
@@ -46,7 +51,8 @@ final class ConnectWindow: NSObject {
         spinner.controlSize = .small
         spinner.isDisplayedWhenStopped = false
         for (b, sel) in [(primary, #selector(primaryPressed)), (secondary, #selector(secondaryPressed)), (openAgain, #selector(openAgainPressed)),
-                         (connections, #selector(connectionsPressed)), (useKey, #selector(connectionsPressed)), (detailsToggle, #selector(detailsPressed))] {
+                         (connections, #selector(connectionsPressed)), (useKey, #selector(connectionsPressed)), (detailsToggle, #selector(detailsPressed)),
+                         (demo, #selector(demoPressed))] {
             b.target = self
             b.action = sel
             b.bezelStyle = .rounded
@@ -74,7 +80,7 @@ final class ConnectWindow: NSObject {
         detailsToggle.imagePosition = .imageLeading
         let head = NSStackView(views: [spinner, titleLabel])
         head.spacing = 8
-        let buttons = NSStackView(views: [useKey, NSView(), secondary, primary])
+        let buttons = NSStackView(views: [useKey, NSView(), demo, secondary, primary])
         buttons.distribution = .fill
         let stack = NSStackView(views: [head, leadLabel, textLabel, codeField, detailsToggle, detailLabel, openAgain, warnLabel, connections, buttons])
         stack.orientation = .vertical
@@ -176,6 +182,12 @@ final class ConnectWindow: NSObject {
         connections.isHidden = keySource == nil
         useKey.title = t.useKey
         useKey.isHidden = keySource != nil
+        // The demo week next to Connect, while there is something to connect: not once connected, nor while it works.
+        demo.title = t.tryDemo
+        switch step {
+        case .idle(.notInstalled), .idle(.notSignedIn), .idle(.unknown): demo.isHidden = !offerDemo
+        default: demo.isHidden = true
+        }
         var asksCode = false
         if case let .signingIn(_, code, _, _) = step { asksCode = code }
         codeField.placeholderString = t.codePlaceholder
@@ -242,4 +254,5 @@ final class ConnectWindow: NSObject {
     @objc private func secondaryPressed() { onSecondary() }
     @objc private func openAgainPressed() { onOpenAgain() }
     @objc private func connectionsPressed() { onConnections() }
+    @objc private func demoPressed() { onDemo() }
 }

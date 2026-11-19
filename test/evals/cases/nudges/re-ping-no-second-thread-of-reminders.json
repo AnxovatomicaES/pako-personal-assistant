@@ -1,0 +1,63 @@
+{
+  "suite": "nudges",
+  "behaviour": "a re-ping half an hour later joins the open loop: the reminders are those of one loop, never two sets",
+  "origin": "re-pings: one loop, one set of reminders",
+  "input": {
+    "timeZone": "America/Chicago",
+    "ownerName": "Sam",
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0TARA",
+          "label": "Tara Quinn (private)",
+          "msgs": [
+            {
+              "at": "2026-11-18 09:00",
+              "who": "Tara Quinn",
+              "text": "Can you send me the renewal quote for Initech by 15:00?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send Tara the Initech renewal quote\",\"detail\":\"Tara asked on Slack.\",\"who\":\"Tara\",\"due\":\"2026-11-18 15:00\",\"tz\":\"America/Chicago\",\"check\":\"slackReply\"}],\"closes\":[]}"
+      },
+      {
+        "slack": {
+          "channel": "D0TARA",
+          "label": "Tara Quinn (private)",
+          "msgs": [
+            {
+              "at": "2026-11-18 09:30",
+              "who": "Tara Quinn",
+              "text": "any luck with that quote?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send Tara the Initech renewal quote\",\"detail\":\"Tara asked again on Slack.\",\"who\":\"Tara\",\"due\":\"2026-11-18 15:00\",\"tz\":\"America/Chicago\",\"check\":\"slackReply\",\"same\":\"{{loop1}}\"}],\"closes\":[]}"
+      }
+    ],
+    "timeline": {
+      "until": "2026-11-18 16:00"
+    }
+  },
+  "expect": {
+    "cards": [
+      {
+        "from": "2026-11-18 09:30",
+        "to": "2026-11-18 10:00",
+        "has": [
+          "Tara",
+          "renewal quote",
+          "15:00"
+        ]
+      },
+      {
+        "from": "2026-11-18 13:30",
+        "to": "2026-11-18 15:00",
+        "has": [
+          "Not long now",
+          "renewal quote"
+        ]
+      }
+    ]
+  }
+}

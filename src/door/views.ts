@@ -2,7 +2,7 @@
 // rehearsal, Pako's health, the follow-ups, the bookings, Slack and the action log.
 
 import { logText } from "../control.ts";
-import { currentAbout, factLine } from "../memory-facts.ts";
+import { createPersonContext } from "../person-context.ts";
 import { matchView, VIEW_COMMAND, type View } from "../intents.ts";
 import type { Door } from "./door.ts";
 import type { Handler } from "./incoming.ts";
@@ -140,11 +140,22 @@ export const onDraft: Handler = async (door, { command }) => {
     return "draft: which";
   }
   const l = found.loop;
-  // What the owner told Pako about that person (dated facts that hold now): the draft's tone and facts, never sent anywhere.
-  const about = l.who ? currentAbout(await facts.read().catch(() => []), [l.who]).slice(0, 8).map((f) => ({ label: l.who, text: factLine(f, lang(), d.timeZone) })) : [];
+  // What the owner's memory says about that person (src/person-context.ts): who they are to the owner (the draft's tone), what was last
+  // agreed, what else is open between them. Data for the draft, never sent anywhere; this loop itself is D1, so it is not repeated.
+  const ctx = d.personContext
+    ?? ((who: string, o?: { exclude?: string[] }) => createPersonContext({
+      facts: () => facts.read(), graph: async () => (await door.idGraph.read()).persons, timeZone: d.timeZone, lang,
+    }).about(who, o));
+  const block = l.who ? await ctx(l.who, { exclude: [l.id] }).catch(() => null) : null;
+  const about = block ? [{ label: `People · ${block.name}`, text: block.text }] : [];
   // A loop from an email: the draft remembers that email, so it can come back as a reply the owner sends with one press.
   const mailRef = l.sources.find((s) => s.kind === "mail" && s.ref)?.ref;
-  const task = await d.draftFor({ title: l.title, facts: [...d.followups.draftFacts(l), ...about], ...(mailRef ? { mailRef } : {}) }).catch(() => null);
+  // Whom and where it goes: what the owner then sends there is compared with the draft, and what they changed is learnt (src/lessons.ts).
+  const to = { ...(l.who ? { who: l.who } : {}), where: l.where.label, ...(l.where.channel ? { channel: l.where.channel } : {}) };
+  const task = await d.draftFor({
+    title: l.title, facts: [...d.followups.draftFacts(l), ...about], ...(mailRef ? { mailRef } : {}), about: to, ...(block?.own.length ? { allow: block.own } : {}),
+  })
+    .catch(() => null);
   await sendText(task && task.status !== "failed" ? tx("draftWorking", { title: l.title }) : tx("draftFailed"));
   return "draft asked";
 };

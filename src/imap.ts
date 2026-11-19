@@ -33,11 +33,15 @@ import { english, texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import { mailClients, type MailOAuthProvider } from "./mail-clients.ts";
 import { authenticated, providerOf } from "./mail-categories.ts";
-import { addressOf, htmlToText, loadMailFilters, takeMail, takeOwnMail, type AgentMailMessage, type MailAccount, type Mailbox } from "./mail.ts";
+import {
+  addressOf, htmlToText, loadMailFilters, takeMail, takeOwnMail, type AgentMailMessage, type IntakeDeps, type MailAccount, type Mailbox,
+} from "./mail.ts";
 import type { Inbound } from "./whatsapp.ts";
 import type { HealthReport } from "./watchdog.ts";
 import type { InviteStore } from "./invites.ts";
 import type { Backfill } from "./backfill.ts";
+import { cleanMailBody } from "./mail-body.ts";
+import type { SentMail } from "./mail-followups.ts";
 import { createLog } from "./log.ts";
 
 const log = createLog("imap");
@@ -541,6 +545,18 @@ export interface ImapDeps {
    * first look reads the last 24 hours quietly.
    */
   backfill?: Pick<Backfill, "add" | "addSent" | "startLine"> & { days: number };
+  /**
+   * Each email the owner sent from their own mailbox (the Sent folder): their own words, compared with a draft Pako wrote for that address
+   * (src/lessons.ts ownSent). Only the recipients, the words (quoted lines left out) and when.
+   */
+  ownSent?: (o: { to: string[]; text: string; at: number }) => Promise<unknown>;
+  /**
+   * Each email the owner sent, after the catch-up (src/mail-followups.ts sent): read whole by the follow-ups, for their promises and for what
+   * their reply answers. In a catch-up it goes through the catch-up instead, paced.
+   */
+  sentMail?: (m: SentMail) => Promise<unknown>;
+  /** An email a sender rule filed with no run of Claude, for the follow-ups (src/mail.ts IntakeDeps filed). */
+  filed?: IntakeDeps["filed"];
 }
 
 export interface PollResult {
@@ -705,13 +721,28 @@ export function createImapReader(d: ImapDeps) {
     }
     // What it answers and is already kept leaves the dashboard's preview (src/mail.ts takeOwnMail).
     await takeOwnMail(d.box, { headers: p.headers }, now()).catch((err: Error) => log.error(`a reply of the owner's could not be matched: ${err.message}`));
-    // After the catch-up, Sent is read at every look only for this: a reply the owner sent from their own mail app takes the email it
-    // answers off the dashboard and closes its loop. Their new promises reach the follow-ups another way (not through the one-time catch-up).
-    if (!catchUp || !d.backfill) return false;
-    const words = (p.text ?? (p.html ? htmlToText(p.html) : "")).replace(/\n>.*$/gs, "").trim().slice(0, 3000);
-    if (!words) return false;
-    const to = p.to.join(", ").slice(0, 200);
-    await d.backfill.addSent({ ref: `imap-sent:${uid}`, label: to ? `email to ${to}` : "sent email", text: `To: ${to}\nSubject: ${p.subject}\n\n${words}`, at });
+    // The owner's own email beside a draft Pako wrote for that address: what they changed is learnt (src/lessons.ts).
+    if (d.ownSent) {
+      const mine = (p.text ?? (p.html ? htmlToText(p.html) : "")).replace(/\n>.*$/gs, "").trim().slice(0, 3000);
+      if (mine) await d.ownSent({ to: p.to.map((x) => addressOf(x)), text: mine, at }).catch((err: Error) => log.error(`a sent email's lesson failed: ${err.message}`));
+    }
+    // The owner's own email, read whole by the follow-ups (src/mail-followups.ts): what they promise in it ("I'll send it Friday") becomes
+    // their loop, and a reply that does what was asked closes it. A reply also takes the email it answers off the dashboard (above).
+    const header = (name: string): string => p.headers.filter((h) => h.name.toLowerCase() === name).map((h) => h.value).join(", ");
+    const sent: SentMail = {
+      messageId: p.messageId, inReplyTo: header("in-reply-to"), references: header("references"), subject: p.subject.slice(0, 300),
+      to: header("to").slice(0, 200), cc: header("cc").slice(0, 200), text: cleanMailBody(p.text ?? (p.html ? htmlToText(p.html) : "")), at, from: p.from.slice(0, 200),
+    };
+    if (!sent.text) return false;
+    if (!catchUp || !d.backfill) {
+      if (d.sentMail) await d.sentMail(sent).catch((err: Error) => log.error(`a sent email could not reach the follow-ups: ${err.message}`));
+      return false;
+    }
+    // A catch-up's goes through the catch-up, paced on its allowance.
+    const to = sent.to || p.to.join(", ").slice(0, 200);
+    await d.backfill.addSent({
+      ref: `imap-sent:${uid}`, label: to ? `email to ${to}` : "sent email", text: `To: ${to}\nSubject: ${p.subject}\n\n${sent.text}`, at, mail: sent,
+    });
     return true;
   };
 
@@ -748,7 +779,7 @@ export function createImapReader(d: ImapDeps) {
     // A catch-up email goes to the catch-up, which hands it out paced on its own allowance; one the owner already answered is marked so.
     const replied = catchUp && !!p.messageId && answered.has(p.messageId.toLowerCase());
     const bf = catchUp ? d.backfill : undefined;
-    return takeMail({ box: d.box, enqueue: d.enqueue, control: d.control, lang, now, vip: config.vip, provider }, id, m, accountOf(p), {
+    return takeMail({ box: d.box, enqueue: d.enqueue, control: d.control, lang, now, vip: config.vip, provider, filed: d.filed }, id, m, accountOf(p), {
       quiet, ...(replied ? { replied: true } : {}), ...(bf ? { enqueue: (x: Inbound) => bf.add(x, { from: addressOf(p.from), replied }) } : {}),
     });
   };

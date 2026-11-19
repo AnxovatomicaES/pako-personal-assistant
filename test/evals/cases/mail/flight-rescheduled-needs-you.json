@@ -1,0 +1,20 @@
+{
+  "suite": "mail",
+  "behaviour": "an airline moves the owner's flight and asks to accept or rebook by 20 Nov: Needs you, with the ask",
+  "origin": "a booking that changed: a decision with a deadline; India owner",
+  "input": {
+    "from": "Bluefin Air <noreply@bluefin-air.example>",
+    "subject": "Schedule change: BF 131 on 22 Nov",
+    "text": "Dear Ms Rao, your flight BF 131 Mumbai to Singapore on 22 Nov has been rescheduled from 09:40 to 14:15. Please accept the new time or choose another flight in Manage Booking by 20 Nov.",
+    "recorded": "NEEDS_YOU\nWHY: Your flight on 22 Nov moved to 14:15; accept or rebook by 20 Nov\nASK: decide | Accept the new 14:15 time for flight BF 131 or rebook, by 20 Nov\nLOOP: Accept or rebook flight BF 131 | Bluefin Air | 2026-11-20\nYour flight BF 131 on 22 Nov now leaves at 14:15 instead of 09:40. Accept or pick another flight by 20 Nov."
+  },
+  "expect": {
+    "category": "needs_you",
+    "ask": true,
+    "askHas": [
+      "flight",
+      "20 Nov"
+    ],
+    "notify": true
+  }
+}

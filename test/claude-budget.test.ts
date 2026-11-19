@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_WRITING_MODEL, modelUnavailable } from "../assistant/bridge.ts";
 import { buildClaudeArgs, ClaudeError, createBridge, createWarmClaude, loadBridgeConfig, offersFlag, stopRunningClaude, type BridgeConfig, type ClaudeResult, type RunConfig } from "../assistant/bridge.ts";
 import { createBudget, loadBudgetConfig, materialKey, resetAt, usageLine, type BudgetConfig } from "../assistant/budget.ts";
 import { createWatchdog, readBridgeReport } from "../src/watchdog.ts";
@@ -132,7 +133,7 @@ interface Rig {
   posts: { path: string; body: any }[];
   inbox: any[];
   logs: string[];
-  next: { reply: string | ((prompt: string) => string); fail?: ClaudeError };
+  next: { reply: string | ((prompt: string) => string); fail?: ClaudeError; failIf?: (c: RunConfig) => ClaudeError | undefined };
 }
 
 function rig(o: { budget?: Partial<BudgetConfig>; now?: () => number; config?: Partial<BridgeConfig> } = {}): Rig {
@@ -157,6 +158,8 @@ function rig(o: { budget?: Partial<BudgetConfig>; now?: () => number; config?: P
     run: async (prompt, c, sessionId): Promise<ClaudeResult> => {
       r.runs.push({ prompt, c, ...(sessionId ? { sessionId } : {}) });
       if (r.next.fail) throw r.next.fail;
+      const f = r.next.failIf?.(c);
+      if (f) throw f;
       return { text: typeof r.next.reply === "function" ? r.next.reply(prompt) : r.next.reply, sessionId: "s1", costUsd: 0.01 };
     },
   });
@@ -427,4 +430,116 @@ test("warm, through the bridge: the owner's messages share one process, a run of
     bridge.stopWarm();
     stopRunningClaude("SIGKILL");
   }
+});
+
+// ---------- the model by kind of run ----------
+
+test("models: Sonnet for everything, Opus for the brief and drafts; ASSISTANT_WRITING_MODEL overrides, off or empty means the general model", () => {
+  const env = { ASSISTANT_SERVER_URL: "https://x.example.com", ASSISTANT_BRIDGE_TOKEN: TOKEN };
+  const d = loadBridgeConfig(env);
+  assert.deepEqual([d.model, d.writingModel], ["claude-sonnet-5-5", "claude-opus-5-5"]);
+  assert.equal(DEFAULT_WRITING_MODEL, "claude-opus-5-5");
+  assert.equal(loadBridgeConfig({ ...env, ASSISTANT_WRITING_MODEL: "claude-sonnet-5-5" }).writingModel, "claude-sonnet-5-5");
+  assert.equal(loadBridgeConfig({ ...env, ASSISTANT_WRITING_MODEL: "off" }).writingModel, "claude-sonnet-5-5", "off: the general model");
+  assert.equal(loadBridgeConfig({ ...env, ASSISTANT_WRITING_MODEL: " " }).writingModel, "claude-sonnet-5-5", "empty: the general model");
+  const both = loadBridgeConfig({ ...env, ASSISTANT_MODEL: "claude-haiku-5-5", ASSISTANT_WRITING_MODEL: "OFF" });
+  assert.deepEqual([both.model, both.writingModel], ["claude-haiku-5-5", "claude-haiku-5-5"]);
+  assert.equal(loadBridgeConfig({ ...env, ASSISTANT_MODEL: "" }).model, "claude-sonnet-5-5");
+  assert.throws(() => loadBridgeConfig({ ...env, ASSISTANT_WRITING_MODEL: "opus; rm" }), /ASSISTANT_WRITING_MODEL/);
+});
+
+test("models: what says the account cannot use a model, and what does not", () => {
+  const opus = "claude-opus-5-5";
+  for (const yes of [
+    "You've hit your Opus limit · resets 9pm",
+    "There's an issue with the selected model (claude-opus-5-5). It may not exist or you may not have access to it.",
+    "API Error: 404 {\"type\":\"error\",\"error\":{\"type\":\"not_found_error\",\"message\":\"model: claude-opus-5-5\"}}",
+    "Opus is not available on your plan. Upgrade to Max to use it.",
+    "Invalid model name",
+  ]) assert.equal(modelUnavailable(yes, opus), true, yes);
+  for (const no of [
+    "You've hit your 5-hour limit · resets 9pm",
+    "Not logged in · Please run /login",
+    "Claude took longer than 180 s",
+    "API Error: 529 Overloaded (claude-opus-5-5)",
+  ]) assert.equal(modelUnavailable(no, opus), false, no);
+});
+
+test("bridge, models: the brief and a draft run on Opus, chat and the rest on Sonnet; the day's numbers say which model answered", async () => {
+  const r = rig({ config: { model: "claude-sonnet-5-5", writingModel: "claude-opus-5-5" } });
+  r.next.reply = (p) => (p.includes("BRIEF-") ? "{}" : "ok");
+  r.inbox.push(
+    { id: "o1", at: 1, text: "¿Qué tengo hoy?" },
+    { id: "fu:cccccccccc", at: 2, text: "", followup: { source: "slack", label: "#x", text: "Ana: ¿me mandas el informe?" } },
+    { id: "pr:aaaaaaaaaa", at: 3, text: "", proactive: { text: "facts" } },
+    email("mail:<a@x>"),
+    { id: "brief:dddddddddd", at: 5, text: "", brief: { kind: "brief", label: "brief", text: "FACTS" } },
+    { id: "brief:draft1", at: 6, text: "", brief: { kind: "do", label: "Draft: reply to Ana", text: "FACTS D1", draft: true } },
+    { id: "brief:task1", at: 7, text: "", brief: { kind: "prep", label: "Prepare me", text: "FACTS P1" } },
+  );
+  for (let i = 0; i < 8; i++) await r.bridge.tick(0);
+  const by = (needle: string) => r.runs.filter((x) => x.prompt.includes(needle)).map((x) => x.c.model);
+  assert.deepEqual(by("FACTS"), ["claude-opus-5-5", "claude-opus-5-5", "claude-sonnet-5-5"], "brief and draft on Opus; a prep on Sonnet");
+  assert.deepEqual(by("informe"), ["claude-sonnet-5-5"], "follow-up extraction on Sonnet");
+  assert.ok(r.runs.filter((x) => !x.prompt.includes("FACTS")).every((x) => x.c.model === "claude-sonnet-5-5"), "chat, mail, checks: Sonnet");
+  const u = r.bridge.usage();
+  assert.equal(u.kinds.brief, 1);
+  assert.equal(u.kinds.draft, 1, "a draft is counted as one, and as the owner's own");
+  assert.equal(u.background, (u.kinds.followup ?? 0) + (u.kinds.proactive ?? 0) + (u.kinds.email ?? 0) + 1);
+  assert.equal(u.models["claude-opus-5-5"], 2);
+  assert.equal(u.models["claude-sonnet-5-5"], r.runs.length - 2);
+  assert.match(usageLine(u), /by model: .*claude-opus-5-5 2/);
+  assert.ok(r.logs.some((l) => /brief brief dddddddd: .*claude-opus-5-5/.test(l)), "the brief's line names its model");
+});
+
+test("bridge, models: Opus refused by the account: the brief runs again on Sonnet at once, one log line, Sonnet for the rest of the day", async () => {
+  const clock = { t: at("2099-11-18T08:00:00") };
+  const r = rig({ now: () => clock.t, config: { model: "claude-sonnet-5-5", writingModel: "claude-opus-5-5" } });
+  let opusTries = 0;
+  r.next.reply = (p) => (p.includes("BRIEF-") ? "{\"opening\":\"Hi\"}" : "ok");
+  // The fake run fails every Opus run with the CLI's words for a model the plan does not include.
+  const runs = r.runs;
+  const failOpus = new ClaudeError("There's an issue with the selected model (claude-opus-5-5). It may not exist or you may not have access to it.", "other");
+  r.next.failIf = (c: RunConfig) => (c.model === "claude-opus-5-5" ? (opusTries++, failOpus) : undefined);
+  r.inbox.push({ id: "brief:dddddddddd", at: 5, text: "", brief: { kind: "brief", label: "brief", text: "FACTS" } });
+  for (let i = 0; i < 3; i++) await r.bridge.tick(0);
+  assert.deepEqual(runs.map((x) => x.c.model), ["claude-opus-5-5", "claude-sonnet-5-5"], "tried on Opus, then at once on Sonnet");
+  assert.deepEqual(posted(r, "/assistant/brief"), [{ id: "brief:dddddddddd", text: "{\"opening\":\"Hi\"}" }], "the brief is written, not lost");
+  assert.equal(r.logs.filter((l) => /claude-opus-5-5 is not available to this account/.test(l)).length, 1);
+  assert.equal(r.bridge.usage().pausedUntil, 0, "not Claude's limit: the background is not paused");
+  assert.equal(r.bridge.usage().kinds.brief, 1, "counted once");
+  r.inbox.push({ id: "brief:draft1", at: 6, text: "", brief: { kind: "do", label: "Draft", text: "FACTS D1", draft: true } });
+  for (let i = 0; i < 3; i++) await r.bridge.tick(0);
+  assert.equal(opusTries, 1, "set aside for the day: a draft goes straight to Sonnet");
+  assert.equal(runs.at(-1)!.c.model, "claude-sonnet-5-5");
+  assert.deepEqual(r.bridge.usage().modelsOff, ["claude-opus-5-5"]);
+  clock.t = at("2099-11-19T08:00:00");
+  r.inbox.push({ id: "brief:eeeeeeeeee", at: 7, text: "", brief: { kind: "brief", label: "brief", text: "FACTS 2" } });
+  for (let i = 0; i < 3; i++) await r.bridge.tick(0);
+  assert.equal(opusTries, 2, "the next day Opus is tried again");
+});
+
+test("bridge, models: Opus's own limit falls back to Sonnet; a plain 5-hour limit is still Claude's limit (no second run)", async () => {
+  const clock = { t: at("2099-11-18T08:00:00") };
+  const r = rig({ now: () => clock.t, config: { model: "claude-sonnet-5-5", writingModel: "claude-opus-5-5" } });
+  r.next.reply = "{}";
+  r.next.failIf = (c: RunConfig) => (c.model === "claude-opus-5-5" ? new ClaudeError("You've hit your Opus limit · resets 9pm", "limit") : undefined);
+  r.inbox.push({ id: "brief:dddddddddd", at: 5, text: "", brief: { kind: "brief", label: "brief", text: "FACTS" } });
+  for (let i = 0; i < 3; i++) await r.bridge.tick(0);
+  assert.deepEqual(r.runs.map((x) => x.c.model), ["claude-opus-5-5", "claude-sonnet-5-5"]);
+  assert.equal(r.bridge.usage().pausedUntil, 0, "the Opus limit does not stop Sonnet's background work");
+  const r2 = rig({ now: () => clock.t, config: { model: "claude-sonnet-5-5", writingModel: "claude-opus-5-5" } });
+  r2.next.fail = new ClaudeError("You've hit your 5-hour limit · resets 9pm", "limit");
+  r2.inbox.push({ id: "brief:dddddddddd", at: 5, text: "", brief: { kind: "brief", label: "brief", text: "FACTS" } });
+  for (let i = 0; i < 3; i++) await r2.bridge.tick(0);
+  assert.deepEqual(r2.runs.map((x) => x.c.model), ["claude-opus-5-5"], "the plan's own limit: no second run");
+  assert.ok(r2.bridge.usage().pausedUntil > 0);
+});
+
+test("bridge, models: no writing model (off): the brief runs on the general model, as before", async () => {
+  const r = rig({ config: { model: "claude-sonnet-5-5", writingModel: "claude-sonnet-5-5" } });
+  r.next.reply = "{}";
+  r.inbox.push({ id: "brief:dddddddddd", at: 5, text: "", brief: { kind: "brief", label: "brief", text: "FACTS" } }, { id: "o1", at: 6, text: "hola" });
+  for (let i = 0; i < 3; i++) await r.bridge.tick(0);
+  assert.deepEqual(r.runs.map((x) => x.c.model), ["claude-sonnet-5-5", "claude-sonnet-5-5"]);
 });

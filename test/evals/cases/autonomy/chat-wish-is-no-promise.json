@@ -1,0 +1,17 @@
+{
+  "suite": "autonomy",
+  "behaviour": "«I should really call my sister this weekend» is a wish, not a promise to anyone: nothing kept",
+  "origin": "the owner's own promises: a wish is not one",
+  "input": {
+    "message": "I should really call my sister this weekend, it's been ages",
+    "owner": [
+      "I should really call my sister this weekend, it's been ages"
+    ],
+    "recorded": "It has been a while, she'll be glad to hear from you."
+  },
+  "expect": {
+    "actions": [],
+    "exact": true,
+    "promises": []
+  }
+}

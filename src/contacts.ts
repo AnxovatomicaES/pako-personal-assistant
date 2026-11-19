@@ -17,7 +17,7 @@ import { emailOf, guard, isObject, limit, line, localOnly, type RouteAuth } from
 import type { Control } from "./control.ts";
 import { texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
-import { nationalNumber, phoneCountry } from "./region.ts";
+import { nationalNumber, phoneCountry, withoutTrunkZero } from "./region.ts";
 import { createLog } from "./log.ts";
 
 const log = createLog("contacts");
@@ -41,7 +41,7 @@ export interface Contact {
  * code (in Spain 612 34 56 78 is +34612345678, in the US (415) 555-0100 is +14155550100: src/region.ts). Null when too short.
  */
 export function phoneOf(v: unknown, country: string = phoneCountry()): string | null {
-  const raw = line(v, 40);
+  const raw = withoutTrunkZero(line(v, 40));
   const digits = raw.replace(/[^\d+]/g, "").replace(/(?!^)\+/g, "");
   const plain = digits.replace(/^00/, "+");
   if (plain.replace(/\D/g, "").length < 6) return null;

@@ -43,7 +43,7 @@ export interface Inbound {
    * A written-brief job (src/brief-v2.ts): the day's facts with their ids, which the bridge reads in an isolated run and answers on
    * /assistant/brief (the brief as JSON, or a document asked from the page). `text` stays empty, so an older bridge lets it go.
    */
-  brief?: { kind: "brief" | "do" | "prep"; label: string; text: string };
+  brief?: { kind: "brief" | "do" | "prep"; label: string; text: string; draft?: boolean };
   /**
    * A proactive check (src/proactive.ts): what Pako knows of the owner's day and life, which the bridge reads in an isolated run and answers
    * on /assistant/proactive with at most one suggestion. `text` stays empty, so an older bridge lets it go: nothing is said.

@@ -97,6 +97,27 @@ export interface Reversal<R> {
   changed: boolean;
 }
 
+/**
+ * What an undo teaches (src/lessons.ts undone): one line per thing Pako did that the owner put back, from what Pako itself recorded doing.
+ * Forgetting a note or a person put back is left out: it was the owner's own wish, undone, not Pako's mistake.
+ */
+export type UndoLesson = { what: "follow-up kept" | "follow-up closed" | "reminder" | "note" | "task" | "list" | "person" | "calendar" | "routine"; title: string };
+export function lessonsOfUndo(changes: Change[]): UndoLesson[] {
+  return changes.flatMap((c): UndoLesson[] => {
+    if (c.kind === "loop-added") return [{ what: "follow-up kept" as const, title: c.loop.title }];
+    if (c.kind === "loops-closed") return c.loops.map((x) => ({ what: "follow-up closed" as const, title: x.title }));
+    if (c.kind === "reminder-added") return [{ what: "reminder" as const, title: c.reminder.text }];
+    if (c.kind === "note-added") return [{ what: "note" as const, title: c.note.text }];
+    if (c.kind === "task-added") return [{ what: "task" as const, title: c.task.text }];
+    if (c.kind === "items-added") return [{ what: "list" as const, title: `${c.list}: ${c.items.map((x) => x.text).join(", ")}` }];
+    if (c.kind === "person-added" || c.kind === "person-changed") return [{ what: "person" as const, title: c.kind === "person-added" ? c.person.name : c.after.name }];
+    if (c.kind === "calendar-written") return [{ what: "calendar" as const, title: `${c.write.op} ${c.write.title}` }];
+    if (c.kind === "routine-added") return [{ what: "routine" as const, title: c.routine.text }];
+    if (c.kind === "watch-added") return [{ what: "routine" as const, title: c.watch.text }];
+    return [];
+  });
+}
+
 const KEY = "assistant-undo";
 const KEEP = 30;
 /** How long a receipt's button keeps working. */

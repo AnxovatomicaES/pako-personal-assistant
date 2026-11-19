@@ -9,12 +9,12 @@
       {
         "at": "2026-11-17 10:00",
         "message": "Lucía vive en Sevilla.",
-        "recorded": "Apuntado. <know who=\"Lucía\" key=\"ciudad\">Sevilla</know>"
+        "recorded": "Apuntado. <know who=\"Lucía\" key=\"city\">Sevilla</know>"
       },
       {
         "at": "2026-11-17 10:02",
         "message": "Lucía se ha ido a vivir a Bilbao.",
-        "recorded": "Vale. <know who=\"Lucía\" key=\"ciudad\">Bilbao</know>",
+        "recorded": "Vale. <know who=\"Lucía\" key=\"city\">Bilbao</know>",
         "judge": ""
       }
     ],
@@ -27,21 +27,21 @@
     "holds": [
       {
         "who": "Lucía",
-        "key": "ciudad",
+        "key": "city",
         "value": "Bilbao"
       }
     ],
     "notHolds": [
       {
         "who": "Lucía",
-        "key": "ciudad",
+        "key": "city",
         "value": "Sevilla"
       }
     ],
     "card": {
       "has": [
         "Lucía",
-        "ciudad: Bilbao"
+        "city: Bilbao"
       ],
       "title": "Lucía"
     },

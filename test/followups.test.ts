@@ -83,9 +83,11 @@ async function askAndExtract(r: ReturnType<typeof rig>, answer = EXTRACTED): Pro
   return id;
 }
 
-test("config: on by default with 10 min, 6 a day, 3 min batches and Slack's quiet hours; off; a wrong value is said and its default used", () => {
+test("config: on by default with 10 min, 6 a day, 3 min batches, Slack's quiet hours, 40 mail jobs; off; a wrong value is said and its default used", () => {
   const c = loadFollowupsConfig({});
-  assert.deepEqual(c, { config: { delayMs: 10 * MIN, maxPerDay: 6, batchMs: 3 * MIN, quiet: { start: 23 * 60, end: 8 * 60 } }, problems: [] });
+  assert.deepEqual(c, { config: { delayMs: 10 * MIN, maxPerDay: 6, batchMs: 3 * MIN, quiet: { start: 23 * 60, end: 8 * 60 }, mailPerDay: 40 }, problems: [] });
+  assert.equal(loadFollowupsConfig({ FOLLOWUP_MAIL_JOBS_PER_DAY: "0" }).config?.mailPerDay, 0);
+  assert.equal(loadFollowupsConfig({ FOLLOWUP_MAIL_JOBS_PER_DAY: "500" }).problems.length, 1);
   assert.equal(loadFollowupsConfig({ FOLLOWUPS: "off" }).config, null);
   assert.deepEqual(loadFollowupsConfig({ SLACK_QUIET_HOURS: "off" }).config?.quiet, null, "Slack's quiet hours by default");
   assert.deepEqual(loadFollowupsConfig({ FOLLOWUP_QUIET_HOURS: "22:00-07:30" }).config?.quiet, { start: 22 * 60, end: 7 * 60 + 30 });
@@ -127,7 +129,7 @@ test("the owner's example: Slack ask -> one job with the conversation -> 10 min 
   assert.equal(job.text, "", "an older bridge lets it go unread");
   assert.match(job.id, /^fu:[0-9a-f]{10}$/);
   assert.equal(job.followup?.source, "slack");
-  assert.match(job.followup!.text, /Now: 2026-11-16 09:33 \(Europe\/Madrid\)/);
+  assert.match(job.followup!.text, /Now: 2026-11-16 09:33, Monday \(Europe\/Madrid\)/);
   assert.match(job.followup!.text, /\[2026-11-16 08:31\] YOU: morning/, "the owner's own reply is there, marked");
   assert.match(job.followup!.text, /\* \[2026-11-16 09:30\] Rohan: samir@acmeco\.example Maya Chen/, "the new message is marked");
   assert.equal((job.followup!.text.match(/can you set it up/g) ?? []).length, 1, "the new message once, not twice");

@@ -169,6 +169,66 @@ test("a meeting moved from 5:15 to 6:15 AM ET in a later message: the loop follo
   assert.ok(open.some((l) => l.dueAt === Date.parse("2026-11-16T11:15:00Z")), "the loop follows the new time, 6:15 AM ET");
 });
 
+test("a move the run writes in the owner's own zone keeps the meeting's zone: still said in ET, at the new time", async () => {
+  const r = rig();
+  await r.engine.observeSlack(rohan(T0, "Can you set up a call with Samir at 5:15 AM ET today?"));
+  r.clock.now = T0 + 3 * MIN;
+  await r.engine.tick();
+  const loop = { kind: "request_to_owner", title: "Set up the call with Samir", who: "Rohan", check: "zoomMeeting", hints: ["Samir"] };
+  await r.engine.result(jobId(r.queued[0]!), JSON.stringify({ loops: [{ ...loop, due: "2026-11-16 05:15", tz: "America/New_York" }] }));
+  const [first] = await r.engine.open();
+  r.clock.now = T0 + 5 * MIN;
+  await r.engine.observeSlack(rohan(T0 + 5 * MIN, "can we make it 6:15 instead?"));
+  r.clock.now = T0 + 8 * MIN;
+  await r.engine.tick();
+  // The same instant (6:15 AM ET), written by the run as 12:15 in Madrid.
+  await r.engine.result(jobId(r.queued[1]!), JSON.stringify({ loops: [{ ...loop, due: "2026-11-16 12:15", tz: "Europe/Madrid", same: first!.id }] }));
+  const [l] = await r.engine.open();
+  assert.equal(l!.dueAt, Date.parse("2026-11-16T11:15:00Z"));
+  assert.equal(l!.tz, "America/New_York");
+  assert.match(r.engine.describe(l!), /6:15 AM ET \(12:15 Madrid\)/);
+});
+
+test("a time given later in the same conversation to a loop that had none: the loop takes it, and is nudged for it", async () => {
+  const r = rig();
+  await r.engine.observeSlack(rohan(T0, "could you review my draft of the proposal?"));
+  r.clock.now = T0 + 3 * MIN;
+  await r.engine.tick();
+  const loop = { kind: "request_to_owner", title: "Review Rohan's draft of the proposal", who: "Rohan", check: "none", reason: "document" };
+  await r.engine.result(jobId(r.queued[0]!), JSON.stringify({ loops: [loop] }));
+  const [timeless] = await r.engine.open();
+  assert.equal(timeless!.dueAt, undefined);
+  r.clock.now = T0 + 20 * MIN;
+  await r.engine.observeSlack(rohan(T0 + 20 * MIN, "let's go through it Friday 3pm"));
+  r.clock.now = T0 + 23 * MIN;
+  await r.engine.tick();
+  await r.engine.result(jobId(r.queued[1]!), JSON.stringify({ loops: [{ ...loop, due: "2026-11-20 15:00", same: timeless!.id }], closes: [] }));
+  const open = await r.engine.open();
+  assert.equal(open.length, 1, "no second loop");
+  assert.equal(open[0]!.dueAt, Date.parse("2026-11-20T14:00:00Z"), "Friday 15:00 Madrid");
+  // Nudged once, two hours before its new time (a check no server can see).
+  r.clock.now = Date.parse("2026-11-20T12:01:00Z");
+  await r.engine.tick();
+  assert.equal(r.cards.length, 1);
+  assert.match(r.cards[0]!.body, /15:00/);
+});
+
+test("a time said in another conversation never sets the time of a loop that had none", async () => {
+  const r = rig();
+  await r.engine.observeSlack(rohan(T0, "could you review my draft of the proposal?"));
+  r.clock.now = T0 + 3 * MIN;
+  await r.engine.tick();
+  const loop = { kind: "request_to_owner", title: "Review Rohan's draft of the proposal", who: "Rohan", check: "none", reason: "document" };
+  await r.engine.result(jobId(r.queued[0]!), JSON.stringify({ loops: [loop] }));
+  r.clock.now = T0 + 20 * MIN;
+  await r.engine.observeSlack({ ...rohan(T0 + 20 * MIN, "can you review the proposal by Friday 3pm?"), channel: "C0SALES", where: "#sales", direct: false });
+  r.clock.now = T0 + 23 * MIN;
+  await r.engine.tick();
+  await r.engine.result(jobId(r.queued[1]!), JSON.stringify({ loops: [{ ...loop, due: "2026-11-20 15:00" }], closes: [] }));
+  const open = await r.engine.open();
+  assert.ok(open.every((l) => l.dueAt === undefined), "the timeless loop keeps no time from another conversation");
+});
+
 test("DST mismatch week (US still on summer time): 5:15 AM ET is 10:15 in Madrid", async () => {
   const at = Date.parse("2026-10-28T08:30:00Z");
   const r = rig({ clock: { now: at } });

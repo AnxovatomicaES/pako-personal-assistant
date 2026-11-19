@@ -1,0 +1,37 @@
+{
+  "suite": "followups",
+  "behaviour": "«by Friday 5pm» said on a Thursday is tomorrow at 17:00",
+  "origin": "the ambiguous Friday: said the day before",
+  "input": {
+    "timeZone": "America/Los_Angeles",
+    "ownerName": "Jordan",
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0RAFA",
+          "label": "Rafa Ortiz (private)",
+          "msgs": [
+            {
+              "at": "2026-11-19 10:40",
+              "who": "Rafa Ortiz",
+              "text": "Could you approve the vendor invoice by Friday 5pm? Finance closes the month"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Approve Rafa's vendor invoice\",\"detail\":\"Rafa asked on Slack.\",\"who\":\"Rafa\",\"due\":\"2026-11-20 17:00\",\"tz\":\"America/Los_Angeles\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Rafa",
+        "titleHas": [
+          "invoice"
+        ],
+        "dueLocal": "2026-11-20 17:00"
+      }
+    ]
+  }
+}

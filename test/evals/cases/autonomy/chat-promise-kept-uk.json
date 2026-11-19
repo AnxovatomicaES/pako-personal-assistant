@@ -1,0 +1,26 @@
+{
+  "suite": "autonomy",
+  "behaviour": "a UK owner says in the chat «I told Omar I'd send him the revised quote by Thursday 5pm»: kept as their promise to Omar, due Thursday 17:00, nothing sent",
+  "origin": "catching the owner's own promises in the chat (<promise>)",
+  "input": {
+    "message": "I told Omar I'd send him the revised quote by Thursday 5pm",
+    "owner": [
+      "I told Omar I'd send him the revised quote by Thursday 5pm"
+    ],
+    "now": "2026-11-17 18:20",
+    "recorded": "I'll keep an eye on it.<promise who=\"Omar\" due=\"2026-11-19 17:00\">send Omar the revised quote</promise>"
+  },
+  "expect": {
+    "actions": [],
+    "exact": true,
+    "promises": [
+      {
+        "who": "Omar",
+        "has": [
+          "quote"
+        ],
+        "due": "2026-11-19 17:00"
+      }
+    ]
+  }
+}

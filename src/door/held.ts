@@ -11,16 +11,17 @@ export function mountHeld(door: Door): Pick<Door, "heldQueue" | "holdAction" | "
   const { d, now, tx, note, via, sendText, sendButton, deliver, watchCall, at, whatOf, shortText, inChat } = door;
   const emailStamps: number[] = [];
   /** Sends an email from Pako's own inbox, opened by a line that says it is the owner's AI assistant writing. */
-  const sendMailNow = async (e: { label: string; target: string; subject?: string; text: string }, id: string): Promise<void> => {
+  /** False when it certainly did not go (no mail, the day's maximum, a refusal): the owner was told why. */
+  const sendMailNow = async (e: { label: string; target: string; subject?: string; text: string }, id: string): Promise<boolean> => {
     if (!d.sendEmail) {
       await sendText(at("emailOff"));
-      return;
+      return false;
     }
     const t = now();
     while (emailStamps.length && t - emailStamps[0]! > 24 * 3600_000) emailStamps.shift();
     if (emailStamps.length >= EMAIL_DAILY) {
       await sendText(at("emailToday", { n: EMAIL_DAILY }));
-      return;
+      return false;
     }
     // The subject and the opening line are Pako's own words, English; the owner's text under them stays as written.
     const theirs = autonomyText("en");
@@ -36,46 +37,49 @@ export function mountHeld(door: Door): Pick<Door, "heldQueue" | "holdAction" | "
       // The service's own reason (Resend says which domain is not verified, which address it refused), else the status.
       const why = String((err as { why?: unknown }).why ?? "").trim().replace(/[.\s]+$/, "");
       const reason = why ? `HTTP ${status}: ${why}` : `HTTP ${status}`;
-      await sendText(status >= 400 && status < 500 ? at("emailFailed", { to: e.label, why: reason, address: e.target }) : at("emailUnknown", { to: e.label }));
-      return;
+      const refused = status >= 400 && status < 500;
+      await sendText(refused ? at("emailFailed", { to: e.label, why: reason, address: e.target }) : at("emailUnknown", { to: e.label }));
+      return !refused;
     }
     emailStamps.push(t);
     d.control?.log("mail", at("sentEmail", { to: e.label, text: shortText(e.text) }));
     note(at("sentEmail", { to: e.label, text: shortText(e.text) }));
     await sendText(at("sentEmail", { to: e.label, text: shortText(e.text) }));
+    return true;
   };
-  /** A held action whose window is over: it goes now (unless Pako is paused). Called once per action (src/autonomy.ts). */
-  const runHeld = async (a: HeldAction): Promise<void> => {
+  /**
+   * A held action whose window is over: it goes now (unless Pako is paused). Called once per action (src/autonomy.ts). False when it
+   * certainly did not go.
+   */
+  const runHeld = async (a: HeldAction): Promise<boolean> => {
     const pause = d.control ? await d.control.state() : null;
     if (pause && pause.paused !== null) {
       await sendText(at("paused", { what: whatOf(a.type), to: a.label }));
-      return;
+      return false;
     }
-    if (a.type === "message") {
-      await deliver({ digits: a.target, label: a.label, text: a.text });
-      return;
-    }
-    if (a.type === "email") {
-      await sendMailNow(a, a.id);
-      return;
-    }
+    if (a.type === "message") return deliver({ digits: a.target, label: a.label, text: a.text });
+    if (a.type === "email") return sendMailNow(a, a.id);
     // A call: staged and confirmed in one go, the owner's own words being the yes (the same tools as the card's Call).
     const staged = await d.tools.run({ callId: CALL_ID, tool: "call_contact", args: { name: a.target, message: a.text, direct: a.direct === true }, trusted: true, now: now() });
     if (!staged.verbatim) {
       await sendText(tx("callNotReady", { why: staged.say }));
-      return;
+      return false;
     }
     const r = await d.tools.run({ callId: CALL_ID, tool: "confirm_call", args: {}, readbackText: staged.say, answerText: "yes", trusted: true, now: now() });
     if (r.placed) note(tx("noteCallPlaced", { name: r.placed.name }));
     else note(tx(r.unknown ? "noteCallUnknown" : r.simulated ? "noteCallSimulated" : "noteCallFailed", { name: a.label }));
     await sendText(r.say);
     if (r.placed) watchCall(r.placed);
+    return !!r.placed || r.unknown === true;
   };
   const heldQueue: HeldQueue = createHeldQueue({
     kv: d.kv,
     now,
     ...(d.autonomy?.delay ? { delay: d.autonomy.delay } : {}),
-    run: (a) => inChat(a.route, () => runHeld(a)),
+    run: (a) => {
+      let went = true;
+      return inChat(a.route, async () => void (went = await runHeld(a))).then(() => went);
+    },
     tell: (a, kind) => inChat(a.route, async () => void (await sendText(at(kind, { what: whatOf(a.type), to: a.label })))),
   });
   void heldQueue.start();
@@ -110,6 +114,9 @@ export function mountHeld(door: Door): Pick<Door, "heldQueue" | "holdAction" | "
     const r = await heldQueue.undo(id).catch(() => ({ status: "gone" as const, action: undefined }));
     if (r.status === "undone" && r.action) {
       d.control?.log("autonomy", at("logUndone", { what: whatOf(r.action.type), to: r.action.label }));
+      // Stopped before it went: a lesson for the next drafts and actions (src/lessons.ts), from the action Pako itself held.
+      void d.lessons?.undone({ what: r.action.type, title: shortText(r.action.text), who: r.action.label })
+        .catch((err: Error) => log.error(`a stopped ${r.action?.type ?? "action"} could not be kept as a lesson: ${err.message}`));
       await sendText(at("undone"));
       return;
     }

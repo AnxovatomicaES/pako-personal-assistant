@@ -1,0 +1,50 @@
+{
+  "suite": "followups",
+  "behaviour": "after Not mine on Raj's vendor contract review in #procurement, Raj's email asking for the next contract review makes no loop",
+  "origin": "learning from corrections: the lesson holds for that person in another place",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "C0PROC",
+          "label": "#procurement",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:20",
+              "who": "Raj Iyer",
+              "text": "@Alex can you review the Q3 vendor contract for Globex?"
+            }
+          ],
+          "direct": false
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Review the Q3 vendor contract for Globex\",\"detail\":\"Raj asked in #procurement.\",\"who\":\"Raj\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      },
+      {
+        "press": {
+          "loop": 1,
+          "button": "3"
+        }
+      },
+      {
+        "mail": {
+          "at": "2026-11-17 11:00",
+          "ref": "m-raj",
+          "from": "Raj Iyer <raj@acme.example>",
+          "to": "Alex <alex@acme.example>",
+          "subject": "Vendor contract review",
+          "category": "needs_you",
+          "messageId": "<ri2@acme.example>",
+          "body": "Hi Alex,\n\nCould you also review the Q4 vendor contract for Initech this week?\n\nThanks,\nRaj"
+        },
+        "recorded": "{\"loops\":[],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "jobHas": [
+      "Owner's corrections",
+      "Review the Q3 vendor contract for Globex"
+    ]
+  }
+}

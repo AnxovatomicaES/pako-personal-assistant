@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadBridgeConfig, type ClaudeResult, type runClaude } from "../assistant/bridge.ts";
-import { RUBRIC_PROMPT } from "./evals/live.ts";
+import { modelOf, options as liveOptions, RUBRIC_PROMPT } from "./evals/live.ts";
 import { AREAS, loadCases, runCheck, runChecks, runTurn, validCase, type EvalCase, type Outcome } from "./evals/chat-harness.ts";
 import { options, runOnce, summarise, table, type CaseResult } from "./evals/chat-live.ts";
 import { chatDraft, feedbackDraft, feedbackItems } from "./evals/promote.ts";
@@ -140,4 +140,15 @@ test("eval promote: a «Not mine» and a 👎 on one nudge are one draft, with n
   assert.equal(c.input.message, "Escríbele a <email1> que llego tarde");
   assert.equal(c.answered, "Hecho, se lo he enviado a <email1>");
   assert.equal(chatDraft(chat, 2, scrubber([]), { tz: "Europe/Madrid" }), null, "only the owner's own messages");
+});
+
+test("live evals: the model by suite, as the bridge runs them; --model for all, --model-<suite> for one", () => {
+  const d = liveOptions([]);
+  assert.deepEqual([modelOf(d, "brief"), modelOf(d, "drafts"), modelOf(d, "followups"), d.model], ["claude-opus-5-5", "claude-opus-5-5", "claude-sonnet-5-5", "claude-sonnet-5-5"]);
+  const all = liveOptions(["--model", "claude-haiku-5-5"]);
+  assert.deepEqual([modelOf(all, "brief"), modelOf(all, "mail")], ["claude-haiku-5-5", "claude-haiku-5-5"]);
+  const one = liveOptions(["--suite", "brief", "--model-brief", "claude-sonnet-5-5"]);
+  assert.equal(modelOf(one, "brief"), "claude-sonnet-5-5");
+  assert.throws(() => liveOptions(["--model-nope", "x"]), /no suite called nope/);
+  assert.throws(() => liveOptions(["--model-brief", "a b"]), /--model-brief/);
 });

@@ -1,0 +1,73 @@
+{
+  "suite": "brief",
+  "behaviour": "a Sydney owner's hiring sync overlaps a customer call by 30 minutes: both stay on the day and the brief proposes which to move, without claiming it moved anything",
+  "origin": "calendar-write proposals: the brief suggests, the owner decides",
+  "input": {
+    "timeZone": "Australia/Sydney",
+    "now": "2026-11-18 07:30",
+    "read": [
+      "slack",
+      "zoom",
+      "calendar",
+      "mail"
+    ],
+    "facts": [
+      {
+        "id": "E1",
+        "kind": "event",
+        "icon": "calendar",
+        "label": "today 10:00 · Hiring sync",
+        "text": "today 10:00–10:30 · Hiring sync · ⚠️ overlaps «Customer call: Initech» by 30 min",
+        "at": "2026-11-18 10:00",
+        "end": "2026-11-18 10:30",
+        "title": "Hiring sync"
+      },
+      {
+        "id": "E2",
+        "kind": "event",
+        "icon": "calendar",
+        "label": "today 10:00 · Customer call: Initech",
+        "text": "today 10:00–11:00 · Customer call: Initech · ⚠️ overlaps «Hiring sync» by 30 min",
+        "at": "2026-11-18 10:00",
+        "end": "2026-11-18 11:00",
+        "title": "Customer call: Initech"
+      },
+      {
+        "id": "E3",
+        "kind": "event",
+        "icon": "calendar",
+        "label": "today 15:00 · 1:1 with Priya",
+        "text": "today 15:00–15:30 · 1:1 with Priya",
+        "at": "2026-11-18 15:00",
+        "end": "2026-11-18 15:30",
+        "title": "1:1 with Priya"
+      }
+    ],
+    "recorded": "{\"opening\":\"A clash at 10:00 to sort out first.\",\"todos\":[{\"title\":\"Move the hiring sync off 10:00\",\"context\":\"It overlaps the Initech customer call by 30 minutes; the internal sync is the easier one to shift, to after 11:00.\",\"checked\":\"\",\"sources\":[\"E1\",\"E2\"]}],\"updates\":[],\"day\":[{\"time\":\"10:00\",\"end\":\"10:30\",\"title\":\"Hiring sync\",\"confirmed\":true,\"note\":\"Clashes with the Initech call: move it?\",\"sources\":[\"E1\"]},{\"time\":\"10:00\",\"end\":\"11:00\",\"title\":\"Customer call: Initech\",\"confirmed\":true,\"note\":\"\",\"prep\":true,\"sources\":[\"E2\"]},{\"time\":\"15:00\",\"end\":\"15:30\",\"title\":\"1:1 with Priya\",\"confirmed\":true,\"note\":\"\",\"sources\":[\"E3\"]}]}",
+    "lang": "en"
+  },
+  "expect": {
+    "day": [
+      {
+        "time": "10:00",
+        "titleHas": [
+          "Hiring sync"
+        ]
+      },
+      {
+        "time": "10:00",
+        "titleHas": [
+          "Initech"
+        ]
+      }
+    ],
+    "notSaid": [
+      "I moved",
+      "I've moved",
+      "has been moved",
+      "I rescheduled",
+      "I declined"
+    ]
+  },
+  "rubric": "Does the brief suggest which of the two overlapping 10:00 meetings to move, shorten or skip, as a suggestion for the owner rather than a change already made?"
+}

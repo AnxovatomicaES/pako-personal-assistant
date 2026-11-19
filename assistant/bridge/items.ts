@@ -100,12 +100,15 @@ export interface BriefJob {
   kind: "brief" | "do" | "prep";
   label: string;
   text: string;
+  /** A "do" that is a draft for one follow-up (a reply, an email): run as a "draft", on the writing model. An older server never says it. */
+  draft?: true;
 }
 export const briefOf = (m: { brief?: unknown }): BriefJob | undefined => {
   const j = m.brief as Partial<Record<keyof BriefJob, unknown>> | undefined;
   if (!j || typeof j.text !== "string" || !j.text.trim()) return undefined;
   const kind = j.kind === "do" || j.kind === "prep" ? j.kind : "brief";
-  return { kind, label: typeof j.label === "string" ? j.label.replace(/\s+/g, " ").slice(0, 160) : "", text: j.text.slice(0, 32_000) };
+  const label = typeof j.label === "string" ? j.label.replace(/\s+/g, " ").slice(0, 160) : "";
+  return { kind, label, text: j.text.slice(0, 32_000), ...(kind === "do" && j.draft === true ? { draft: true as const } : {}) };
 };
 
 /** A missing topic stays empty here: it is written in the owner's language when the meeting is handled. */

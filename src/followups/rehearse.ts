@@ -11,7 +11,7 @@ export function mountRehearse(fu: Engine): Pick<Engine, "draft" | "dryAnswer"> {
   /** A rehearsal's job: the text a real one would carry, built the same way; nothing kept, nothing queued. */
   const draft = async (o: DraftInput): Promise<{ job: Job; text: string }> => {
     const made = o.source === "slack" ? await slackJob(o) : textJob(o);
-    return { job: made.job, text: (await jobText(made.job, made.material)).slice(0, 16_000) };
+    return { job: made.job, text: (await jobText(made.job, made.material, made.people)).slice(0, 16_000) };
   };
 
   /**

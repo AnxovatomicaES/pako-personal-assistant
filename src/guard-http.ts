@@ -19,11 +19,11 @@
 
 import { hostname, networkInterfaces } from "node:os";
 import type { RequestHandler } from "express";
-import { texts, type Lang } from "./i18n.ts";
+import { npmCommand, texts, type Lang } from "./i18n.ts";
 
 const T = texts(
   {
-    host: "Pako only answers at its own address on this computer. To open the panel, run npm run panel in the Pako folder.",
+    host: `Pako only answers at its own address on this computer. To open the panel, run ${npmCommand()} run panel in the Pako folder.`,
     site: "Pako does not take requests from other websites.",
   },
 );

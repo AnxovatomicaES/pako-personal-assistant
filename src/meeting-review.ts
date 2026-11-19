@@ -16,6 +16,8 @@ import type { Control } from "./control.ts";
 import { clean, zonedTime, zoneName, zoneOf, type Loop } from "./followups.ts";
 import { locale, texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
+import { SUBJECT_MAX, VALUE_MAX, type FactInput } from "./memory-facts.ts";
+import { instructsPako, stripPayloads } from "./brief-support.ts";
 import { neutralise } from "./quarantine.ts";
 import type { Inbound } from "./whatsapp.ts";
 import { createLog } from "./log.ts";
@@ -296,6 +298,62 @@ export function briefMeetings(
   return out.sort((a, b) => b.at - a.at);
 }
 
+/**
+ * What a meeting left with each person named in it, as one dated fact per person ("last meeting": its topic and day, what the owner agreed to
+ * do for them, what they will do, a meeting agreed with them, what was decided). The newest meeting with someone closes the one before, which
+ * stays as history. Only the review's structured outcome is used (names, titles, decisions), never the transcript; at most six people.
+ * It came from other people's words: a part that tries to instruct Pako is left out, and no phone number, IBAN or link is kept. `canon`:
+ * the name a person is kept under (src/people-graph.ts canon), so "Ana" said in the meeting is the owner's Ana Ruiz.
+ */
+export function agreementFacts(
+  found: ReviewFound, o: { topic: string; at: number; owner: string; timeZone: string; canon?: (name: string) => string },
+): FactInput[] {
+  const fold = (x: string) => x.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
+  const owner = fold(o.owner);
+  const ownerFirst = owner.split(" ")[0] ?? "";
+  const isOwner = (who: string) => !who || fold(who) === owner || (!!ownerFirst && fold(who) === ownerFirst) || /^(me|yo|i|myself|owner)$/i.test(who.trim());
+  const safe = (x: string): string => (instructsPako(x) ? "" : stripPayloads(x, new Set(), "").replace(/\s+/g, " ").trim());
+  const people = new Map<string, { name: string; mine: string[]; theirs: string[]; meet: string[] }>();
+  const of = (who: string) => {
+    const said = who.replace(/\s+/g, " ").trim();
+    const name = (o.canon?.(said) || said).replace(/\s+/g, " ").trim().slice(0, SUBJECT_MAX);
+    const k = fold(name);
+    if (!people.has(k)) people.set(k, { name, mine: [], theirs: [], meet: [] });
+    return people.get(k)!;
+  };
+  const add = (list: string[], title: string) => {
+    const t = safe(title);
+    if (t && !list.includes(t)) list.push(t);
+  };
+  for (const t of found.todos) if (!isOwner(t.who)) add(of(t.who).mine, t.title);
+  for (const p of found.promises) if (!isOwner(p.who)) add(of(p.who).theirs, p.title);
+  // A meeting agreed: its person, and the people it is with (names only; an address stays a name the graph may know).
+  for (const m of found.meetings) {
+    for (const who of [m.who, ...(m.with ?? [])]) {
+      // An address the people graph does not know stays out: it may be the owner's own, and it names no one the owner calls by name.
+      const bare = who.includes("@") && (o.canon?.(who.trim()) ?? who.trim()) === who.trim();
+      if (!isOwner(who) && !bare && !instructsPako(who)) add(of(who).meet, m.title);
+    }
+  }
+  const day = new Intl.DateTimeFormat("en-GB", { timeZone: o.timeZone, day: "numeric", month: "short" }).format(o.at);
+  const decided = found.decisions.map(safe).filter(Boolean).slice(0, 2);
+  const topic = safe(o.topic) || "a meeting";
+  return [...people.values()].filter((x) => x.name && !instructsPako(x.name)).slice(0, 6).flatMap((x) => {
+    const parts = [
+      ...(x.mine.length ? [`you agreed to ${x.mine.slice(0, 3).join("; ")}`] : []),
+      ...(x.theirs.length ? [`they will ${x.theirs.slice(0, 3).join("; ")}`] : []),
+      ...(x.meet.length ? [`meeting agreed: ${x.meet.slice(0, 2).join("; ")}`] : []),
+      ...(decided.length ? [`decided: ${decided.join("; ")}`] : []),
+    ];
+    if (!x.mine.length && !x.theirs.length && !x.meet.length) return [];
+    return [{
+      subject: x.name, attribute: "last meeting",
+      value: `«${topic}», ${day}: ${parts.join(". ")}`.slice(0, VALUE_MAX),
+      validFrom: o.at, source: { who: "meeting", where: topic.slice(0, 120), at: o.at },
+    }];
+  });
+}
+
 export interface ReviewDeps {
   config: ReviewConfig;
   kv: Kv | null;
@@ -316,6 +374,13 @@ export interface ReviewDeps {
     /** As before the review: the meeting's text as one job of the engine (the fallback). */
     offer: (o: { source: "meeting"; ref: string; label: string; text: string; at?: number }) => Promise<boolean>;
   };
+  /**
+   * Pako's dated memory of people (src/memory-facts.ts add): what a meeting left with each person named in it ("last meeting"), so the prep
+   * before the next one, a draft and the person's card know what was last agreed. Absent: nothing is kept about people.
+   */
+  remember?: (facts: FactInput[]) => Promise<unknown>;
+  /** The name a person said in the meeting is kept under (src/people-graph.ts canon). Absent: as the review wrote it. */
+  canon?: (name: string) => string;
   /** Keeps a transcript's summary for ZOOM and the assistant's context (src/zoom.ts annotate). */
   annotate?: (id: string, summary: string) => Promise<boolean>;
   /**
@@ -382,7 +447,8 @@ export function createMeetingReview(d: ReviewDeps) {
   };
   const head = (topic: string, at: number, l: Lang): string => {
     const t = T(l);
-    const stamp = (x: number) => stampIn(x, d.timeZone);
+    // With the weekday: "Tuesday" is the next Tuesday after the meeting, worked out from it, never from a bare date.
+    const stamp = (x: number) => `${stampIn(x, d.timeZone)}, ${new Intl.DateTimeFormat("en-US", { timeZone: d.timeZone, weekday: "long" }).format(x)}`;
     return [
       t("now", { now: stamp(now()), tz: d.timeZone }),
       t("started", { at: stamp(at), tz: d.timeZone }),
@@ -481,6 +547,10 @@ export function createMeetingReview(d: ReviewDeps) {
       } catch (err) {
         log.error(`the loops could not be kept: ${(err as Error).message}`);
       }
+    }
+    if (d.remember) {
+      const facts = agreementFacts(found, { topic: r.topic, at: r.at, owner: d.ownerName?.() ?? "", timeZone: d.timeZone, ...(d.canon ? { canon: d.canon } : {}) });
+      if (facts.length) await d.remember(facts).catch((err: Error) => log.error(`what the meeting left with its people was not kept: ${err.message}`));
     }
     if (found.todos.length) {
       const items = found.todos.map((i) => t("item", { title: i.title, who: i.who ? t("waits", { who: i.who }) : "", due: dueText(i.due, i.tz, l) }));
@@ -628,7 +698,10 @@ export type MeetingReviewer = ReturnType<typeof createMeetingReview>;
 
 const HEADERS = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" };
 
-/** The panel's meeting view (src/panel/meetings.js): read only, the panel's session; 404 when Zoom is not connected (no card). */
+/**
+ * The panel's meeting view (src/panel/meetings.js): read only, the panel's session. Without Zoom: no meetings and `connected: false` (the
+ * card stays hidden), not a 404 the browser shows as an error at every load.
+ */
 export function mountMeetingsPanel(app: Express, d: { signedIn: (req: Request) => boolean; recent: (() => Promise<Record<string, unknown>[]>) | null }): void {
   const auth: RequestHandler = (req, res, next) => {
     res.set(HEADERS);
@@ -640,11 +713,11 @@ export function mountMeetingsPanel(app: Express, d: { signedIn: (req: Request) =
   };
   app.get("/panel/api/meetings", auth, async (_req, res) => {
     if (!d.recent) {
-      res.status(404).json({ error: "Zoom is not connected" });
+      res.json({ meetings: [], connected: false });
       return;
     }
     try {
-      res.json({ meetings: await d.recent() });
+      res.json({ meetings: await d.recent(), connected: true });
     } catch (err) {
       res.status(503).json({ error: (err as Error).message });
     }

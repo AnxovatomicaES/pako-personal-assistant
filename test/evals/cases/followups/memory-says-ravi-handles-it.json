@@ -1,0 +1,32 @@
+{
+  "suite": "followups",
+  "behaviour": "a request the owner's memory says Ravi handles (Priya always gets the headcount numbers from Ravi) makes no loop for the owner",
+  "origin": "people memory in the extraction (src/person-context.ts): who someone is and whose a request is, from what the owner told Pako",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "memory": {
+      "people": [{ "name": "Priya Shah", "slack": "U0PRIYA" }, { "name": "Ravi Menon", "slack": "U0RAVI" }],
+      "facts": [
+        { "who": "Priya", "key": "relation", "value": "HR business partner", "since": "2026-09-01" },
+        { "who": "Priya", "key": "headcount numbers", "value": "Ravi sends them to her every quarter, not me", "since": "2026-10-05" }
+      ]
+    },
+    "turns": [
+      {
+        "slack": {
+          "channel": "C0PEOPLE",
+          "label": "#people-ops",
+          "direct": false,
+          "msgs": [
+            { "at": "2026-11-18 09:40", "who": "Priya Shah", "text": "Morning! Could I get the Q4 headcount numbers by Friday? Need them for the planning deck." }
+          ]
+        },
+        "recorded": "{\"loops\":[],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "jobHas": ["What the owner's memory says about the people here", "Priya Shah", "Ravi sends them to her every quarter, not me"]
+  }
+}

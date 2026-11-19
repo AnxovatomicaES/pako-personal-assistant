@@ -9,7 +9,13 @@ export interface BridgeConfig {
   server: string;
   token: string;
   claudeBin: string;
+  /** The model every run uses (ASSISTANT_MODEL), unless its kind is one of the writing ones below. */
   model: string;
+  /**
+   * The model of the runs whose words the owner reads as written (the morning brief, a draft): ASSISTANT_WRITING_MODEL, Opus by default.
+   * Empty: those runs use `model` too. When the account cannot use it, the bridge falls back to `model` for the rest of the day (runs.ts).
+   */
+  writingModel?: string;
   stateDir: string;
   /** Claude's built-in tools: "WebSearch" by default; empty for none. */
   tools: string[];
@@ -72,6 +78,15 @@ export function defaultStateDir(home: string, exists: (path: string) => boolean 
 
 /** The model the owner's assistant runs on unless ASSISTANT_MODEL says otherwise. */
 export const DEFAULT_MODEL = "claude-sonnet-5-5";
+/** The model the morning brief and the drafts run on unless ASSISTANT_WRITING_MODEL says otherwise: about one brief and a few drafts a day. */
+export const DEFAULT_WRITING_MODEL = "claude-opus-5-5";
+
+/** A model setting: unset is `fallback`; "off" or an empty value is `general` (the general default); anything else is itself. */
+const modelSetting = (raw: string | undefined, fallback: string, general: string): string => {
+  if (raw === undefined) return fallback;
+  const v = raw.trim();
+  return !v || v.toLowerCase() === "off" ? general : v;
+};
 
 export function loadBridgeConfig(env: Record<string, string | undefined>): BridgeConfig {
   const errors: string[] = [];
@@ -97,7 +112,7 @@ export function loadBridgeConfig(env: Record<string, string | undefined>): Bridg
       const bin = (env.CLAUDE_BIN ?? "claude").trim() || "claude";
       return bin.includes("/") || bin.includes("\\") ? resolve(bin) : bin;
     })(),
-    model: (env.ASSISTANT_MODEL ?? "").trim() || DEFAULT_MODEL,
+    model: modelSetting(env.ASSISTANT_MODEL, DEFAULT_MODEL, DEFAULT_MODEL),
     stateDir: (env.ASSISTANT_STATE_DIR ?? "").trim() || defaultStateDir(homedir()),
     tools: (env.ASSISTANT_TOOLS ?? "WebSearch").split(",").map((t) => t.trim()).filter(Boolean),
     runTimeoutMs: num("ASSISTANT_RUN_TIMEOUT_MS", 180_000, 10_000, 900_000),
@@ -112,12 +127,15 @@ export function loadBridgeConfig(env: Record<string, string | undefined>): Bridg
     warmMs: num("ASSISTANT_WARM_MIN", 10, 0, 120) * 60_000,
     backgroundEffort: (env.ASSISTANT_BACKGROUND_EFFORT ?? "low").trim().toLowerCase(),
   };
+  const general = config.model;
+  config.writingModel = modelSetting(env.ASSISTANT_WRITING_MODEL, DEFAULT_WRITING_MODEL, general);
   const budget = loadBudgetConfig(env);
   errors.push(...budget.problems);
   config.budget = budget.config;
   if (!["", "low", "medium", "high"].includes(config.backgroundEffort ?? "")) errors.push("ASSISTANT_BACKGROUND_EFFORT must be low, medium, high or empty (none asked for)");
   if (!/^(auto|[a-z]{2,3})$/.test(config.whisperLang)) errors.push("ASSISTANT_WHISPER_LANG must be auto or a language code like en");
   if (!/^[A-Za-z0-9-]*$/.test(config.model)) errors.push("ASSISTANT_MODEL may only hold letters, digits and -");
+  if (!/^[A-Za-z0-9-]*$/.test(config.writingModel)) errors.push("ASSISTANT_WRITING_MODEL may only hold letters, digits and -");
   // An allowlist, not a blocklist: every tool Claude Code has or adds later that can run commands, read files or change anything is refused by default.
   if (config.tools.some((t) => !ALLOWED_TOOLS.has(t))) errors.push(`ASSISTANT_TOOLS may only name ${[...ALLOWED_TOOLS].join(" and ")} (nothing that runs commands, reads files or edits them)`);
   if (errors.length) throw new Error(`Assistant bridge config invalid:\n - ${errors.join("\n - ")}`);

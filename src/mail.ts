@@ -15,6 +15,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import express, { type Express, type Request, type Response } from "express";
 import { rateLimit } from "express-rate-limit";
 import { createCodeVault, hideCodes } from "./codes.ts";
+import { mailThreadKey } from "./mail-body.ts";
 import {
   CATEGORIES, CATEGORY_LABEL, categoryOf, cleanMessageId, notifyPrefsOf, preClassify, providerOf, rulesOf, RULES_MAX, senderAddress,
   shouldNotify, trustedSender, type MailAction, type MailCategory, type MailProvider, type NotifyKey, type NotifyPrefs, type SenderRule, type Verdict,
@@ -351,6 +352,16 @@ export interface RecentMail {
   openedAt?: number;
   /** The owner replied to its thread (a mail of theirs whose In-Reply-To or References name it). */
   repliedAt?: number;
+  /**
+   * The thread it belongs to (src/mail-body.ts mailThreadKey, a hash of the thread's first Message-ID): the follow-ups read a thread's new
+   * mail as one job, and the owner's reply in it with them. Absent on older records.
+   */
+  thread?: string;
+  /** Sent to a list (List-Unsubscribe, List-Id or a bulk Precedence): never read for follow-ups, whatever its category. */
+  bulk?: boolean;
+  /** Its To and Cc lines, cut short: who else the follow-ups' reading sees it was for. Absent on older records. */
+  to?: string;
+  cc?: string;
 }
 
 /** A record with its category always filled in, as the panel, the brief and the digest read it. */
@@ -734,6 +745,8 @@ export interface IntakeDeps {
   vip: string[];
   /** Where the owner's copy lives (src/imap.ts knows its host); without it, read from the addresses the mail was delivered to. */
   provider?: MailProvider | undefined;
+  /** An email a sender rule filed with no run of Claude (src/mail-followups.ts inbox decides whether the follow-ups read it). */
+  filed?: ((id: string, category: MailCategory) => Promise<unknown>) | undefined;
 }
 
 /**
@@ -781,7 +794,18 @@ export async function takeMail(
   const messageId = cleanMessageId(headerValues(m, ["message-id"])[0]);
   const delivered = [...headerValues(m, ["delivered-to", "x-forwarded-to", "x-original-to", "to"]), ...(m.to ?? [])].map(String);
   const provider = d.provider ?? providerOf(undefined, delivered);
-  const where = { ...(messageId ? { messageId } : {}), ...(provider ? { provider } : {}) };
+  // The thread, the list mark and the recipients: what the follow-ups' reading of the real email needs besides its words (src/mail-followups.ts).
+  const bulk = isBulk(m);
+  const thread = mailThreadKey({
+    references: headerValues(m, ["references"]).join(" "), inReplyTo: headerValues(m, ["in-reply-to"])[0] ?? "",
+    messageId: headerValues(m, ["message-id"])[0] ?? "", subject: oneLine(m.subject, 300),
+  });
+  const toLine = oneLine(headerValues(m, ["to"]).join(", ") || (m.to ?? []).map(String).join(", "), 200);
+  const ccLine = oneLine(headerValues(m, ["cc"]).join(", "), 200);
+  const where = {
+    ...(messageId ? { messageId } : {}), ...(provider ? { provider } : {}), thread, ...(bulk ? { bulk: true } : {}),
+    ...(toLine ? { to: toLine } : {}), ...(ccLine ? { cc: ccLine } : {}),
+  };
   // Decided without a run of Claude (src/mail-categories.ts preClassify): a sender rule the owner taught, mail sent to a list, a known carrier's
   // or shop's notice. Most of the volume, none of the news; a VIP always gets the run (and the notice). Only for a sender the owner's mail
   // server vouched for (DKIM or DMARC aligned with From) and with no red flag: anything else, a look-alike "orders@" first of all, gets the
@@ -790,13 +814,15 @@ export async function takeMail(
     from, authResults: headerValues(m, ["authentication-results"]), replyTo: headerValues(m, ["reply-to"]), subject, text,
     ...(typeof m.html === "string" ? { html: m.html.slice(0, 200_000) } : {}),
   });
-  const pre = trusted ? preClassify({ from, subject, bulk: isBulk(m), listId: headerValues(m, ["list-id"])[0] ?? "" }, await box.rules().catch(() => [])) : null;
+  const pre = trusted ? preClassify({ from, subject, bulk, listId: headerValues(m, ["list-id"])[0] ?? "" }, await box.rules().catch(() => [])) : null;
   // In a quiet catch-up (old mail, never told), a proven no-reply sender or receipt is not worth a run either: kept as Updates.
   const filed = pre ?? (trusted && o.quiet && cheapSkip(m) ? { category: "updates" as const, why: "A notice or receipt already in your mailbox when it was connected" } : null);
   if (filed) {
     if (!(await box.record({ id, at, from, subject, preview, account, kind: "masivo", category: filed.category, why: filed.why, ...where }, also))) return "seen";
     await box.keepBody(id, text);
     d.control?.log("mail", t("logBulk", { label: CATEGORY_LABEL[filed.category], from, subject: quoted }), at);
+    // A sender the owner moved to Needs you, Waiting, Important or Personal is filed with no run of Claude: the follow-ups still read it.
+    if (pre?.rule && d.filed) await d.filed(id, filed.category).catch((err: Error) => log.error(`a filed email could not reach the follow-ups: ${err.message}`));
     return "stored";
   }
   if (!(await box.record({ id, at, from, subject, preview, account, kind: "pendiente", ...(vip ? { vip: true } : {}), ...where }, also))) return "seen";
@@ -829,6 +855,8 @@ export interface MailDeps {
   lang?: () => Lang;
   /** The watchdog (src/watchdog.ts): whether each listing of the inbox went through. */
   health?: HealthReport;
+  /** An email a sender rule filed with no run of Claude, for the follow-ups (IntakeDeps filed). */
+  filed?: IntakeDeps["filed"];
 }
 
 export function mountMail(app: Express, d: MailDeps) {
@@ -885,7 +913,7 @@ export function mountMail(app: Express, d: MailDeps) {
     if (addressOf(oneLine(raw.from, 200)) === config.inbox.toLowerCase()) return "dropped";
     if (await box.isSeen(id)) return "seen";
     const m = await withBody(raw);
-    return takeMail({ box, enqueue: d.enqueue, control: d.control, lang, now, vip: config.vip }, id, m, accountOf(m, config));
+    return takeMail({ box, enqueue: d.enqueue, control: d.control, lang, now, vip: config.vip, filed: d.filed }, id, m, accountOf(m, config));
   };
 
   const failed = rateLimit({

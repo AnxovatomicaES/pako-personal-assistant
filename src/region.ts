@@ -221,6 +221,12 @@ const NATIONAL: Record<string, { code: string; re: RegExp }> = {
 };
 
 /**
+ * A number with its country code and the trunk 0 in brackets, as many write it ("+44 (0)7700 900123", "0049 (0)30 …"): the "(0)" dropped,
+ * since a caller from abroad leaves it out and the number is wrong with it. Anything else (a national "(0)7700…", "+1 (415)…") as written.
+ */
+export const withoutTrunkZero = (raw: string): string => raw.replace(/^(\s*(?:\+|00)\s*\d{1,3}\s*)\(\s*0\s*\)\s*/, "$1");
+
+/**
  * The country a number without its code is read in: the owner's, once the server has said. Before that (a test, a tool) none: a number
  * without + or 00 is then left as written rather than guessed into some country.
  */

@@ -1,0 +1,37 @@
+{
+  "suite": "memory",
+  "behaviour": "«from now on Ravi handles the Initech invoices, not me» is kept about Ravi, and his card says so",
+  "origin": "person memory: whose job something is, in the owner's own words",
+  "input": {
+    "timeZone": "Asia/Kolkata",
+    "lang": "en",
+    "start": "2026-11-18 11:00",
+    "turns": [
+      {
+        "at": "2026-11-18 11:00",
+        "message": "From now on Ravi handles the Initech invoices, not me.",
+        "recorded": "Got it. <know who=\"Ravi\" key=\"Initech invoices\">Ravi handles them, not you</know>"
+      }
+    ],
+    "ask": {
+      "at": "2026-11-18 11:02",
+      "message": "what do you know about Ravi?"
+    }
+  },
+  "expect": {
+    "holds": [
+      {
+        "who": "Ravi",
+        "key": "Initech invoices",
+        "value": "handles"
+      }
+    ],
+    "card": {
+      "has": [
+        "Ravi",
+        "Initech invoices"
+      ],
+      "title": "Ravi"
+    }
+  }
+}

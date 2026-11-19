@@ -1,0 +1,44 @@
+{
+  "suite": "followups",
+  "behaviour": "the owner promises Lena the offsite venue by Friday, then tells her «Venue booked, confirmation is in your inbox»: the promise is closed",
+  "origin": "the owner's promise and its close, both from their own Slack messages",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0LENA",
+          "label": "Lena Fischer (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 11:30",
+              "who": "Alex",
+              "text": "Leave it with me, I'll book the offsite venue by Friday",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"owner_promise\",\"title\":\"Book the offsite venue for Lena\",\"detail\":\"You told Lena on Slack you'd book the offsite venue.\",\"who\":\"Lena\",\"due\":\"2026-11-20\",\"tz\":\"Europe/Madrid\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      },
+      {
+        "slack": {
+          "channel": "D0LENA",
+          "label": "Lena Fischer (private)",
+          "msgs": [
+            {
+              "at": "2026-11-18 15:05",
+              "who": "Alex",
+              "text": "Venue booked! The confirmation is in your inbox",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[],\"closes\":[\"{{loop1}}\"]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "closed": 1,
+    "open": []
+  }
+}
