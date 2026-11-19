@@ -1,0 +1,54 @@
+{
+  "suite": "followups",
+  "behaviour": "a re-ping («any news on the setup?») joins the open loop instead of making a second one",
+  "origin": "hunt repro: the re-ping made a duplicate loop",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Ravi",
+              "text": "omar@client.example Laura Pine Tom myself for meeting at 5:15 AM ET Today — can you set it up pls"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Set up the meeting with omar@client.example, Laura Pine and Tom\",\"detail\":\"Ravi asked on Slack to set up the meeting.\",\"who\":\"Ravi\",\"due\":\"2026-11-16 05:15\",\"tz\":\"America/New_York\",\"check\":\"zoomMeeting\",\"hints\":[\"omar@client.example\",\"Laura Pine\",\"Tom\"]}],\"closes\":[]}"
+      },
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:20",
+              "who": "Ravi",
+              "text": "any news on the setup?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Set up the meeting with omar@client.example, Laura Pine and Tom\",\"detail\":\"Ravi asked on Slack to set up the meeting.\",\"who\":\"Ravi\",\"due\":\"2026-11-16 05:15\",\"tz\":\"America/New_York\",\"check\":\"zoomMeeting\",\"hints\":[\"omar@client.example\",\"Laura Pine\",\"Tom\"],\"same\":\"{{loop1}}\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "merged": 1,
+    "open": [
+      {
+        "kind": "request_to_owner",
+        "who": "Ravi",
+        "titleHas": [
+          "meeting",
+          "Laura"
+        ],
+        "dueLocal": "2026-11-16 11:15",
+        "tz": "America/New_York",
+        "check": "zoomMeeting"
+      }
+    ]
+  }
+}

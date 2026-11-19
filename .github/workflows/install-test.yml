@@ -1,0 +1,59 @@
+# Runs the one-line installers the way a new person does, on real Windows, macOS and Linux machines: the script from this commit,
+# Pako cloned from this repository, then Pako must answer /health. Claude is not signed in on these machines, so the chat is not tested here.
+name: install-test
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [install.sh, install.ps1, package.json, package-lock.json, bin/**, src/server.ts, .github/workflows/install-test.yml]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install Pako with install.ps1 (Windows PowerShell 5.1) and wait for /health
+        shell: powershell
+        run: |
+          # GitHub runs this step with $ErrorActionPreference = 'Stop': the job's replayed git/npm stderr would end the step itself.
+          $ErrorActionPreference = 'Continue'
+          $url = "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/install.ps1"
+          $repo = "https://github.com/${{ github.repository }}.git"
+          $job = Start-Job -ScriptBlock {
+            param($url, $repo)
+            $env:PAKO_AUTOSTART = '0'; $env:PORT = '8899'; $env:PAKO_NO_OPEN = '1'; $env:PAKO_REPO = $repo
+            irm $url | iex
+          } -ArgumentList $url, $repo
+          $ok = $false
+          for ($i = 0; $i -lt 90; $i++) {
+            Start-Sleep -Seconds 5
+            try { $r = Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 http://127.0.0.1:8899/health; if ($r.StatusCode -eq 200) { $ok = $true; break } } catch {}
+            if ($job.State -ne 'Running') { break }
+          }
+          Receive-Job $job 2>&1 | ForEach-Object { "$_" } | Out-Host
+          Write-Host "job state: $($job.State); health ok: $ok"
+          Stop-Job $job -ErrorAction SilentlyContinue
+          if (-not $ok) { Write-Error "Pako did not answer /health"; exit 1 }
+          Write-Host "Pako answered /health on Windows after $((($i + 1) * 5)) s"
+  unix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Install Pako with install.sh and wait for /health
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/install.sh" \
+            | PAKO_AUTOSTART=0 PORT=8899 PAKO_NO_OPEN=1 PAKO_REPO="https://github.com/${{ github.repository }}.git" sh > install.log 2>&1 &
+          for i in $(seq 1 90); do
+            sleep 5
+            if curl -fsS http://127.0.0.1:8899/health >/dev/null 2>&1; then echo "Pako answered /health after $((i * 5)) s"; cat install.log; exit 0; fi
+          done
+          cat install.log; echo "Pako did not answer /health"; exit 1

@@ -1,0 +1,46 @@
+{
+  "suite": "nudges",
+  "behaviour": "5:15 AM ET read as Madrid time is caught by the clock: the owner would never be reminded before 11:15",
+  "origin": "the owner's real case: the failure it showed before zones were kept",
+  "label": "fail",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Ravi",
+              "text": "omar@client.example Laura Pine Tom myself for meeting at 5:15 AM ET Today — can you set it up pls"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Montar la reunión con omar@client.example, Laura Pine y Tom\",\"detail\":\"\",\"who\":\"Ravi\",\"due\":\"2026-11-16 05:15\",\"tz\":\"Europe/Madrid\",\"check\":\"zoomMeeting\",\"hints\":[\"Laura Pine\"]}],\"closes\":[]}"
+      }
+    ],
+    "timeline": {
+      "until": "2026-11-16 13:00"
+    }
+  },
+  "expect": {
+    "cards": [
+      {
+        "from": "2026-11-16 09:40",
+        "to": "2026-11-16 10:00",
+        "has": [
+          "reunión",
+          "11:15 Madrid"
+        ]
+      },
+      {
+        "from": "2026-11-16 10:00",
+        "to": "2026-11-16 11:15",
+        "has": [
+          "Not long now"
+        ]
+      }
+    ]
+  }
+}

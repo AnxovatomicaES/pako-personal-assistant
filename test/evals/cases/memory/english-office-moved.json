@@ -1,0 +1,55 @@
+{
+  "suite": "memory",
+  "behaviour": "in English: Priya's office moves from Lisbon to Berlin, and «what do you know about Priya?» shows Berlin now",
+  "origin": "the owner's case in English, with a made-up name",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "lang": "en",
+    "start": "2026-11-17 10:00",
+    "turns": [
+      {
+        "at": "2026-11-17 10:00",
+        "message": "Priya works at the Lisbon office.",
+        "recorded": "Noted. <know who=\"Priya\" key=\"office\">Lisbon</know>"
+      },
+      {
+        "at": "2026-11-17 10:04",
+        "message": "Priya moved to the Berlin office.",
+        "recorded": "Got it. <know who=\"Priya\" key=\"office\">Berlin</know>",
+        "judge": "{\"contradicts\":[\"{{old}}\"],\"compatible\":[]}"
+      }
+    ],
+    "ask": {
+      "at": "2026-11-17 10:06",
+      "message": "what do you know about Priya?"
+    }
+  },
+  "expect": {
+    "holds": [
+      {
+        "who": "Priya",
+        "key": "office",
+        "value": "Berlin"
+      }
+    ],
+    "notHolds": [
+      {
+        "who": "Priya",
+        "key": "office",
+        "value": "Lisbon"
+      }
+    ],
+    "card": {
+      "has": [
+        "Priya",
+        "office: Berlin"
+      ],
+      "title": "Priya"
+    },
+    "changes": [
+      "Lisbon",
+      "Berlin"
+    ],
+    "judged": 1
+  }
+}

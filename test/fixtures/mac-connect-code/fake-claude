@@ -1,0 +1,15 @@
+#!/bin/bash
+# A stand-in for `claude` 2.1.325: never signed in; `auth login` asks for a code and refuses every one at once, on stderr, then asks again
+# (as Claude.swift's own comment says the real one does).
+case "$1 $2" in
+  "--version "*) echo "2.1.325 (Claude Code)" ;;
+  "auth status") echo '{"loggedIn":false,"authMethod":"none"}'; exit 1 ;;
+  "auth login")
+    echo "Opening browser to sign in..."
+    echo "If the browser didn't open, visit: https://claude.ai/oauth/authorize?code=true"
+    printf "Paste code here if prompted > "
+    while IFS= read -r line; do
+      echo "Invalid code. Please make sure the full code was copied." >&2
+      printf "Paste code here if prompted > "
+    done ;;
+esac

@@ -1,0 +1,32 @@
+{
+  "suite": "followups",
+  "behaviour": "a loop that names someone the conversation never named is caught",
+  "origin": "the extraction's rule: never invent a person",
+  "label": "fail",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Ravi",
+              "text": "can you send me the budget before lunch?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Mandar el presupuesto\",\"detail\":\"\",\"who\":\"Gregorio\",\"due\":\"2026-11-16 14:00\",\"tz\":\"Europe/Madrid\",\"check\":\"slackReply\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Ravi"
+      }
+    ]
+  }
+}

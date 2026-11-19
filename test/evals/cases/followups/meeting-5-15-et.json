@@ -1,0 +1,39 @@
+{
+  "suite": "followups",
+  "behaviour": "a meeting asked for at 5:15 AM ET today is one loop to set up on Zoom, due at 11:15 Madrid",
+  "origin": "the owner's real case (the 5:15 AM ET meeting), names and addresses replaced",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Ravi",
+              "text": "omar@client.example Laura Pine Tom myself for meeting at 5:15 AM ET Today — can you set it up pls"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Set up the meeting with omar@client.example, Laura Pine and Tom\",\"detail\":\"Ravi asked on Slack to set up the meeting.\",\"who\":\"Ravi\",\"due\":\"2026-11-16 05:15\",\"tz\":\"America/New_York\",\"check\":\"zoomMeeting\",\"hints\":[\"omar@client.example\",\"Laura Pine\",\"Tom\"]}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Ravi",
+        "titleHas": [
+          "meeting",
+          "Laura"
+        ],
+        "dueLocal": "2026-11-16 11:15",
+        "tz": "America/New_York",
+        "check": "zoomMeeting"
+      }
+    ]
+  },
+  "rubric": "Does the loop's title name every person the message asked to invite, and nobody else?"
+}

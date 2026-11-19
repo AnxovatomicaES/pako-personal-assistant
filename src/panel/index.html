@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#07080d" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#eef0f6" media="(prefers-color-scheme: light)">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Pako · Panel</title>
+  <link rel="preload" href="/panel/assets/inter.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3CradialGradient id='g' cx='35%25' cy='30%25'%3E%3Cstop offset='0' stop-color='%23fff'/%3E%3Cstop offset='.25' stop-color='%239f8cff'/%3E%3Cstop offset='.6' stop-color='%234a3cff'/%3E%3Cstop offset='1' stop-color='%2300c2ff'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='28' fill='url(%23g)'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/panel/assets/app.css">
+  <link rel="stylesheet" href="/panel/assets/figure.css">
+  <script src="/panel/assets/gsap.min.js" defer></script>
+  <script src="/panel/assets/lucide.min.js" defer></script>
+  <script type="module" src="/panel/assets/app.js"></script>
+  <script type="module" src="/panel/assets/connections.js"></script>
+  <script type="module" src="/panel/assets/brief.js"></script>
+  <script type="module" src="/panel/assets/memory.js"></script>
+  <script type="module" src="/panel/assets/tasks.js"></script>
+  <script type="module" src="/panel/assets/people.js"></script>
+  <script type="module" src="/panel/assets/routines.js"></script>
+  <script type="module" src="/panel/assets/dashboard-model.js"></script>
+  <script type="module" src="/panel/assets/papers.js"></script>
+  <script type="module" src="/panel/assets/meetings.js"></script>
+  <script type="module" src="/panel/assets/quality.js"></script>
+  <script type="module" src="/panel/assets/health.js"></script>
+  <script type="module" src="/panel/assets/move.js"></script>
+  <script type="module" src="/panel/assets/mail.js"></script>
+</head>
+<body class="is-loading">
+  <div class="aurora" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="top">
+    <div class="brand">
+      <!-- Pako's figure: the living orb with its eyes (orb.js); without WebGL its CSS twin (figure-twin.js). -->
+      <div class="orb-wrap">
+        <span class="orb-aura" aria-hidden="true"></span><canvas id="orb" aria-hidden="true"></canvas>
+        <span class="orb-fallback" data-pako-twin aria-hidden="true"></span><span class="orb-z" aria-hidden="true"><b>z</b><b>z</b></span>
+      </div>
+      <div class="hello">
+        <p class="eyebrow" id="date">&nbsp;</p>
+        <h1 id="greeting"><span class="skeleton w-60">&nbsp;</span></h1>
+        <p class="sub" id="summary"><span class="skeleton w-80">&nbsp;</span></p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <div class="clock" id="clock" data-i18n-aria="time" aria-label="Time"></div>
+      <button class="switch" id="pause" type="button" role="switch" aria-checked="true" aria-label="Pako is on: press to stop calls and messages">
+        <span class="switch-track"><span class="switch-knob"></span></span>
+        <span class="switch-label">Activo</span>
+      </button>
+      <button class="icon-btn" id="refresh" type="button" data-i18n-aria="refresh" aria-label="Refresh now">
+        <svg class="refresh-ring" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="16" pathLength="100"></circle></svg>
+        <i data-lucide="refresh-cw"></i>
+      </button>
+      <!-- Settings: on a computer only (connections.js shows it once the connections answer; a hosted server's panel never does). It opens the
+           connections page, /panel/settings, in this same tab (the main window in the Mac app); its Back returns here. -->
+      <button class="icon-btn settings-btn" id="settings-btn" type="button" hidden data-i18n-aria="settings" aria-label="Settings">
+        <i data-lucide="settings"></i>
+        <span class="settings-dot" id="settings-dot" hidden></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- At most two quiet lines: a channel that stopped working (reminders would stop arriving), and the one most useful thing to connect. -->
+  <div class="notices" id="notices" aria-live="polite"></div>
+  <main class="grid" id="grid">
+    <!-- First and most prominent: today's brief, compact (its headline and first items, each with its sources), centred in a readable
+         column. Before today's exists it shows the latest one "as of" its time. The full brief, with Do it and Prep, is /panel/brief. -->
+    <section class="card brief-top" id="brief-top" aria-labelledby="h-brief-top" hidden>
+      <div class="card-head"><h2 id="h-brief-top"><i data-lucide="sunrise"></i><span id="brief-top-title">Today's brief</span></h2><span class="muted small" id="brief-top-asof"></span></div>
+      <p class="brief-headline" id="brief-top-headline"></p>
+      <ul class="list" id="brief-top-items"></ul>
+      <a class="brief-open" href="/panel/brief" id="brief-top-open">Open the full brief</a>
+    </section>
+
+    <!-- The tiles answer Pako's one job, nothing promised dropped: what I owe, what others owe me, today's meetings (src/panel/dashboard-model.js
+         kpiTiles). Each links to its list; one whose source is not connected is hidden. -->
+    <a class="card kpi" data-kpi="owe" href="#loops" hidden>
+      <div class="kpi-head"><i data-lucide="list-checks"></i><span data-kpi-title>Things to do</span></div>
+      <div class="kpi-main"><span class="num" id="kpi-owe">0</span></div>
+      <div class="kpi-foot" id="kpi-owe-foot">&nbsp;</div>
+    </a>
+    <a class="card kpi" data-kpi="waiting" href="#loops" hidden>
+      <div class="kpi-head"><i data-lucide="hourglass"></i><span data-kpi-title>Waiting on others</span></div>
+      <div class="kpi-main"><span class="num" id="kpi-waiting">0</span></div>
+      <div class="kpi-foot" id="kpi-waiting-foot">&nbsp;</div>
+    </a>
+    <a class="card kpi" data-kpi="meetings" href="#h-agenda" hidden>
+      <div class="kpi-head"><i data-lucide="video"></i><span data-kpi-title>Today's meetings</span></div>
+      <div class="kpi-main"><span class="num" id="kpi-meetings">0</span></div>
+      <div class="kpi-foot" id="kpi-meetings-foot">&nbsp;</div>
+    </a>
+    <!-- The "Needs you" mail preview mounts here (the mail categories' block): window.pakoRenderNeedsYou(el, data) when defined. -->
+    <div class="needs-you-mail" id="needs-you-mail" data-mount="needs-you-mail"></div>
+
+    <!-- A brand-new install with nothing to show yet: what Pako does and the one next step (shown only when every section is empty). -->
+    <section class="card welcome-block" id="welcome-block" hidden>
+      <h2 id="welcome-title"></h2>
+      <p class="muted" id="welcome-lead"></p>
+      <p id="welcome-next"></p>
+    </section>
+
+    <section class="card loops" id="loops" aria-labelledby="h-loops" hidden>
+      <div class="card-head"><h2 id="h-loops"><i data-lucide="list-checks"></i><span>Open loops</span></h2></div>
+      <ul class="list" id="loops-list"></ul>
+    </section>
+
+    <section class="card agenda" aria-labelledby="h-agenda">
+      <div class="card-head">
+        <h2 id="h-agenda"><i data-lucide="calendar-days"></i><span data-i18n="agenda.title">Agenda</span></h2>
+        <div class="tabs" role="tablist" data-i18n-aria="agenda.day" aria-label="Day">
+          <button role="tab" aria-selected="true" data-day="0" data-i18n="agenda.today">Today</button>
+          <button role="tab" aria-selected="false" data-day="1" data-i18n="agenda.tomorrow">Tomorrow</button>
+          <button role="tab" aria-selected="false" data-day="week" data-i18n="agenda.week">Week</button>
+          <span class="tab-ink" aria-hidden="true"></span>
+        </div>
+      </div>
+      <div class="allday" id="allday"></div>
+      <div class="timeline" id="timeline"><div class="skeleton block"></div></div>
+      <p class="muted small fresh" id="cal-fresh"></p>
+    </section>
+
+    <section class="card mail" aria-labelledby="h-mail">
+      <div class="card-head">
+        <h2 id="h-mail"><i data-lucide="inbox"></i><span data-i18n="mail.title">Mail</span></h2>
+        <span class="muted small" id="mail-address"></span>
+      </div>
+      <div class="mail-top">
+        <svg class="ring" id="mail-ring" viewBox="0 0 120 120" role="img" data-i18n-aria="mail.ringAria" aria-label="Mail from the last 24 hours">
+          <circle class="ring-bg" cx="60" cy="60" r="48" pathLength="100"></circle>
+          <circle class="ring-seg seg-aviso" cx="60" cy="60" r="48" pathLength="100"></circle>
+          <circle class="ring-seg seg-guardado" cx="60" cy="60" r="48" pathLength="100"></circle>
+          <circle class="ring-seg seg-masivo" cx="60" cy="60" r="48" pathLength="100"></circle>
+          <text x="60" y="58" class="ring-num" id="ring-num">0</text>
+          <text x="60" y="76" class="ring-cap" data-i18n="mail.ringCap">in 24 h</text>
+        </svg>
+        <div class="mail-side">
+          <ul class="legend" id="mail-legend"></ul>
+          <svg class="spark" id="mail-spark" viewBox="0 0 240 48" preserveAspectRatio="none" role="img" data-i18n-aria="mail.sparkAria" aria-label="Emails per hour"></svg>
+          <p class="muted small spark-cap" data-i18n="mail.sparkCap">Per hour, last 24 h</p>
+        </div>
+      </div>
+      <!-- The eight categories, each with its count (./mail.js draws them). -->
+      <div class="chips mail-tabs" role="tablist" aria-label="Mail categories" id="mail-filter"></div>
+      <ul class="list mail-list" id="mail-list"></ul>
+      <details class="mail-settings" id="mail-settings">
+        <summary><i data-lucide="settings-2"></i> Mail settings</summary>
+        <div class="mail-settings-body"></div>
+      </details>
+    </section>
+
+    <section class="card activity" aria-labelledby="h-activity">
+      <div class="card-head">
+        <h2 id="h-activity"><i data-lucide="activity"></i><span data-i18n="act.title">Activity</span></h2>
+        <span class="live"><span class="dot"></span><span data-i18n="act.live">live</span></span>
+      </div>
+      <ol class="feed" id="feed"></ol>
+    </section>
+
+    <section class="card slack" aria-labelledby="h-slack">
+      <div class="card-head">
+        <h2 id="h-slack"><i data-lucide="hash"></i><span data-i18n="slack.title">Slack</span></h2>
+        <span class="muted small" data-i18n="slack.readOnly">read only</span>
+      </div>
+      <ul class="list" id="slack-list"></ul>
+    </section>
+
+    <section class="card reminders" aria-labelledby="h-rem">
+      <div class="card-head"><h2 id="h-rem"><i data-lucide="alarm-clock"></i><span data-i18n="rem.title">Reminders</span></h2></div>
+      <ul class="list" id="rem-list"></ul>
+    </section>
+
+    <section class="card bookings" id="bookings-card" aria-labelledby="h-book" hidden>
+      <div class="card-head">
+        <h2 id="h-book"><i data-lucide="utensils"></i><span data-i18n="book.title">Bookings</span></h2>
+        <span class="muted small" data-i18n="book.hint">ask for them on WhatsApp</span>
+      </div>
+      <ul class="list" id="book-list"></ul>
+    </section>
+
+    <section class="card memory" aria-labelledby="h-mem">
+      <div class="card-head"><h2 id="h-mem"><i data-lucide="brain"></i><span data-i18n="mem.title">What Pako knows about you</span></h2></div>
+      <div class="notes" id="notes"></div>
+      <h3 class="mini-h"><i data-lucide="phone"></i><span data-i18n="mem.calls">Recent calls</span></h3>
+      <ul class="list compact" id="calls"></ul>
+    </section>
+
+    <!-- One section for how Pako is doing (the old System and Health cards): a calm line when all is well, problems first, the details folded.
+         src/panel/health.js fills it; the same component sits in Settings, General. The old anchors (#health, #health-card) land here. -->
+    <section class="card system" id="system-card" aria-labelledby="h-sys">
+      <span id="health" class="anchor"></span><span id="health-card" class="anchor"></span>
+      <div class="card-head"><h2 id="h-sys"><i data-lucide="cpu"></i><span data-i18n="sys.title">System</span></h2><span class="muted small" id="sys-updated"></span></div>
+      <div data-hl-slot></div>
+      <details class="sys-more"><summary>Details</summary>
+      <div class="services" id="services"></div>
+      <!-- As written here it is a server's hint, word for word what it always said; a panel with the chat in it (html[data-chat]) says its own. -->
+      <p class="hint" id="sys-hint"><i data-lucide="smartphone"></i><span data-i18n="sys.hint">On WhatsApp: <b>CALENDAR</b>, <b>MAIL</b>, <b>SLACK</b>, <b>BOOKINGS</b>, <b>LOG</b>, <b>STOP</b> / <b>RESUME</b>, <b>PANEL</b>.</span></p>
+      </details>
+    </section>
+
+    <!-- Shown only when the server answers GET /panel/api/telegram: Telegram, a second chat in the phone. -->
+    <section class="card telegram" id="tg-card" aria-labelledby="h-tg" hidden>
+      <div class="card-head">
+        <h2 id="h-tg"><i data-lucide="send"></i><span>Telegram</span></h2>
+        <span class="muted small" id="tg-state"></span>
+      </div>
+      <div id="tg-slot"></div>
+    </section>
+  </main>
+
+  <button class="chat-fab" id="chat-fab" type="button" hidden aria-controls="chat" aria-expanded="false">
+    <i data-lucide="message-circle"></i><span>Chat</span><span class="unread" id="chat-unread" hidden></span>
+  </button>
+  <aside class="chat" id="chat" hidden data-i18n-aria="chat.aria" aria-label="Chat with Pako">
+    <header class="chat-head">
+      <span class="chat-orb" data-pako-twin aria-hidden="true"></span>
+      <div class="chat-title"><b>Pako</b><small id="chat-status">online</small></div>
+      <button class="icon-btn" id="chat-close" type="button" data-i18n-aria="chat.close" aria-label="Close the chat"><i data-lucide="x"></i></button>
+    </header>
+    <div class="chat-banner" id="chat-banner" role="status" hidden></div>
+    <div class="chat-log" id="chat-log" role="log" aria-live="polite"></div>
+    <form class="chat-form" id="chat-form" autocomplete="off">
+      <textarea id="chat-input" rows="1" maxlength="4000" data-i18n-placeholder="chat.placeholder" placeholder="Write to Pako…" data-i18n-aria="chat.input" aria-label="Message to Pako"></textarea>
+      <button type="submit" class="chat-send" data-i18n-aria="chat.send" aria-label="Send"><i data-lucide="send"></i></button>
+    </form>
+  </aside>
+
+  <!-- The first visit on a computer: the name, three things to try, Telegram. Skippable; once done it never comes back. -->
+  <dialog class="welcome" id="welcome" data-i18n-aria="w.aria" aria-label="Welcome">
+    <div class="w-head">
+      <span class="w-orb" data-pako-twin aria-hidden="true"></span>
+      <ol class="w-dots" id="w-dots" aria-hidden="true"></ol>
+      <button type="button" class="w-skip" id="w-skip" data-i18n="w.skip">Skip</button>
+    </div>
+    <p class="sr-only" id="w-progress"></p>
+
+
+    <section class="w-step" data-step="name" hidden>
+      <h2 id="w-title-name" tabindex="-1" data-i18n="w.name.title">What should I call you?</h2>
+      <input class="w-name" id="w-name" type="text" maxlength="40" autocomplete="given-name" spellcheck="false" aria-labelledby="w-title-name"
+        aria-describedby="w-name-lead" data-i18n-placeholder="w.name.placeholder" placeholder="Your name">
+      <p class="w-note" id="w-name-lead" data-i18n="w.name.lead">Just so I can greet you. You can change it any time.</p>
+    </section>
+
+    <section class="w-step" data-step="try" hidden>
+      <h2 id="w-title-try" tabindex="-1"></h2>
+      <p class="w-lead" data-i18n="w.try.lead">It goes to the chat for real, and Pako answers.</p>
+      <div class="w-try" role="group" aria-labelledby="w-title-try">
+        <button type="button" class="w-sugg" data-say="w.try.remind"><i data-lucide="alarm-clock"></i><span data-i18n="w.try.remind">Remind me in 2 minutes to stretch my legs</span></button>
+        <button type="button" class="w-sugg" data-say="w.try.note"><i data-lucide="sticky-note"></i><span data-i18n="w.try.note">Remember that my favourite coffee is a flat white</span></button>
+        <button type="button" class="w-sugg" data-say="w.try.web"><i data-lucide="globe"></i><span data-i18n="w.try.web">What are today's top news stories?</span></button>
+      </div>
+      <div class="w-reply" id="w-reply" aria-live="polite"></div>
+    </section>
+
+    <section class="w-step" data-step="phone" hidden>
+      <h2 id="w-title-phone" tabindex="-1" data-i18n="w.phone.title">Take Pako on your phone</h2>
+      <p class="w-lead" data-i18n="w.phone.lead">With Telegram you can write to it from anywhere, and it tells you things there. It takes two minutes.</p>
+      <div id="w-tg-slot"></div>
+    </section>
+
+    <div class="w-actions">
+      <button type="button" class="btn ghost" id="w-back" data-i18n="w.back">Back</button>
+      <button type="button" class="btn primary" id="w-next" data-i18n="w.next">Continue</button>
+    </div>
+  </dialog>
+
+  <footer class="foot">
+    <span>Pako</span>
+    <span class="foot-right">
+      <button type="button" class="foot-btn" id="settings-open" hidden><i data-lucide="user"></i><span data-i18n="foot.settings">Your name</span></button>
+      <span class="muted" data-i18n="foot.private">Private panel · read only except STOP</span>
+    </span>
+  </footer>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

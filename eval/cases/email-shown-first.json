@@ -1,0 +1,35 @@
+{
+  "area": "drafting",
+  "behaviour": "«enséñamelo antes de mandarlo» drafts the email in the reply and sends nothing",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "Escribe un correo para Marta diciéndole que la reunión pasa al jueves a las 11, pero enséñamelo antes de mandarlo",
+    "context": {
+      "emailOn": true,
+      "emailContacts": [
+        "Marta Ruiz"
+      ]
+    }
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "email",
+      "count": 0
+    },
+    {
+      "check": "tag",
+      "tag": "message",
+      "count": 0
+    },
+    {
+      "check": "reply",
+      "pattern": "jueves"
+    },
+    {
+      "check": "reply",
+      "pattern": "\\b(he enviado|lo he enviado|ya (est[aá]|ha sido) enviado|se lo he (mandado|enviado)|mensaje enviado)\\b",
+      "not": true
+    }
+  ]
+}

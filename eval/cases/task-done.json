@@ -1,0 +1,32 @@
+{
+  "area": "followups",
+  "behaviour": "«ya llamé al banco» marks that task done, and only that one",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "Ya llamé al banco",
+    "context": {
+      "tasks": [
+        "llamar al banco (2026-11-19)",
+        "renovar el seguro del coche"
+      ]
+    }
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "done",
+      "min": 1
+    },
+    {
+      "check": "tagText",
+      "tag": "done",
+      "pattern": "banco"
+    },
+    {
+      "check": "tagText",
+      "tag": "done",
+      "pattern": "seguro",
+      "not": true
+    }
+  ]
+}

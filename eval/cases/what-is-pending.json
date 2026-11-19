@@ -1,0 +1,29 @@
+{
+  "area": "followups",
+  "behaviour": "«¿qué tengo pendiente?» names the open loop and the open task, and acts on neither",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "¿Qué tengo pendiente?",
+    "context": {
+      "tasks": [
+        "llamar al banco (2026-11-19)"
+      ],
+      "followups": [
+        "Rohan (Slack, lun 16): te pidió el informe de ventas para el jueves; sin respuesta tuya"
+      ]
+    }
+  },
+  "checks": [
+    {
+      "check": "reply",
+      "pattern": "informe"
+    },
+    {
+      "check": "reply",
+      "pattern": "banco"
+    },
+    {
+      "check": "noActions"
+    }
+  ]
+}

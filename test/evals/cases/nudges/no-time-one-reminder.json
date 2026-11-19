@@ -1,0 +1,38 @@
+{
+  "suite": "nudges",
+  "behaviour": "a request with no time: one reminder after the delay, then silence (no nagging the same day)",
+  "origin": "the nudge budget: one card per loop unless its time is near",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0NADIA",
+          "label": "Nadia (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 11:00",
+              "who": "Nadia",
+              "text": "could you review my draft of the proposal when you get a chance?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Revisar el borrador de propuesta de Nadia\",\"detail\":\"Nadia lo pidió por Slack.\",\"who\":\"Nadia\",\"check\":\"slackReply\"}],\"closes\":[]}"
+      }
+    ],
+    "timeline": {
+      "until": "2026-11-16 22:00"
+    }
+  },
+  "expect": {
+    "cards": [
+      {
+        "from": "2026-11-16 11:10",
+        "to": "2026-11-16 11:30",
+        "has": [
+          "Nadia",
+          "propuesta"
+        ]
+      }
+    ]
+  }
+}

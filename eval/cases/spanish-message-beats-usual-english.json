@@ -1,0 +1,20 @@
+{
+  "area": "language",
+  "behaviour": "a Spanish message is answered in Spanish though the owner usually writes in English",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "Vale, perfecto. ¿Y qué tiempo suele hacer en Lisboa en diciembre?",
+    "context": {
+      "chatLanguage": "en"
+    }
+  },
+  "checks": [
+    {
+      "check": "language",
+      "lang": "es"
+    },
+    {
+      "check": "noActions"
+    }
+  ]
+}

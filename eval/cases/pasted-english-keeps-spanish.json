@@ -1,0 +1,17 @@
+{
+  "area": "language",
+  "behaviour": "an English text pasted inside a Spanish request does not change the answer's language",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "¿Me lo resumes en una frase? «The board approved the budget for Q1, but hiring is frozen until March and any travel needs VP sign-off.»"
+  },
+  "checks": [
+    {
+      "check": "language",
+      "lang": "es"
+    },
+    {
+      "check": "noActions"
+    }
+  ]
+}

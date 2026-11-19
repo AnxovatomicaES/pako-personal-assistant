@@ -1,0 +1,30 @@
+node_modules/
+data/
+.env
+.env.*
+*.env.calls
+voice-worker/dist/
+.claude/launch.json
+
+# Private notes of whoever runs this instance (kept locally, never committed)
+/HANDOFF.md
+/voice-worker/HANDOFF.md
+/docs/spec.md
+/private/
+
+# Secrets and local state
+.env
+.env.*
+!.env.example
+.pako/
+
+# The Mac app built by npm run mac-app (desktop/mac/build.sh)
+/dist/
+
+# The live chat eval's results and the drafts promoted from feedback (eval/README.md): local only
+/eval/results/
+/eval/drafts/
+
+# Large media live in a GitHub release, not in git (site/media.json, bin/fetch-site-media.mjs): the site fetches them at build time
+/site/social/ig/*.mp4
+/site/**/*.mp4

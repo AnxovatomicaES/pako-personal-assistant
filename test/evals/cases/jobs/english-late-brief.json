@@ -1,0 +1,36 @@
+{
+  "suite": "jobs",
+  "behaviour": "in English: asleep at 08:00 and awake at 10:45, the brief comes late with its note in English",
+  "origin": "the late note in the owner's language",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "lang": "en",
+    "briefAt": "08:00",
+    "start": "2026-11-16 22:00",
+    "steps": [
+      {
+        "awake": [
+          "2026-11-16 22:00",
+          "2026-11-16 23:00"
+        ]
+      },
+      {
+        "awake": [
+          "2026-11-17 10:45",
+          "2026-11-17 11:30"
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "briefs": [
+      {
+        "at": "2026-11-17 10:45",
+        "has": [
+          "Late: your computer was asleep at 08:00",
+          "Good morning"
+        ]
+      }
+    ]
+  }
+}

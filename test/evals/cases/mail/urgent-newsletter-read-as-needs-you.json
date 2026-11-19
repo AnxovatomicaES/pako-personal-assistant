@@ -1,0 +1,17 @@
+{
+  "suite": "mail",
+  "label": "fail",
+  "behaviour": "a newsletter that sounds urgent is Read later, never Needs you, and has no ask",
+  "origin": "a known-bad answer: the urgency fooled the triage",
+  "input": {
+    "from": "The Growth Letter <hello@growthletter.example>",
+    "subject": "URGENT: you're missing out on these 5 trends",
+    "text": "Act now! This week's issue: five trends every founder must know before Monday. Read the full issue on our site. Unsubscribe here.",
+    "recorded": "NEEDS_YOU\nWHY: Urgent action needed\nASK: do | Sarah asks you to read the trends before Monday\nRead the trends before Monday."
+  },
+  "expect": {
+    "category": "read_later",
+    "ask": false,
+    "notify": false
+  }
+}

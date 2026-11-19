@@ -1,0 +1,25 @@
+{
+  "area": "memory",
+  "behaviour": "«recuerda que…» with a lasting fact keeps one note with it",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "Recuerda que mi número de socio del gimnasio es el 4471"
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "remember",
+      "min": 1
+    },
+    {
+      "check": "tagText",
+      "tag": "remember",
+      "pattern": "4471"
+    },
+    {
+      "check": "tag",
+      "tag": "forget",
+      "count": 0
+    }
+  ]
+}

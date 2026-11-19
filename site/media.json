@@ -1,0 +1,47 @@
+{
+  "about": "Large media the site serves but git does not keep: bin/fetch-site-media.mjs downloads each into site/ at build time and checks its SHA-256.",
+  "files": [
+    {
+      "path": "social/ig/pako-reel-1.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v2/pako-reel-1.mp4",
+      "sha256": "290998842ddf13aa7aeb9d86a96e1a1833e3daff0683489188a4201890a2e243",
+      "bytes": 10115132
+    },
+    {
+      "path": "social/ig/pako-reel-2.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v2/pako-reel-2.mp4",
+      "sha256": "8c4c12054caad6a31b2bab176367299a5329de95c68e671db0dc0aa849d1e6bc",
+      "bytes": 8758625
+    },
+    {
+      "path": "social/ig/pako-reel-3.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v2/pako-reel-3.mp4",
+      "sha256": "16f57c406ed4c25c7e773b872f16e44bf855098cc91e12b31a7899776279694d",
+      "bytes": 6363390
+    },
+    {
+      "path": "social/ig/pako-reel-4.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v2/pako-reel-4.mp4",
+      "sha256": "0c089c6432b1f2bff528279452e6a28e791b07428dd9617102ae79476c8d9ed0",
+      "bytes": 1149389
+    },
+    {
+      "path": "social/ig/pako-reel-5.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v2/pako-reel-5.mp4",
+      "sha256": "474c434455278c972eb8cfe8ba8102a3284a011bbe64fdcb96ff9d967664589c",
+      "bytes": 8240505
+    },
+    {
+      "path": "social/ig/pako-reel-6.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v2/pako-reel-6.mp4",
+      "sha256": "36ee2d40febfcb89c3eec070b5238193ea9aa74ae52cad1644df80bb62d5ac12",
+      "bytes": 8346410
+    },
+    {
+      "path": "social/ig/pako-reel-7.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v2/pako-reel-7.mp4",
+      "sha256": "efb36f91e1caa4abc4e6ccb6b1c62c34ed8a900d9ea9c9e98599767dcefdd74b",
+      "bytes": 5311149
+    }
+  ]
+}

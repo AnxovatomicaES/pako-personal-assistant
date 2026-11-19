@@ -1,0 +1,11 @@
+{
+  "suite": "intents",
+  "behaviour": "«What would you have told me today?» is the rehearsal",
+  "origin": "plain words (src/intents.ts)",
+  "input": {
+    "text": "What would you have told me today?"
+  },
+  "expect": {
+    "view": "rehearsal"
+  }
+}

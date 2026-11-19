@@ -1,0 +1,11 @@
+{
+  "suite": "intents",
+  "behaviour": "«¿Cómo estás, Pako?» is a greeting, not the health view",
+  "origin": "plain words (src/intents.ts)",
+  "input": {
+    "text": "¿Cómo estás, Pako?"
+  },
+  "expect": {
+    "view": null
+  }
+}

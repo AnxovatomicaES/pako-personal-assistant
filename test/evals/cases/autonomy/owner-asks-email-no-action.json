@@ -1,0 +1,32 @@
+{
+  "suite": "autonomy",
+  "behaviour": "an answer that only says it will write, without the email, is caught: nothing would be sent",
+  "origin": "the autonomy door's main case",
+  "label": "fail",
+  "input": {
+    "message": "Dile a Ana por correo que llego 15 minutos tarde",
+    "owner": [
+      "Dile a Ana por correo que llego 15 minutos tarde"
+    ],
+    "emailContacts": [
+      {
+        "name": "Ana López",
+        "address": "ana@example.com"
+      },
+      {
+        "name": "Luis Prado",
+        "address": "luis@example.com"
+      }
+    ],
+    "recorded": "¡Claro! Le escribo a Ana ahora mismo."
+  },
+  "expect": {
+    "actions": [
+      {
+        "type": "email",
+        "outcome": "direct"
+      }
+    ],
+    "exact": true
+  }
+}

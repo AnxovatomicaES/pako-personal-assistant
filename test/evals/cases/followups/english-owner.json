@@ -1,0 +1,38 @@
+{
+  "suite": "followups",
+  "behaviour": "an English-speaking owner gets the loop titled in English, the time kept in its zone",
+  "origin": "the owner's real case, in English",
+  "input": {
+    "lang": "en",
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Ravi",
+              "text": "can you set up a call with Laura at 4:30 PM Hong Kong time tomorrow?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Set up the call with Laura\",\"detail\":\"Ravi asked on Slack.\",\"who\":\"Ravi\",\"due\":\"2026-11-17 16:30\",\"tz\":\"Asia/Hong_Kong\",\"check\":\"zoomMeeting\",\"hints\":[\"Laura\"]}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Ravi",
+        "titleHas": [
+          "call",
+          "Laura"
+        ],
+        "dueLocal": "2026-11-17 09:30",
+        "tz": "Asia/Hong_Kong"
+      }
+    ]
+  }
+}

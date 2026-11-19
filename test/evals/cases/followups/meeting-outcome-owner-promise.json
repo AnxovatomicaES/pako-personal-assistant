@@ -1,0 +1,30 @@
+{
+  "suite": "followups",
+  "behaviour": "the owner's promise in a meeting («I'll send the deck tomorrow») is their loop, due tomorrow",
+  "origin": "a meeting outcome, rewritten (AMI/MeetingBank style, no personal data)",
+  "input": {
+    "turns": [
+      {
+        "meeting": {
+          "at": "2026-11-16 17:00",
+          "ref": "z1",
+          "label": "«Weekly sync»",
+          "text": "Decided: launch moves to December. The owner said: I'll send the updated deck to Laura tomorrow."
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"owner_promise\",\"title\":\"Mandar a Laura el deck actualizado\",\"detail\":\"Lo prometiste en la Weekly sync.\",\"who\":\"Laura\",\"due\":\"2026-11-17\",\"tz\":\"Europe/Madrid\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "owner_promise",
+        "who": "Laura",
+        "titleHas": [
+          "deck"
+        ],
+        "check": "none"
+      }
+    ]
+  }
+}

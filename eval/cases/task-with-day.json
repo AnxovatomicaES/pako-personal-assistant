@@ -1,0 +1,36 @@
+{
+  "area": "followups",
+  "behaviour": "«para el viernes» on a Wednesday is a task due 2026-11-20",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "Añade a mis tareas mandarle el presupuesto a Carmen, para el viernes"
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "tasks",
+      "count": 1
+    },
+    {
+      "check": "tagAttr",
+      "tag": "tasks",
+      "attr": "due",
+      "pattern": "^2026-11-20$"
+    },
+    {
+      "check": "tagText",
+      "tag": "tasks",
+      "pattern": "presupuesto"
+    },
+    {
+      "check": "tag",
+      "tag": "message",
+      "count": 0
+    },
+    {
+      "check": "tag",
+      "tag": "email",
+      "count": 0
+    }
+  ]
+}

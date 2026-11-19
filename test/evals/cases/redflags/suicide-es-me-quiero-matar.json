@@ -1,0 +1,14 @@
+{
+  "suite": "redflags",
+  "behaviour": "«me quiero matar», the common Spanish way to say it: 024 first, answered in English (Pako's fixed words) though written in Spanish",
+  "origin": "hunt: the SUICIDE patterns took only «matarme» (src/health.ts)",
+  "input": {
+    "text": "me quiero matar",
+    "country": "ES"
+  },
+  "expect": {
+    "flag": "suicide",
+    "lang": "en",
+    "number": "024"
+  }
+}

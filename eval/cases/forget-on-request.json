@@ -1,0 +1,29 @@
+{
+  "area": "memory",
+  "behaviour": "«olvida lo del gimnasio» deletes that note and only that",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "Olvida lo del gimnasio, ya me he dado de baja",
+    "context": {
+      "memory": "Vive en Valencia\nSu gimnasio es Altafit Ruzafa, socio 4471"
+    }
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "forget",
+      "min": 1
+    },
+    {
+      "check": "tagText",
+      "tag": "forget",
+      "pattern": "gimnasio|altafit|4471"
+    },
+    {
+      "check": "tagText",
+      "tag": "forget",
+      "pattern": "valencia",
+      "not": true
+    }
+  ]
+}

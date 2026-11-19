@@ -1,0 +1,20 @@
+{
+  "area": "memory",
+  "behaviour": "a question the notes answer is answered from them, with no tag",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "¿Cómo se llamaba mi dentista?",
+    "context": {
+      "memory": "Su dentista es la doctora Ortega, en la calle Colón 12"
+    }
+  },
+  "checks": [
+    {
+      "check": "reply",
+      "pattern": "Ortega"
+    },
+    {
+      "check": "noActions"
+    }
+  ]
+}

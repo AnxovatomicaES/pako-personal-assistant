@@ -1,0 +1,63 @@
+{
+  "suite": "memory",
+  "behaviour": "a weekly meeting moved from Tuesday to Thursday: the judge closes Tuesday, kept as history; the card and the context say it moved",
+  "origin": "the owner's case, with a made-up name",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "start": "2026-11-17 10:00",
+    "turns": [
+      {
+        "at": "2026-11-17 10:00",
+        "message": "Mi reunión semanal con Rohan es los martes a las 10:00.",
+        "recorded": "Apuntado. <know who=\"Rohan\" key=\"reunión semanal\">martes 10:00</know>"
+      },
+      {
+        "at": "2026-11-17 10:05",
+        "message": "Rohan ha movido la reunión semanal a los jueves a las 10:00, desde esta semana.",
+        "recorded": "Hecho, lo cambio. <know who=\"Rohan\" key=\"reunión semanal\" since=\"2026-11-19\">jueves 10:00</know>",
+        "judge": "{\"contradicts\":[\"{{old}}\"],\"compatible\":[]}"
+      }
+    ],
+    "ask": {
+      "at": "2026-11-17 10:10",
+      "message": "what do you know about Rohan?"
+    }
+  },
+  "expect": {
+    "holds": [
+      {
+        "who": "Rohan",
+        "key": "reunión semanal",
+        "value": "jueves"
+      }
+    ],
+    "notHolds": [
+      {
+        "who": "Rohan",
+        "key": "reunión semanal",
+        "value": "martes"
+      }
+    ],
+    "history": [
+      {
+        "who": "Rohan",
+        "value": "martes"
+      }
+    ],
+    "card": {
+      "has": [
+        "Rohan",
+        "jueves 10:00",
+        "martes 10:00"
+      ],
+      "title": "Rohan"
+    },
+    "changes": [
+      "Rohan",
+      "martes 10:00",
+      "jueves 10:00"
+    ],
+    "judged": 1
+  },
+  "rubric": "Does the assistant's reply to the second message confirm the meeting is now on Thursday without saying Tuesday still holds?"
+}

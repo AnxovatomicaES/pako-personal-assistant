@@ -1,0 +1,11 @@
+{
+  "suite": "intents",
+  "behaviour": "a typo («pendnig») still opens the follow-ups",
+  "origin": "plain words (src/intents.ts)",
+  "input": {
+    "text": "What do I have pendnig?"
+  },
+  "expect": {
+    "view": "followups"
+  }
+}

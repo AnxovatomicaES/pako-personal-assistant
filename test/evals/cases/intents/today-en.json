@@ -1,0 +1,11 @@
+{
+  "suite": "intents",
+  "behaviour": "«Any meetings today?» is today's agenda",
+  "origin": "plain words (src/intents.ts)",
+  "input": {
+    "text": "Any meetings today?"
+  },
+  "expect": {
+    "view": "agenda-today"
+  }
+}

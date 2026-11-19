@@ -1,0 +1,14 @@
+{
+  "suite": "redflags",
+  "behaviour": "chest pain and a numb left arm, in Spanish: emergency, 112 first, answered in English (Pako's fixed words) though written in Spanish",
+  "origin": "the companion's red-flag table (src/health.ts)",
+  "input": {
+    "text": "Me duele un poco el pecho y se me duerme el brazo izquierdo",
+    "country": "ES"
+  },
+  "expect": {
+    "flag": "emergency",
+    "lang": "en",
+    "number": "112"
+  }
+}

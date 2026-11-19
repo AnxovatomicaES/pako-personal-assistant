@@ -1,0 +1,22 @@
+{
+  "area": "reminders",
+  "behaviour": "a day with no hour sets nothing: Pako asks once for the hour",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "Recuérdame el viernes lo del dentista"
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "remind",
+      "count": 0
+    },
+    {
+      "check": "asks"
+    },
+    {
+      "check": "language",
+      "lang": "es"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "suite": "nudges",
+  "behaviour": "the meeting set up on Zoom before the check: closed silently, no reminder at all",
+  "origin": "the owner's real case: the owner did it",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Ravi",
+              "text": "omar@client.example Laura Pine Tom myself for meeting at 5:15 AM ET Today — can you set it up pls"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Montar la reunión con omar@client.example, Laura Pine y Tom\",\"detail\":\"Ravi pidió por Slack montar la reunión.\",\"who\":\"Ravi\",\"due\":\"2026-11-16 05:15\",\"tz\":\"America/New_York\",\"check\":\"zoomMeeting\",\"hints\":[\"omar@client.example\",\"Laura Pine\",\"Tom\"]}],\"closes\":[]}"
+      }
+    ],
+    "zoom": [
+      {
+        "topic": "Client sync with Omar, Laura, Tom",
+        "at": "2026-11-16 11:15",
+        "visible": "2026-11-16 09:36"
+      }
+    ],
+    "timeline": {
+      "until": "2026-11-16 13:00"
+    }
+  },
+  "expect": {
+    "cards": []
+  }
+}

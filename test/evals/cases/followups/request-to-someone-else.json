@@ -1,0 +1,27 @@
+{
+  "suite": "followups",
+  "behaviour": "a request to someone else in a channel is not the owner's loop",
+  "origin": "hunt repro: a channel ask to a colleague became the owner's",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "C0SALES",
+          "label": "#sales",
+          "direct": false,
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Ravi",
+              "text": "@Laura can you send the pricing sheet to the client today?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": []
+  }
+}

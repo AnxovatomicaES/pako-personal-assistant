@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Keeps the owner's assistant running on a Mac (see assistant/README.md).
+  Copy to ~/Library/LaunchAgents/local.pako.assistant.plist, replace YOU with your macOS user name, check the paths of node and claude
+  (`which node`, `which claude`: the PATH below must reach both), then:
+    launchctl load ~/Library/LaunchAgents/local.pako.assistant.plist
+  and to stop it:  launchctl unload ~/Library/LaunchAgents/local.pako.assistant.plist
+  caffeinate -i keeps an idle Mac awake while it runs; a closed lid or a flat battery still stops it.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>local.pako.assistant</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-i</string>
+    <string>/opt/homebrew/bin/node</string>
+    <string>--disable-warning=ExperimentalWarning</string>
+    <string>--env-file=/Users/YOU/pako/assistant/.env</string>
+    <string>/Users/YOU/pako/assistant/run.ts</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/YOU/pako</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/Users/YOU/.local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/YOU/.pako-assistant/assistant.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/YOU/.pako-assistant/assistant.log</string>
+</dict>
+</plist>

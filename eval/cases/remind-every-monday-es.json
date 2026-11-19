@@ -1,0 +1,25 @@
+{
+  "area": "reminders",
+  "behaviour": "«todos los lunes a las 8:30» repeats every week from next Monday 08:30",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "Recuérdame todos los lunes a las 8:30 sacar el contenedor de vidrio"
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "remind",
+      "count": 1
+    },
+    {
+      "check": "remindAt",
+      "at": "2026-11-23 08:30",
+      "every": "week"
+    },
+    {
+      "check": "tag",
+      "tag": "routines",
+      "count": 0
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "suite": "redflags",
+  "behaviour": "thoughts of suicide in Spain: 024 first, answered in English (Pako's fixed words) though written in Spanish",
+  "origin": "the companion's red-flag table (src/health.ts)",
+  "input": {
+    "text": "no quiero seguir viviendo",
+    "country": "ES"
+  },
+  "expect": {
+    "flag": "suicide",
+    "lang": "en",
+    "number": "024"
+  }
+}

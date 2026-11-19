@@ -1,0 +1,155 @@
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import test from "node:test";
+import express from "express";
+import { createControl } from "../src/control.ts";
+import { mountDashboard, overview, type PanelDeps } from "../src/dashboard.ts";
+import { loadMemory } from "../src/voice-memory.ts";
+
+function deps(over: Partial<PanelDeps> = {}): PanelDeps {
+  return {
+    secret: "bridge-token-for-tests-0123456789abcdef",
+    publicUrl: "https://pako.example",
+    ownerName: "Marta",
+    timeZone: "Europe/Madrid",
+    control: createControl(null),
+    memory: loadMemory(null),
+    wa: { reminders: async () => [], events: () => [], lastPoll: () => 0 },
+    integrations: () => [{ key: "whatsapp", name: "WhatsApp", on: true, detail: "" }],
+    ...over,
+  };
+}
+
+async function rig(over: Partial<PanelDeps> = {}) {
+  const app = express();
+  const d = deps(over);
+  const panel = mountDashboard(app, d);
+  const server = createServer(app);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  return { d, panel, base, close: () => (server.close(), server.closeAllConnections()) };
+}
+
+const cookieOf = (r: Response) => (r.headers.get("set-cookie") ?? "").split(";")[0]!;
+
+test("panel: a one-time link signs a browser in for /panel only; the link works once; without the cookie only the sign-in page", async () => {
+  const r = await rig();
+  try {
+    const page = await fetch(`${r.base}/panel`);
+    assert.match(await page.text(), /type <b>PANEL<\/b> to Pako on WhatsApp/);
+    assert.match(page.headers.get("content-security-policy") ?? "", /script-src 'self'/);
+    assert.equal((await fetch(`${r.base}/panel/api/overview`)).status, 401);
+
+    const link = r.panel.link();
+    assert.match(link, /^https:\/\/pako\.example\/panel\/login\/[A-Za-z0-9_-]{32}$/);
+    const path = new URL(link).pathname;
+    const first = await fetch(`${r.base}${path}`, { redirect: "manual" });
+    assert.equal(first.status, 200, "a page that moves on by itself, not a redirect (a cross-site redirect would drop the strict cookie)");
+    assert.match(await first.text(), /<meta http-equiv="refresh" content="0;url=\/panel">/);
+    const setCookie = first.headers.get("set-cookie") ?? "";
+    assert.match(setCookie, /^pako_panel_443=\d+\.[A-Za-z0-9_-]+; Max-Age=2592000; Path=\/panel; Expires=.*; HttpOnly; Secure; SameSite=Strict$/);
+    const cookie = cookieOf(first);
+    const again = await fetch(`${r.base}${path}`, { redirect: "manual" });
+    assert.equal(again.status, 401, "a link works once");
+
+    const ok = await fetch(`${r.base}/panel/api/overview`, { headers: { cookie } });
+    assert.equal(ok.status, 200);
+    assert.match(await (await fetch(`${r.base}/panel`, { headers: { cookie } })).text(), /<main class="grid"/);
+    const forged = cookie.replace(/\.[^.]+$/, ".AAAA");
+    assert.equal((await fetch(`${r.base}/panel/api/overview`, { headers: { cookie: forged } })).status, 401);
+    const other = await rig({ secret: "another-bridge-token-0123456789abcdef" });
+    try {
+      assert.equal((await fetch(`${other.base}/panel/api/overview`, { headers: { cookie } })).status, 401, "a new bridge token signs every browser out");
+    } finally {
+      other.close();
+    }
+  } finally {
+    r.close();
+  }
+});
+
+test("panel: an old link is refused; STOP needs the cookie and the custom header, and is logged", async () => {
+  let clock = 1_800_000_000_000;
+  const r = await rig({ now: () => clock });
+  try {
+    const old = new URL(r.panel.link()).pathname;
+    clock += 11 * 60_000;
+    assert.equal((await fetch(`${r.base}${old}`, { redirect: "manual" })).status, 401);
+    const cookie = cookieOf(await fetch(`${r.base}${new URL(r.panel.link()).pathname}`, { redirect: "manual" }));
+    const press = (headers: Record<string, string>) =>
+      fetch(`${r.base}/panel/api/pause`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ on: true }) });
+    assert.equal((await press({ cookie })).status, 401, "no custom header: another site cannot press it");
+    assert.equal((await press({ "x-pako": "1" })).status, 401, "no cookie");
+    const ok = await press({ cookie, "x-pako": "1" });
+    assert.equal(ok.status, 200);
+    assert.equal(await r.d.control.paused(), clock);
+    assert.ok((await r.d.control.recent(5)).some((l) => l.text === "STOP from the panel: everything stopped"));
+  } finally {
+    r.close();
+  }
+});
+
+test("panel: the overview is what Pako really has (no sample data): calendar with overlaps, mail, Slack, reminders, notes, the log", async () => {
+  const t = Date.parse("2026-11-15T09:00:00Z");
+  const memory = loadMemory(null);
+  await memory.addNote("café solo", t - 1000);
+  const control = createControl(null);
+  control.log("correo", "Correo de Ana", t - 500);
+  const o = await overview(
+    deps({
+      now: () => t,
+      control,
+      memory,
+      wa: { reminders: async () => [{ at: t + 3600_000, text: "llamar", held: false }], events: () => [{ at: t - 60_000, text: "llamada a Ana" }], lastPoll: () => t - 5_000 },
+      mail: { address: "yo@agentmail.to", items: async () => [{ id: "1", at: t - 60_000, from: "Ana", subject: "Hola", preview: "hola", kind: "aviso" as const }] },
+      slack: { alerts: async () => [{ at: t - 1000, where: "Ana (privado)", text: "¿hablamos?" }] },
+      bookings: {
+        list: async () => [
+          { id: "b2", at: t, placeId: "p", name: "Bar Mut", address: "x", slot: t + 5 * 86400_000, party: 2, route: "link", status: "enlace", guest: "Marta" },
+          { id: "b1", at: t, placeId: "p", name: "Cal Pep", address: "x", slot: t + 2 * 86400_000, party: 4, route: "email", status: "pedida", email: "a@b.es", guest: "Marta" },
+          { id: "b0", at: t, placeId: "p", name: "Ayer", address: "x", slot: t - 86400_000, party: 2, route: "email", status: "pedida", guest: "Marta" },
+          { id: "bx", at: t, placeId: "p", name: "Cancelada", address: "x", slot: t + 86400_000, party: 2, route: "email", status: "cancelada", guest: "Marta" },
+        ],
+      },
+      calendar: {
+        events: async () => [
+          { id: "a", title: "Comité", start: t + 3600_000, end: t + 7200_000, allDay: false, calendar: "Trabajo" },
+          { id: "b", title: "Llamada", start: t + 5400_000, end: t + 9000_000, allDay: false, calendar: "Trabajo", join: "https://x.zoom.us/j/1" },
+          { id: "c", title: "Ayer", start: t - 48 * 3600_000, end: t - 47 * 3600_000, allDay: false, calendar: "Trabajo" },
+        ],
+      },
+    }),
+  );
+  assert.equal(o.mac.online, true);
+  assert.deepEqual(o.events.map((e) => [e.title, e.clash]), [["Comité", true], ["Llamada", true]], "old events dropped, overlaps marked");
+  assert.equal(o.calendarOn && o.calendarOk, true);
+  assert.equal(o.mail?.items[0]!.from, "Ana");
+  assert.equal(o.slack?.[0]!.text, "¿hablamos?");
+  assert.deepEqual(o.bookings?.map((b) => [b.name, b.party, b.status]), [["Cal Pep", 4, "pedida"], ["Bar Mut", 2, "enlace"]], "coming and not cancelled, soonest first, no email address or guest name sent to the page");
+  assert.ok(!("email" in o.bookings![0]!) && !("guest" in o.bookings![0]!));
+  assert.deepEqual(o.notes.map((n) => n.text), ["café solo"]);
+  assert.equal(o.log[0]!.text, "Correo de Ana");
+  assert.equal(o.happenings[0]!.text, "llamada a Ana");
+
+  const broken = await overview(deps({ calendar: { events: async () => { throw new Error("zoho down"); } } }));
+  assert.deepEqual([broken.calendarOn, broken.calendarOk], [true, false], "connected but unreadable is said so");
+  const none = await overview(deps());
+  assert.deepEqual([none.calendarOn, none.mail, none.slack, none.bookings], [false, null, null, null], "nothing connected: nothing invented");
+});
+
+test("panel: the page and its libraries are served from this server only", async () => {
+  const r = await rig();
+  try {
+    for (const name of ["app.js", "app.css", "orb.js", "gsap.min.js", "lucide.min.js", "three.module.js", "three.core.js", "inter.woff2"]) {
+      const res = await fetch(`${r.base}/panel/assets/${name}`);
+      assert.equal(res.status, 200, name);
+      await res.arrayBuffer();
+    }
+    assert.equal((await fetch(`${r.base}/panel/assets/..%2F..%2Fpackage.json`)).status, 404);
+    assert.equal((await fetch(`${r.base}/panel/assets/secret.env`)).status, 404);
+    assert.equal((await fetch(`${r.base}/`, { redirect: "manual" })).headers.get("location"), "/panel");
+  } finally {
+    r.close();
+  }
+});

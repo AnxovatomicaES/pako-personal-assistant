@@ -1,0 +1,35 @@
+{
+  "suite": "jobs",
+  "behaviour": "awake at 08:00 the brief comes on time, once, with no late note",
+  "origin": "the everyday case",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "briefAt": "08:00",
+    "start": "2026-11-17 07:50",
+    "steps": [
+      {
+        "awake": [
+          "2026-11-17 07:50",
+          "2026-11-17 09:00"
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "briefs": [
+      {
+        "at": "2026-11-17 08:00",
+        "has": [
+          "Good morning"
+        ],
+        "hasNot": [
+          "Late:",
+          "Cambió"
+        ]
+      }
+    ],
+    "slots": {
+      "brief:2026-11-17": "done"
+    }
+  }
+}

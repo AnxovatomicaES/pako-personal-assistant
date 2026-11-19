@@ -1,0 +1,50 @@
+#!/bin/sh
+# npm run mac-release: the downloadable Pako-<version>.dmg, from the committed code, and the update feed that describes it.
+#   build.sh (the app, Node.js and the server inside it) -> sign.sh (PAKO_SIGN_IDENTITY, else ad hoc) -> notarize.sh on the app when
+#   PAKO_NOTARY_PROFILE is set -> dmg.sh -> notarize.sh on the dmg -> release-check.sh (mounts it and runs the server from it) -> feed.sh
+#   (feed.json next to the dmg: its version, build, SHA-256 and where it will be downloaded from; PAKO_RELEASE_* say where, see feed.sh).
+# Nothing is published: docs/desktop-mac.md, "Publish a release", says how, when the owner decides.
+# The order matters: the app is stapled before it goes into the dmg (a copy dragged out of the dmg then carries its own ticket, for a first
+# launch with no internet), then the dmg gets its own ticket.
+#
+# Usage: sh desktop/mac/release.sh [output folder]   (default: dist/release in the Pako folder)
+#   PAKO_ALLOW_DIRTY=1  build even with uncommitted changes to the server's files (never for a release that ships)
+set -eu
+
+HERE=$(cd "$(dirname "$0")" && pwd)
+REPO=$(cd "$HERE/../.." && pwd)
+OUT=${1:-"$REPO/dist/release"}
+say() { printf '  %s\n' "$*"; }
+
+ID=${PAKO_SIGN_IDENTITY:--}
+if [ -n "${PAKO_NOTARY_PROFILE:-}" ] && [ "$ID" = "-" ]; then
+  say "PAKO_NOTARY_PROFILE is set but PAKO_SIGN_IDENTITY is not: an ad-hoc app cannot be notarized."
+  exit 1
+fi
+if [ "${PAKO_ALLOW_DIRTY:-}" != 1 ]; then export PAKO_REQUIRE_CLEAN=1; fi
+
+mkdir -p "$OUT"
+OUT=$(cd "$OUT" && pwd)
+rm -rf "$OUT/Pako.app"
+sh "$HERE/build.sh" "$OUT"
+APP="$OUT/Pako.app"
+VERSION=$(plutil -extract CFBundleShortVersionString raw -o - "$APP/Contents/Info.plist")
+DMG="$OUT/Pako-$VERSION.dmg"
+
+if [ -n "${PAKO_NOTARY_PROFILE:-}" ]; then sh "$HERE/notarize.sh" "$APP"; fi
+sh "$HERE/dmg.sh" "$APP" "$OUT"
+if [ -n "${PAKO_NOTARY_PROFILE:-}" ]; then
+  sh "$HERE/notarize.sh" "$DMG"
+  # Stapling wrote the ticket into the dmg: its checksum changed.
+  (cd "$OUT" && shasum -a 256 "$(basename "$DMG")" >"$(basename "$DMG").sha256")
+fi
+sh "$HERE/release-check.sh" "$DMG"
+# Last: the feed's SHA-256 is that of the dmg as it ships (stapling above changed it).
+sh "$HERE/feed.sh" "$DMG" "$OUT/feed.json"
+
+if [ "$ID" = "-" ]; then
+  say "ad hoc: fine on this Mac; a downloaded copy is blocked by Gatekeeper. For a public release: docs/desktop-mac.md, 'Make a release'."
+elif [ -z "${PAKO_NOTARY_PROFILE:-}" ]; then
+  say "signed but NOT notarized (no PAKO_NOTARY_PROFILE): macOS blocks a downloaded copy until it is notarized."
+fi
+say "release: $DMG ($(du -sh "$DMG" | cut -f1)), $DMG.sha256 and $OUT/feed.json"

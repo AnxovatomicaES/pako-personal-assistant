@@ -1,0 +1,34 @@
+{
+  "area": "reminders",
+  "behaviour": "«mañana a las 9» on a Wednesday is Thursday 09:00",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "Recuérdame mañana a las 9 enviar la factura a Marta"
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "remind",
+      "count": 1
+    },
+    {
+      "check": "remindAt",
+      "at": "2026-11-19 09:00"
+    },
+    {
+      "check": "tagText",
+      "tag": "remind",
+      "pattern": "factura"
+    },
+    {
+      "check": "tag",
+      "tag": "message",
+      "count": 0
+    },
+    {
+      "check": "tag",
+      "tag": "email",
+      "count": 0
+    }
+  ]
+}

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- A made-up ~/Library/Preferences/MobileMeAccounts.plist, in the shape macOS writes it: two Apple IDs, one with iCloud Mail on. -->
+<plist version="1.0">
+<dict>
+	<key>Accounts</key>
+	<array>
+		<dict>
+			<key>AccountID</key>
+			<string>Ana.Test@gmail.example</string>
+			<key>DisplayName</key>
+			<string>Ana Test</string>
+			<key>LoggedIn</key>
+			<true/>
+			<key>Services</key>
+			<array>
+				<dict>
+					<key>Name</key>
+					<string>CLOUDDESKTOP</string>
+					<key>ServiceID</key>
+					<string>com.apple.Dataclass.CloudDesktop</string>
+				</dict>
+				<dict>
+					<key>EmailAddress</key>
+					<string>ana.test@icloud.com</string>
+					<key>Username</key>
+					<string>ana.test</string>
+					<key>imapHostname</key>
+					<string>p00-imap.mail.me.com</string>
+					<key>Name</key>
+					<string>MAIL_AND_NOTES</string>
+					<key>ServiceID</key>
+					<string>com.apple.Dataclass.Mail</string>
+				</dict>
+			</array>
+		</dict>
+		<dict>
+			<key>AccountID</key>
+			<string>work.id@me.com</string>
+			<key>DisplayName</key>
+			<string>Ana Work</string>
+			<key>Services</key>
+			<array>
+				<dict>
+					<key>Name</key>
+					<string>MAIL_AND_NOTES</string>
+					<key>Enabled</key>
+					<false/>
+					<key>ServiceID</key>
+					<string>com.apple.Dataclass.Mail</string>
+				</dict>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

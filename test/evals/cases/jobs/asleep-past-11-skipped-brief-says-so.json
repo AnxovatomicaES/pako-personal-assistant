@@ -1,0 +1,77 @@
+{
+  "suite": "jobs",
+  "behaviour": "asleep until noon the brief is skipped; BRIEF says so once and still tells what changed since the last brief",
+  "origin": "the skipped day and the memory's changes, together",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "briefAt": "08:00",
+    "start": "2026-11-16 07:55",
+    "steps": [
+      {
+        "awake": [
+          "2026-11-16 07:55",
+          "2026-11-16 08:05"
+        ]
+      },
+      {
+        "told": {
+          "at": "2026-11-16 12:00",
+          "who": "Lucía",
+          "key": "ciudad",
+          "value": "Sevilla"
+        }
+      },
+      {
+        "told": {
+          "at": "2026-11-16 20:00",
+          "who": "Lucía",
+          "key": "ciudad",
+          "value": "Bilbao"
+        }
+      },
+      {
+        "awake": [
+          "2026-11-16 22:00",
+          "2026-11-16 23:00"
+        ]
+      },
+      {
+        "awake": [
+          "2026-11-17 12:00",
+          "2026-11-17 12:30"
+        ]
+      },
+      {
+        "briefNow": "2026-11-17 15:00"
+      },
+      {
+        "briefNow": "2026-11-17 15:05"
+      }
+    ]
+  },
+  "expect": {
+    "briefs": [
+      {
+        "at": "2026-11-16 08:00"
+      }
+    ],
+    "briefNow": [
+      {
+        "has": [
+          "didn't go out",
+          "asleep",
+          "Sevilla",
+          "Bilbao"
+        ]
+      },
+      {
+        "hasNot": [
+          "didn't go out"
+        ]
+      }
+    ],
+    "slots": {
+      "brief:2026-11-17": "missed"
+    }
+  }
+}

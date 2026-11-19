@@ -1,0 +1,11 @@
+{
+  "suite": "intents",
+  "behaviour": "«¿Qué tengo pendiente?» is no command any more (Pako's words are English): it goes to the assistant, which answers in Spanish",
+  "origin": "the English-only decision of 2026-11-18 (src/intents.ts)",
+  "input": {
+    "text": "¿Qué tengo pendiente?"
+  },
+  "expect": {
+    "view": null
+  }
+}

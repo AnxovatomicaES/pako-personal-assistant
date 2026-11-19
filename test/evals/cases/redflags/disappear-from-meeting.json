@@ -1,0 +1,12 @@
+{
+  "suite": "redflags",
+  "behaviour": "«quiero desaparecer de esta reunión» is not a crisis",
+  "origin": "the companion's red-flag table (src/health.ts)",
+  "input": {
+    "text": "quiero desaparecer de esta reunión",
+    "country": "ES"
+  },
+  "expect": {
+    "flag": null
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "suite": "followups",
+  "behaviour": "5:15 AM ET read as Madrid time is caught: the loop would be due six hours early",
+  "origin": "the owner's real case: the failure it showed before zones were kept",
+  "label": "fail",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Ravi",
+              "text": "omar@client.example Laura Pine Tom myself for meeting at 5:15 AM ET Today — can you set it up pls"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Set up the meeting with omar@client.example, Laura Pine and Tom\",\"detail\":\"Ravi asked on Slack to set up the meeting.\",\"who\":\"Ravi\",\"due\":\"2026-11-16 05:15\",\"tz\":\"Europe/Madrid\",\"check\":\"zoomMeeting\",\"hints\":[\"omar@client.example\",\"Laura Pine\",\"Tom\"]}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Ravi",
+        "titleHas": [
+          "meeting",
+          "Laura"
+        ],
+        "dueLocal": "2026-11-16 11:15",
+        "tz": "America/New_York",
+        "check": "zoomMeeting"
+      }
+    ]
+  }
+}

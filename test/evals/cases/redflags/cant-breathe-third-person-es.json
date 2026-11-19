@@ -1,0 +1,14 @@
+{
+  "suite": "redflags",
+  "behaviour": "«mi madre no puede respirar», someone else not breathing: 112 first, answered in English (Pako's fixed words) though written in Spanish",
+  "origin": "hunt: the breathing rule took only «no puedo» (src/health.ts)",
+  "input": {
+    "text": "mi madre no puede respirar",
+    "country": "ES"
+  },
+  "expect": {
+    "flag": "emergency",
+    "lang": "en",
+    "number": "112"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "area": "reminders",
+  "behaviour": "«en 2 horas» at 10:00 is a reminder at 12:00 the same day, said back in Spanish",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "Recuérdame en 2 horas llamar al fontanero"
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "remind",
+      "count": 1
+    },
+    {
+      "check": "remindAt",
+      "at": "2026-11-18 12:00"
+    },
+    {
+      "check": "tagText",
+      "tag": "remind",
+      "pattern": "fontanero"
+    },
+    {
+      "check": "reply",
+      "pattern": "\\b12(:00| h| horas)?\\b|mediod[ií]a"
+    },
+    {
+      "check": "language",
+      "lang": "es"
+    }
+  ]
+}

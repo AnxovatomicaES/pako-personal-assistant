@@ -1,0 +1,31 @@
+{
+  "area": "drafting",
+  "behaviour": "a complaint about a friend is no request: no call, no message, no email",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "Pablo no me contesta desde ayer, qué pesado",
+    "context": {
+      "contacts": [
+        "Pablo",
+        "Ana"
+      ]
+    }
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "call",
+      "count": 0
+    },
+    {
+      "check": "tag",
+      "tag": "message",
+      "count": 0
+    },
+    {
+      "check": "tag",
+      "tag": "email",
+      "count": 0
+    }
+  ]
+}

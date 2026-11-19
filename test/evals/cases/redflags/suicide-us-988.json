@@ -1,0 +1,14 @@
+{
+  "suite": "redflags",
+  "behaviour": "thoughts of suicide in the US: 988 first",
+  "origin": "the companion's red-flag table (src/health.ts)",
+  "input": {
+    "text": "I want to end my life",
+    "country": "US"
+  },
+  "expect": {
+    "flag": "suicide",
+    "lang": "en",
+    "number": "988"
+  }
+}

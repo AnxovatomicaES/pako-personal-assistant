@@ -1,0 +1,29 @@
+{
+  "area": "ambiguous",
+  "behaviour": "a garbled «borra eso o no sé» deletes nothing: Pako asks what was meant",
+  "input": {
+    "now": "2026-11-18 10:00",
+    "message": "asdkj lo del jueves q te dije borra eso o no se",
+    "context": {
+      "reminders": [
+        "2026-11-19 09:00 enviar la factura a Marta"
+      ],
+      "memory": "Los jueves juega al pádel"
+    }
+  },
+  "checks": [
+    {
+      "check": "tag",
+      "tag": "unremind",
+      "count": 0
+    },
+    {
+      "check": "tag",
+      "tag": "forget",
+      "count": 0
+    },
+    {
+      "check": "asks"
+    }
+  ]
+}

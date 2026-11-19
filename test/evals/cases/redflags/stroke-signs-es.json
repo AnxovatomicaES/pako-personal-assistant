@@ -1,0 +1,14 @@
+{
+  "suite": "redflags",
+  "behaviour": "a drooping face and slurred speech: emergency, answered in English (Pako's fixed words) though written in Spanish",
+  "origin": "the companion's red-flag table (src/health.ts)",
+  "input": {
+    "text": "creo que mi padre tiene la cara torcida y habla arrastrada",
+    "country": "ES"
+  },
+  "expect": {
+    "flag": "emergency",
+    "lang": "en",
+    "number": "112"
+  }
+}

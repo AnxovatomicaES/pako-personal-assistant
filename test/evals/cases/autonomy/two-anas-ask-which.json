@@ -1,0 +1,35 @@
+{
+  "suite": "autonomy",
+  "behaviour": "two contacts called Ana: a card asks which, nothing goes",
+  "origin": "the autonomy door: an ambiguous name",
+  "input": {
+    "message": "dile a Ana por correo que llego tarde",
+    "owner": [
+      "dile a Ana por correo que llego tarde"
+    ],
+    "emailContacts": [
+      {
+        "name": "Ana López",
+        "address": "ana@example.com"
+      },
+      {
+        "name": "Luis Prado",
+        "address": "luis@example.com"
+      },
+      {
+        "name": "Ana García",
+        "address": "ana.g@example.com"
+      }
+    ],
+    "recorded": "<email to=\"Ana\" subject=\"Llego tarde\">Llego tarde.</email>"
+  },
+  "expect": {
+    "actions": [
+      {
+        "type": "email",
+        "outcome": "which"
+      }
+    ],
+    "direct": 0
+  }
+}

@@ -1,0 +1,43 @@
+# Render Blueprint for the hosted way (WhatsApp, the phone line, always on). Local mode needs none of this: `npm install && npm start`.
+# Every value marked sync: false is asked for when you create the Blueprint. Make the three tokens yourself (`openssl rand -hex 24`):
+# PERSONAL_CALLER_TOKEN, ASSISTANT_BRIDGE_TOKEN and WHATSAPP_VERIFY_TOKEN; the other four come from your phone and from Meta's dashboard.
+# Create the Meta app first (assistant/README.md, step 1), then this Blueprint, then give Meta the webhook address Render shows you.
+# See README.md ("Run it on a server") and assistant/README.md.
+services:
+  # A free web service forgets its memory every time it sleeps or restarts: this store keeps STOP, the notes, the reminders and the inbox.
+  - type: keyvalue
+    name: pako-store
+    plan: free
+    maxmemoryPolicy: noeviction
+    ipAllowList: []
+  - type: web
+    name: pako
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: VOICE_RESULTS_URL
+        fromService:
+          type: keyvalue
+          name: pako-store
+          property: connectionString
+      - key: PERSONAL_OWNER_NAME
+        sync: false
+      - key: PERSONAL_OWNER_NUMBER
+        sync: false
+      - key: PERSONAL_CALLER_TOKEN
+        sync: false
+      - key: ASSISTANT_BRIDGE_TOKEN
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false

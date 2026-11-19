@@ -1,0 +1,47 @@
+{
+  "suite": "nudges",
+  "behaviour": "the 5:15 AM ET meeting not on Zoom: one reminder after the delay, one near the time, none once it has passed",
+  "origin": "the owner's real case, against the clock",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0RAVI",
+          "label": "Ravi (privado)",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Ravi",
+              "text": "omar@client.example Laura Pine Tom myself for meeting at 5:15 AM ET Today — can you set it up pls"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Montar la reunión con omar@client.example, Laura Pine y Tom\",\"detail\":\"Ravi pidió por Slack montar la reunión.\",\"who\":\"Ravi\",\"due\":\"2026-11-16 05:15\",\"tz\":\"America/New_York\",\"check\":\"zoomMeeting\",\"hints\":[\"omar@client.example\",\"Laura Pine\",\"Tom\"]}],\"closes\":[]}"
+      }
+    ],
+    "timeline": {
+      "until": "2026-11-16 13:00"
+    }
+  },
+  "expect": {
+    "cards": [
+      {
+        "from": "2026-11-16 09:40",
+        "to": "2026-11-16 10:00",
+        "has": [
+          "reunión",
+          "11:15 Madrid",
+          "Zoom"
+        ]
+      },
+      {
+        "from": "2026-11-16 10:00",
+        "to": "2026-11-16 11:15",
+        "has": [
+          "Not long now",
+          "11:15 Madrid"
+        ]
+      }
+    ]
+  }
+}
