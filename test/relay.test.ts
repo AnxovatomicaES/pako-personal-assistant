@@ -173,3 +173,61 @@ test("the laptop: a reminder the relay sent while it slept is marked sent when i
     relayServer.closeAllConnections();
   }
 });
+
+test("the laptop awake: a reminder it sends itself is not fired by the relay too (its sync leaves out what is due now)", async () => {
+  const clock = { now: T0 };
+  const relaySent: string[] = [];
+  const relay = createRelay({ kv: memKv().kv, now: () => clock.now, send: async (t) => (relaySent.push(t), true) });
+  const relayApp = express();
+  mountRelay(relayApp, { relay, token: TOKEN });
+  const relayServer: Server = createServer(relayApp);
+  await new Promise<void>((r) => relayServer.listen(0, "127.0.0.1", () => r()));
+  const relayUrl = `http://127.0.0.1:${(relayServer.address() as AddressInfo).port}`;
+  const sent: Body[] = [];
+  const meta = (async (_u: string | URL | Request, init?: RequestInit) => {
+    sent.push(JSON.parse(String(init?.body)) as Body);
+    return new Response(JSON.stringify({ messages: [{ id: `wamid.out${sent.length}` }] }), { status: 200 });
+  }) as typeof fetch;
+  const { kv } = memKv();
+  const memory = loadMemory(kv);
+  const tools = loadVoiceTools({ memory, actions: { contacts: () => [], callContact: async () => ({ ok: true, text: "started" }), lookupCall: async () => "ok" } });
+  const config = loadWhatsappConfig(ENV, "+447700900123").config!;
+  const ref: { c: ReturnType<typeof createRelayClient> | null } = { c: null };
+  const app = express();
+  const door = mountWhatsapp(app, {
+    config, tools, memory, kv, control: createControl(kv, () => clock.now), ownerName: "Alex", timeZone: "Europe/London", contacts: () => [], fetch: meta,
+    now: () => clock.now, callCheckMs: 5, receiptWaitMs: 60_000,
+    relay: { sync: () => (ref.c ? ref.c.sync() : Promise.resolve(false)), firedByRelay: (r) => ref.c?.firedByRelay(r) ?? false },
+  });
+  ref.c = createRelayClient({ config: { url: relayUrl, token: TOKEN }, reminders: () => door.relayReminders(), now: () => clock.now });
+  const server: Server = createServer(app);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const raw = JSON.stringify({ object: "whatsapp_business_account", entry: [{ id: "1", changes: [{ field: "messages", value: {
+    messaging_product: "whatsapp", metadata: { phone_number_id: config.phoneNumberId },
+    messages: [{ from: "447700900123", id: `wamid.r${clock.now}`, timestamp: String(clock.now / 1000), type: "text", text: { body: "remind me at 09:10" } }],
+  } }] }] });
+  const signature = `sha256=${createHmac("sha256", config.appSecret).update(raw).digest("hex")}`;
+  try {
+    await fetch(`${base}/whatsapp/webhook`, { method: "POST", headers: { "content-type": "application/json", "x-hub-signature-256": signature }, body: raw });
+    await fetch(`${base}/assistant/reply`, {
+      method: "POST", headers: { authorization: `Bearer ${config.bridgeToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ text: "Done.", remind: [{ at: "2026-11-16 09:10", text: "Call the bank" }], key: `wamid.r${T0}` }),
+    });
+    assert.equal(await ref.c.sync(), true);
+    // 09:10, the lid open: the laptop's own look comes before the relay's next tick, and sends it.
+    clock.now = T0 + 10 * MIN + 5_000;
+    await door.runReminders();
+    const texts = sent.map((b) => (b.type === "text" ? b.text.body : b.interactive?.body?.text ?? "") as string);
+    assert.ok(texts.some((t) => /Call the bank/.test(t)), "the laptop sent it");
+    await new Promise((r) => setTimeout(r, 50)); // the sync's own tick on the relay
+    clock.now = T0 + 10 * MIN + 30_000;
+    await relay.tick();
+    assert.deepEqual(relaySent, [], "the relay sent it a second time");
+  } finally {
+    server.close();
+    server.closeAllConnections();
+    relayServer.close();
+    relayServer.closeAllConnections();
+  }
+});

@@ -18,10 +18,12 @@
   <script type="module" src="/panel/assets/whatsapp.js"></script>
   <script type="module" src="/panel/assets/acts.js"></script>
   <script type="module" src="/panel/assets/health.js"></script>
+  <script type="module" src="/panel/assets/demo.js"></script>
 </head>
 <body>
   <a class="skip" href="#cards-title" data-t="skip">Skip to the connections</a>
   <div class="glow" aria-hidden="true"><span></span><span></span></div>
+  <div data-mount="demo-banner"></div>
   <header class="top">
     <a class="back" href="/panel" data-t="backPanel">← Panel</a>
     <span class="brand"><span class="brand-orb" data-pako-twin aria-hidden="true"></span>Pako</span>
@@ -29,6 +31,7 @@
   <nav class="tabbar" id="tabs" role="tablist" aria-label="Settings sections"></nav>
   <main id="main">
    <div class="tab-panel" id="tab-connections" role="tabpanel" aria-labelledby="tab-btn-connections">
+    <div data-mount="demo-connect"></div>
     <section class="hero" aria-labelledby="hero-title">
       <div class="hero-words">
         <h1 id="hero-title" data-t="heroTitle">Connect your things</h1>
@@ -69,6 +72,7 @@
    </div>
    <!-- Mail: how the mailbox is read. The mail categories' switches and learned sender rules mount at #mail-categories when they exist. -->
    <div class="tab-panel" id="tab-mail" role="tabpanel" aria-labelledby="tab-btn-mail" hidden>
+    <div data-mount="demo-connect"></div>
     <p class="section-note" data-t="mailTab.lead"></p>
     <ul class="cards" id="cards-mail"></ul>
     <div id="mail-categories" data-mount="mail-categories"></div>
@@ -89,6 +93,7 @@
    <!-- General: starting with this computer (src/panel/autostart.js), updates, and how Pako is doing (src/panel/health.js, one component). -->
    <div class="tab-panel" id="tab-general" role="tabpanel" aria-labelledby="tab-btn-general" hidden>
     <p class="section-note" data-t="general.lead"></p>
+    <div class="mount" data-mount="demo"></div>
     <div class="mount" data-mount="autostart"></div>
     <p class="section-note" data-t="general.updates"></p>
     <p class="section-note" data-t="general.name"></p>

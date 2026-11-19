@@ -1,0 +1,40 @@
+{
+  "suite": "followups",
+  "behaviour": "a promise written below a long quoted thread (bottom-posting) is found; the requests in the quoted history make no loop",
+  "origin": "mail from the real body: the quoted history is removed, the newest words kept wherever they sit",
+  "input": {
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-16 11:40",
+          "ref": "m-omar",
+          "from": "Omar Haddad <omar@client.example>",
+          "to": "Alex <alex@acme.example>",
+          "subject": "Re: Q1 budget",
+          "category": "waiting",
+          "messageId": "<o9@client.example>",
+          "inReplyTo": "<a7@acme.example>",
+          "references": "<a1@acme.example> <a7@acme.example>",
+          "body": "On Mon, 9 Nov 2026 at 10:02, Alex <alex@acme.example> wrote:\n> Hi Omar,\n> Can you approve the Q1 budget by Monday? I need it before the board pack goes out.\n> Thanks, Alex\n>\n> On Mon, 1 Nov 2026 at 01:15, Omar Haddad <omar@client.example> wrote:\n>> Alex, item 1: please also send me the headcount plan and the hiring budget for team 1 by Tuesday.\n>> We need the vendor list for region 1 too, and the travel policy before the offsite.\n>>\n> On Mon, 2 Nov 2026 at 02:15, Omar Haddad <omar@client.example> wrote:\n>> Alex, item 2: please also send me the headcount plan and the hiring budget for team 2 by Tuesday.\n>> We need the vendor list for region 2 too, and the travel policy before the offsite.\n>>\n> On Mon, 3 Nov 2026 at 03:15, Omar Haddad <omar@client.example> wrote:\n>> Alex, item 3: please also send me the headcount plan and the hiring budget for team 3 by Tuesday.\n>> We need the vendor list for region 3 too, and the travel policy before the offsite.\n>>\n> On Mon, 4 Nov 2026 at 04:15, Omar Haddad <omar@client.example> wrote:\n>> Alex, item 4: please also send me the headcount plan and the hiring budget for team 4 by Tuesday.\n>> We need the vendor list for region 4 too, and the travel policy before the offsite.\n>>\n> On Mon, 5 Nov 2026 at 05:15, Omar Haddad <omar@client.example> wrote:\n>> Alex, item 5: please also send me the headcount plan and the hiring budget for team 5 by Tuesday.\n>> We need the vendor list for region 5 too, and the travel policy before the offsite.\n>>\n> On Mon, 6 Nov 2026 at 06:15, Omar Haddad <omar@client.example> wrote:\n>> Alex, item 6: please also send me the headcount plan and the hiring budget for team 6 by Tuesday.\n>> We need the vendor list for region 6 too, and the travel policy before the offsite.\n>>\n> On Mon, 7 Nov 2026 at 07:15, Omar Haddad <omar@client.example> wrote:\n>> Alex, item 7: please also send me the headcount plan and the hiring budget for team 7 by Tuesday.\n>> We need the vendor list for region 7 too, and the travel policy before the offsite.\n>>\n> On Mon, 8 Nov 2026 at 08:15, Omar Haddad <omar@client.example> wrote:\n>> Alex, item 8: please also send me the headcount plan and the hiring budget for team 8 by Tuesday.\n>> We need the vendor list for region 8 too, and the travel policy before the offsite.\n>>\n\nAlex, sorry for the slow reply, it was a long week. The budget is approved. I'll send you the revised SOW by Thursday 12:00.\n\nOmar"
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"other_promise\",\"title\":\"Receive the revised SOW from Omar\",\"detail\":\"Omar promised by email to send the revised SOW.\",\"who\":\"Omar\",\"due\":\"2026-11-19 12:00\",\"tz\":\"Europe/Madrid\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "other_promise",
+        "who": "Omar",
+        "titleHas": [
+          "SOW"
+        ],
+        "dueLocal": "2026-11-19 12:00",
+        "check": "none"
+      }
+    ],
+    "jobHas": [
+      "revised SOW by Thursday 12:00"
+    ]
+  }
+}

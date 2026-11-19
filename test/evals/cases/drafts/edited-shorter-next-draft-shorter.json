@@ -1,0 +1,41 @@
+{
+  "suite": "drafts",
+  "behaviour": "the owner cut a draft to Ana from 46 words to 15 and dropped the greeting: the next draft to Ana is short and opens with no greeting",
+  "origin": "learning from corrections: a draft the owner changed before sending (src/lessons.ts ownSent)",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-17 09:45",
+    "lang": "en",
+    "before": [
+      {
+        "at": "2026-11-16 10:00",
+        "who": "Ana",
+        "where": "Ana (private)",
+        "channel": "D0ANA",
+        "draft": "A reply in your Slack conversation with Ana\nHi Ana! Thanks so much for your patience on this one. I wanted to let you know that the Q4 deck is nearly finished and I will send it over to you by Friday afternoon, once the finance team has signed off the last numbers. Thanks!",
+        "sent": "Q4 deck is nearly finished, I'll send it Friday once finance signs off the numbers."
+      }
+    ],
+    "loop": {
+      "title": "Send Ana the budget numbers",
+      "who": "Ana",
+      "where": "Ana (private)",
+      "channel": "D0ANA",
+      "facts": [
+        {
+          "label": "Slack · Ana (private)",
+          "text": "Follow-up (you were asked) · Ana on Slack (private), Tuesday 09:40: send Ana the budget numbers · Pako checked: no reply from you there yet"
+        }
+      ]
+    },
+    "recorded": "A reply in your Slack conversation with Ana\nBudget numbers coming by [blank], I'll drop them here once they're final."
+  },
+  "expect": {
+    "lesson": [
+      "Ana",
+      "words"
+    ],
+    "maxWords": 25,
+    "noGreeting": true
+  }
+}

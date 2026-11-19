@@ -63,6 +63,8 @@ export interface ClaudeResult {
   outsideRead?: OutsideSource[];
   /** Pako's MCP server did not load for this run: the bridge goes back to the tags. */
   mcpDown?: true;
+  /** The model that answered, when the bridge chose one by the run's kind (runs.ts): the writing model, or the general one after a fallback. */
+  model?: string;
 }
 
 export interface ClaudeJson {
@@ -89,9 +91,12 @@ export function readTheWeb(doc: ClaudeJson, seen?: TurnSeen): boolean {
   return n(doc.num_turns) > 1;
 }
 
+/** Why a run of claude failed: signed out, a limit, the command not on this computer ("missing"), or anything else. */
+export type ClaudeTrouble = "login" | "limit" | "missing" | "other";
+
 export class ClaudeError extends Error {
-  kind: "login" | "limit" | "other";
-  constructor(message: string, kind: "login" | "limit" | "other") {
+  kind: ClaudeTrouble;
+  constructor(message: string, kind: ClaudeTrouble) {
     super(message);
     this.kind = kind;
   }
@@ -99,13 +104,30 @@ export class ClaudeError extends Error {
 
 // An API key whose account is out of credits ("Credit balance is too low") waits like a plan's limit: the message is answered once credits are
 // added, instead of being dropped with an apology.
-export const classify = (s: string): "login" | "limit" | "other" =>
-  /not logged in|please run \/login|invalid api key|authentication|oauth token|unauthori[sz]ed/i.test(s)
+export const classify = (s: string): ClaudeTrouble =>
+  // The claude command is not there (spawn's ENOENT, here or in the warm process: assistant/bridge/warm.ts): trying again never helps.
+  /could not start .{0,300}\bENOENT\b/.test(s)
+    ? "missing"
+    : /not logged in|please run \/login|invalid api key|authentication|oauth token|unauthori[sz]ed/i.test(s)
     ? "login"
     : /rate limit|usage limit|limit reached|overloaded|quota|hit your .{0,40}limit|out of (?:extra )?usage|spend limit|shared budget/i.test(s)
         || /usage credits?|credit balance|(?:weekly|monthly|5-hour|opus|sonnet) limit/i.test(s)
       ? "limit"
       : "other";
+
+/**
+ * Whether a failed run says this account cannot use `model` now: the plan does not include it, the model is not there, or a limit that names
+ * it ("You've hit your Opus limit"). An overloaded model is not one: that passes. Only asked of a run on the writing model (runs.ts), which
+ * then runs again on the general model instead of failing.
+ */
+export function modelUnavailable(message: string, model: string): boolean {
+  const family = /(opus|sonnet|haiku)/i.exec(model)?.[1]?.toLowerCase() ?? "";
+  const named = message.toLowerCase().includes(model.toLowerCase()) || (!!family && new RegExp(`\\b${family}\\b`, "i").test(message));
+  const gone = /\b(?:invalid|unknown|unsupported) model\b|not_found_error|\bmodel\b.{0,80}\b(?:not (?:found|available|supported|allowed|enabled|included)|unavailable|does(?: not|n't) exist)/i;
+  const notHere = /not (?:available|found|supported|allowed|enabled|included)|unavailable|does(?: not|n't) exist|(?:no|not have|without) access|upgrade|not part of/i;
+  if (gone.test(message)) return true;
+  return named && (notHere.test(message) || (classify(message) === "limit" && !/overloaded/i.test(message)));
+}
 
 /** The `claude -p` runs under way, by process id (each the leader of its own group, see runClaude). */
 export const runningClaude = new Set<number>();
@@ -204,7 +226,8 @@ export function runClaude(
       clearTimeout(timer);
       if (settled) return;
       settled = true;
-      reject(new ClaudeError(`could not start ${c.claudeBin}: ${e.message}`, "other"));
+      const msg = `could not start ${c.claudeBin}: ${e.message}`;
+      reject(new ClaudeError(msg, classify(msg)));
     });
     child.on("close", (code) => {
       if (child.pid) runningClaude.delete(child.pid);

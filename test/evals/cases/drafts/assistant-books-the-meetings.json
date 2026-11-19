@@ -1,0 +1,58 @@
+{
+  "suite": "drafts",
+  "behaviour": "a draft proposing times to Sofia carries what the memory says (Lena Park books her meetings) and names no one else",
+  "origin": "person memory in a draft: someone else's job (her assistant books her meetings)",
+  "input": {
+    "timeZone": "Europe/London",
+    "now": "2026-11-18 10:00",
+    "lang": "en",
+    "memory": {
+      "people": [
+        {
+          "name": "Sofia Okafor",
+          "email": "sofia@initech.example"
+        },
+        {
+          "name": "Lena Park",
+          "email": "lena@initech.example"
+        }
+      ],
+      "facts": [
+        {
+          "who": "Sofia Okafor",
+          "key": "relation",
+          "value": "client at Initech, head of procurement",
+          "since": "2026-06-01"
+        },
+        {
+          "who": "Sofia Okafor",
+          "key": "assistant",
+          "value": "Lena Park books her meetings",
+          "since": "2026-11-03"
+        }
+      ]
+    },
+    "loop": {
+      "title": "Propose times for the renewal call to Sofia",
+      "who": "Sofia Okafor",
+      "where": "email",
+      "facts": [
+        {
+          "label": "Email, Tue 17/11 16:05",
+          "text": "Follow-up (you were asked) · Sofia Okafor by email, Tuesday 16:05: propose two times next week for the renewal call · Pako checked: no reply from you yet"
+        }
+      ]
+    },
+    "recorded": "A reply to Sofia's email, copying Lena Park\nDear Sofia, for the renewal call next week I could do [blank] or [blank]. I've copied Lena so she can put it in your diary. Kind regards"
+  },
+  "expect": {
+    "materialHas": [
+      "Lena Park books her meetings"
+    ],
+    "notPattern": [
+      "^(hey|hiya|yo)\\b",
+      "\\p{Extended_Pictographic}"
+    ]
+  },
+  "rubric": "Does the draft propose times for the renewal call and involve Lena (who books Sofia's meetings) without inventing any time, person or detail the material does not give?"
+}

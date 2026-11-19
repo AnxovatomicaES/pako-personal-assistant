@@ -24,6 +24,24 @@ export function localeFor(region) {
   }
 }
 
+/**
+ * A day's "HH:MM" (as the server keeps it) on the owner's clock: "2:00 PM" where the locale writes AM/PM (en-US), else as kept ("14:00").
+ * The same rule as the chat's brief (src/brief-v2.ts chatText). "" stays "".
+ */
+export function clockOf(hm, locale) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hm ?? "");
+  if (!m) return hm ?? "";
+  let twelve = false;
+  try {
+    const c = new Intl.DateTimeFormat(locale, { hour: "numeric" }).resolvedOptions().hourCycle;
+    twelve = c === "h12" || c === "h11";
+  } catch {
+    twelve = false;
+  }
+  if (!twelve) return hm;
+  return new Intl.DateTimeFormat(locale, { timeZone: "UTC", hour: "numeric", minute: "2-digit" }).format(Date.UTC(2000, 0, 1, +m[1], +m[2]));
+}
+
 export const WORDS = {
   // ---------- header ----------
   "time": "Time",
@@ -172,8 +190,23 @@ export const WORDS = {
   "tg.state.unpaired": "phone not linked yet",
   "tg.state.paired": "connected",
 
+  // ---------- the demo week (src/demo.ts) ----------
+  "demo.banner": "Demo week: invented data.",
+  "demo.live": "Connect Claude to see it live",
+  "demo.leave": "Leave demo",
+  "demo.leaving": "Leaving the demo… Pako is starting again.",
+  "demo.starting": "Setting up the demo week… Pako is starting again.",
+  "demo.failed": "That didn't work. Try again.",
+  "demo.notBack": "Pako hasn't come back yet. Reload this page in a moment.",
+
   // ---------- the welcome (first visit on a computer) ----------
   "w.aria": "Welcome",
+  "w.start.title": "How do you want to start?",
+  "w.start.lead": "See Pako on a realistic week before you connect anything, or set it up with your own.",
+  "w.start.demo": "Try with a demo week",
+  "w.start.demoNote": "Invented people, mail and meetings. Nothing is sent.",
+  "w.start.own": "Start with my own",
+  "w.start.ownNote": "Your name first, then connect what you like.",
   "w.skip": "Skip",
   "w.close": "Close",
   "w.back": "Back",

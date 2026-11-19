@@ -210,7 +210,7 @@ tells you anything about these jobs.
 
 | Inbox field | What it carries | Prompt (`assistant/prompt.ts`) | Answer posted to |
 | --- | --- | --- | --- |
-| `followup` `{source, label, text}` | A Slack conversation's new messages (with its last 15 and your replies marked), a Needs you mail summary without a LOOP line, or a meeting's summary when it could not be reviewed | `FOLLOWUP_PROMPT` | `POST /assistant/followups` `{id: "fu:<hex10>", text}` |
+| `followup` `{source, label, text}` | A Slack conversation's new messages (with its last 15 and your replies marked), an email thread's new emails (cleaned words, yours marked YOU), a Needs you mail summary when email reading is off or spent, or a meeting's summary when it could not be reviewed | `FOLLOWUP_PROMPT` | `POST /assistant/followups` `{id: "fu:<hex10>", text}` |
 | `review` `{source, topic, when, head, text}` | Zoom's AI Companion summary (`id: "review:<uuid>"`), or, beside `meeting`, a cloud transcript (`id: "zoom:<uuid>"`) | `REVIEW_PROMPT` | `POST /assistant/meeting-review` `{id, text}` |
 | `brief` `{kind: "brief" \| "do" \| "prep", label, text}` | The day's facts with their ids (L, Z, S, E, Q, T, M, B, R); `do` and `prep` add your request from the brief's page | `BRIEF_PROMPT` (brief), `BRIEF_TASK_PROMPT` (do, prep) | `POST /assistant/brief` `{id: "br:<hex10>", text}` |
 
@@ -483,7 +483,10 @@ the phone line has its own voice stack.
 
 Settings (all optional, in `assistant/.env`): `ASSISTANT_WHISPER_MODEL` (path of the model; set by the script), `ASSISTANT_WHISPER_BIN` (default `whisper-cli`),
 `ASSISTANT_FFMPEG_BIN` (default `ffmpeg`), `ASSISTANT_WHISPER_LANG` (`auto` by default, or a code like `es`), `ASSISTANT_MODEL` (the model `claude` runs: by default the one named in
-`assistant/bridge.ts`, or any other model id your plan allows; one message costs about 1.4 cents at list price on the default), `ASSISTANT_TOOLS` (default `WebSearch`; empty for none; tools that run commands
+`assistant/bridge.ts`, or any other model id your plan allows; one message costs about 1.4 cents at list price on the default),
+`ASSISTANT_WRITING_MODEL` (the morning brief and the drafts: `claude-opus-5-5` by default; `off` or empty for `ASSISTANT_MODEL`; when the plan
+cannot use it they run on `ASSISTANT_MODEL` for the rest of the day, see [docs/configuration.md](../docs/configuration.md)),
+`ASSISTANT_TOOLS` (default `WebSearch`; empty for none; tools that run commands
 or edit files are refused), `ASSISTANT_ROTATE_AFTER` (a new conversation every N messages, default 30), `ASSISTANT_RUN_TIMEOUT_MS`,
 `ASSISTANT_TYPED_TOOLS` (on when this Claude Code can load Pako's own MCP server, `assistant/mcp-server.ts`; `off` for the tags alone, as before).
 
@@ -676,9 +679,16 @@ settings:
 
 Pako notices what other people ask of you and what you promise, and reminds you only when it can't see it done:
 
-- **Where from:** the Slack messages kept for you (direct messages, group DMs, mentions), the summaries of emails worth telling you, and
-  meeting outcomes (Zoom's own summary, or the Mac's summary of a transcript). A conversation's messages are gathered for a few minutes
-  (`FOLLOWUP_BATCH_MIN`, default 3) and read together with its last messages and your own replies.
+- **Where from:** the Slack messages kept for you (direct messages, group DMs, mentions), your email, and meeting outcomes (Zoom's own
+  summary, or the Mac's summary of a transcript). A conversation's messages are gathered for a few minutes (`FOLLOWUP_BATCH_MIN`, default
+  3) and read together with its last messages and your own replies.
+- **Email, from the real words:** the server picks the mail (never a model): what the triage filed as Needs you, Waiting on others,
+  Important or Personal, told to you or not, and every email you sent (your Sent folder, by IMAP). Never Updates, Read later, Promotions,
+  Suspicious, a scam, or mail sent to a list (`List-Unsubscribe`, `List-Id`, a bulk `Precedence`). What is read is the email's newest
+  message as plain text (the quoted history, reply headers and signature removed; about 4,000 characters at most), with its From, To, Cc,
+  date and subject, and the thread's open follow-ups, so your reply ("attached is the signed NDA") closes what was asked and your promise
+  ("I'll send it Friday") becomes yours. A thread's new emails are read as one job; an email is never read twice. At most
+  `FOLLOWUP_MAIL_JOBS_PER_DAY` jobs a day (default 40); past that, or with `0`, the triage's own LOOP line is used, as before.
 - **Read in isolation:** the assistant's computer reads them in a run of their own (no tools, no conversation, nothing acted on) and answers
   with JSON only; the server checks every field. Thanks, FYIs and chit-chat make nothing. Other people's text can never make Pako act: a
   follow-up never posts, schedules or writes anything; it only reminds you.

@@ -1,0 +1,39 @@
+{
+  "suite": "followups",
+  "behaviour": "in March, when the US is already on summer time and the UK not yet, Wednesday 3pm ET is 19:00 in London, not 20:00",
+  "origin": "DST: the three weeks a year the London–New York gap is 4 hours, not 5",
+  "input": {
+    "timeZone": "Europe/London",
+    "ownerName": "Harriet",
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0NATE",
+          "label": "Nate Brooks (private)",
+          "msgs": [
+            {
+              "at": "2027-03-15 14:00",
+              "who": "Nate Brooks",
+              "text": "Can you set up a call with the Boston team on Wednesday at 3pm ET? Me, you and dana@partner.example"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Set up the call with the Boston team and dana@partner.example\",\"detail\":\"Nate asked on Slack.\",\"who\":\"Nate\",\"due\":\"2027-03-17 15:00\",\"tz\":\"America/New_York\",\"check\":\"zoomMeeting\",\"hints\":[\"Boston\",\"dana@partner.example\"]}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Nate",
+        "titleHas": [
+          "Boston"
+        ],
+        "dueLocal": "2027-03-17 19:00",
+        "tz": "America/New_York",
+        "check": "zoomMeeting"
+      }
+    ]
+  }
+}

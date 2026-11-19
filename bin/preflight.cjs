@@ -34,13 +34,15 @@ function check(o) {
 }
 
 /** What to tell the person (English, like all of Pako's own words): what is wrong and the one thing to do about it. */
-function message(found) {
+function message(found, platform) {
+  // npm.cmd on Windows: PowerShell's default policy refuses the npm.ps1 a bare `npm` runs there.
+  var npm = (platform || process.platform) === "win32" ? "npm.cmd" : "npm";
   if (found.problem === "node") {
     return [
       "",
       "  Pako needs Node.js 22.18 or newer, and this is Node.js " + found.version + ".",
       "  Install a recent one (the LTS): from https://nodejs.org, with nvm (nvm install --lts) or with Homebrew (brew install node).",
-      "  Then, in this folder: npm install && npm start",
+      "  Then, in this folder: " + npm + " install && " + npm + " start",
       "",
     ].join("\n");
   }
@@ -48,7 +50,7 @@ function message(found) {
   var which = found.all ? "" : " (" + found.missing.slice(0, 3).join(", ") + (found.missing.length > 3 ? ", …" : "") + ")";
   return [
     "",
-    "  Pako's dependencies are not installed in this folder" + which + ": run npm install, then npm start.",
+    "  Pako's dependencies are not installed in this folder" + which + ": run " + npm + " install, then " + npm + " start.",
     "",
   ].join("\n");
 }

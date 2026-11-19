@@ -77,7 +77,8 @@ setTimeout(() => updater.proved(), 120_000).unref();
 const said = await updater.version();
 if (said) bridge.setVersion(said);
 
-console.log(`Assistant bridge started: server ${config.server}, tools [${config.tools.join(", ") || "none"}], model ${config.model || "default"}`);
+const models = `model ${config.model || "default"}, writing model ${config.writingModel || config.model || "default"}`;
+console.log(`Assistant bridge started: server ${config.server}, tools [${config.tools.join(", ") || "none"}], ${models}`);
 console.log(
   `Claude budget: ${config.budget?.perDay ?? 40} background runs a day, your own messages never held back; `
     + `${config.warmMs ? `your conversation's claude process kept up for ${Math.round(config.warmMs / 60_000)} min between messages` : "a new claude process for every message"}`,

@@ -3,6 +3,7 @@
 // an email"). Yes queues the write under the card's id (its idempotency key); the Mac app makes it; the receipt says what changed, with Undo.
 
 import { randomBytes } from "node:crypto";
+import { pausedText } from "../control.ts";
 import { texts } from "../i18n.ts";
 import { whyText, type OutsideSource } from "../quarantine.ts";
 import { whenText } from "../undo.ts";
@@ -29,6 +30,7 @@ const K = texts({
   notFound: "I don't see “{title}” at {when} on your Mac's calendars, so I changed nothing.",
   badTime: "I couldn't read the time for “{title}”, so I changed nothing.",
   failed: "Your calendar was not changed: {why}.",
+  paused: "{paused} Your calendar was not changed.",
 });
 
 export interface CalendarProposalIn {
@@ -43,7 +45,8 @@ export interface CalendarProposalIn {
 export function mountCalendarCards(door: Door): Pick<Door, "proposeCalendar" | "pressedCalendar" | "calendarResult"> {
   // sendReceipt is mounted after this module: read from the door when used.
   const { d, now, lang, sendText, sendButtons } = door;
-  const cards = new Map<string, { at: number; write: Omit<CalendarWrite, "id" | "status" | "queuedAt"> }>();
+  // `stops`: the STOPs sent before the card was shown. A STOP ends every card waiting (src/door/stop-resume.ts): its yes changes nothing after.
+  const cards = new Map<string, { at: number; stops: number; write: Omit<CalendarWrite, "id" | "status" | "queuedAt"> }>();
   const k = () => K(lang());
   const when = (t: number) => whenText(t, d.timeZone, lang());
 
@@ -65,17 +68,17 @@ export function mountCalendarCards(door: Door): Pick<Door, "proposeCalendar" | "
       if (p.op === "move") {
         const to = p.newStart ? localToEpoch(p.newStart, d.timeZone) : null;
         if (to === null) return void (await sendText(k()("badTime", { title: p.title })));
-        write = { op: "move", eventId: e.eventId, at: e.at, start: to, end: to + (e.end - e.start), title: e.title };
+        write = { op: "move", eventId: e.eventId, at: e.at, start: to, end: to + (e.end - e.start), title: e.title, was: { start: e.start, end: e.end } };
         body = k()("move", { title: e.title, from: when(e.start), to: when(to) });
       } else {
-        write = { op: "delete", eventId: e.eventId, at: e.at, title: e.title };
+        write = { op: "delete", eventId: e.eventId, at: e.at, title: e.title, was: { start: e.start, end: e.end, title: e.title, calendarId: e.calendarId } };
         body = k()("cancel", { title: e.title, from: when(e.start) });
       }
     }
     for (const [key, c] of cards) if (now() - c.at >= PENDING_CALL_MS) cards.delete(key);
     while (cards.size >= 10) cards.delete(cards.keys().next().value!);
     const id = randomBytes(5).toString("hex");
-    cards.set(id, { at: now(), write });
+    cards.set(id, { at: now(), stops: door.stops, write });
     const from = why.length ? k()("fromOutside", { what: whyText(why, lang()) }) : k()("fromYou");
     await sendButtons(`${body}\n${from}`, `m1:${id}`, `m0:${id}`, k()("yes"));
   };
@@ -84,8 +87,11 @@ export function mountCalendarCards(door: Door): Pick<Door, "proposeCalendar" | "
   const pressedCalendar = async (yes: boolean, id: string): Promise<void> => {
     const c = cards.get(id);
     cards.delete(id);
-    if (!c || now() - c.at >= PENDING_CALL_MS) return void (await sendText(k()("gone")));
+    if (!c || now() - c.at >= PENDING_CALL_MS || c.stops !== door.stops) return void (await sendText(k()("gone")));
     if (!yes) return void (await sendText(k()("no")));
+    // Paused (STOP, the panel's switch, or Pako's own pause for its store): the Mac changes nothing, and the card is used up.
+    const pause = d.control ? await d.control.state() : null;
+    if (pause && pause.paused !== null) return void (await sendText(k()("paused", { paused: pausedText(pause.why, lang()) })));
     try {
       await d.calendarWrites!.enqueue({ ...c.write, id });
       await sendText(k()("queued"));

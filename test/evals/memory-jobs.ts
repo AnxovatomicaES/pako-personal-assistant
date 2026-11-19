@@ -156,7 +156,8 @@ export async function runMemory(c: EvalCase, answer: Answer): Promise<MemoryRun>
         const jt = asStr(job.judge?.text);
         const olds = [...jt.matchAll(/(?:ANTERIOR|OLD) ([0-9a-f]{10})/g)].map((m) => m[1]!);
         const recorded = turn.judge === undefined ? undefined : turn.judge.replaceAll("\"{{old}}\"", olds.map((x) => `"${x}"`).join(","));
-        const said = await answer({ system: "judge", text: jt, recorded });
+        // `judge: ""` is the case's premise (a judge that never answers), not a recorded answer: live, no judge runs either.
+        const said = turn.judge === "" ? "" : await answer({ system: "judge", text: jt, recorded });
         answers.push(said);
         if (said.trim()) {
           await post("/assistant/judge", { id: job.id, text: said });

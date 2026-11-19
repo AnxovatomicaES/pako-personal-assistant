@@ -9,12 +9,12 @@
       {
         "at": "2026-11-17 10:00",
         "message": "Mi reunión semanal con Rohan es los martes a las 10:00.",
-        "recorded": "Apuntado. <know who=\"Rohan\" key=\"reunión semanal\">martes 10:00</know>"
+        "recorded": "Apuntado. <know who=\"Rohan\" key=\"weekly meeting\">martes 10:00</know>"
       },
       {
         "at": "2026-11-17 10:05",
         "message": "Rohan ha movido la reunión semanal a los jueves a las 10:00, desde esta semana.",
-        "recorded": "Hecho, lo cambio. <know who=\"Rohan\" key=\"reunión semanal\" since=\"2026-11-19\">jueves 10:00</know>",
+        "recorded": "Hecho, lo cambio. <know who=\"Rohan\" key=\"weekly meeting\" since=\"2026-11-19\">jueves 10:00</know>",
         "judge": "{\"contradicts\":[\"{{old}}\"],\"compatible\":[]}"
       }
     ],
@@ -27,14 +27,14 @@
     "holds": [
       {
         "who": "Rohan",
-        "key": "reunión semanal",
+        "key": "weekly meeting",
         "value": "jueves"
       }
     ],
     "notHolds": [
       {
         "who": "Rohan",
-        "key": "reunión semanal",
+        "key": "weekly meeting",
         "value": "martes"
       }
     ],
@@ -47,15 +47,18 @@
     "card": {
       "has": [
         "Rohan",
-        "jueves 10:00",
-        "martes 10:00"
+        "weekly meeting",
+        "jueves",
+        "martes",
+        "10:00"
       ],
       "title": "Rohan"
     },
     "changes": [
       "Rohan",
-      "martes 10:00",
-      "jueves 10:00"
+      "martes",
+      "jueves",
+      "10:00"
     ],
     "judged": 1
   },

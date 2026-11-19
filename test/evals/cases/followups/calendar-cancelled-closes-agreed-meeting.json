@@ -1,0 +1,47 @@
+{
+  "suite": "followups",
+  "behaviour": "an agreed meeting called off on the calendar is closed: nothing is owed any more",
+  "origin": "changed overnight: a cancelled event ends the agreed meeting's loop",
+  "input": {
+    "timeZone": "Europe/London",
+    "ownerName": "Harriet",
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0PIA",
+          "label": "Pia Lund (private)",
+          "msgs": [
+            {
+              "at": "2026-11-17 11:00",
+              "who": "Pia Lund",
+              "text": "Great, let's do the budget walkthrough Wednesday 15:00, I'll book a room"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"agreed_meeting\",\"title\":\"Budget walkthrough with Pia\",\"detail\":\"Pia agreed on Slack.\",\"who\":\"Pia\",\"due\":\"2026-11-18 15:00\",\"tz\":\"Europe/London\",\"check\":\"calendarEvent\",\"hints\":[\"budget\",\"Pia\"]}],\"closes\":[]}"
+      },
+      {
+        "calendar": [
+          {
+            "kind": "cancelled",
+            "title": "Budget walkthrough",
+            "start": "2026-11-18 15:00",
+            "at": "2026-11-18 07:00"
+          }
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "agreed_meeting",
+        "who": "Pia",
+        "titleHas": [
+          "budget"
+        ]
+      }
+    ],
+    "open": []
+  }
+}

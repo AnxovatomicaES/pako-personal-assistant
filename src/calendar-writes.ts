@@ -19,6 +19,8 @@ const RESEND_MS = 2 * 60_000;
 /** Never fetched: the Mac app is not running; the owner is told it did not happen. */
 const EXPIRE_MS = 30 * 60_000;
 const KEEP_MS = 7 * 24 * 3600_000;
+/** A move or delete whose event the Mac could not find: said so, never "deleted". */
+const NOT_FOUND = "it wasn't found on your Mac's calendars (deleted or moved already?)";
 
 export type WriteOp = "move" | "create" | "delete";
 
@@ -42,6 +44,13 @@ export interface CalendarWrite {
   error?: string;
   /** This write undoes another (its id). */
   undoOf?: string;
+  /**
+   * move, delete: the event as this Mac's calendar showed it when the owner said yes. What Undo puts back when the Mac's own "before" is lost:
+   * a move made, the app restarted before answering, and sent again (the second try sees the new times), or a delete sent again (nothing left).
+   */
+  was?: { start: number; end: number; title?: string; calendarId?: string; location?: string };
+  /** How many times it was sent to the Mac (more than once: the app restarted mid-way). */
+  sends?: number;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -107,7 +116,25 @@ export function createCalendarWrites(d: {
                 ...(str(b.calendarId, 200) ? { calendarId: str(b.calendarId, 200) } : {}), ...(str(b.location, 200) ? { location: str(b.location, 200) } : {}),
               }
             : undefined;
-          Object.assign(w, { status: "done", result: { ...(str(r.eventId, 300) ? { eventId: str(r.eventId, 300) } : {}), ...(before ? { before } : {}) } });
+          const resent = (w.sends ?? 1) > 1;
+          if (w.op === "delete" && !before && !(resent && w.was)) {
+            // Nothing was there to delete (an older app answers ok with nothing before): it was not deleted, and there is nothing to Undo.
+            Object.assign(w, { status: "failed", error: NOT_FOUND });
+            finished.push(w);
+            continue;
+          }
+          // Sent again after a restart: the first try's "before" is lost (a move now sees its new times, a delete finds nothing). What the
+          // calendar showed when the owner said yes stands in, so Undo puts it back where it was.
+          const reapplied = w.op === "move" && before && before.start === w.start && before.end === w.end;
+          const kept = (reapplied || (w.op === "delete" && !before)) && w.was
+            ? (w.op === "move" ? { start: w.was.start, end: w.was.end } : w.was)
+            : before;
+          Object.assign(w, { status: "done", result: { ...(str(r.eventId, 300) ? { eventId: str(r.eventId, 300) } : {}), ...(kept ? { before: kept } : {}) } });
+        } else if (r.notFound === true && w.op === "delete" && (w.sends ?? 1) > 1 && w.was) {
+          // The first try deleted it and the app restarted before saying so: deleted, and Undo brings it back.
+          Object.assign(w, { status: "done", result: { before: w.was } });
+        } else if (r.notFound === true) {
+          Object.assign(w, { status: "failed", error: NOT_FOUND });
         } else {
           Object.assign(w, { status: "failed", error: str(r.error, 200) || "the Mac could not make the change" });
         }
@@ -120,7 +147,7 @@ export function createCalendarWrites(d: {
         }
       }
       const due = list.filter((w) => w.status === "queued" || (w.status === "sent" && t - (w.sentAt ?? 0) > RESEND_MS));
-      for (const w of due) Object.assign(w, { status: "sent", sentAt: t });
+      for (const w of due) Object.assign(w, { status: "sent", sentAt: t, sends: (w.sends ?? 0) + 1 });
       await save(list);
       return due.map(({ id, op, eventId, at, start, end, title, location, calendarId }) => ({ id, op, eventId, at, start, end, title, location, calendarId }));
     });

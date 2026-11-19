@@ -23,19 +23,22 @@ import { homedir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createWindowsAutostart } from "./autostart-windows.ts";
-import { texts, type Lang } from "./i18n.ts";
+import { npmCommand, texts, type Lang } from "./i18n.ts";
 import { lockHolder, pakoHome } from "./local.ts";
 
 type Env = Record<string, string | undefined>;
 
+/** npm as typed here (npm.cmd on Windows: a bare npm is refused by PowerShell's default policy). */
+const NPM = npmCommand();
+
 const T = texts(
   {
-    unsupported: "Starting by itself isn't available on this system yet: start Pako with npm start.",
+    unsupported: `Starting by itself isn't available on this system yet: start Pako with ${NPM} start.`,
     inApp: "In Pako for Mac, starting by itself belongs to the app: Start with this Mac, in its menu-bar menu.",
     root: "Pako won't set itself to start as root: do this as your usual user, without sudo.",
     badPath: "The path {path} has a line break: move Pako to a folder with an ordinary name and try again.",
     noWrite: "I couldn't write {file} ({code}). Check there's free space and permission, then try again.",
-    noSystemd: "systemd for your user isn't answering here (systemctl --user: {why}). Start Pako with npm start, or with the service manager you use.",
+    noSystemd: `systemd for your user isn't answering here (systemctl --user: {why}). Start Pako with ${NPM} start, or with the service manager you use.`,
     noLaunchd: "launchctl couldn't start it now ({why}): it will start the next time you log in.",
     on: "Pako will start by itself every time you log in ({file}).",
     started: "It's starting in the background now.",
@@ -44,12 +47,13 @@ const T = texts(
     keepsRunning: "The Pako running now keeps going until you stop it or log out.",
     linger: "To start it when the computer starts, before you log in: loginctl enable-linger {user} (it may ask for sudo).",
     logs: "What it writes is kept in {dir}.",
-    panel: "To open the panel: npm run panel, in {repo}.",
+    panel: `To open the panel: ${NPM} run panel, in {repo}.`,
     statusOn: "Autostart: on ({file}).",
     statusStale: "Autostart: on, but for another folder or another Node.js, perhaps since upgraded or removed ({file}). Turn it on again: --autostart on.",
-    busy: "Not starting it now: a Pako is already running in another terminal (process {pid}). Stop it with Ctrl+C and start the new one with npm start; it will start by itself when you log in.",
+    busy: `Not starting it now: a Pako is already running in another terminal (process {pid}). Stop it with Ctrl+C and start the new one with ${NPM} start;`
+      + " it will start by itself when you log in.",
     statusOff: "Autostart: off.",
-    usage: "Usage: node src/server.ts --autostart on|off|status (or npm run autostart -- on).",
+    usage: `Usage: node src/server.ts --autostart on|off|status (or ${NPM} run autostart -- on).`,
     logOn: "Autostart turned on from the panel",
     logOff: "Autostart turned off from the panel",
   },

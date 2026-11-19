@@ -1,0 +1,72 @@
+{
+  "suite": "brief",
+  "behaviour": "a London owner's board prep with an investor is marked worth preparing, with what Pako knows of the person and what is still owed",
+  "origin": "meeting prep: the day's item carries prep, the person fact rides along",
+  "input": {
+    "timeZone": "Europe/London",
+    "now": "2026-11-18 07:45",
+    "read": [
+      "slack",
+      "zoom",
+      "calendar",
+      "mail"
+    ],
+    "facts": [
+      {
+        "id": "E1",
+        "kind": "event",
+        "icon": "calendar",
+        "label": "today 14:00 · Board prep with Erin Walsh",
+        "text": "today 14:00–15:00 · Board prep with Erin Walsh · Zoom",
+        "at": "2026-11-18 14:00",
+        "end": "2026-11-18 15:00",
+        "title": "Board prep with Erin Walsh"
+      },
+      {
+        "id": "E2",
+        "kind": "event",
+        "icon": "calendar",
+        "label": "today 12:30 · Lunch",
+        "text": "today 12:30–13:15 · Lunch",
+        "at": "2026-11-18 12:30",
+        "end": "2026-11-18 13:15",
+        "title": "Lunch"
+      },
+      {
+        "id": "L1",
+        "kind": "loop",
+        "icon": "mail",
+        "label": "Email, Mon 16/11 18:10",
+        "text": "promised to you · Email, Mon 16/11 18:10 · due: today 12:00 · Get the Q3 investor update from Erin · who: Erin Walsh · what Pako checked: nothing from Erin in the thread since",
+        "ref": "d1d1d1d1d1",
+        "at": "2026-11-18 12:00"
+      },
+      {
+        "id": "N1",
+        "kind": "person",
+        "icon": "people",
+        "label": "People · Erin Walsh",
+        "text": "what Pako knows of Erin Walsh: relation: lead investor, board member (since 1 Feb) · last agreed: «October board», 21 Oct: you agreed to bring the hiring plan to the next prep"
+      }
+    ],
+    "recorded": "{\"opening\":\"One meeting that matters: the board prep with Erin at 14:00.\",\"todos\":[{\"title\":\"Bring the hiring plan to the board prep\",\"context\":\"You agreed at the October board to bring it to the next prep with Erin.\",\"checked\":\"\",\"sources\":[\"E1\",\"N1\"]},{\"title\":\"Check Erin sent the Q3 investor update\",\"context\":\"She promised it by email for 12:00; nothing in the thread yet.\",\"checked\":\"Pako sees nothing from Erin since Monday.\",\"sources\":[\"L1\"],\"loopId\":\"L1\"}],\"updates\":[],\"day\":[{\"time\":\"12:30\",\"end\":\"13:15\",\"title\":\"Lunch\",\"confirmed\":true,\"note\":\"\",\"sources\":[\"E2\"]},{\"time\":\"14:00\",\"end\":\"15:00\",\"title\":\"Board prep with Erin Walsh\",\"confirmed\":true,\"note\":\"Bring the hiring plan\",\"prep\":true,\"sources\":[\"E1\",\"N1\"]}]}",
+    "lang": "en"
+  },
+  "expect": {
+    "day": [
+      {
+        "time": "14:00",
+        "titleHas": [
+          "Board prep"
+        ],
+        "confirmed": true,
+        "prep": true
+      }
+    ],
+    "todoCites": [
+      [
+        "N1"
+      ]
+    ]
+  }
+}

@@ -173,40 +173,44 @@ function openBrowser(url) {
   }
 }
 
+/** npm as typed here: npm.cmd on Windows, where PowerShell's default policy refuses the npm.ps1 a bare `npm` runs. */
+var NPM = process.platform === "win32" ? "npm.cmd" : "npm";
+
 /** The sentences for each way it can go (English, like all of Pako's own words). */
 var SAY = {
   notStarted: function (home) {
-    return ["Pako has not started with the folder " + home + " yet. Start it with npm start in the Pako folder: it opens the panel by itself."];
+    return ["Pako has not started with the folder " + home + " yet. Start it with " + NPM + " start in the Pako folder: it opens the panel by itself."];
   },
   notRunning: function () {
-    return ["Pako is not running. Start it with npm start in the Pako folder: it opens the panel by itself."];
+    return ["Pako is not running. Start it with " + NPM + " start in the Pako folder: it opens the panel by itself."];
   },
   starting: function (pid, port) {
     return [
       "Pako is starting (process " + pid + ") but does not answer on port " + port + " yet. Look at its terminal: if it asks what to call you,"
-        + " answer. Then run npm run panel again.",
+        + " answer. Then run " + NPM + " run panel again.",
     ];
   },
   older: function (pid) {
     return [
-      "The running Pako (process " + pid + ") is from before npm run panel: restart it once (Ctrl+C in its terminal, then npm start) and it opens"
+      "The running Pako (process " + pid + ") is from before " + NPM + " run panel: restart it once (Ctrl+C in its terminal, then " + NPM + " start) and it opens"
         + " the panel with a fresh link.",
     ];
   },
   otherHome: function (port, home) {
     return [
-      "The Pako on port " + port + " does not use the folder " + home + ": it was started with another one (PAKO_HOME). Ask with that one: PAKO_HOME=that/folder npm run panel",
+      "The Pako on port " + port + " does not use the folder " + home + ": it was started with another one (PAKO_HOME). Ask with that one: "
+        + (process.platform === "win32" ? "$env:PAKO_HOME=\"that\\folder\"; " : "PAKO_HOME=that/folder ") + NPM + " run panel",
     ];
   },
   noRoute: function (port) {
-    return ["Whatever answers on port " + port + " gives no links: it is not a Pako of this folder. If Pako has stopped, start it with npm start."];
+    return ["Whatever answers on port " + port + " gives no links: it is not a Pako of this folder. If Pako has stopped, start it with " + NPM + " start."];
   },
   tooMany: function () {
     return ["Too many links in a row: wait a few minutes and try again."];
   },
   broken: function (port, why) {
     return [
-      "Pako is not answering properly on port " + port + " (" + why + "). If it is stuck, stop it with Ctrl+C in its terminal and start it again with npm start.",
+      "Pako is not answering properly on port " + port + " (" + why + "). If it is stuck, stop it with Ctrl+C in its terminal and start it again with " + NPM + " start.",
     ];
   },
 };

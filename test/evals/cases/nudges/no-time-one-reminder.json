@@ -16,7 +16,7 @@
             }
           ]
         },
-        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Revisar el borrador de propuesta de Nadia\",\"detail\":\"Nadia lo pidió por Slack.\",\"who\":\"Nadia\",\"check\":\"slackReply\"}],\"closes\":[]}"
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Review Nadia's draft of the proposal\",\"detail\":\"Nadia asked on Slack.\",\"who\":\"Nadia\",\"check\":\"slackReply\"}],\"closes\":[]}"
       }
     ],
     "timeline": {
@@ -30,7 +30,7 @@
         "to": "2026-11-16 11:30",
         "has": [
           "Nadia",
-          "propuesta"
+          "proposal"
         ]
       }
     ]

@@ -6,7 +6,11 @@
 // script, a link as words that are never loaded). Done and Move to… change Pako's own records only, never the owner's real mailbox.
 // Its words are English only (the owner's decision).
 
+import { localeFor } from "./i18n.js";
+
 const $ = (s, root = document) => root.querySelector(s);
+/** Dates written the way the owner's country writes English (i18n.js localeFor): 5:00 PM in the US, 17:00 elsewhere. */
+const localeOf = () => localeFor(globalThis.document?.documentElement?.dataset?.region);
 const UNDO_MS = 8_000;
 
 export const CATEGORIES = ["needs_you", "waiting", "important", "personal", "updates", "read_later", "promotions", "suspicious"];
@@ -55,12 +59,12 @@ export function age(at, now = Date.now()) {
   return d === 1 ? "yesterday" : `${d} days`;
 }
 /** A due time in words: "overdue", "today 17:00", "Fri 20 Nov". */
-export function dueWords(at, now = Date.now()) {
+export function dueWords(at, now = Date.now(), locale = localeOf()) {
   if (at < now) return "overdue";
   const day = (t) => new Date(t).toDateString();
-  const time = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" }).format(at);
+  const time = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(at);
   if (day(at) === day(now)) return `today ${time}`;
-  return new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" }).format(at);
+  return new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", month: "short" }).format(at);
 }
 
 /** The tab counts: every category, 0 when none (the panel's tabs and the tests read it). */
@@ -133,7 +137,8 @@ function drawNeeds() {
         r.ask ? h("div", { class: "what" }, r.ask) : null,
         r.dueAt ? h("div", { class: `due${r.overdue ? " late" : ""}` }, icon("clock"), dueWords(r.dueAt)) : null),
       h("button", { type: "button", class: "btn done-btn", onclick: () => markDone(r.id), "aria-label": `Mark the mail from ${r.from} as done` }, icon("check"), "Done")))),
-    more ? h("p", { class: "needs-more" }, h("a", { href: "#h-mail", onclick: () => pickTab("needs_you") }, `+${more} more · open Mail`)) : null,
+    // replaceChildren writes a null as the word "null": nothing at all when there is no more.
+    ...(more ? [h("p", { class: "needs-more" }, h("a", { href: "#h-mail", onclick: () => pickTab("needs_you") }, `+${more} more · open Mail`))] : []),
   );
   paint();
 }
@@ -257,7 +262,7 @@ async function openReader(id) {
     return;
   }
   const m = r.item;
-  const when = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" }).format(m.at);
+  const when = new Intl.DateTimeFormat(localeOf(), { dateStyle: "medium", timeStyle: "short" }).format(m.at);
   const link = showLink(r.link) ? h("a", { class: "btn primary", href: r.link.url, target: "_blank", rel: "noopener noreferrer" }, icon("external-link"), r.link.label) : null;
   dlg.replaceChildren(
     h("header", { class: "reader-head" },

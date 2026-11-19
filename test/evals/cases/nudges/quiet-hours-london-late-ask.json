@@ -1,0 +1,49 @@
+{
+  "suite": "nudges",
+  "behaviour": "a London owner asked at 23:30 for the figures by 9:30 tomorrow: nothing in the night, the reminders come from 08:00 and before 09:30",
+  "origin": "the quiet hours (23:00 to 08:00) for a UK owner",
+  "input": {
+    "timeZone": "Europe/London",
+    "ownerName": "Harriet",
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0OWEN",
+          "label": "Owen Hart (private)",
+          "msgs": [
+            {
+              "at": "2026-11-17 23:30",
+              "who": "Owen Hart",
+              "text": "sorry for the late one, can you send me the Q3 figures by 9:30 tomorrow?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send Owen the Q3 figures\",\"detail\":\"Owen asked on Slack late at night.\",\"who\":\"Owen\",\"due\":\"2026-11-18 09:30\",\"tz\":\"Europe/London\",\"check\":\"slackReply\"}],\"closes\":[]}"
+      }
+    ],
+    "timeline": {
+      "until": "2026-11-18 10:30"
+    }
+  },
+  "expect": {
+    "cards": [
+      {
+        "from": "2026-11-18 08:00",
+        "to": "2026-11-18 08:30",
+        "has": [
+          "Owen",
+          "Q3 figures",
+          "09:30"
+        ]
+      },
+      {
+        "from": "2026-11-18 08:30",
+        "to": "2026-11-18 09:30",
+        "has": [
+          "Not long now",
+          "Q3 figures"
+        ]
+      }
+    ]
+  }
+}

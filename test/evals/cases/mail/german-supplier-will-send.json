@@ -1,0 +1,16 @@
+{
+  "suite": "mail",
+  "behaviour": "a German supplier says he will send the quote by Wednesday: Waiting, nothing for the owner now",
+  "origin": "a non-English sender's promise",
+  "input": {
+    "from": "Jonas Weber <j.weber@maschinen.example>",
+    "subject": "Ihre Anfrage",
+    "text": "Guten Tag, vielen Dank für Ihre Anfrage. Ich schicke Ihnen das Angebot bis Mittwoch. Mit freundlichen Grüßen, Jonas Weber",
+    "recorded": "WAITING\nWHY: Jonas will send the quote by Wednesday\nLOOP: Send the quote | Jonas Weber | 2026-11-18\nJonas thanks you for the request and will send the quote by Wednesday."
+  },
+  "expect": {
+    "category": "waiting",
+    "ask": false,
+    "notify": false
+  }
+}

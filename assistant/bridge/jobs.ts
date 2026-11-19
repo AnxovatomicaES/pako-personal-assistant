@@ -130,13 +130,15 @@ export function mountJobs(b: AfterLanguage) {
     let text = "";
     try {
       // The morning brief without a run (over the budget, or Claude's limit) is answered empty at once: the server then sends the brief it
-      // builds by itself, on time, instead of waiting for a reset. A document asked from the page is the owner's own and always runs.
-      const kind: RunKind = rehearsal(id) ? "rehearsal" : job.kind === "brief" ? "brief" : "task";
+      // builds by itself, on time, instead of waiting for a reset. A document asked from the page is the owner's own and always runs. The brief
+      // and a draft run on the writing model (runs.ts).
+      const kind: RunKind = rehearsal(id) ? "rehearsal" : job.kind === "brief" ? "brief" : job.draft ? "draft" : "task";
       const r = await background(kind, `${job.kind}\n${job.text}`, prompt, { ...config, tools: [], systemPrompt: system });
       if ("skipped" in r) log(`brief ${id.slice(-8)}: no run (${r.skipped === "cap" ? "over today's background budget" : "Claude's limit"}): the server sends its own`);
       else {
         text = r.text.slice(0, 30_000);
-        log(`brief ${job.kind} ${id.slice(-8)}: ${text.length} chars, $${r.costUsd.toFixed(4)}`);
+        const what = kind === "draft" ? "draft" : job.kind;
+        log(`brief ${what} ${id.slice(-8)}: ${text.length} chars, $${r.costUsd.toFixed(4)}${r.model ? `, ${r.model}` : ""}`);
       }
     } catch (err) {
       const kind = err instanceof ClaudeError ? err.kind : "other";

@@ -4,6 +4,8 @@
 import type { Control } from "../control.ts";
 import type { Lang } from "../i18n.ts";
 import type { Kv } from "../kv.ts";
+import type { LessonsPort } from "../lessons.ts";
+import type { PersonBlock } from "../person-context.ts";
 import type { Inbound } from "../whatsapp.ts";
 
 export const LOOP_KINDS = ["request_to_owner", "owner_promise", "other_promise", "agreed_meeting", "deadline"] as const;
@@ -19,6 +21,8 @@ export interface Where {
   channel?: string;
   /** The Slack thread it was said in (its parent's ts), when it was in one. */
   thread?: string;
+  /** The email thread it was said in (src/mail-body.ts mailThreadKey): a later email of that thread can close it. */
+  mailThread?: string;
 }
 
 /** How the server sees that it was done. `around`: the time it is for (ms), when one was said. */
@@ -111,11 +115,43 @@ export interface Batch {
   msgs: BatchMsg[];
 }
 
+/**
+ * One email for the follow-ups' reading (src/mail-followups.ts): who, to whom, when, its subject and its words as cleaned (src/mail-body.ts
+ * cleanMailBody, at most about 4,000 characters). `mine`: the owner sent it (their Sent folder). `closed`: the owner already answered it (a
+ * catch-up). Its words wait in a batch only until the thread's job is queued.
+ */
+export interface MailSeen {
+  /** The mailbox's id for it (an inbox email), or "sent:<hash>" for one the owner sent. */
+  ref: string;
+  thread: string;
+  at: number;
+  from: string;
+  to: string;
+  cc: string;
+  subject: string;
+  body: string;
+  mine?: boolean;
+  closed?: boolean;
+}
+/** An email thread's new mail, gathered for a few minutes before it becomes one job. */
+export interface MailBatch {
+  thread: string;
+  where: Where;
+  firstAt: number;
+  mails: MailSeen[];
+}
+
 export interface FollowupsState {
   loops: Loop[];
   rules: LearnedRule[];
   jobs: Job[];
   batches: Batch[];
+  /** Email threads waiting to become jobs. */
+  mailBatches: MailBatch[];
+  /** The emails already read for follow-ups (their refs): none is ever sent to the model twice. */
+  mailRead: string[];
+  /** Email jobs queued on `day` (the owner's day): at most FollowupsConfig.mailPerDay. */
+  mailBudget: { day: string; n: number };
   /** Nudges given on `day` (the owner's day, "YYYY-MM-DD"). */
   budget: { day: string; n: number };
 }
@@ -126,6 +162,11 @@ export interface FollowupsConfig {
   batchMs: number;
   /** Minutes of the day [start, end) with no nudges (start > end crosses midnight); null = none. */
   quiet: { start: number; end: number } | null;
+  /**
+   * Email reading jobs a day (FOLLOWUP_MAIL_JOBS_PER_DAY, 40 by default; 0: the mail's own triage lines only, as before). A thread's mail
+   * gathered into one job counts once.
+   */
+  mailPerDay?: number;
 }
 
 /** A Slack message kept for the owner (src/slack.ts observe). */
@@ -206,6 +247,13 @@ export interface FollowupsDeps {
   who?: (name: string) => string;
   /** What else Pako said on its own today (src/proactive.ts suggestions): the day's budget is shared. */
   othersToday?: () => Promise<number>;
+  /** What Pako learned from the owner's corrections (src/lessons.ts): "Not mine" kept as a lesson, and the lessons each extraction reads. */
+  lessons?: LessonsPort;
+  /**
+   * What the owner's memory says about the people of a job (src/person-context.ts many: names, Slack ids, addresses), at most three blocks:
+   * who they are to the owner, what was last agreed, what is open with them. Absent: the job carries none.
+   */
+  people?: (words: string[]) => Promise<PersonBlock[]>;
 }
 
 /** The quiet 👍/👎 under a card: buttons where the chat has room for more than three, else a line answered by text. */
@@ -266,9 +314,15 @@ export interface FollowupsDoor {
   command(): Promise<string>;
   context(): Promise<string[]>;
   result(jobId: string, raw: string): Promise<{ ok: boolean; added: number }>;
-  offer(o: { source: "mail" | "meeting"; ref: string; label: string; text: string; at?: number; closed?: boolean }): Promise<boolean>;
+  /** `people`: who the text involves (names, addresses), for what the owner's memory says of them (src/person-context.ts). */
+  offer(o: { source: "mail" | "meeting"; ref: string; label: string; text: string; at?: number; closed?: boolean; people?: string[] }): Promise<boolean>;
   /** The mail triage's loops for one email (src/followups/mail.ts); absent on an engine from before. */
-  fromMail?(o: { ref: string; label: string; at: number; loops: unknown[]; closed?: boolean }): Promise<number>;
+  fromMail?(o: { ref: string; label: string; at: number; loops: unknown[]; closed?: boolean; thread?: string }): Promise<number>;
+  /**
+   * One email for the follow-ups to read whole (src/followups/mail-jobs.ts): added to its thread's batch (a few minutes, then one job). False
+   * when it is not taken: read already, no words, or the day's email jobs are spent (the caller falls back to the triage's own lines).
+   */
+  observeMail?(m: MailSeen, label: string): Promise<boolean>;
   /** A new email from these people: what they owed the owner by mail is closed. */
   answered?(o: { who: string[]; ref: string }): Promise<number>;
   /**

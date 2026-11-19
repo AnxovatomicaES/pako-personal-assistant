@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import { waLink } from "../links.ts";
 import { MAX_SEEN } from "./inbox.ts";
 import { TYPED_NUMBER_MS, SEND_DAILY, SEND_PER_NUMBER_DAILY, REPLY_FORWARD_MS } from "./shared.ts";
-import { callingCode, nationalNumber, phoneCountry } from "../region.ts";
+import { callingCode, nationalNumber, phoneCountry, withoutTrunkZero } from "../region.ts";
 import type { Door } from "./door.ts";
 import type { Handler } from "./incoming.ts";
 
@@ -16,7 +16,7 @@ type Part = Pick<
 
 /** The digits of a typed number with its country code: as written when it has + or 00, else read as a national number of the owner's country. */
 const international = (raw: string): string => {
-  const digits = raw.replace(/\D/g, "");
+  const digits = withoutTrunkZero(raw).replace(/\D/g, "");
   if (/^\s*(?:\+|00)/.test(raw)) return digits.replace(/^00/, "");
   return (nationalNumber(digits) ?? digits).replace(/^\+/, "");
 };
@@ -53,7 +53,7 @@ export function mountMessages(door: Door): Part {
 
   const rememberNumbers = (text: string, at: number): void => {
     for (const m of text.matchAll(/\+?\d[\d\s().-]{6,20}\d/g)) {
-      const digits = m[0].replace(/\D/g, "");
+      const digits = withoutTrunkZero(m[0]).replace(/\D/g, "");
       if (digits.length >= 8 && digits.length <= 15) ownerNumbers.push({ digits, at });
     }
     while (ownerNumbers.length > 30) ownerNumbers.shift();
@@ -64,7 +64,7 @@ export function mountMessages(door: Door): Part {
     const friend = d.contactByName?.(to) ?? null;
     if (friend) return { label: friend.name, digits: friend.number.replace(/\D/g, "") };
     if (!/^\+\d[\d\s().-]{6,20}$/.test(to.trim())) return null;
-    const digits = to.replace(/\D/g, "");
+    const digits = withoutTrunkZero(to.trim()).replace(/\D/g, "");
     return digits.length >= 8 && digits.length <= 15 && ownerNumbers.some((n) => n.digits === digits && at - n.at < TYPED_NUMBER_MS) ? { label: `+${digits}`, digits } : null;
   };
 

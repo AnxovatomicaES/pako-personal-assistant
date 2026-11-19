@@ -38,6 +38,12 @@ export const fill = (s: string, vars?: Record<string, string | number>): string 
   vars ? s.replace(/\{(\w+)\}/g, (m, k: string) => (Object.hasOwn(vars, k) ? String(vars[k]) : m)) : s;
 
 /**
+ * npm as a person types it on this system: npm.cmd on Windows, where PowerShell picks npm.ps1 for a bare `npm` and its default execution
+ * policy refuses it ("running scripts is disabled on this system"); npm everywhere else.
+ */
+export const npmCommand = (platform: string = process.platform): string => (platform === "win32" ? "npm.cmd" : "npm");
+
+/**
  * A module's fixed texts, English only.
  *
  *   const T = texts({ hi: "Hi, {name}." });

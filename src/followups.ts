@@ -1,5 +1,6 @@
 // Follow-ups: the commitments engine. What other people asked of the owner, what the owner promised, meetings agreed and deadlines, found in
-// the owner's Slack (the messages kept for them), in the mail summaries and in meeting outcomes; checked later; and the owner reminded once,
+// the owner's Slack (the messages kept for them), in their email (the real words, src/mail-followups.ts), and in meeting outcomes; checked
+// later; and the owner reminded once,
 // only when the check finds it not done.
 //
 // - Extraction never runs here: each conversation's new messages (gathered for a few minutes), with its last messages and the owner's own
@@ -25,7 +26,7 @@ export { LOOPS_MAX, FOLLOWUP_BUTTON, jobInboxId } from "./followups/limits.ts";
 export { LOOP_KINDS } from "./followups/types.ts";
 export type {
   LoopKind, LoopStatus, SourceKind, Where, Check, LoopSource, Loop, LearnedRule, Job, FollowupsState, FollowupsConfig, SlackSeen, SlackLine,
-  ZoomSeen, EventSeen, FollowupsDeps, CardFeedback, FollowupsQuality, DraftInput, WouldBe, DryOutcome, FollowupsDoor,
+  ZoomSeen, EventSeen, FollowupsDeps, CardFeedback, FollowupsQuality, DraftInput, WouldBe, DryOutcome, FollowupsDoor, MailSeen, MailBatch,
 } from "./followups/types.ts";
 export { loadFollowupsConfig } from "./followups/config.ts";
 export { zoneOf, zoneName, zonedTime } from "./followups/time.ts";

@@ -149,6 +149,8 @@ export interface QualityDeps {
   timeZone: string;
   now?: () => number;
   lang?: () => Lang;
+  /** Each verdict kept, as the owner gave it: a 👎 is a correction Pako learns from (src/lessons.ts wrong). */
+  onVerdict?: (v: Omit<Verdict, "at">) => void;
 }
 
 interface Asking {
@@ -200,10 +202,16 @@ export function createQuality(d: QualityDeps) {
   const quietly = (p: Promise<unknown>, what: string): void => void p.catch((err: Error) => log.error(`${what}: ${err.message}`));
 
   /** One verdict per thing judged: a second press changes the first. */
-  const record = (v: Omit<Verdict, "at">): Promise<void> =>
-    mutate((s) => {
+  const record = async (v: Omit<Verdict, "at">): Promise<void> => {
+    await mutate((s) => {
       s.verdicts = [...s.verdicts.filter((x) => !(x.ref === v.ref && x.source === v.source)), { ...v, what: v.what.slice(0, WHAT_MAX), at: now() }];
     });
+    try {
+      d.onVerdict?.(v);
+    } catch (err) {
+      log.error(`a verdict's lesson failed: ${(err as Error).message}`);
+    }
+  };
 
   const thanks = (source: FeedbackSource, verdict: "up" | "down", l: Lang): string =>
     T(l)(verdict === "up" ? "thanksUp" : source === "nudge" ? "thanksDown" : "thanksBriefDown");

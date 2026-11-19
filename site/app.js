@@ -19,6 +19,7 @@ const narrow = () => window.innerWidth < 900;
 /** Where the figure sits in each section: [x, y, size] on a wide screen, and on a narrow one. */
 const LAYOUTS = {
   hero: [[2.85, 0.15, 0.95], [0, 1.55, 0.72]],
+  smart: [[4.6, 2.3, 0.34], [0, 2.7, 0.28]],
   statement: [[-4.4, 1.9, 0.42], [0, 2.6, 0.32]],
   day: [[-4.9, 2.35, 0.3], [0, 2.7, 0.28]],
   does: [[3.6, 1.6, 0.45], [0, 2.6, 0.35]],
@@ -92,7 +93,7 @@ function smooth() {
 
 // ---------- sections: where the figure goes, what it feels ----------
 function sections() {
-  const names = ["hero", "statement", "day", "does", "proactive", "safety", "mac", "how", "install", "faq", "final"];
+  const names = ["hero", "smart", "statement", "day", "does", "proactive", "safety", "mac", "how", "install", "faq", "final"];
   const els = names.map((n) => `section.${n}`); // section.: a class name alone (.mac) also matches a chip inside the bento
   const nodes = els.map((s) => $(s));
   let current = -1;
@@ -151,9 +152,9 @@ function reveals() {
 function day() {
   const steps = $$(".day-steps li");
   const msgs = $$(".msg");
-  const times = ["08:00", "11:20", "13:30", "17:45", "23:00"];
-  const labels = ["Morning brief", "A follow-up", "A table for four", "A reminder", "Quiet hours"];
-  const moods = ["speaking", "thinking", "happy", "speaking", "sleeping"];
+  const times = ["08:00", "09:20", "11:20", "13:30", "17:45"];
+  const labels = ["Morning brief", "Before a meeting", "A follow-up", "A calendar change", "A reminder"];
+  const moods = ["speaking", "thinking", "thinking", "happy", "speaking"];
   const clock = $(".clock-time");
   const label = $(".clock-label");
   const status = $(".phone-status");
@@ -177,7 +178,7 @@ function day() {
     gsap.fromTo(clock, { yPercent: 40, opacity: 0 }, { yPercent: 0, opacity: 1, duration: 0.6, ease: "expo.out" });
     clock.textContent = times[i];
     label.textContent = labels[i];
-    status.textContent = i === 4 ? "sleeping" : "online";
+    status.textContent = "online";
     stage?.setMood(moods[i]);
     if (i === 2) stage?.pulse();
   };

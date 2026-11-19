@@ -1,0 +1,25 @@
+{
+  "suite": "followups",
+  "behaviour": "a newsletter the triage filed as Important («register by Friday», «reply with your feedback») makes no loop",
+  "origin": "mail from the real body: a mailing's calls to action are not promises or requests to the owner",
+  "input": {
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-16 07:00",
+          "ref": "m-weekly",
+          "from": "The Product Weekly <weekly@productweekly.example>",
+          "to": "Alex <alex@acme.example>",
+          "subject": "This week: 5 launches, and our Friday webinar",
+          "category": "important",
+          "messageId": "<pw-482@productweekly.example>",
+          "body": "Hi there,\n\nHere are this week's five launches worth your time.\n\n1. Northwind ships offline sync.\n2. Tailspin opens its API.\n3. Contoso cuts prices by 20%.\n4. Fabrikam adds SSO.\n5. Litware goes open source.\n\nDon't miss our webinar on Friday at 17:00: register by Thursday to save your seat!\n\nReply to this email with your feedback by Wednesday and we'll feature the best answers.\n\nSee you next week,\nThe Product Weekly team\n\nYou are receiving this because you subscribed at productweekly.example. Unsubscribe any time."
+        },
+        "recorded": "{\"loops\":[],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": []
+  }
+}

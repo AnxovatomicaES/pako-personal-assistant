@@ -6,12 +6,14 @@
 //   - Set: the hosted way (docs/server.md, "Run it on a server"): WhatsApp is the chat, the phone line and the other connections work as configured.
 
 import { spawn } from "node:child_process";
-import { utimesSync } from "node:fs";
+import { existsSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createApp, loadAppConfig, STAND_IN_NAME, type LocalContext } from "./app.ts";
 import { lastingExitCode, runAutostartCli } from "./autostart.ts";
 import { appliedAtStart, applyStoredSettings } from "./connections.ts";
 import { createSettings, createLocalChannel, isLocalMode, loadEnvFiles, loadHome, localEnv, lockHome, openBrowser, pakoHome, superviseBridge } from "./local.ts";
+import { demoDir, demoEnv, demoStart, demoStartedAt, demoWanted, seedDemo } from "./demo.ts";
 import { unreadableNotice } from "./secrets.ts";
 import { sqliteKv } from "./sqlite-kv.ts";
 import { createLog } from "./log.ts";
@@ -90,9 +92,18 @@ async function main(): Promise<void> {
   let local: LocalContext | undefined;
   let bridge: ReturnType<typeof superviseBridge> | undefined;
   const localMode = isLocalMode(process.env);
-  if (localMode) {
+  // The demo week (src/demo.ts), on a computer only: its own folder and store, no connection, nothing sent.
+  const realHome = pakoHome(process.env);
+  const demo = localMode && demoWanted(process.env, process.argv, realHome);
+  if (demo) {
+    const gone = demoEnv(process.env);
+    if (gone.length) logPako.info(`demo week: ${gone.length} connection settings left out while it runs`);
+  }
+  if (localMode && !demo) {
     // The connections set in the panel (src/connections.ts), before anything reads the settings: the shell's and the files' values win.
     applyStoredSettings(pakoHome(process.env), process.env);
+  }
+  if (localMode) {
     const port = Number(process.env.PORT) || 8787;
     let home;
     try {
@@ -104,13 +115,34 @@ async function main(): Promise<void> {
       // Started by launchd or systemd, a code they do not start it again for: another Pako holds the folder (src/autostart.ts).
       process.exit(lastingExitCode(process.env));
     }
+    if (demo) {
+      // The real folder keeps its lock and its three run secrets (the browser stays signed in); everything else is the demo's folder: its
+      // store, its name and welcome, Claude Code's state, the papers. Its secrets stay in a file there (deleted with it).
+      if (demoStartedAt(home.dir) === null) demoStart(home.dir);
+      const dir = demoDir(home.dir);
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      const config = join(dir, "config.json");
+      if (!existsSync(config)) {
+        const real = createSettings(home.dir, process.env).name();
+        writeFileSync(config, JSON.stringify({ name: real || "Alex", welcomed: true }), { mode: 0o600 });
+      }
+      home.dir = dir;
+      process.env.PAKO_HOME = dir;
+      process.env.PAKO_SECRET_STORE = "file";
+    }
     // No question in this terminal: the panel's welcome asks for the name, and it applies at once (src/app.ts). PAKO_NAME
     // still wins. The phone line's settings need a name from the start: until one is given, a stand-in.
     const settings = createSettings(home.dir, process.env, home.firstRun === true);
     home.name = settings.name() || STAND_IN_NAME;
     Object.assign(process.env, localEnv(process.env, home, port));
     const kv = sqliteKv(home.dir);
+    if (demo) {
+      const timeZone = process.env.PERSONAL_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const seeded = await seedDemo(kv, { now: Date.now(), timeZone, name: home.name, briefUrl: `http://127.0.0.1:${port}` });
+      if (seeded) logPako.info("demo week: seeded");
+    }
     local = {
+      demo: { on: demo, home: realHome },
       kv,
       channel: createLocalChannel({ kv }),
       bridgeToken: home.bridgeToken,
@@ -237,8 +269,11 @@ async function main(): Promise<void> {
     // After a change of connections in the panel (src/connections-panel.ts): the same command again, so every module reads its settings anew.
     const entry = process.argv[1]!;
     /** False when it cannot restart (the panel then says the change applies at the next start, and takes changes again). */
-    app.locals.restart = (): boolean => {
+    /** `leaving`: the demo week ends (src/demo.ts), so a demo forced at start (PAKO_DEMO=1, --demo) is not forced again. */
+    app.locals.restart = (o: { leaving?: boolean } = {}): boolean => {
       if (stopping) return true;
+      if (o.leaving) delete startEnv.PAKO_DEMO;
+      const argv = o.leaving ? process.argv.filter((a) => a !== "--demo") : process.argv;
       // npm run dev: `node --watch` starts Pako again when its file changes, and first stops this one with SIGTERM (the shutdown above). Its
       // file is only touched: its contents stay as they are.
       if (process.env.WATCH_REPORT_DEPENDENCIES === "1") {
@@ -257,7 +292,7 @@ async function main(): Promise<void> {
           env: startEnv,
           execPath: process.execPath,
           execArgv: process.execArgv,
-          argv: process.argv,
+          argv,
           platform: process.platform,
           ipc: typeof process.send === "function",
           ...(execve ? { execve: execve.bind(process) } : {}),

@@ -10,6 +10,13 @@ import { createLog } from "../log.ts";
 
 const log = createLog("followups");
 
+/** The words the owner names a loop by: each one starts a word of its title or person ("deck" finds "decks"; "Ana" never finds "Mariana"). */
+const keysOf = (words: string): string[] => fold(words).split(/[^\p{L}\p{N}]+/u).filter((k) => k.length >= 2);
+const names = (keys: string[], l: Loop): boolean => {
+  const words = fold(`${l.title} ${l.who}`).split(/[^\p{L}\p{N}]+/u);
+  return keys.every((k) => words.some((w) => w.startsWith(k)));
+};
+
 export function mountOwner(fu: Engine): Pick<Engine, "press" | "open" | "command" | "context" | "closeByWords" | "calendarChanged" | "reopenClosed" | "forDraft" | "draftFacts"> {
   const { d, now, lang, mutate, read, dueText, sourceText } = fu;
   const press: FollowupsDoor["press"] = async (button, id) => {
@@ -31,6 +38,10 @@ export function mountOwner(fu: Engine): Pick<Engine, "press" | "open" | "command
         }
         Object.assign(l, { status: "dismissed", closedAt: now(), nextCheckAt: 0 });
         s.rules = [...s.rules, { at: now(), who: l.who, where: l.where.label, title: l.title }].slice(-RULES_MAX);
+        // The same press, kept as a lesson too (src/lessons.ts): the owner's own correction, which every next extraction reads.
+        void d.lessons?.notMine({
+          title: l.title, who: l.who, where: l.where.label, ...(l.where.channel ? { channel: l.where.channel } : {}), nudged: l.nudges > 0,
+        }).catch((err: Error) => log.error(`a "Not mine" could not be kept as a lesson: ${err.message}`));
         d.control?.log("followup", t("logLearned", { title: l.title }));
         return t("pressedNotMine", { title: l.title });
       });
@@ -84,10 +95,9 @@ export function mountOwner(fu: Engine): Pick<Engine, "press" | "open" | "command
     const shown = new Set((await open()).map((l) => l.id));
     await mutate((s) => {
       for (const w of words) {
-        const keys = fold(w).split(/\s+/).filter((k) => k.length >= 2);
+        const keys = keysOf(w);
         if (!keys.length) continue;
-        const hits = s.loops.filter((l) => shown.has(l.id) && l.status !== "done" && l.status !== "dismissed"
-          && keys.every((k) => fold(`${l.title} ${l.who}`).includes(k)));
+        const hits = s.loops.filter((l) => shown.has(l.id) && l.status !== "done" && l.status !== "dismissed" && names(keys, l));
         if (hits.length === 1) {
           const l = hits[0]!;
           out.closed.push({ id: l.id, title: l.title, status: l.status, nextCheckAt: l.nextCheckAt });
@@ -120,14 +130,14 @@ export function mountOwner(fu: Engine): Pick<Engine, "press" | "open" | "command
 
   const forDraft: Engine["forDraft"] = async (words) => {
     const list = (await open()).filter((l) => l.status === "open" || l.status === "snoozed");
-    const keys = fold(words).split(/\s+/).filter((k) => k.length >= 2);
+    const keys = keysOf(words);
     if (!keys.length) {
       // The one reminded of last, the last day: what a DRAFT right after a reminder means.
       const recent = list.filter((l) => l.nudges > 0 && l.checkedAt && now() - l.checkedAt < 24 * 3600_000).sort((a, b) => b.checkedAt! - a.checkedAt!);
       if (recent[0]) return { loop: recent[0] };
       return list.length === 1 ? { loop: list[0]! } : list.length ? { many: list.slice(0, 5).map((l) => l.title) } : { none: true };
     }
-    const hits = list.filter((l) => keys.every((k) => fold(`${l.title} ${l.who}`).includes(k)));
+    const hits = list.filter((l) => names(keys, l));
     return hits.length === 1 ? { loop: hits[0]! } : hits.length ? { many: hits.slice(0, 5).map((l) => l.title) } : { none: true };
   };
 

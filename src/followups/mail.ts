@@ -3,6 +3,7 @@
 // owed; and the panel's Done on a mail closes its loops the way the nudge's Hecho button does (and its Undo opens them again).
 
 import { fold } from "../lists.ts";
+import { MAIL_THREAD } from "../mail-body.ts";
 import type { Engine } from "./parts.ts";
 import { LOOPS_PER_JOB } from "./limits.ts";
 import { isOpen, newId } from "./record.ts";
@@ -10,7 +11,7 @@ import type { Job, Loop } from "./types.ts";
 
 export interface MailLoops {
   /** Loops the triage found in one email (candidates as the extraction gives them): kept like an answer to a job of that email. */
-  fromMail: (o: { ref: string; label: string; at: number; loops: unknown[]; closed?: boolean }) => Promise<number>;
+  fromMail: (o: { ref: string; label: string; at: number; loops: unknown[]; closed?: boolean; thread?: string }) => Promise<number>;
   /** A new email from these names or addresses: the open loops they owed the owner from mail are closed (they answered). */
   answered: (o: { who: string[]; ref: string }) => Promise<number>;
   /** Every loop (open or closed) that came from this email, newest first. */
@@ -26,7 +27,8 @@ export function mountMailLoops(fu: Engine): MailLoops {
   const fromMail: MailLoops["fromMail"] = (o) =>
     mutate((s) => {
       const label = o.label.slice(0, 120) || "mail";
-      const job: Job = { id: newId(), at: now(), source: "mail", where: { type: "mail", label }, whenSaid: o.at, label, ref: o.ref.slice(0, 200) };
+      const mailThread = o.thread && MAIL_THREAD.test(o.thread) ? { mailThread: o.thread } : {};
+      const job: Job = { id: newId(), at: now(), source: "mail", where: { type: "mail", label, ...mailThread }, whenSaid: o.at, label, ref: o.ref.slice(0, 200) };
       // Not trusted: the candidates come from a model's answer, so a check time in them is ignored, as for any job.
       const added = keep(s, job, o.loops, LOOPS_PER_JOB, false);
       // The owner already replied (a mailbox's catch-up): known, kept closed, never a nudge.
@@ -40,13 +42,16 @@ export function mountMailLoops(fu: Engine): MailLoops {
 
   const answered: MailLoops["answered"] = (o) =>
     mutate((s) => {
-      const names = o.who.map((w) => fold(w)).filter((w) => w.length >= 2);
+      // Whole words: "Ana" is Ana Ruiz or ana.ruiz@…, never Mariana or joana@….
+      const wordsOf = (x: string): string[] => fold(x.split("@")[0]!).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 2);
+      const names = o.who.map(wordsOf).filter((w) => w.length);
       if (!names.length) return 0;
       let n = 0;
       for (const l of s.loops) {
         if (!isOpen(l) || l.kind !== "other_promise" || l.where.type !== "mail" || l.sources.some((x) => x.ref === o.ref)) continue;
-        const who = fold(l.who);
-        if (!who || !names.some((x) => x === who || x.includes(who) || who.includes(x))) continue;
+        const who = wordsOf(l.who);
+        const within = (a: string[], b: string[]): boolean => a.every((w) => b.includes(w));
+        if (!who.length || !names.some((x) => within(who, x) || within(x, who))) continue;
         Object.assign(l, { status: "done", closedAt: now(), nextCheckAt: 0, lastCheck: "They answered by email." });
         n++;
       }

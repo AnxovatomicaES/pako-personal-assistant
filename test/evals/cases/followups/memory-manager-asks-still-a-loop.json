@@ -1,0 +1,56 @@
+{
+  "suite": "followups",
+  "behaviour": "the owner's memory knows Marcus as their manager: his ask for the churn numbers before tomorrow's 10:00 one-to-one is a loop, with the memory in the job",
+  "origin": "people memory reaches the extraction without stopping a real request",
+  "input": {
+    "timeZone": "America/Chicago",
+    "ownerName": "Sam",
+    "memory": {
+      "people": [
+        {
+          "name": "Marcus Lee",
+          "slack": "U0MARCUS"
+        }
+      ],
+      "facts": [
+        {
+          "who": "Marcus Lee",
+          "key": "relation",
+          "value": "my manager, VP Sales",
+          "since": "2026-01-10"
+        }
+      ]
+    },
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0MARCUS",
+          "label": "Marcus Lee (private)",
+          "msgs": [
+            {
+              "at": "2026-11-17 15:10",
+              "who": "Marcus Lee",
+              "text": "Can you pull the churn numbers before our 1:1 tomorrow at 10?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send Marcus the churn numbers\",\"detail\":\"Marcus asked on Slack for the churn numbers before your 1:1.\",\"who\":\"Marcus\",\"due\":\"2026-11-18 10:00\",\"tz\":\"America/Chicago\",\"check\":\"slackReply\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Marcus",
+        "titleHas": [
+          "churn"
+        ],
+        "dueLocal": "2026-11-18 10:00"
+      }
+    ],
+    "jobHas": [
+      "my manager, VP Sales"
+    ]
+  }
+}

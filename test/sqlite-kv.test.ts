@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sqliteKv } from "../src/sqlite-kv.ts";
@@ -53,6 +53,20 @@ test("sqliteKv: an older Pako's kv.json is copied in once, expired entries left 
   // The next start reads kv.db and does not copy anything again.
   writeFileSync(join(dir, "kv.json"), JSON.stringify({ note: { v: "stale", exp: 0 } }));
   assert.equal(await sqliteKv(dir, () => t).get("note"), "hola");
+});
+
+test("sqliteKv: a copy of kv.json that stopped halfway (an empty kv.db beside it) is done again at the next start, not lost", async () => {
+  const dir = tmp();
+  const t = 5_000_000;
+  // What a stop inside the copy's transaction leaves: kv.db made, with its table and nothing in it (SQLite rolled back), and kv.json as it was.
+  sqliteKv(dir, () => t);
+  rmSync(join(dir, "kv.db.made"), { force: true });
+  writeFileSync(join(dir, "kv.json"), JSON.stringify({ note: { v: "hola", exp: 0 } }));
+  writeFileSync(join(dir, "kv.json.made"), "x");
+  const kv = sqliteKv(dir, () => t);
+  assert.equal(await kv.get("note"), "hola", "the person's things were left behind in kv.json and Pako started empty");
+  assert.equal(kv.lost, null);
+  assert.ok(!existsSync(join(dir, "kv.json")), "copied and checked: the plaintext file is gone");
 });
 
 test("sqliteKv: a store that existed and is gone starts as 'missing', for kv.db and for an older Pako's kv.json", () => {

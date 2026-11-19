@@ -5,6 +5,8 @@
 // - On its own (src/proactive.ts, /panel/api/proactive): the topics Pako may suggest something about (each a chip: pressed is on; they cover
 //   the habit nudges, the lessons and the birthdays too), what it learnt of the owner's tastes and plans (never health: only how many such
 //   things it keeps), and the week's suggestions with what became of them. Off (PROACTIVE=off): the card says so.
+// - What Pako learned from you (src/lessons.ts, /panel/api/lessons): each correction kept as a short dated lesson (Not mine, an undo, a 👎,
+//   a draft changed before it was sent), how often it was taught, and a button that deletes one.
 // Saved with the strict session cookie and the x-pako header, like STOP. Everything is put on the page as text, never as HTML.
 
 import { localeFor } from "./i18n.js";
@@ -38,6 +40,14 @@ const WORDS = {
   st_sent: "", st_accepted: "accepted", st_declined: "no, thanks", st_less: "topic off",
   trabajo: "Work", comida: "Food", viajes: "Travel", ocio: "Fun", deporte: "Sport", aficiones: "Hobbies", bienestar: "Wellbeing",
   aprendizaje: "Learning", amigos: "Friends", topicFailed: "I couldn't change it. Try again.",
+  lessonsTitle: "What Pako learned from you",
+  lessonsLead: "When you press Not mine, undo something, give a 👎 or change a draft before you send it, I keep a short lesson and follow it "
+    + "next time: in the follow-ups I catch, the drafts I write and the brief. Delete any you don't want me to follow.",
+  noLessons: "Nothing yet.",
+  taught: "taught {n} times",
+  k_not_mine: "Not mine", k_wrong: "Not useful", k_undo: "Undone", k_draft_edit: "Draft changed",
+  draftWas: "My draft: {text}", draftSent: "You sent: {text}",
+  forget: "Delete this lesson: {text}", forgotten: "Deleted.", forgetFailed: "I couldn't delete it. Try again.",
 };
 /** Dates written the way the owner's country writes English (i18n.js localeFor). */
 const localeOf = () => localeFor(document.documentElement.dataset.region);
@@ -58,7 +68,7 @@ function h(tag, attrs = {}, ...children) {
   return el;
 }
 
-const st = { autonomy: null, life: null, auNote: "", lifeNote: "", card: null };
+const st = { autonomy: null, life: null, lessons: null, auNote: "", lifeNote: "", lessonsNote: "", card: null };
 
 async function saveAutonomy(choices) {
   try {
@@ -84,6 +94,18 @@ async function setTopic(topic, on) {
     st.lifeNote = t("topicFailed");
   }
   await loadLife();
+}
+
+async function forgetLesson(id) {
+  try {
+    const r = await fetch("/panel/api/lessons/delete", {
+      method: "POST", credentials: "same-origin", headers: { "x-pako": "1", "content-type": "application/json" }, body: JSON.stringify({ id }),
+    });
+    st.lessonsNote = r.ok ? t("forgotten") : t("forgetFailed");
+  } catch {
+    st.lessonsNote = t("forgetFailed");
+  }
+  await loadLessons();
 }
 
 const day = (at) => new Intl.DateTimeFormat(localeOf(), { day: "2-digit", month: "2-digit" }).format(new Date(at));
@@ -160,14 +182,35 @@ function lifePart() {
   ];
 }
 
+function lessonsPart() {
+  if (!st.lessons) return [];
+  const list = Array.isArray(st.lessons.lessons) ? st.lessons.lessons : [];
+  const head = [h("h3", { id: "h-acts-lessons" }, t("lessonsTitle")), h("p", { class: "muted" }, t("lessonsLead"))];
+  if (!list.length) return [...head, h("p", { class: "muted" }, t("noLessons"))];
+  const item = (x) => {
+    const text = str(x.text);
+    const kind = t(`k_${str(x.kind)}`);
+    const n = num(x.count);
+    const extra = [str(x.draft) ? t("draftWas", { text: str(x.draft).slice(0, 200) }) : "", str(x.sent) ? t("draftSent", { text: str(x.sent).slice(0, 200) }) : ""]
+      .filter(Boolean);
+    return h("li", { class: "lesson" },
+      h("span", {}, `${day(num(x.last))} · ${kind}: ${text} `),
+      n > 1 ? h("span", { class: "muted" }, `(${t("taught", { n })}) `) : "",
+      ...extra.map((e) => h("div", { class: "muted small" }, e)),
+      h("button", { class: "ic", type: "button", "aria-label": t("forget", { text }), onclick: () => void forgetLesson(str(x.id)) }, h("i", { "data-lucide": "x" })));
+  };
+  return [...head, h("ul", {}, ...list.slice(0, 60).map(item)), st.lessonsNote ? h("p", { role: "status" }, st.lessonsNote) : ""];
+}
+
 function paint() {
-  if (!st.card || (!st.autonomy && !st.life)) return;
+  if (!st.card || (!st.autonomy && !st.life && !st.lessons)) return;
   st.card.hidden = false;
   st.card.replaceChildren(
     h("div", { class: "card-head" }, h("h2", { id: "h-acts" }, h("i", { "data-lucide": "sparkles" }), h("span", {}, t("title")))),
     h("div", { "aria-live": "polite" },
       st.autonomy ? h("div", { class: "part" }, ...autonomyPart()) : "",
-      st.life ? h("div", { class: "part" }, ...lifePart()) : ""),
+      st.life ? h("div", { class: "part" }, ...lifePart()) : "",
+      st.lessons ? h("div", { class: "part" }, ...lessonsPart()) : ""),
   );
   window.lucide?.createIcons?.({ attrs: { "aria-hidden": "true" } });
 }
@@ -176,6 +219,16 @@ async function loadAutonomy() {
   try {
     const r = await fetch("/panel/api/autonomy", { credentials: "same-origin", cache: "no-store" });
     if (r.ok) st.autonomy = await r.json();
+  } catch {
+    /* the server is restarting: the next load asks again */
+  }
+  paint();
+}
+
+async function loadLessons() {
+  try {
+    const r = await fetch("/panel/api/lessons", { credentials: "same-origin", cache: "no-store" });
+    if (r.ok) st.lessons = await r.json();
   } catch {
     /* the server is restarting: the next load asks again */
   }
@@ -200,6 +253,7 @@ function mount() {
   slot.append(st.card);
   void loadAutonomy();
   void loadLife();
+  void loadLessons();
   setInterval(() => void loadLife(), 5 * 60_000);
 }
 

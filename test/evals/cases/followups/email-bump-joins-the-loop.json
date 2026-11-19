@@ -1,0 +1,52 @@
+{
+  "suite": "followups",
+  "behaviour": "a second email «just bumping this, any update on the W-9?» joins the open loop of the thread instead of making another",
+  "origin": "a re-ping by email, in the same thread",
+  "input": {
+    "timeZone": "America/Chicago",
+    "ownerName": "Sam",
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-16 10:00",
+          "ref": "m-w9",
+          "from": "Olivia Grant <ap@vendorco.example>",
+          "to": "Sam <sam@northwind.example>",
+          "subject": "W-9 needed",
+          "category": "needs_you",
+          "messageId": "<w1@vendorco.example>",
+          "body": "Hi Sam,\n\nCould you send us your company's W-9 so we can set you up as a vendor?\n\nThanks,\nOlivia"
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send Olivia the company W-9\",\"detail\":\"Olivia asked by email for the W-9.\",\"who\":\"Olivia\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      },
+      {
+        "mail": {
+          "at": "2026-11-18 09:30",
+          "ref": "m-w9b",
+          "from": "Olivia Grant <ap@vendorco.example>",
+          "to": "Sam <sam@northwind.example>",
+          "subject": "Re: W-9 needed",
+          "category": "needs_you",
+          "messageId": "<w2@vendorco.example>",
+          "inReplyTo": "<w1@vendorco.example>",
+          "references": "<w1@vendorco.example>",
+          "body": "Hi Sam, just bumping this up. Any update on the W-9?\n\nOlivia\n\nOn Mon, 16 Nov 2026, Olivia Grant <ap@vendorco.example> wrote:\n> Could you send us your company's W-9?"
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send Olivia the company W-9\",\"detail\":\"Olivia asked again by email.\",\"who\":\"Olivia\",\"check\":\"none\",\"reason\":\"email\",\"same\":\"{{loop1}}\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "merged": 1,
+    "open": [
+      {
+        "kind": "request_to_owner",
+        "who": "Olivia",
+        "titleHas": [
+          "W-9"
+        ]
+      }
+    ]
+  }
+}

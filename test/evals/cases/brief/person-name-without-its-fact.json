@@ -1,0 +1,19 @@
+{
+  "suite": "brief",
+  "label": "fail",
+  "behaviour": "a to-do that names Lena (known only from the person fact N1) but cites only the follow-up is caught",
+  "origin": "people memory in the brief: a name counts as known only when a cited fact holds it",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-18 08:00",
+    "read": ["mail", "people"],
+    "facts": [
+      { "id": "L1", "kind": "loop", "icon": "mail", "label": "Email, Mon 16/11 18:10", "ref": "c000000001", "text": "you promised · Email, Mon 16/11 18:10 · due: today 17:00 CET · Send Sofia the revised quote · who: Sofia Okafor", "at": "2026-11-18 17:00" },
+      { "id": "N1", "kind": "person", "icon": "people", "label": "People · Sofia Okafor", "text": "what Pako knows of Sofia Okafor: relation: client at Initech (since 1 Jun) · assistant: Lena Park books her meetings (since 3 Nov)" }
+    ],
+    "recorded": "{\"opening\":\"One promise due today.\",\"todos\":[{\"title\":\"Ask Lena Park to book time with Sofia for the quote\",\"sources\":[\"L1\"]}]}"
+  },
+  "expect": {
+    "todoCites": [["L1", "N1"]]
+  }
+}

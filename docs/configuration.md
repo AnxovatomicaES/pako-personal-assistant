@@ -19,6 +19,7 @@ code reads must be listed here, in `docs/personal-caller.md` or in `assistant/RE
 | `PAKO_LOCAL` | automatic | `1` forces local mode, `0` turns it off. Automatic means on when neither WhatsApp nor the phone line is set up and not on Render. |
 | `PAKO_HOST` | `127.0.0.1` | The address local mode listens on, and the only other name the panel then answers to. Leave it: the panel is for you only. With `PAKO_HOST=0.0.0.0` (or `::`) it also answers to this computer's network addresses and host name. Through an SSH tunnel or a container, keep the same name (`127.0.0.1`): another name gets a 421. |
 | `PAKO_NO_OPEN` | empty | `1` stops local mode from opening your browser. |
+| `PAKO_DEMO` | empty | `1` starts the demo week (also `npm start -- --demo`, or **Try with a demo week** in the panel): an invented week in `~/.pako/demo`, every connection off, nothing sent. **Leave demo** in the panel deletes it. |
 | `PAKO_REPO`, `PAKO_APP_REPORT`, `PAKO_APP_UPDATE_FEED`, `PAKO_APP_FAKE_SOURCES`, `PAKO_APP_WALK` | empty | Only for the Mac app (`desktop/mac`): the Pako folder before any other it looks in, a path for a report of a build's check, a check-only update feed, made-up calendars, contacts and Mail accounts in place of the Mac's, and a walk through the connections page with a picture of each step (the last four ignored by a Developer ID build). See [docs/desktop-mac.md](desktop-mac.md). |
 | `PAKO_APP_BUNDLE` | empty | Set to `1` by Pako for Mac for the server it carries inside itself: "start with this computer" then belongs to the app's own login item, and the panel's card and `--autostart` say so instead of writing a LaunchAgent that would point inside the app. Not for you to set. |
 | `PAKO_APP_PID` | empty | Set by Pako for Mac to its own process id for the Pako it starts: that Pako stops by itself within two seconds when the app is gone without stopping it (Force Quit, a crash), and prints no sign-in link at start (its output goes to `~/.pako/logs/app.log`). Ignored under launchd/systemd (`PAKO_SERVICE`). Not for you to set. |
@@ -65,7 +66,7 @@ code reads must be listed here, in `docs/personal-caller.md` or in `assistant/RE
 | `PROACTIVE_REPEAT_DAYS` | `7` | Nothing like a suggestion of these last days (1 to 60). |
 | `PROACTIVE_TOPICS` | all | The topics on at the start, comma separated: `trabajo,comida,viajes,ocio,deporte,aficiones,bienestar,aprendizaje,amigos`. `bienestar` also covers the health diary's habit nudges, `aprendizaje` the quiz cards, `amigos` the birthdays and the weekly check-in. The panel and the chat change them. |
 | `PAKO_PLACE` | empty | `lat,lon` (like `40.42,-3.70`): the weather for the suggestions, from Open-Meteo (free, no key). Empty: no weather. |
-| `FOLLOWUPS`, `FOLLOWUP_DELAY_MIN`, `FOLLOWUP_MAX_PER_DAY`, `FOLLOWUP_BATCH_MIN`, `FOLLOWUP_QUIET_HOURS` | `on`; `10`; `6`; `3`; `SLACK_QUIET_HOURS` | Follow-ups (`src/followups.ts`): what you were asked or promised on Slack, in mail and in meetings, checked later (Zoom, calendar, your Slack replies) and reminded once if not done; see [assistant/README.md](../assistant/README.md), "Follow-ups". |
+| `FOLLOWUPS`, `FOLLOWUP_DELAY_MIN`, `FOLLOWUP_MAX_PER_DAY`, `FOLLOWUP_BATCH_MIN`, `FOLLOWUP_QUIET_HOURS`, `FOLLOWUP_MAIL_JOBS_PER_DAY` | `on`; `10`; `6`; `3`; `SLACK_QUIET_HOURS`; `40` | Follow-ups (`src/followups.ts`): what you were asked or promised on Slack, in mail and in meetings, checked later (Zoom, calendar, your Slack replies) and reminded once if not done; see [assistant/README.md](../assistant/README.md), "Follow-ups". |
 | `GOOGLE_PLACES_API_KEY` | empty (no table booking) | Booking a table (`src/booking.ts`, `src/restaurants/`): Google Places (New) for real restaurants; it writes to a restaurant from the assistant inbox, so that inbox's key needs the `message_send` permission. See [assistant/README.md](../assistant/README.md), "Tables". |
 | `BOOKING` | empty (on when `GOOGLE_PLACES_API_KEY` is set) | `off` turns table booking off and keeps the key, so it can come back by removing `BOOKING` or setting it to `on`. |
 | `PAKO_BOOKING_CONFIRM` | empty (book straight from your order) | `1` brings back the card to press before Maître books a table, even when you named the restaurant, the day, the time and the party yourself. Without it your own order books at once, with a receipt and **Undo**. A booking prompted by outside text (an email, a forward, a web page) always shows the card. See [docs/booking.md](booking.md). |
@@ -88,6 +89,14 @@ code reads must be listed here, in `docs/personal-caller.md` or in `assistant/RE
 | `ASSISTANT_BRIDGE_TOKEN` | none (required) | The same value as on Render. |
 | `ASSISTANT_STATE_DIR` | `~/.pako-assistant` | The empty folder `claude -p` runs from, and the bridge's state. A Mac set up before Pako had its name, with only `~/.ai-buyer-assistant`, keeps using that one. |
 | `CLAUDE_BIN` | `claude` | The Claude Code binary (on Windows a `claude.cmd` works too). |
+| `ASSISTANT_MODEL` | `claude-sonnet-5-5` | Every run of Claude but the writing ones: your chat, follow-ups, mail summaries, verdicts, checks. `off` or empty: the default. |
+| `ASSISTANT_WRITING_MODEL` | `claude-opus-5-5` | The morning brief and the drafts for a follow-up (a reply, an email). `off` or empty: `ASSISTANT_MODEL`. See below. |
 | `BRIDGE_AUTOUPDATE` | `on` | The assistant's computer keeps itself up to date from GitHub (`assistant/update.ts`): `off` to update it by hand. See [assistant/README.md](../assistant/README.md), "It updates itself". |
 
-The rest (`ASSISTANT_MODEL`, the Whisper settings) is in [assistant/README.md](../assistant/README.md).
+The brief is about one run a day and the drafts a few, so they get the stronger model and the frequent, fast work stays on Sonnet. When
+your plan cannot use the writing model (not included, not there, or its own limit reached), that run goes again on `ASSISTANT_MODEL` at once,
+with one line in the log, and the writing model is set aside until the next day: the brief never fails for the model. The day's numbers in
+the log (`claude today: ...`) say how many runs each model answered.
+
+In local mode these `ASSISTANT_*` settings go in `~/.pako/.env` (the server passes them to the assistant it starts). The rest (the Whisper
+settings, the budget) is in [assistant/README.md](../assistant/README.md).

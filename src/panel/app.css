@@ -414,6 +414,9 @@ h2 svg.lucide { color: var(--accent); }
 }
 @keyframes chatGlow { to { transform: translate3d(0, 20%, 0) scale(1.1); } }
 .chat > * { position: relative; z-index: 1; }
+/* The glow above and the header's aurora reach past the box: hidden still lets a focus or scrollIntoView scroll it sideways (66px after
+   "Skip" on the welcome); clip cuts them and never scrolls. */
+.chat, .chat-head { overflow: clip; }
 .chat.pako-busy::before { opacity: 1; animation-duration: 8s; }
 .chat:not(.open)::before, .chat:not(.open) .chat-head::before, .chat:not(.open) .pako-twin * { animation-play-state: paused; }
 .chat-orb { font-size: 38px; margin: 2px 0; }
@@ -536,6 +539,25 @@ html[data-chat]:not(.i18n-ready) :is(#sys-hint, [data-i18n="book.hint"], [data-i
 .w-name { width: 100%; padding: 16px 18px; border: 1.5px solid var(--line-strong); border-radius: 16px; background: var(--bg-2); color: var(--text); font: 600 20px/1.2 inherit; font-family: inherit; outline: none; transition: border-color .2s, box-shadow .2s; }
 .w-name:focus { border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); }
 .w-try { display: grid; gap: 10px; }
+.w-choice { display: flex; align-items: center; gap: 14px; width: 100%; padding: 16px; border: 1px solid var(--line-strong); border-radius: 16px;
+  background: rgba(127, 135, 170, .07); color: var(--text); font-family: inherit; text-align: left; cursor: pointer; transition: transform .2s, border-color .2s, background .2s; }
+.w-choice:hover, .w-choice:focus-visible { transform: translateY(-1px); border-color: var(--accent); background: rgba(139, 123, 255, .1); }
+.w-choice > span { display: grid; gap: 2px; }
+.w-choice b { font: 650 16px/1.3 inherit; font-family: inherit; }
+.w-choice small { color: var(--muted, inherit); font-size: 13px; }
+.w-choice svg.lucide { flex: none; width: 22px; height: 22px; color: var(--accent); }
+.w-choice[aria-disabled="true"] { opacity: .6; cursor: progress; }
+/* The demo week's banner: across the panel, above everything else. */
+.demo-banner { position: sticky; top: 0; z-index: 30; max-width: 1440px; margin: 0 auto 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent); border-radius: 14px; background: color-mix(in srgb, var(--accent) 16%, var(--card-solid));
+  color: var(--text); font-size: 14px; }
+.demo-banner[hidden] { display: none; }
+.demo-banner svg.lucide { width: 18px; height: 18px; color: var(--accent); flex: none; }
+.demo-banner .demo-text { flex: 1 1 220px; }
+.demo-banner .demo-live { margin-left: 6px; color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.demo-banner .demo-leave { flex: none; padding: 6px 14px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--card-solid); color: var(--text);
+  font: 600 13px/1.2 inherit; font-family: inherit; cursor: pointer; }
+.demo-banner .demo-leave:hover, .demo-banner .demo-leave:focus-visible { border-color: var(--accent); }
 .w-sugg { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; border: 1px solid var(--line-strong); border-radius: 16px; background: rgba(127, 135, 170, .07); color: var(--text); font: 600 15px/1.35 inherit; font-family: inherit; text-align: left; cursor: pointer; transition: transform .2s, border-color .2s, background .2s; }
 .w-sugg:hover:not(.sent) { transform: translateY(-1px); border-color: var(--accent); background: rgba(139, 123, 255, .1); }
 .w-sugg svg.lucide { width: 20px; height: 20px; color: var(--accent); }

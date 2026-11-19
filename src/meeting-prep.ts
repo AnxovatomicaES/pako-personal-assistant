@@ -1,6 +1,7 @@
 // Meeting prep before the meeting, by itself (one-job audit §4): about 40 minutes before a meeting with someone else on it, the brief's prep
 // run (src/brief-v2.ts prepMeeting) writes the note from the meeting itself, who is coming, what is still open with those people (the follow-ups),
-// and what the owner told Pako about them (dated facts). Told in the chat like a "Prepare me".
+// and what the owner's memory says about them (src/person-context.ts, the same block the brief, the drafts and the extraction read). Told in
+// the chat like a "Prepare me".
 //
 // Never for an all-day event, a declined one, or one with nobody but the owner; a repeating meeting (a standup) only when something is open
 // with its people; once per meeting; six a day at most. MEETING_PREP=off turns it off.
@@ -33,12 +34,15 @@ export interface MeetingPrepDeps {
   events: () => Promise<CalEvent[]>;
   /** The open follow-ups. */
   loops?: () => Promise<Loop[]>;
-  /** What the owner told Pako about these people (dated facts that hold now), as fact lines. */
-  about?: (names: string[]) => Promise<PrepFact[]>;
+  /**
+   * What the owner's memory says about these people (src/person-context.ts: who they are, what was last agreed, dated facts), one fact each.
+   * Given each attendee as "Name <address>", or the address alone.
+   */
+  about?: (people: string[]) => Promise<PrepFact[]>;
   /** The owner's own addresses: never counted as someone else on the meeting. */
   self?: () => string[];
   /** The prep run; null when it could not be asked. */
-  prep: (o: { title: string; at: number; facts: PrepFact[] }) => Promise<{ status: string } | null>;
+  prep: (o: { event?: string; title: string; at: number; facts: PrepFact[] }) => Promise<{ status: string } | null>;
   /** The time in the owner's zone, as the brief writes it ("09:30"). */
   clock: (t: number) => string;
 }
@@ -94,7 +98,9 @@ export function createMeetingPrep(d: MeetingPrepDeps) {
       text: `Still open with ${l.who}: ${l.title}${l.detail ? ` (${l.detail})` : ""}${l.lastCheck ? `. What Pako checked: ${l.lastCheck}` : ""}`,
       ...(l.sources[0] ? { at: l.sources[0].at } : {}),
     }));
-    const about = d.about ? await d.about(names).catch(() => [] as PrepFact[]) : [];
+    // By name and address ("Ana Ruiz <ana@x.com>"): the people graph knows them by either (src/person-context.ts).
+    const words = others.map((p) => (p.name ? `${p.name} <${p.email}>` : p.email));
+    const about = d.about ? await d.about(words).catch(() => [] as PrepFact[]) : [];
     return { facts: [meeting, ...loopFacts, ...about.slice(0, 10)], open: open.length };
   };
 
@@ -118,7 +124,7 @@ export function createMeetingPrep(d: MeetingPrepDeps) {
     for (const e of due.sort((a, b) => a.start - b.start)) {
       if (s.done.some((x) => x.key === keyOf(e))) continue;
       if (today + asked.length >= PER_DAY) break;
-      const others = (e.attendees ?? []).filter((a) => !mine.has(a.email));
+      const others = (e.attendees ?? []).filter((a) => !mine.has(a.email.trim().toLowerCase()));
       if (!others.length) continue;
       const { facts, open } = await factsFor(e, others);
       // A repeating meeting (a standup) gets a note only when something is open with its people: otherwise it is the same every day.
@@ -126,7 +132,7 @@ export function createMeetingPrep(d: MeetingPrepDeps) {
         s.done.push({ key: keyOf(e), at: t });
         continue;
       }
-      const r = await d.prep({ title: e.title, at: e.start, facts }).catch(() => null);
+      const r = await d.prep({ event: e.id, title: e.title, at: e.start, facts }).catch(() => null);
       if (!r || r.status === "failed") continue; // tried again at the next look, while it is still early enough
       s.done.push({ key: keyOf(e), at: t, asked: true });
       asked.push(e.title);

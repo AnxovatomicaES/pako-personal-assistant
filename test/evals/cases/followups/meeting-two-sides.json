@@ -1,0 +1,36 @@
+{
+  "suite": "followups",
+  "behaviour": "a meeting's notes: the owner's promise to Bea (revised timeline by Wednesday) and Bea's own (vendor shortlist by Friday) are two loops, one each way",
+  "origin": "a meeting outcome, written for the set",
+  "input": {
+    "turns": [
+      {
+        "meeting": {
+          "at": "2026-11-16 16:30",
+          "ref": "z-plan",
+          "label": "«Migration planning»",
+          "text": "Summary: the migration slips two weeks. Action items: Alex will send the revised timeline to Bea by Wednesday. Bea will share the vendor shortlist with Alex by Friday."
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"owner_promise\",\"title\":\"Send Bea the revised timeline\",\"detail\":\"You said in Migration planning you'd send it.\",\"who\":\"Bea\",\"due\":\"2026-11-18\",\"tz\":\"Europe/Madrid\",\"check\":\"none\",\"reason\":\"email\"},{\"kind\":\"other_promise\",\"title\":\"Get the vendor shortlist from Bea\",\"detail\":\"Bea said in Migration planning she'd share it.\",\"who\":\"Bea\",\"due\":\"2026-11-20\",\"tz\":\"Europe/Madrid\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "owner_promise",
+        "who": "Bea",
+        "titleHas": [
+          "timeline"
+        ]
+      },
+      {
+        "kind": "other_promise",
+        "who": "Bea",
+        "titleHas": [
+          "shortlist"
+        ]
+      }
+    ]
+  }
+}

@@ -28,7 +28,7 @@ import { rateLimit } from "express-rate-limit";
 import type { Control } from "./control.ts";
 import { texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
-import { nationalNumber } from "./region.ts";
+import { nationalNumber, withoutTrunkZero } from "./region.ts";
 import type { Tunnel } from "./tunnel.ts";
 import type { OwnerChannel, WhatsappLine } from "./whatsapp.ts";
 import { createLog } from "./log.ts";
@@ -108,7 +108,7 @@ const FIELDS = Object.keys(SHAPES) as (keyof typeof SHAPES)[];
  * people write their own number at home ("612 34 56 78" in Spain, "(415) 555-0100" in the US), gets the owner's country's code.
  */
 export const ownerDigits = (raw: string): string => {
-  const typed = raw.replace(/[\s().-]/g, "");
+  const typed = withoutTrunkZero(raw).replace(/[\s().-]/g, "");
   if (/^(?:\+|00)/.test(typed)) return typed.replace(/^\+/, "").replace(/^00/, "");
   return (nationalNumber(typed) ?? typed).replace(/^\+/, "");
 };

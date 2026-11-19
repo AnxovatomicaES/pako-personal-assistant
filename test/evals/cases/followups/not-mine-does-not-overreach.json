@@ -1,0 +1,59 @@
+{
+  "suite": "followups",
+  "behaviour": "after Not mine on a #sales pricing request, the owner's manager asking in a DM for their expense report is still a loop",
+  "origin": "learning from corrections without over-learning: an unlike request stays",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "C0SALES",
+          "label": "#sales",
+          "msgs": [
+            {
+              "at": "2026-11-16 09:30",
+              "who": "Stan",
+              "text": "@Alex can you send the pricing sheet to Initech today?"
+            }
+          ],
+          "direct": false
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send the pricing sheet to Initech\",\"detail\":\"Stan asked in #sales.\",\"who\":\"Stan\",\"due\":\"2026-11-16\",\"tz\":\"Europe/Madrid\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      },
+      {
+        "press": {
+          "loop": 1,
+          "button": "3"
+        }
+      },
+      {
+        "slack": {
+          "channel": "D0HELEN",
+          "label": "Helen Park (private)",
+          "msgs": [
+            {
+              "at": "2026-11-17 10:15",
+              "who": "Helen Park",
+              "text": "Alex, I need your October expense report by Friday 15:00 please"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send Helen the October expense report\",\"detail\":\"Helen asked on Slack.\",\"who\":\"Helen\",\"due\":\"2026-11-20 15:00\",\"tz\":\"Europe/Madrid\",\"check\":\"slackReply\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Helen",
+        "titleHas": [
+          "expense report"
+        ],
+        "dueLocal": "2026-11-20 15:00"
+      }
+    ],
+    "jobHas": [
+      "Owner's corrections"
+    ]
+  }
+}

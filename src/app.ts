@@ -31,16 +31,18 @@ import { createZoom, loadZoomConfig, type ZoomReader } from "./zoom.ts";
 import { briefMeetings, createMeetingReview, loadReviewConfig, mountMeetingsPanel, type MeetingReviewer, type ReviewDoor } from "./meeting-review.ts";
 import { createCalendarChanges, type CalendarChanges } from "./calendar-changes.ts";
 import { createMeetingPrep, loadMeetingPrepConfig } from "./meeting-prep.ts";
-import { currentAbout, factLine } from "./memory-facts.ts";
 import { createRelay, loadRelayConfig, mountRelay, telegramSender } from "./relay.ts";
 import { createRelayClient, loadRelayClientConfig, type RelayClient } from "./relay-client.ts";
 import { createFollowups, followupsProxy, loadFollowupsConfig, type Followups, type FollowupsDoor } from "./followups.ts";
 import { createQuality, mountQualityPanel, type Quality } from "./quality.ts";
 import { createProactive, loadProactiveConfig, mountProactivePanel, type LifeDoor, type Proactive } from "./proactive.ts";
+import { createLessons, mountLessonsPanel } from "./lessons.ts";
+import { createPersonContext, type PersonContext } from "./person-context.ts";
 import { createRehearsal, mountRehearsalPanel, type Rehearsal } from "./rehearsal.ts";
 import { loadSlackConfig, mountSlack, mountSlackCheckOnly, type SlackReader } from "./slack.ts";
 import { createImapReader, loadImapConfig, type ImapReader } from "./imap.ts";
-import { createMailbox, loadMailConfig, loadMailFilters, mountMail, sendEmail } from "./mail.ts";
+import { addressOf, createMailbox, loadMailConfig, loadMailFilters, mountMail, sendEmail } from "./mail.ts";
+import { createMailFollowups } from "./mail-followups.ts";
 import { chooseSender, loadResendConfig } from "./resend.ts";
 import { createBooking, registerBookingTools, type Booking, type BookingReply, type BookingRequest } from "./booking.ts";
 import { loadMaitre } from "./maitre/index.ts";
@@ -76,6 +78,7 @@ import type { BackfillChat } from "./backfill.ts";
 import { mountSettingsPage } from "./settings-page.ts";
 import { mountAutostartPanel } from "./autostart-panel.ts";
 import { mountDataPanel } from "./data-panel.ts";
+import { demoCalendar, demoCalendarWrites, demoGuard, demoSender, demoSlack, demoTimes, mountDemoPanel, recordedAnswer } from "./demo.ts";
 import { mountMovePanel } from "./move.ts";
 import { mountMemoryPanel } from "./memory-panel.ts";
 import { mountTasksPanel } from "./lists.ts";
@@ -107,6 +110,7 @@ const logBackfill = createLog("backfill");
 const logBrief = createLog("brief");
 const logFollowups = createLog("followups");
 const logProactive = createLog("proactive");
+const logLessons = createLog("lessons");
 const logBooking = createLog("booking");
 const logChat = createLog("chat");
 const logTelegram = createLog("telegram");
@@ -228,6 +232,11 @@ export interface LocalContext {
    * src/restaurants/website.ts, each hop's host checked to be public.
    */
   icsNet?: { fetch: typeof fetch; resolve: (host: string) => Promise<string[]> };
+  /**
+   * The demo week (src/demo.ts): `on` while it runs (its sources are the demo store's, nothing goes out), and Pako's real home, where the
+   * panel makes and deletes the demo's folder. Absent: off, the home from PAKO_HOME.
+   */
+  demo?: { on: boolean; home: string };
 }
 
 /** The store key that says this Places key has answered once (a hash of the key): src/data.ts "places-ok". */
@@ -292,6 +301,9 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
     : null;
   if (waComputer) app.use(waComputer.gate);
   if (local) app.use(localGuard({ host: env.PAKO_HOST, lang: uiLang }));
+  // The demo week (src/demo.ts): no account is connected, nothing is imported and nothing of the person's is exported while it runs.
+  const demo = local?.demo?.on ? local.demo : null;
+  if (demo) app.use(demoGuard());
   if (waComputer) {
     waComputer.mountWebhook(app);
     // server.ts starts it once the server listens (the tunnel again, if it was on), and stops it on shutdown.
@@ -427,15 +439,17 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
       const imapRef: { reader: ImapReader | null } = { reader: null };
       // A reply of the owner's found in their Sent mail closes the loops of the mail it answers (the follow-ups are built later: looked up then).
       const repliedRef: { close: (ids: string[]) => void } = { close: () => undefined };
-      const box = mail.config || imap.config
+      const box = mail.config || imap.config || demo
         ? createMailbox(kv, { showCodes: loadMailFilters(env).showCodes, lang: uiLang, onReplied: (ids) => repliedRef.close(ids) })
         : null;
       // Both addresses when both are read: the assistant's context and the panel say which mail it is.
-      const mailAddress = [mail.config?.inbox, imap.config?.user].filter(Boolean).join(", ");
+      const mailAddress = demo ? "alex@northwind.example (demo)" : [mail.config?.inbox, imap.config?.user].filter(Boolean).join(", ");
       // The owner's Slack, read only (src/slack.ts): off unless the app's user token and signing secret are set.
       const slack = loadSlackConfig(env);
       if (slack.problems.length) logSlack.error(`off, because: ${slack.problems.join("; ")}`);
       const slackRef: { reader: SlackReader | null } = { reader: null };
+      // The demo's Slack, read only from its own store: what the brief, the panel and the chat read instead of a real workspace.
+      const fakeSlack = demo && local ? demoSlack(local.kv) : null;
       // The owner's Zoom, read only (src/zoom.ts): off unless the Server-to-Server app's values and the owner's Zoom email are set.
       const zoom = loadZoomConfig(env);
       if (zoom.problems.length) logZoom.error(`off, because: ${zoom.problems.join("; ")}`);
@@ -465,7 +479,7 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
       // A wrong CALENDAR_REMIND_MINUTES turns the ICS links off too: said for them, as Zoho's line says it for Zoho.
       if (icsLinks.config && !timing.timing) logCalendar.error(`the ICS link is off, because: ${timing.problems.join("; ")}`);
       // On a computer, this Mac's calendars too (src/calendar-local.ts), once the Mac app has pushed them: a first push restarts Pako to add them.
-      const macCal = local ? createLocalCalendar({ kv: local.kv }) : null;
+      const macCal = local && !demo ? createLocalCalendar({ kv: local.kv }) : null;
       // This Mac's calendar written by its app (src/calendar-writes.ts): the queue the owner's yes on a card goes into; the door tells the result.
       const relayClientCfg = loadRelayClientConfig(env);
       if (relayClientCfg.problems.length) logRelay.error(relayClientCfg.problems.join("; "));
@@ -478,10 +492,12 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
       const cal = {
         zoho: zoho.config, ics: timing.timing ? icsLinks.config : null, mac: macCal && timing.timing && hasLocalCalendar(local!.kv) ? macCal : null,
         google: timing.timing ? googleCal.config : null,
+        demo: demo && local && timing.timing ? demoCalendar(local.kv) : null,
       };
-      const calOn = !!(cal.zoho || cal.ics || cal.mac || cal.google);
+      const calOn = !!(cal.zoho || cal.ics || cal.mac || cal.google || cal.demo);
       // What the panel says is connected: the ICS links by their host only (the rest of a link is its secret).
-      const calLabel = [cal.zoho ? `Zoho (${cal.zoho.dc})` : "", cal.ics ? `ICS: ${icsHosts(cal.ics.urls).join(", ")}` : "", cal.mac ? "Mac" : "", cal.google ? "Google" : ""]
+      const calLabel = [cal.zoho ? `Zoho (${cal.zoho.dc})` : "", cal.ics ? `ICS: ${icsHosts(cal.ics.urls).join(", ")}` : "", cal.mac ? "Mac" : "", cal.google ? "Google" : "",
+        cal.demo ? "Demo calendar" : ""]
         .filter(Boolean).join(" + ");
       const calRef: { reader: CalendarReader | null } = { reader: null };
       const calChangesRef: { c: CalendarChanges | null } = { c: null };
@@ -508,8 +524,12 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
       const followupsCfg = loadFollowupsConfig(env);
       if (followupsCfg.problems.length) logFollowups.error(`${followupsCfg.problems.join("; ")}`);
       const followupsRef: { engine: Followups | null } = { engine: null };
+      // What the owner's memory says about a person (src/person-context.ts), built once the door is: its facts and people graph are the door's.
+      const personRef: { c: PersonContext | null } = { c: null };
       // Every method of the door the engine has, reached through the engine once it is built (src/followups/door-proxy.ts).
       const followupsDoor: FollowupsDoor = followupsProxy(() => followupsRef.engine);
+      // The mail the follow-ups read whole (src/mail-followups.ts): the categories that matter, and what the owner sent.
+      const mailFollowups = box ? createMailFollowups({ box, followups: () => (followupsRef.engine ? followupsDoor : null) }) : null;
       repliedRef.close = (ids) => {
         const engine = followupsRef.engine;
         if (!engine) return;
@@ -529,7 +549,21 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
         health: () => (lifeRef.engine ? lifeRef.engine.health() : Promise.resolve([])),
       };
       // Quality (src/quality.ts): the 👍/👎 on the nudges and the brief, the panel's "Calidad" card, the Monday line. With either of them on.
-      const quality: Quality | null = followupsCfg.config || smartCfg.config || proactiveCfg.config ? createQuality({ kv, timeZone, lang: uiLang }) : null;
+      // What Pako learned from the owner's corrections (src/lessons.ts): Not mine, an undo, a 👎, a draft changed before it was sent.
+      const lessons = createLessons({ kv, timeZone });
+      /** A 👎 the owner gave: on a follow-up's reminder (its loop's person and place), or on a to-do or an update of the brief. */
+      const verdictLesson = async (v: { verdict: "up" | "down"; source: string; ref: string; what: string }): Promise<void> => {
+        if (v.verdict !== "down") return;
+        if (v.source === "nudge") {
+          const l = (await followupsRef.engine?.read())?.loops.find((x) => x.id === v.ref);
+          if (l) await lessons.wrong({ what: "follow-up reminder", title: l.title, who: l.who, where: l.where.label, ...(l.where.channel ? { channel: l.where.channel } : {}) });
+        } else if (v.source === "brief_todo" || v.source === "brief_update") {
+          await lessons.wrong({ what: v.source === "brief_todo" ? "brief to-do" : "brief update", title: v.what });
+        }
+      };
+      const quality: Quality | null = followupsCfg.config || smartCfg.config || proactiveCfg.config
+        ? createQuality({ kv, timeZone, lang: uiLang, onVerdict: (v) => void verdictLesson(v).catch((err: Error) => logLessons.error(err.message)) })
+        : null;
       // The rehearsal (src/rehearsal.ts): REHEARSAL and the panel's button; built once the door is (its jobs go through its inbox).
       const rehearsalRef: { r: Rehearsal | null } = { r: null };
       /** What a 👍/👎 button is about: the nudge's loop, or today's written brief. */
@@ -711,6 +745,8 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
         // The emails the owner asks for: through Resend when it is set (src/resend.ts), else Pako's own AgentMail inbox (the API key needs
         // AgentMail's message_send permission).
         ...(outgoing ? { sendEmail: outgoing.send } : {}),
+        // The demo week: an email the owner says yes to goes nowhere, and the chat says so.
+        ...(demo && local ? { sendEmail: demoSender((text) => local.channel.push("pako", text)) } : {}),
         // The owner's country (read above): the emergency number and the crisis line a red flag gets (src/health.ts).
         country: country.country,
         // Health data local only: a server on the internet keeps the diary in memory (src/health.ts).
@@ -745,9 +781,18 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           : {}),
         brief: { now: briefNow, daily: briefCfg.at !== null },
         ...(followupsCfg.config ? { followups: followupsDoor } : {}),
+        lessons,
         // Pako Relay, the laptop's side (src/relay-client.ts): built just below, once the door can list the reminders.
         ...(relayClientCfg.config
           ? { relay: { sync: () => (relayRef.c ? relayRef.c.sync() : Promise.resolve(false)), firedByRelay: (r: { id: string; at: number; text: string }) => relayRef.c?.firedByRelay(r) ?? false } }
+          : {}),
+        ...(demo && local
+          ? {
+              calendarWrites: demoCalendarWrites({
+                events: () => (calRef.reader ? calRef.reader.load() : Promise.resolve([])),
+                tell: (text) => local.channel.push("pako", text),
+              }),
+            }
           : {}),
         ...(macCal && calWrites
           ? {
@@ -769,6 +814,7 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
         ...(followupsCfg.config && smartCfg.config
           ? { draftFor: (o: Parameters<BriefV2["draftFor"]>[0]) => (smartRef.brief ? smartRef.brief.draftFor(o) : Promise.resolve(null)) }
           : {}),
+        personContext: (who: string, o?: { exclude?: string[] }) => (personRef.c ? personRef.c.about(who, o) : Promise.resolve(null)),
         backfillAnswered: (id, o) => (backfillRef.b ? backfillRef.b.answered(id, o) : Promise.resolve(false)),
         ...(proactiveCfg.config ? { life: lifeDoor } : {}),
         ...(reviewCfg.config ? { reviews: reviewsDoor } : {}),
@@ -809,14 +855,14 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
                 recent: () => (slackRef.reader ? slackRef.reader.recent() : Promise.resolve([])),
               },
             }
-          : {}),
+          : fakeSlack ? { slack: { search: fakeSlack.search, recent: fakeSlack.recent } } : {}),
         // Each send to Meta, for the watchdog (a computer has no WhatsApp).
         ...(!local ? { health: dog.reporter("whatsapp") } : {}),
         // What the watches look at (src/routines.ts): only what this server already has, read when they look (a part set up later counts).
         watchSources: () => ({
           ...(box ? { mail: () => box.items(60) } : {}),
           ...(calRef.reader ? { calendar: () => calRef.reader!.load() } : {}),
-          ...(slackRef.reader ? { slack: () => slackRef.reader!.alerts() } : {}),
+          ...(slackRef.reader ? { slack: () => slackRef.reader!.alerts() } : fakeSlack ? { slack: fakeSlack.alerts } : {}),
         }),
         get ownerName() {
           return ownerName();
@@ -833,6 +879,7 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
                 notifies: (id: string) => box.notifies(id),
                 replied: (id: string) => box.repliedById(id),
                 get: (id: string) => box.get(id),
+                ...(mailFollowups ? { followups: (id: string, o: Parameters<typeof mailFollowups.inbox>[1]) => mailFollowups.inbox(id, o) } : {}),
                 digest: () => box.digest(timeZone),
               },
               // The one-time codes taken out of the mail (src/codes.ts), for the owner's CODE.
@@ -840,6 +887,16 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
             } : {}),
       });
       calDoorRef.result = (w) => door.calendarResult(w);
+      // What the owner's memory says about a person (src/person-context.ts): one helper for the follow-up extraction, the drafts, the brief and
+      // the meeting prep. Identities through the people graph; the open follow-ups once the engine is built (further down).
+      personRef.c = createPersonContext({
+        facts: () => door.facts.read(),
+        graph: async () => (await door.peopleGraph.read()).persons,
+        loops: () => (followupsRef.engine ? followupsRef.engine.open() : Promise.resolve([])),
+        lessons: (q) => lessons.lines(q),
+        timeZone, lang: uiLang,
+        self: () => [givenName(), mail.config?.inbox, imap.config?.user].filter((x): x is string => !!x),
+      });
       if (relayClientCfg.config) {
         relayRef.c = createRelayClient({ config: relayClientCfg.config, reminders: () => door.relayReminders() });
         relayRef.c.start();
@@ -902,7 +959,7 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
             : { key: "phone", name: t("phone"), on: true, detail: t(config.personalCaller?.live ? "live" : "dry") },
           { key: "mail", name: t("mail"), on: !!box, detail: box ? mailAddress : t("none") },
           { key: "calendar", name: t("calendar"), on: calOn, detail: calOn ? calLabel : t("none") },
-          { key: "slack", name: "Slack", on: !!slack.config, detail: t(slack.config ? "readOnly" : "none") },
+          { key: "slack", name: "Slack", on: !!slack.config || !!fakeSlack, detail: t(slack.config || fakeSlack ? "readOnly" : "none") },
           { key: "zoom", name: "Zoom", on: !!zoom.config, detail: t(zoom.config ? "readOnly" : "off") },
           // On a computer Telegram is always listed: it is set up from the panel.
           ...(tgRef.channel || local ? [telegramLine()] : []),
@@ -924,9 +981,12 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
         saying = run;
         return run;
       };
+      /** Claude signed in here (the bridge's word): the demo week runs live; otherwise its recorded outputs show. */
+      const claudeLive = (): boolean => !!local && local.bridge.status().claude === "ok";
       const panel = mountDashboard(app, {
         secret: wa.config.bridgeToken,
         publicUrl,
+        ...(local ? { demo: { on: !!demo, live: claudeLive } } : {}),
         get ownerName() {
           return ownerName();
         },
@@ -964,6 +1024,8 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
                 // What is typed in the window is a message from the owner, handled exactly like one that came by WhatsApp.
                 send: async (text: string) => {
                   await local.channel.push("you", text);
+                  // The demo week without Claude: a recorded answer, so the chat still shows what Pako would say.
+                  if (demo && local.bridge.status().claude !== "ok") return void (await local.channel.push("pako", recordedAnswer(text, await demoTimes(local.kv))));
                   fromWindow({ type: "text", text: { body: text } });
                 },
                 press: async (id: string) => fromWindow({ type: "interactive", interactive: { type: "button_reply", button_reply: { id, title: "" } } }),
@@ -971,6 +1033,7 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
             }
           : {}),
         ...(slack.config ? { slack: { alerts: () => (slackRef.reader ? slackRef.reader.alerts() : Promise.resolve([])) } } : {}),
+        ...(fakeSlack ? { slack: { alerts: fakeSlack.alerts } } : {}),
         ...(followupsCfg.config ? { loops: async () => (followupsRef.engine ? followupsRef.engine.open() : []) } : {}),
         catchUp: async () => (backfillRef.b ? backfillRef.b.progress() : null),
         ...(calOn
@@ -1228,6 +1291,7 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
         : null);
       // The connections page the gear opens (src/panel/settings.*): a computer only.
       mountSettingsPage(app, { signedIn: panel.signedIn, lang: uiLang, local: !!local });
+      if (local) mountDemoPanel(app, { signedIn: panel.signedIn, on: !!demo, live: claudeLive, home: local.demo?.home ?? pakoHome(env) });
       mountAutostartPanel(app, local ? { signedIn: panel.signedIn, env, lang: uiLang, control } : null);
       mountDataPanel(app, local ? { signedIn: panel.signedIn, env, lang: uiLang, control, store: local.kv, chat: local.channel } : null);
       // Moving from a server to a computer (src/move.ts): a server's panel gives the file, a computer's panel takes it in.
@@ -1263,6 +1327,7 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           ...(cal.ics ? [(icsRef.source = createIcsSource({ config: cal.ics, timeZone, lang: uiLang, control, log, me: myAddresses, ...(local?.icsNet ?? {}) }))] : []),
           ...(cal.mac ? [cal.mac.source] : []),
           ...(cal.google ? [createGoogleCalendarSource({ config: cal.google, timeZone, log })] : []),
+          ...(cal.demo ? [cal.demo] : []),
         ];
         const notify = (text: string) => door.notifyOwner(text, { urgent: true });
         calRef.reader = createCalendarCore({ sources, timing: calTiming, kv, timeZone, control, lang: uiLang, log, notify, health: dog.reporter("calendar") });
@@ -1309,7 +1374,7 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
         // The tasks due today or overdue (src/lists.ts): its own line, only when there is one.
         extras: [
           () => (box ? box.brief() : Promise.resolve(null)),
-          () => (slackRef.reader ? slackRef.reader.brief() : Promise.resolve(null)),
+          () => (slackRef.reader ? slackRef.reader.brief() : fakeSlack ? fakeSlack.brief() : Promise.resolve(null)),
           // A new mailbox's catch-up, once it is done: "From the last 14 days (mail): …", once.
           async () => (backfillRef.b ? backfillRef.b.briefLine() : null),
           // A private calendar link that stopped working: said once here (its row on the connections page says it for as long as it lasts).
@@ -1358,12 +1423,15 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
                 }
               : {}),
             ...(slack.config ? { slack: () => (slackRef.reader ? slackRef.reader.alerts() : Promise.reject(new Error("Slack is not ready"))) } : {}),
+            ...(fakeSlack ? { slack: fakeSlack.alerts } : {}),
             ...(calOn ? { events: () => (calRef.reader ? calRef.reader.load() : Promise.reject(new Error("the calendar is not ready"))) } : {}),
             tasks: async () => (await door.lists.read(true)).tasks,
             ...(box ? { mail: () => box.items(60) } : {}),
             birthdays: () => door.birthdaysBrief(),
             reminders: async () => (await door.reminders()).filter((r) => !r.birthday),
             ...(calOn ? { calendarChanges: (since: number) => (calChangesRef.c ? calChangesRef.c.since(since) : Promise.resolve([])) } : {}),
+            // What the owner's memory says of the day's people (src/person-context.ts): one block each, at most three.
+            people: async (words: string[]) => (personRef.c ? (await personRef.c.many(words)).map((b) => ({ name: b.name, text: b.text })) : []),
           },
           enqueue: (m) => door.inbox.add(m),
           // The computer asked for messages in the last three minutes: otherwise the old brief goes at once rather than after the wait.
@@ -1373,6 +1441,13 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           changes: (since) => door.changesBrief(since),
           notify: briefSent,
           tell: (text) => door.notifyOwner(text),
+          lessons: (q) => lessons.lines(q),
+          // A draft written for the chat: kept to compare with what the owner sends to that conversation or address (src/lessons.ts).
+          drafted: async (o) => {
+            const m = o.mailRef && box ? await box.get(o.mailRef).catch(() => null) : null;
+            const address = m ? addressOf(m.from) : "";
+            await lessons.drafted({ text: o.text, ...o.about, ...(address ? { address } : {}) });
+          },
           // A draft answering an email comes back as a reply on the email card: the email's sender and subject from the mailbox.
           ...(box
             ? {
@@ -1388,6 +1463,19 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           ...(quality ? { quality: { monday: () => quality.monday(), line: (l: Lang) => quality.briefLine(l), asked: quality.briefAsked } } : {}),
         });
         smartRef.brief.start();
+        // The demo week with Claude signed in: a fresh brief is written from the demo's facts once the bridge asks for work (it replaces
+        // the recorded one). Tried for ten minutes after the start, once.
+        if (demo) {
+          const brief = smartRef.brief;
+          const started = Date.now();
+          const live = setInterval(() => {
+            if (Date.now() - started > 10 * 60_000) return void clearInterval(live);
+            if (!claudeLive() || Date.now() - door.lastPoll() > 60_000) return;
+            clearInterval(live);
+            void brief.begin(Date.now(), true).catch((err: Error) => logBrief.error(`the demo's live brief: ${err.message}`));
+          }, 5000);
+          live.unref?.();
+        }
         // A meeting's prep by itself, about 40 minutes before it (src/meeting-prep.ts): the meeting, what is open with its people, what
         // Pako knows of them. MEETING_PREP=off turns it off.
         if (calOn && loadMeetingPrepConfig(env).on) {
@@ -1396,10 +1484,9 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
             kv, timeZone,
             events: () => (calRef.reader ? calRef.reader.load() : Promise.reject(new Error("the calendar is not ready"))),
             ...(followupsCfg.config ? { loops: () => (followupsRef.engine ? followupsRef.engine.open() : Promise.resolve([])) } : {}),
-            about: async (names) => {
-              const all = await door.facts.read();
-              return names.flatMap((n) => currentAbout(all, [n]).slice(0, 4).map((f) => ({ label: n, text: factLine(f, uiLang(), timeZone) })));
-            },
+            // What the owner's memory says of its people (src/person-context.ts); the open follow-ups with them come apart, as their own facts.
+            about: async (words) =>
+              (personRef.c ? await personRef.c.many(words, { loops: false }) : []).map((b) => ({ label: `People · ${b.name}`, text: b.text })),
             self: () => [mail.config?.inbox, imap.config?.user].filter((x): x is string => !!x),
             prep: (o) => brief.prepMeeting(o),
             clock: (t) => new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(t),
@@ -1422,6 +1509,10 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           annotate: (id, summary) => (zoomRef.reader ? zoomRef.reader.annotate(id, summary) : Promise.resolve(false)),
           // The computer asked for messages in the last three minutes: otherwise Zoom's summary is told at once, as before.
           bridgeAlive: () => Date.now() - door.lastPoll() < 3 * 60_000,
+          // What the meeting left with each person, in Pako's dated memory of them: the next prep and the person's card know it.
+          remember: (facts) => door.facts.add(facts, Date.now()),
+          // A name said in the meeting kept under the person's own name (src/people-graph.ts), so their card and context find it.
+          canon: (name: string) => door.peopleGraph.canon(name),
           ...(followupsCfg.config
             ? {
                 loops: {
@@ -1465,6 +1556,8 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           config: slack.config, kv, timeZone, control, lang: uiLang, notify: (text) => door.notifyOwner(text),
           observe: (m) => {
             void followupsRef.engine?.observeSlack(m);
+            // The owner's own post beside a draft Pako wrote for that conversation: what they changed is learnt (src/lessons.ts).
+            if (m.mine) void lessons.ownSent({ channel: m.channel, text: m.text, at: m.at }).catch((err: Error) => logLessons.error(err.message));
             // The owner's own message is not a sighting of someone else.
             if (!m.mine) feedPeople(slackSightings(m));
           },
@@ -1528,6 +1621,9 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
             : {}),
           // One name per person across Slack, the mail and meetings (src/people-graph.ts).
           who: (name: string) => door.peopleGraph.canon(name),
+          lessons,
+          // Who the people of a job are to the owner (src/person-context.ts): read by the extraction with its material.
+          people: (words: string[]) => (personRef.c ? personRef.c.many(words) : Promise.resolve([])),
         });
         followupsRef.engine.start(jobs);
         const fc = followupsCfg.config;
@@ -1566,6 +1662,7 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
         logProactive.info(`ON: every ${pc.everyMs / 60_000} min in its hours, at most ${pc.maxPerDay} a day, ${where}`);
       }
       mountProactivePanel(app, { signedIn: panel.signedIn, life: () => lifeRef.engine });
+      mountLessonsPanel(app, { signedIn: panel.signedIn, lessons: () => lessons });
       if (quality) {
         rehearsalRef.r = createRehearsal({
           kv,
@@ -1577,6 +1674,7 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           followups: followupsCfg.config ? () => followupsRef.engine?.rehearse ?? null : null,
           brief: smartCfg.config ? () => smartRef.brief : null,
           ...(slack.config ? { slack: () => (slackRef.reader ? slackRef.reader.alerts() : Promise.resolve([])) } : {}),
+          ...(fakeSlack ? { slack: fakeSlack.alerts } : {}),
           ...(box ? { mail: () => box.items(60) } : {}),
           ...(zoom.config ? { meetings: () => (zoomRef.reader ? zoomRef.reader.recent(2) : Promise.resolve([])) } : {}),
         });
@@ -1592,7 +1690,10 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
         },
       });
       if (mail.config && box) {
-        mountMail(app, { config: mail.config, box, control, lang: uiLang, enqueue: (m) => door.inbox.add(m), health: dog.reporter("mail") });
+        mountMail(app, {
+          config: mail.config, box, control, lang: uiLang, enqueue: (m) => door.inbox.add(m), health: dog.reporter("mail"),
+          ...(mailFollowups ? { filed: (id, category) => mailFollowups.inbox(id, { category }) } : {}),
+        });
         if (mail.config.pollMinutes > 0) dog.watch("mail");
         const every = mail.config.pollMinutes ? `listed every ${mail.config.pollMinutes} min` : "no listing";
         logMail.info(`ON: ${mail.config.inbox}, webhook at /email/webhook, ${every}`);
@@ -1605,6 +1706,7 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
         backfillRef.b = createBackfill({
           kv, config: backfillCfg.config, enqueue: (m) => door.inbox.add(m), lang: uiLang, notify: (text) => door.notifyOwner(text), chat: backfillChat,
           ...(followupsCfg.config ? { offer: (o) => (followupsRef.engine ? followupsRef.engine.offer(o) : Promise.resolve(false)) } : {}),
+          ...(mailFollowups ? { sent: (m) => mailFollowups.sent(m) } : {}),
           keepUnread: (id, note) => box.annotate(id, "guardado", note),
         });
         backfillRef.b.start();
@@ -1628,6 +1730,8 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           backfill: { add: bf.add, addSent: bf.addSent, startLine: bf.startLine, days: backfillCfg.config.days },
           config: imap.config, kv, box, control, lang: uiLang, enqueue: (m) => door.inbox.add(m), health: dog.reporter("imap"),
           notify: (text) => door.notifyOwner(text),
+          ownSent: (o) => lessons.ownSent(o),
+          ...(mailFollowups ? { sentMail: (m) => mailFollowups.sent(m), filed: (id, category) => mailFollowups.inbox(id, { category }) } : {}),
           ...(invites ? { invites } : {}),
           ...(tokens ? { tokens: () => tokens.access(), forgetToken: () => tokens.forget() } : {}),
         });

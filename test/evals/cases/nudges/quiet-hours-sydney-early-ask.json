@@ -1,0 +1,49 @@
+{
+  "suite": "nudges",
+  "behaviour": "a Sydney owner asked at 06:45 for the deck by 12:00: nothing before 08:00, then the reminders before noon",
+  "origin": "the quiet hours at the start of the day, for an Australian owner",
+  "input": {
+    "timeZone": "Australia/Sydney",
+    "ownerName": "Liam",
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0ERIN",
+          "label": "Erin Walsh (private)",
+          "msgs": [
+            {
+              "at": "2026-11-18 06:45",
+              "who": "Erin Walsh",
+              "text": "Morning! Can you send me the investor deck by 12:00 today?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send Erin the investor deck\",\"detail\":\"Erin asked on Slack.\",\"who\":\"Erin\",\"due\":\"2026-11-18 12:00\",\"tz\":\"Australia/Sydney\",\"check\":\"slackReply\"}],\"closes\":[]}"
+      }
+    ],
+    "timeline": {
+      "until": "2026-11-18 13:00"
+    }
+  },
+  "expect": {
+    "cards": [
+      {
+        "from": "2026-11-18 08:00",
+        "to": "2026-11-18 08:30",
+        "has": [
+          "Erin",
+          "investor deck",
+          "12:00"
+        ]
+      },
+      {
+        "from": "2026-11-18 10:30",
+        "to": "2026-11-18 12:00",
+        "has": [
+          "Not long now",
+          "investor deck"
+        ]
+      }
+    ]
+  }
+}

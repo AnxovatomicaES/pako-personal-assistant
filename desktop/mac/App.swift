@@ -872,6 +872,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         guard message.frameInfo.isMainFrame, isPanelOrigin(protocol: o.protocol, host: o.host, port: o.port, port: port),
               let body = message.body as? [String: Any], let msg = parsePakoMessage(body) else { return }
         guard msg == .panelWord else { return handle(msg, from: message.webView) }
+        // The demo week started from the panel: no Connect window over it now (it stays in the menu, and the banner says how).
+        if body["demo"] as? Bool == true {
+            connectPending = false
+            closeConnect()
+            return
+        }
         if connectPending {
             connectPending = false
             if !(claudeState?.ready ?? false) { showConnect() }
@@ -1764,6 +1770,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         if !force {
             guard runner.defaults.bool(forKey: "updatesAuto"), now - runner.defaults.double(forKey: "updateCheckedAt") >= 86_400 else { return }
         }
+        // Stamped now (two checks never overlap), and put back below when the feed could not be read: a login item that starts before the
+        // network is up must not count that as the day's check, or the six-hourly timer waits a day and the next login fails the same way.
+        let previous = runner.defaults.double(forKey: "updateCheckedAt")
         runner.defaults.set(now, forKey: "updateCheckedAt")
         let config = URLSessionConfiguration.ephemeral
         config.httpShouldSetCookies = false
@@ -1777,7 +1786,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         session.dataTask(with: req) { data, resp, _ in
             session.finishTasksAndInvalidate()
             guard let h = resp as? HTTPURLResponse, h.statusCode == 200, isUpdateURL(h.url, loopback: loopback), let data = data,
-                  let u = parseUpdateFeed(data, loopback: loopback) else { DispatchQueue.main.async { done?(nil, false) }; return }
+                  let u = parseUpdateFeed(data, loopback: loopback) else {
+                DispatchQueue.main.async {
+                    if self.runner.defaults.double(forKey: "updateCheckedAt") == now { self.runner.defaults.set(previous, forKey: "updateCheckedAt") }
+                    done?(nil, false)
+                }
+                return
+            }
             let newer = isNewerRelease(version: u.version, build: u.build, than: current, currentBuild: currentBuild)
             DispatchQueue.main.async {
                 // An install under way keeps the release it started with.
@@ -2275,6 +2290,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         w.onConnections = { [weak self] in
             self?.closeConnect()
             self?.openConnectionsCard()
+        }
+        // The demo week (src/demo.ts): the panel starts it (window.pakoTryDemo), restarts Pako on the demo's folder and reloads itself.
+        w.offerDemo = !runner.defaults.bool(forKey: "claudeConnectedOnce")
+        w.onDemo = { [weak self] in
+            guard let self = self else { return }
+            self.closeConnect()
+            self.webView.evaluateJavaScript("window.pakoTryDemo && window.pakoTryDemo(); void 0", completionHandler: nil)
         }
         connectWindow = w
         return w

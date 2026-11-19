@@ -105,6 +105,26 @@ final class MacSources: PakoSources, @unchecked Sendable {
         }
     }
 
+    /// What each write found before it changed anything, kept on this Mac by the write's id from the first try: a move sent again after a
+    /// restart (the event already at its new times) or a delete sent again (the event gone) still answers with the original, so Undo works.
+    private static let beforeKey = "calendarWriteBefore"
+    private func rememberedBefore(_ id: String) -> [String: Any]? {
+        (UserDefaults.standard.dictionary(forKey: Self.beforeKey)?[id] as? [String: Any]).map { $0.filter { $0.key != "keptAt" } }
+    }
+    private func rememberBefore(_ id: String, _ before: [String: Any]) {
+        let now = Date().timeIntervalSince1970
+        var all = UserDefaults.standard.dictionary(forKey: Self.beforeKey) ?? [:]
+        // A week is longer than any write waits (the server keeps them as long); fifty is more than are ever in flight.
+        func keptAt(_ v: Any) -> Double { (v as? [String: Any])?["keptAt"] as? Double ?? 0 }
+        all = all.filter { keptAt($0.value) > now - 7 * 24 * 3600 }
+        if all.count >= 50, let oldest = all.min(by: { keptAt($0.value) < keptAt($1.value) }) { all.removeValue(forKey: oldest.key) }
+        var b = before
+        b["keptAt"] = now
+        all[id] = b
+        UserDefaults.standard.set(all, forKey: Self.beforeKey)
+        UserDefaults.standard.synchronize()
+    }
+
     /// One change, done once: a move (the occurrence that starts at "at"), a new event (marked with the write's id, so a write sent again finds
     /// it instead of making another), or a deletion (with what it was, so Undo can make it again). Nothing is sent to anyone invited.
     func applyCalendarWrite(_ w: [String: Any]) -> [String: Any] {
@@ -125,7 +145,8 @@ final class MacSources: PakoSources, @unchecked Sendable {
             case "move":
                 guard let e = find(), let start = date("start"), let end = date("end") else { return fail("the event is no longer on the calendar") }
                 guard e.calendar.allowsContentModifications else { return fail("that calendar cannot be changed from this Mac") }
-                let before: [String: Any] = ["start": ms(e.startDate), "end": ms(e.endDate)]
+                let before: [String: Any] = rememberedBefore(id) ?? ["start": ms(e.startDate), "end": ms(e.endDate)]
+                rememberBefore(id, before)
                 e.startDate = start
                 e.endDate = end
                 try s.save(e, span: .thisEvent, commit: true)
@@ -147,10 +168,16 @@ final class MacSources: PakoSources, @unchecked Sendable {
                 try s.save(e, span: .thisEvent, commit: true)
                 return ["id": id, "ok": true, "eventId": e.eventIdentifier ?? ""]
             case "delete":
-                guard let e = find() else { return ["id": id, "ok": true] } // gone already: what was asked is so
+                guard let e = find() else {
+                    // Deleted by this write's first try (the app restarted before saying so): done, with what Undo brings back. Else it was
+                    // not there to delete: said so, never "deleted".
+                    if let before = rememberedBefore(id) { return ["id": id, "ok": true, "before": before] }
+                    return ["id": id, "ok": false, "notFound": true, "error": "it wasn't found on this Mac's calendars"]
+                }
                 guard e.calendar.allowsContentModifications else { return fail("that calendar cannot be changed from this Mac") }
                 var before: [String: Any] = ["start": ms(e.startDate), "end": ms(e.endDate), "title": e.title ?? "", "calendarId": e.calendar.calendarIdentifier]
                 if let place = e.location { before["location"] = place }
+                rememberBefore(id, before)
                 try s.remove(e, span: .thisEvent, commit: true)
                 return ["id": id, "ok": true, "before": before]
             default:

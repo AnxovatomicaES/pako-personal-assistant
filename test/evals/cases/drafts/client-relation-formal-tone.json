@@ -1,0 +1,34 @@
+{
+  "suite": "drafts",
+  "behaviour": "a draft to Sofia, whom the owner's memory knows as a client, reads what was last agreed and is polite and professional, with no casual greeting",
+  "origin": "people memory in the drafts (src/person-context.ts): the relation sets the tone; nothing beyond the memory is invented",
+  "rubric": "Is the message polite and professional, as the owner would write to a client, and free of anything about Sofia that the material does not say?",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-18 10:00",
+    "lang": "en",
+    "memory": {
+      "people": [{ "name": "Sofia Okafor", "email": "sofia@initech.example" }],
+      "facts": [
+        { "who": "Sofia Okafor", "key": "relation", "value": "client at Initech, head of procurement", "since": "2026-06-01" },
+        { "who": "Sofia Okafor", "key": "last meeting", "value": "«Q4 renewal», 12 Nov: you agreed to send the revised quote by Friday", "since": "2026-11-12", "from": "meeting", "where": "Q4 renewal" }
+      ]
+    },
+    "loop": {
+      "title": "Send Sofia the revised quote for the Q4 renewal",
+      "who": "Sofia Okafor",
+      "where": "email",
+      "facts": [
+        {
+          "label": "Email, Mon 16/11 18:10",
+          "text": "Follow-up (you promised) · Sofia Okafor by email, Monday 18:10: send Sofia the revised quote for the Q4 renewal · due: Friday · Pako checked: no reply from you yet"
+        }
+      ]
+    },
+    "recorded": "A reply to Sofia's email\nDear Sofia, following our Q4 renewal meeting on 12 Nov, I will send you the revised quote by Friday as agreed. The figures are [blank]. Kind regards"
+  },
+  "expect": {
+    "materialHas": ["client at Initech", "last agreed", "revised quote by Friday"],
+    "notPattern": ["^(hey|hiya|yo)\\b", "\\b(lol|cheers|xx)\\b", "\\p{Extended_Pictographic}"]
+  }
+}

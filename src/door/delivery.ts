@@ -63,20 +63,21 @@ export function mountDelivery(door: Door): Pick<Door, "graphTo" | "deliver" | "h
       },
     });
 
-  const deliver = async (p: { digits: string; label: string; text: string }): Promise<void> => {
+  /** False when it certainly did not go (paused, over the limit, refused): the owner was told why. */
+  const deliver = async (p: { digits: string; label: string; text: string }): Promise<boolean> => {
     const pause = d.control ? await d.control.state() : null;
     if (d.control && pause && pause.paused !== null) {
       // One language for the log line and the answer; why, as it is (a pause Pako set by itself is not the owner's STOP).
       const l = lang();
       d.control.log("blocked", T(l)("logBlocked", { label: p.label, why: pauseLabel(pause.why, l) }));
       await sendText(T(l)("notSentPaused", { paused: pausedText(pause.why, l) }));
-      return;
+      return false;
     }
     const at = now();
     const blocked = sendLimit(p.digits, at);
     if (blocked) {
       await sendText(blocked);
-      return;
+      return false;
     }
     let r = await graphTo(p.digits, { type: "text", text: { body: withOpening(p.text), preview_url: false } });
     let templated = false;
@@ -90,11 +91,12 @@ export function mountDelivery(door: Door): Pick<Door, "graphTo" | "deliver" | "h
       track(r.id, { ...p, templated });
       note(tx("noteSent", { label: p.label, template: templated ? tx("noteSentTemplate") : "" }));
       await sendText(tx("sentFriend", { label: p.label, template: templated ? tx("sentFriendTemplate") : "" }));
-      return;
+      return true;
     }
     note(tx("noteNotSent", { label: p.label, code: r.code }));
     d.control?.log("failure", tx("logNotSent", { label: p.label, code: r.code }));
     await sendText(r.code === -1 ? tx("sendUnknown", { label: p.label }) : failureText(p.label, p.digits, p.text, r.code, r.detail));
+    return r.code === -1; // no answer: it may have gone
   };
 
   /** What WhatsApp later says about a message to a friend: delivered, or failed (and then the template, if there is one, or the link). */

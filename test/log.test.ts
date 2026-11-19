@@ -121,6 +121,14 @@ test("in any text: bearer tokens, keys in their known shapes, secrets in a query
   assert.deepEqual(redactFields({ phone: "34600111222", to: "+44 7700 900123", count: 34600111222 }), { phone: "***222", to: "+***123", count: 34600111222 });
 });
 
+test("a Telegram bot token inside its API address (.../bot123456:ABC.../getUpdates) is hidden too", () => {
+  const token = "1234567890:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw1";
+  for (const line of [`GET https://api.telegram.org/bot${token}/getUpdates failed`, `https://api.telegram.org/file/bot${token}/voice/file_1.oga`]) {
+    const out = scrubText(line);
+    assert.ok(!out.includes("AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw1"), out);
+  }
+});
+
 test("the mail's one-time codes are hidden by the same rules as src/codes.ts, and a line's message is scrubbed too", (t) => {
   assert.equal(scrubText("subject: Your verification code is 482910"), `subject: Your verification code is ${codeMark("en")}`);
   const out = capture(t, {}, () => createLog("mail").info("new mail: %s", "Tu código de verificación es 482910", { from: "+34600111222" }));

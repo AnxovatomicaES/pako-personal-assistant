@@ -62,7 +62,9 @@ async function notices() {
       return a;
     };
     const lines = brokenChannels(status).map((c) => link(c.text, `/panel/settings#${c.id}`));
-    const next = oneSuggestion(status);
+    // The demo week (src/demo.ts) connects nothing: no suggestion to connect over its invented data.
+    const demo = await fetch("/panel/api/demo", { credentials: "same-origin", cache: "no-store" }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+    const next = demo?.on ? null : oneSuggestion(status);
     // The welcome block of an empty dashboard names the same one step.
     window.pakoNextStep = next;
     if (next) lines.push(link(`${next.text} · ${DASH.settings}`, next.href));

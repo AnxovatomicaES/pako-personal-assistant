@@ -475,8 +475,11 @@ export const heldId = (key: string, type: HeldType): string =>
 export interface HeldQueueDeps {
   kv: Kv | null;
   now: () => number;
-  /** Sends it. Called once per action at most, after it is marked "sending" in the store. */
-  run: (a: HeldAction) => Promise<void>;
+  /**
+   * Sends it. Called once per action at most, after it is marked "sending" in the store. `false`: it certainly did not go (paused, refused,
+   * not ready), and the owner was told so; its Undo then says it is no longer pending, never that it already went out.
+   */
+  run: (a: HeldAction) => Promise<boolean | void>;
   /** Tells the owner something about an action (a restart's stale or unsure one), on its chat. */
   tell: (a: HeldAction, kind: "stale" | "unsure") => Promise<void>;
   /** How long the real timer waits, from the window's milliseconds (the tests shorten it). */
@@ -556,7 +559,7 @@ export function createHeldQueue(d: HeldQueueDeps): HeldQueue {
     }
     let ok = true;
     try {
-      await d.run(a);
+      ok = (await d.run(a)) !== false;
     } catch (err) {
       ok = false;
       log.error(`a held ${a.type} failed: ${(err as Error).message}`);
@@ -592,7 +595,8 @@ export function createHeldQueue(d: HeldQueueDeps): HeldQueue {
         timers.delete(id);
         return { status: "undone", action: a };
       }
-      return { status: before.state === "undone" ? "gone" : "too-late", action: before };
+      // Only one that went (or may have) is too late; one that was undone, did not go, or was let go stale is simply no longer pending.
+      return { status: before.state === "sending" || before.state === "sent" || before.state === "unsure" ? "too-late" : "gone", action: before };
     },
     start: async () => {
       let list: HeldAction[];

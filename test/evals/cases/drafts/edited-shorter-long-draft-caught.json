@@ -1,0 +1,42 @@
+{
+  "suite": "drafts",
+  "behaviour": "a long, greeting-first draft after the owner had cut one short is caught",
+  "origin": "learning from corrections: the judges catch a draft that ignores the lesson",
+  "label": "fail",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-17 09:45",
+    "lang": "en",
+    "before": [
+      {
+        "at": "2026-11-16 10:00",
+        "who": "Ana",
+        "where": "Ana (private)",
+        "channel": "D0ANA",
+        "draft": "A reply in your Slack conversation with Ana\nHi Ana! Thanks so much for your patience on this one. I wanted to let you know that the Q4 deck is nearly finished and I will send it over to you by Friday afternoon, once the finance team has signed off the last numbers. Thanks!",
+        "sent": "Q4 deck is nearly finished, I'll send it Friday once finance signs off the numbers."
+      }
+    ],
+    "loop": {
+      "title": "Send Ana the budget numbers",
+      "who": "Ana",
+      "where": "Ana (private)",
+      "channel": "D0ANA",
+      "facts": [
+        {
+          "label": "Slack · Ana (private)",
+          "text": "Follow-up (you were asked) · Ana on Slack (private), Tuesday 09:40: send Ana the budget numbers · Pako checked: no reply from you there yet"
+        }
+      ]
+    },
+    "recorded": "A reply in your Slack conversation with Ana\nHi Ana! I hope your week is going well. I just wanted to follow up on the budget numbers you asked me about on Tuesday morning. I am still pulling the last figures together with the finance team, and I expect to have everything ready for you by [blank]. I will send them over as soon as they are final. Thanks so much for your patience!"
+  },
+  "expect": {
+    "lesson": [
+      "Ana",
+      "words"
+    ],
+    "maxWords": 25,
+    "noGreeting": true
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "suite": "memory",
+  "behaviour": "a known-bad judge answer: the new job taken as compatible leaves Fabrikam current too, and it is caught",
+  "origin": "person memory: a new job",
+  "label": "fail",
+  "input": {
+    "timeZone": "America/Chicago",
+    "lang": "en",
+    "start": "2026-11-17 10:00",
+    "turns": [
+      {
+        "at": "2026-11-17 10:00",
+        "message": "Kai works at Fabrikam, he runs their data team.",
+        "recorded": "Noted. <know who=\"Kai\" key=\"employer\">Fabrikam</know>"
+      },
+      {
+        "at": "2026-11-17 10:04",
+        "message": "Kai just left Fabrikam, he's at Contoso now.",
+        "recorded": "Good for him. <know who=\"Kai\" key=\"employer\">Contoso</know>",
+        "judge": "{\"contradicts\":[],\"compatible\":[\"{{old}}\"]}"
+      }
+    ],
+    "ask": {
+      "at": "2026-11-17 10:06",
+      "message": "what do you know about Kai?"
+    }
+  },
+  "expect": {
+    "holds": [
+      {
+        "who": "Kai",
+        "key": "employer",
+        "value": "Contoso"
+      }
+    ],
+    "notHolds": [
+      {
+        "who": "Kai",
+        "key": "employer",
+        "value": "Fabrikam"
+      }
+    ],
+    "history": [
+      {
+        "who": "Kai",
+        "value": "Fabrikam"
+      }
+    ],
+    "card": {
+      "has": [
+        "Kai",
+        "Contoso"
+      ],
+      "title": "Kai"
+    },
+    "changes": [
+      "Fabrikam",
+      "Contoso"
+    ],
+    "judged": 1
+  }
+}

@@ -4,7 +4,7 @@
 // Pako's figure (its CSS twin, figure-twin.js) sits by the name in the header: it thinks while the brief is written, is glad at a to-do done.
 
 import { mountTwins } from "./figure-twin.js";
-import { localeFor } from "./i18n.js";
+import { clockOf, localeFor } from "./i18n.js";
 
 const figure = (name, detail) => dispatchEvent(new CustomEvent(`pako:${name}`, detail === undefined ? undefined : { detail }));
 
@@ -254,8 +254,8 @@ function render() {
     const done = over(d);
     day.append(el("li", { class: done ? "slot over" : "slot" },
       d.allDay ? el("div", { class: "time" }, t("allDay"))
-        : !d.time ? el("div", { class: "time" }, t("until", { end: d.end ?? "" }))
-        : el("div", { class: "time" }, d.time, d.end ? el("small", {}, `– ${d.end}`) : null),
+        : !d.time ? el("div", { class: "time" }, t("until", { end: clockOf(d.end ?? "", localeOf()) }))
+        : el("div", { class: "time" }, clockOf(d.time, localeOf()), d.end ? el("small", {}, `– ${clockOf(d.end, localeOf())}`) : null),
       el("div", {},
         el("h3", {}, done ? "✓ " : null, d.title, d.confirmed ? null : el("span", { class: "unconfirmed" }, t("unconfirmed")),
           done ? el("span", { class: "was" }, t("over")) : null),

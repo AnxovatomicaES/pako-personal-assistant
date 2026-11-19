@@ -40,7 +40,15 @@ interface Snap {
   title: string;
   start: number;
   end: number;
+  /** The event's iCalendar UID, when the feed gives it: the same meeting (or series) whatever its id. */
+  uid?: string;
 }
+
+/**
+ * The meeting (or series) an event is one of: its UID, or its id without the start that the Mac, CalDAV and a calendar link put in it
+ * ("mac:E1@1763290800000"). Moving such an event changes its id; this stays.
+ */
+const seriesOf = (e: Snap): string => (e.uid ? `uid:${e.uid}` : e.id.endsWith(`@${e.start}`) ? `id:${e.id.slice(0, -String(e.start).length - 1)}` : `own:${e.id}`);
 interface State {
   /** Null before the first reading: nothing is a change until there is something to compare with. */
   events: Snap[] | null;
@@ -54,7 +62,7 @@ function stateOf(v: unknown): State {
   if (!isObject(v)) return { events: null, log: [] };
   const snap = (x: unknown): Snap | null =>
     isObject(x) && typeof x.id === "string" && typeof x.title === "string" && num(x.start) !== undefined && num(x.end) !== undefined
-      ? { id: x.id, title: x.title, start: x.start as number, end: x.end as number }
+      ? { id: x.id, title: x.title, start: x.start as number, end: x.end as number, ...(typeof x.uid === "string" && x.uid ? { uid: x.uid.slice(0, 200) } : {}) }
       : null;
   const change = (x: unknown): CalChange | null =>
     isObject(x) && (x.kind === "added" || x.kind === "moved" || x.kind === "cancelled") && typeof x.id === "string" && typeof x.title === "string"
@@ -75,8 +83,22 @@ export function diffEvents(prev: Snap[], next: Snap[], t: number): CalChange[] {
   const before = new Map(prev.map((e) => [e.id, e]));
   const now = new Map(next.map((e) => [e.id, e]));
   const out: CalChange[] = [];
+  // An event whose id carries its start gets a new id when it moves: gone under the old one, new under the other. Paired by meeting (the
+  // nearest start of the same one: anywhere for a single event, within the week for a series, whose new ones come into the window), that is a
+  // move, never a cancellation and a new event.
+  const fresh = next.filter((e) => !before.has(e.id));
+  const count = (list: Snap[], k: string): number => list.filter((x) => seriesOf(x) === k).length;
+  const movedTo = new Map<string, Snap>();
+  for (const e of prev.filter((x) => !now.has(x.id) && x.start > t)) {
+    const k = seriesOf(e);
+    const single = count(prev, k) === 1 && count(next, k) === 1;
+    const twin = fresh
+      .filter((n) => seriesOf(n) === k && !movedTo.has(n.id) && (single || n.start < t + ADDED_MS))
+      .sort((a, b) => Math.abs(a.start - e.start) - Math.abs(b.start - e.start))[0];
+    if (twin) movedTo.set(twin.id, e);
+  }
   for (const e of next) {
-    const old = before.get(e.id);
+    const old = before.get(e.id) ?? movedTo.get(e.id);
     if (!old) {
       // New within the week: one that only came into the two weeks' window (a repeating meeting's next one) was there all along.
       if (e.start > t && e.start < t + ADDED_MS) out.push({ kind: "added", id: e.id, title: e.title, start: e.start, end: e.end, at: t });
@@ -84,8 +106,9 @@ export function diffEvents(prev: Snap[], next: Snap[], t: number): CalChange[] {
       out.push({ kind: "moved", id: e.id, title: e.title, start: e.start, end: e.end, was: old.start, at: t });
     }
   }
+  const paired = new Set([...movedTo.values()].map((e) => e.id));
   for (const e of prev) {
-    if (!now.has(e.id) && e.start > t) out.push({ kind: "cancelled", id: e.id, title: e.title, start: e.start, end: e.end, at: t });
+    if (!now.has(e.id) && !paired.has(e.id) && e.start > t) out.push({ kind: "cancelled", id: e.id, title: e.title, start: e.start, end: e.end, at: t });
   }
   return out;
 }
@@ -129,7 +152,7 @@ export function createCalendarChanges(d: {
       const next: Snap[] = read
         .filter((e) => !e.invited && e.end > t && e.start < t + WINDOW_MS && e.response !== "declined")
         .slice(0, SNAP_MAX)
-        .map((e) => ({ id: e.id, title: e.title.slice(0, 200), start: e.start, end: e.end }));
+        .map((e) => ({ id: e.id, title: e.title.slice(0, 200), start: e.start, end: e.end, ...(e.uid ? { uid: e.uid.slice(0, 200) } : {}) }));
       const s = await load();
       const ahead = (s.events ?? []).filter((e) => e.start > t).length;
       if (!next.length && ahead >= 3) {

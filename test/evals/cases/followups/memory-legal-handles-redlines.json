@@ -1,0 +1,57 @@
+{
+  "suite": "followups",
+  "behaviour": "the owner's memory says Inès in legal handles contract redlines: a client asking the owner for the redlined MSA makes no loop for the owner",
+  "origin": "people memory: whose a request is, from what the owner told Pako",
+  "input": {
+    "timeZone": "Europe/London",
+    "ownerName": "Harriet",
+    "memory": {
+      "people": [
+        {
+          "name": "Inès Moreau",
+          "email": "ines@brightside.example"
+        },
+        {
+          "name": "Callum Reid",
+          "email": "callum@client.example"
+        }
+      ],
+      "facts": [
+        {
+          "who": "Inès Moreau",
+          "key": "relation",
+          "value": "in-house counsel",
+          "since": "2026-03-01"
+        },
+        {
+          "who": "Callum Reid",
+          "key": "contracts",
+          "value": "his redlines go to Inès in legal, not me",
+          "since": "2026-10-12"
+        }
+      ]
+    },
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-17 09:30",
+          "ref": "m-callum",
+          "from": "Callum Reid <callum@client.example>",
+          "to": "Harriet <harriet@brightside.example>",
+          "subject": "MSA",
+          "category": "needs_you",
+          "messageId": "<cr1@client.example>",
+          "body": "Morning Harriet,\n\nCould you send over the redlined MSA by Friday? Our procurement team is waiting on it.\n\nCheers,\nCallum"
+        },
+        "recorded": "{\"loops\":[],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "jobHas": [
+      "What the owner's memory says about the people here",
+      "his redlines go to Inès in legal, not me"
+    ]
+  }
+}

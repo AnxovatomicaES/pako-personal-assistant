@@ -1,0 +1,37 @@
+{
+  "suite": "followups",
+  "behaviour": "«next Friday at 11» said on a Wednesday is the Friday a week later (27 Nov), not this one",
+  "origin": "the ambiguous Friday: «next Friday» is a week later",
+  "input": {
+    "timeZone": "America/Chicago",
+    "ownerName": "Sam",
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0TARA",
+          "label": "Tara Quinn (private)",
+          "msgs": [
+            {
+              "at": "2026-11-18 13:30",
+              "who": "Tara Quinn",
+              "text": "No rush on the QBR deck, next Friday at 11 is fine"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send Tara the QBR deck\",\"detail\":\"Tara asked on Slack.\",\"who\":\"Tara\",\"due\":\"2026-11-27 11:00\",\"tz\":\"America/Chicago\",\"check\":\"slackReply\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Tara",
+        "titleHas": [
+          "QBR"
+        ],
+        "dueLocal": "2026-11-27 11:00"
+      }
+    ]
+  }
+}

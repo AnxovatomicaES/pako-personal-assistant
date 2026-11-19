@@ -59,7 +59,7 @@ enum PakoMessage: Equatable {
 /// The panel's message as the app understands it, or nil (then it is ignored): a dictionary with a known `type` and well-formed values.
 func parsePakoMessage(_ body: Any) -> PakoMessage? {
     guard let d = body as? [String: Any] else { return nil }
-    guard let type = d["type"] else { return d["lang"] is String || d["welcomed"] is Bool ? .panelWord : nil }
+    guard let type = d["type"] else { return d["lang"] is String || d["welcomed"] is Bool || d["demo"] is Bool ? .panelWord : nil }
     switch type as? String {
     case "discover":
         guard let list = d["what"] as? [Any], !list.isEmpty, list.count <= 10 else { return nil }

@@ -1,0 +1,40 @@
+{
+  "suite": "followups",
+  "behaviour": "the owner's own sent email «I'll send you the Q4 deck by Friday 17:00» becomes their promise to Ana, due Friday 17:00",
+  "origin": "one-job audit §1: mail the owner sent was dropped; now read from their Sent folder",
+  "input": {
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-16 10:05",
+          "ref": "s1",
+          "mine": true,
+          "from": "Alex <alex@acme.example>",
+          "to": "Ana <ana@client.example>",
+          "subject": "Re: Q4 numbers",
+          "messageId": "<s1@acme.example>",
+          "inReplyTo": "<ana0@client.example>",
+          "references": "<ana0@client.example>",
+          "body": "Hi Ana,\n\nGood call. I'll send you the Q4 deck by Friday 17:00.\n\nAlex\n\nOn Mon, 16 Nov 2026 at 09:12, Ana <ana@client.example> wrote:\n> Could you share the Q4 numbers when you have them?\n> Ana"
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"owner_promise\",\"title\":\"Send Ana the Q4 deck\",\"detail\":\"You told Ana by email you'd send the Q4 deck by Friday.\",\"who\":\"Ana\",\"due\":\"2026-11-20 17:00\",\"tz\":\"Europe/Madrid\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "owner_promise",
+        "who": "Ana",
+        "titleHas": [
+          "deck"
+        ],
+        "dueLocal": "2026-11-20 17:00",
+        "check": "none"
+      }
+    ],
+    "jobHas": [
+      "From: YOU"
+    ]
+  }
+}

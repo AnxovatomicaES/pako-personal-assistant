@@ -1,6 +1,6 @@
 {
   "name": "pako",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Pako: a personal AI assistant that runs on your own computer, with Claude as its brain. Chat, memory, reminders, mail, calendar, Slack, tables, phone. No key needed to start.",
   "type": "module",
   "private": true,
@@ -23,6 +23,7 @@
     "gate": "sh bin/gate.sh",
     "bench:latency": "node --disable-warning=ExperimentalWarning test/bench/latency.ts",
     "evals:live": "node --disable-warning=ExperimentalWarning test/evals/live.ts",
+    "evals:weekly": "node --disable-warning=ExperimentalWarning test/evals/weekly.ts",
     "evals:from-feedback": "node --disable-warning=ExperimentalWarning test/evals/from-feedback.ts",
     "eval:live": "node --disable-warning=ExperimentalWarning test/evals/chat-live.ts",
     "eval:promote": "node --disable-warning=ExperimentalWarning test/evals/promote.ts",

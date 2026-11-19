@@ -1,0 +1,51 @@
+{
+  "suite": "followups",
+  "behaviour": "a vendor asks for the PO and the delivery address, with no date; the owner's reply «PO attached, I'll confirm the address tomorrow 10:00» closes one and gives the other its time",
+  "origin": "the owner's sent mail closes what it does and keeps what it promises",
+  "input": {
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-17 08:40",
+          "ref": "m-po",
+          "from": "Priyanka Nair <orders@supplies.example>",
+          "to": "Alex <alex@acme.example>",
+          "subject": "Order 4471",
+          "category": "needs_you",
+          "messageId": "<po1@supplies.example>",
+          "body": "Hello Alex,\n\nTo ship order 4471 we need two things from you: the signed purchase order, and the delivery address for the Lisbon office.\n\nKind regards,\nPriyanka"
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send Priyanka the signed purchase order\",\"detail\":\"Priyanka asked by email for the PO for order 4471.\",\"who\":\"Priyanka\",\"check\":\"none\",\"reason\":\"email\"},{\"kind\":\"request_to_owner\",\"title\":\"Confirm the Lisbon delivery address to Priyanka\",\"detail\":\"Priyanka asked by email for the delivery address.\",\"who\":\"Priyanka\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      },
+      {
+        "mail": {
+          "at": "2026-11-17 12:15",
+          "ref": "s-po",
+          "mine": true,
+          "from": "Alex <alex@acme.example>",
+          "to": "Priyanka Nair <orders@supplies.example>",
+          "subject": "Re: Order 4471",
+          "messageId": "<s3@acme.example>",
+          "inReplyTo": "<po1@supplies.example>",
+          "references": "<po1@supplies.example>",
+          "body": "Hi Priyanka,\n\nSigned PO attached. I'll confirm the Lisbon delivery address tomorrow 10:00 once facilities reply.\n\nThanks,\nAlex"
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Confirm the Lisbon delivery address to Priyanka\",\"detail\":\"You said you'd confirm it.\",\"who\":\"Priyanka\",\"due\":\"2026-11-18 10:00\",\"tz\":\"Europe/Madrid\",\"check\":\"none\",\"reason\":\"email\",\"same\":\"{{loop2}}\"}],\"closes\":[\"{{loop1}}\"]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "closed": 1,
+    "open": [
+      {
+        "kind": "request_to_owner",
+        "who": "Priyanka",
+        "titleHas": [
+          "address"
+        ],
+        "dueLocal": "2026-11-18 10:00"
+      }
+    ]
+  }
+}

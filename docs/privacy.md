@@ -91,7 +91,7 @@ also capped, as said.
 | `assistant-reminders-fired` | The reminders already sent (the last 40), so none is sent twice | 7 days |
 | `assistant-lists` | Your lists and tasks (done ones for 7 more days) | 400 days |
 | `assistant-people` | The people in your life you told Pako about: name, relation, birthday, likes, things to remember (100 at most) | 400 days |
-| `memory-facts` | What Pako knows, dated: each fact (about you or someone) with since when it holds, until when (when it changed), when Pako learnt it, who said it and where; your notes and people read in. A closed fact is kept a year as history; 800 at most besides the current ones read in from your notes and people | 400 days |
+| `memory-facts` | What Pako knows, dated: each fact (about you or someone) with since when it holds, until when (when it changed), when Pako learnt it, who said it and where; your notes and people read in; what a reviewed meeting left with each person named in it ("last meeting": what you agreed, what they will do, what was decided; never the transcript, and no phone number, IBAN or link). A closed fact is kept a year as history; 800 at most besides the current ones read in from your notes and people. A short, dated block per person is made from here, the identities and the open follow-ups when the extraction, a draft, the brief or a meeting prep needs it, and goes only inside that run's job to your assistant's computer; it is not stored | 400 days |
 | `people-identities` | The people Pako has seen in Slack, the mail, the calendar's invitations and Zoom: names, email addresses, Slack ids, Zoom display names (never what they wrote), the last 5 times each appeared (with the Slack conversation's name for a Slack message), and the "same person?" questions with your answers (400 people at most) | 400 days |
 | `assistant-autonomy-held` | The messages, emails and calls you asked for that waited a few seconds so you could undo them (who, the words, and whether they went out): so none goes out twice after a restart (40 at most) | 2 days |
 | `assistant-autonomy-settings` | What Pako does at once and what it asks first, set in the panel's Settings | 5 years |
@@ -107,12 +107,12 @@ also capped, as said.
 | `assistant-last-channel` | Which chat you last wrote from | 1 year |
 | `owner-language` | The language you write in, as Pako heard it | 1 year |
 | `whatsapp-owner-bsuid` | Your WhatsApp user id (with WhatsApp only) | 1 year |
-| `assistant-mail` | Pako's inbox: a summary of the last 150 emails and the ids of the last 300 seen | 60 days |
+| `assistant-mail` | Pako's inbox: a summary of the last 150 emails (with each one's To and Cc lines, cut short, whether it was sent to a list, and a hash naming its thread) and the ids of the last 300 seen | 60 days |
 | `assistant-mail-codes` | One-time codes found in the mail | 30 minutes |
 | `assistant-mail-body:<id>` | The words of one email (one-time codes hidden), for the panel's reader | 60 days |
 | `mail-prefs` | Your mail choices: the sender rules you taught with Move to…, and which categories notify you | 5 years |
 | `assistant-imap` | Your own mailbox (IMAP, read only): the account name and server, and per folder the number of the last email already looked at. Never the password | 60 days |
-| `mail-backfill` | A newly connected mailbox's catch-up: the emails of its last days waiting to be read (one a minute) and its progress | 30 days |
+| `mail-backfill` | A newly connected mailbox's catch-up: the emails of its last days waiting to be read (one a minute; for one you sent, its newest words, about 4,000 characters at most, its recipients and subject) and its progress | 30 days |
 | `mail-invites` | Invitations caught from your mail (title, time, organizer, place), shown on the dashboard until your calendar has them. Never the mail itself | 60 days |
 | `slack-alerts` | Slack messages it told you about (the last 100) | 14 days |
 | `slack-held` | Slack notices kept during quiet hours | 2 days |
@@ -120,7 +120,8 @@ also capped, as said.
 | `teams-poll` | Where Pako is in each Teams chat and channel it looks at, and the last read and error (no message text) | 60 days |
 | `zoom-state` | Zoom meetings seen and the last 20 summaries | 60 days |
 | `meeting-reviews` | The last 40 Zoom meetings reviewed: their summary, your to-dos (who waits, by when, the words that show it), what others promised you, the decisions, the meetings agreed and the open questions | 30 days |
-| `followups` | Open items Pako follows up (what you were asked or promised, with where each was said), the "Not mine" rules and today's reminder count | 60 days (an open item 14 days, a closed one 7) |
+| `lessons` | What Pako learned from your corrections: a short dated line for each "Not mine", undo, 👎 on a reminder or a brief item, and draft you changed before sending it (what you changed, measured: length, greeting, sign-off, language), with how often you taught it, and for a draft both texts (60 at most; Settings › How Pako acts shows and deletes them). Also Pako's drafts of the last 3 days (10 at most), to compare with what you sent | 400 days |
+| `followups` | Open items Pako follows up (what you were asked or promised, with where each was said), the "Not mine" rules and today's reminder count; the new emails of a thread waiting a few minutes to be read together (their newest words, about 4,000 characters each, gone once the thread's job is queued), the ids of the emails already read (600 at most, so none is read twice) and today's count of email reading jobs. No excerpt of an email is kept with an item | 60 days (an open item 14 days, a closed one 7; a waiting email 2 days at most) |
 | `zoho-refresh` | Access to Zoho Calendar (a secret) | 10 years |
 | `calendar-state` | Which meeting reminders were already sent | 30 days |
 | `meeting-prep` | Which meetings already got their prep note (an id and a time per meeting, a week) | 8 days |
@@ -156,6 +157,8 @@ also capped, as said.
 | `learning` | Your learning goals, the quiz cards from your lessons and when each is due | 400 days |
 | `friend` | Whether the weekly check-in is on, when it last went, and which birthdays were already mentioned the day before | 400 days |
 | `job-claim:<slot>` | A mark while one scheduled run is being done (its slot hashed, and which Pako took it), so two Pakos on one store never do it twice at once | 10 minutes |
+| `demo-seeded` | When the demo week was set up. Only in the demo's own folder, `~/.pako/demo`, deleted by Leave demo | 90 days |
+| `demo-calendar` | The demo week's invented calendar. Only in `~/.pako/demo`, deleted by Leave demo | 90 days |
 | `places-ok` | That your Google Places key has answered once: a fingerprint of the key (a hash), never the key, so the settings page can say "connected" | 400 days |
 | `jobs` | The runs due at a time (the daily brief, each reminder sent): when each was due, whether it was done, missed (the computer slept past its last hour) or failed, and the error. The brief's and the reminders' own words are not in it | 8 days |
 

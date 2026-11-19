@@ -8,10 +8,12 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import { briefMaterial } from "../src/brief-v2.ts";
+import { clockTimes } from "../src/brief-support.ts";
 import { zonedTime } from "../src/followups.ts";
 import { draftCases, scrub } from "./evals/from-feedback.ts";
-import { inventedNames, loadCases, MODEL_SUITES, recordedAnswer, runCase, SUITES, type EvalCase } from "./evals/harness.ts";
-import { estimate, liveCases } from "./evals/live.ts";
+import { inventedNames, loadCases, samePerson, MODEL_SUITES, recordedAnswer, runCase, SUITES, type EvalCase } from "./evals/harness.ts";
+import { estimate, liveCases, options as liveOptions } from "./evals/live.ts";
+import { compare, outcomes, previousReport, readOutcomes, weeklyLines } from "./evals/weekly.ts";
 
 const cases = loadCases();
 const briefOf = (g: Parameters<typeof briefMaterial>[0], c: EvalCase) => {
@@ -66,6 +68,26 @@ test("the invented-people judge: a name the material never had is caught; days, 
   assert.deepEqual(inventedNames("Hoy, Madrid: Ravi espera el lunes de noviembre.", material), []);
 });
 
+test("the invented-people judge, its false positive fixed: UI and label words are not people, an invented name still is", () => {
+  const material = "L1 · Ana asked by email for the signed NDA by Wednesday.";
+  // A mailbox's and Pako's own words, capitalised mid-sentence: the owner's real false positive was «Sent».
+  for (const line of [
+    "Pako can't see your Sent folder, so check it before you chase Ana.",
+    "Ana's email sits under Needs you; you pressed Not mine on a similar one.",
+    "Look in Drafts or the Inbox for the NDA Ana asked about on Wed 18 Nov.",
+    "The NDA for Ana is due Wed, Sept is far off, and the Standup moved to 09:30 IST.",
+  ]) assert.deepEqual(inventedNames(line, material), [], line);
+  // A fact's label is Pako's own words: a word it gives ("Receipts · Billing") is known even when no fact's text repeats it.
+  assert.deepEqual(inventedNames("Ana's NDA came in, and Billing confirmed it.", material), ["Billing"], "without the labels it is unknown");
+  assert.deepEqual(inventedNames("Ana's NDA came in, and Billing confirmed it.", material, "Email · Receipts · Billing"), []);
+  // The other direction: a real invented name is still caught beside every one of those words, and a common first name is never a UI word.
+  assert.deepEqual(inventedNames("Check your Sent folder, then ask Gregorio about the NDA.", material, "Email · Sent"), ["Gregorio"]);
+  assert.deepEqual(inventedNames("Ana and Grace both want the NDA; ask Mark and Will.", material), ["Grace", "Mark", "Will"]);
+  assert.deepEqual(inventedNames("Forward it to Priyanka under Needs you.", material), ["Priyanka"]);
+  // The UI words are never a zone: "10:00 Standup" stays the owner's own time.
+  assert.deepEqual(clockTimes("10:00 Standup, 11:00 Sent, 16:30 Hong Kong", "Madrid"), { bare: [600, 660], ampm: [], zoned: [990] });
+});
+
 test("live mode: the cost is shown before running and the cap stops a run that would cost more", () => {
   const live = cases.filter((c) => MODEL_SUITES.includes(c.suite) && c.label !== "fail");
   const e = estimate(live, 3);
@@ -113,4 +135,33 @@ test("feedback to cases: 👎 and «No es mío» become draft cases with names, 
     assert.ok(r.checks.some((x) => !x.pass), `${d.file}: the judges catch it`);
   }
   assert.match(scrub("Escribe a ana@x.es o al 600 111 222, mira https://a.b/c", ["Ana"]).text, /^Escribe a <email1> o al <phone1>, mira <link1>$/);
+});
+
+test("the weekly run: one line per case, read back, and a case that passed last week and fails now is a regression", () => {
+  const live = liveCases(cases);
+  assert.ok(live.length >= 100, `about 100 live-capable cases (${live.length})`);
+  const [a, b, c, d] = live;
+  const o = { ...liveOptions(["--max-usd", "5"]), k: 1 };
+  const run = { rows: [{ c: a!, passed: 1, ran: 1, fails: [] }, { c: b!, passed: 0, ran: 1, fails: ["run 1: x"] }, { c: c!, passed: 1, ran: 1, fails: [] }],
+    spent: 0.4, stopped: true };
+  const now = outcomes(run, [a!, b!, c!, d!].map((x) => x.file!), 1);
+  assert.deepEqual([...now.values()], ["PASS", "FAIL", "PASS", "NOT RUN"], "the cap left the last one not run: never a regression");
+  const text = weeklyLines(run, [a!, b!, c!, d!], o, "2026-11-26", now, null).join("\n");
+  assert.deepEqual(readOutcomes(text), now, "the report's case lines read back as they were");
+  const before = new Map([[a!.file!, "PASS"], [b!.file!, "PASS"], [c!.file!, "FAIL"]] as const);
+  assert.deepEqual(compare(before, now), { regressions: [b!.file!], fixed: [c!.file!], added: [d!.file!] });
+  const dir = mkdtempSync(join(tmpdir(), "pako-weekly-"));
+  try {
+    assert.equal(previousReport(dir, "2026-11-26"), null);
+    for (const f of ["weekly-2026-11-12.md", "weekly-2026-11-19.md", "weekly-2026-11-26.md", "2026-11-25.md"]) writeFileSync(join(dir, f), "");
+    assert.equal(previousReport(dir, "2026-11-26"), join(dir, "weekly-2026-11-19.md"), "the latest earlier weekly report, never today's or a live run's");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the loop's person: the expected first name with a surname is the same person; another name never is", () => {
+  assert.ok(samePerson("Owen Hart", "Owen") && samePerson("Owen", "Owen") && samePerson("lucía ferrer", "Lucía"));
+  assert.ok(!samePerson("Owena Hart", "Owen") && !samePerson("Hart Owen", "Owen") && !samePerson("Ravi", "Owen"));
+  assert.ok(!samePerson("Owen", "Owen Hart"), "a full name expected needs the full name");
 });

@@ -29,10 +29,10 @@ import { mountTick } from "./bridge/tick.ts";
 import { parseReply } from "./bridge/reply.ts";
 import type { BridgeDeps } from "./bridge/core.ts";
 
-export { DEFAULT_MODEL, defaultStateDir, loadBridgeConfig, OLD_STATE_DIR_NAME, STATE_DIR_NAME } from "./bridge/config.ts";
+export { DEFAULT_MODEL, DEFAULT_WRITING_MODEL, defaultStateDir, loadBridgeConfig, OLD_STATE_DIR_NAME, STATE_DIR_NAME } from "./bridge/config.ts";
 export type { BridgeConfig } from "./bridge/config.ts";
 export { childEnv, claudeCommand, offersFlag, offersNoBare } from "./bridge/cli.ts";
-export { buildClaudeArgs, ClaudeError, readTheWeb, runClaude, stopRunningClaude } from "./bridge/claude.ts";
+export { buildClaudeArgs, ClaudeError, modelUnavailable, readTheWeb, runClaude, stopRunningClaude } from "./bridge/claude.ts";
 export type { ClaudeResult, FileBlock, RunConfig } from "./bridge/claude.ts";
 export { mcpConfigFor, mcpDownIn, offersMcpTools, toolDataPath, watchTurn } from "./bridge/mcp.ts";
 export type { TurnSeen } from "./bridge/mcp.ts";

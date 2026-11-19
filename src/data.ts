@@ -82,6 +82,7 @@ const KEY_LIST = [
   { key: "teams-poll", keep: 60 * DAY }, // teams.ts
   { key: "zoom-state", keep: 60 * DAY }, // zoom.ts
   { key: "followups", keep: 60 * DAY }, // followups.ts
+  { key: "lessons", keep: 400 * DAY }, // lessons.ts
   { key: "meeting-reviews", keep: 30 * DAY }, // meeting-review.ts
   { key: "zoho-refresh", keep: 3650 * DAY, secret: "whole" }, // calendar.ts
   { key: "calendar-state", keep: 30 * DAY },
@@ -120,6 +121,8 @@ const KEY_LIST = [
   { key: "jobs", keep: 8 * DAY }, // jobs.ts
   { key: "job-claim:", prefix: true, keep: 10 * 60 },
   { key: "places-ok", keep: 400 * DAY }, // app.ts (table booking)
+  { key: "demo-seeded", keep: 90 * DAY }, // demo.ts (only in ~/.pako/demo)
+  { key: "demo-calendar", keep: 90 * DAY },
 ] as const satisfies readonly KeyFact[];
 
 export const DATA_KEYS: readonly KeyFact[] = KEY_LIST;
@@ -153,7 +156,7 @@ const ABOUT = texts<AboutKey | "unknown">(
     "assistant-last-channel": "Which chat you last wrote from",
     "owner-language": "The language you write in, as Pako heard it",
     "whatsapp-owner-bsuid": "Your WhatsApp user id (with WhatsApp only)",
-    "assistant-mail": "Pako's inbox: a summary of the last 150 emails and the ids of the last 300 seen",
+    "assistant-mail": "Pako's inbox: a summary of the last 150 emails (with their To and Cc lines, list mark and thread hash) and the ids of the last 300 seen",
     "assistant-mail-codes": "One-time codes found in the mail (exported without the codes)",
     "assistant-mail-body:": "The words of one email (one-time codes hidden), for the panel's reader",
     "mail-prefs": "Your mail choices: the sender rules you taught with Move to…, and which categories notify you",
@@ -165,7 +168,9 @@ const ABOUT = texts<AboutKey | "unknown">(
     "slack-poll": "Where Pako is in each Slack conversation it looks at (no message text)",
     "teams-poll": "Where Pako is in each Teams chat and channel it looks at, and the last read and error (no message text)",
     "zoom-state": "Zoom meetings seen and the last 20 summaries",
-    followups: "Open items Pako follows up (what you were asked or promised), the \"Not mine\" rules and today's reminders",
+    followups: "Open items Pako follows up (what you were asked or promised), the \"Not mine\" rules, today's reminders, and new emails waiting "
+      + "a few minutes to be read for them (gone once read; the ids of those read, so none is read twice)",
+    lessons: "What Pako learned from your corrections (60 at most), and its drafts of the last 3 days, to compare with what you sent",
     "meeting-reviews": "The last 40 Zoom meetings reviewed: their summary, your to-dos, what was promised and decided, the open questions",
     "zoho-refresh": "Access to Zoho Calendar (a secret: never exported)",
     "calendar-state": "Which meeting reminders were already sent",
@@ -204,6 +209,8 @@ const ABOUT = texts<AboutKey | "unknown">(
     jobs: "What was due at a time (the brief, each reminder sent) and whether it was done, so nothing is done twice or lost while the computer sleeps",
     "job-claim:": "A mark while something scheduled is being done, so it is not done twice at once (10 minutes at most)",
     "places-ok": "That your Google Places key has worked once (a fingerprint of the key, never the key)",
+    "demo-seeded": "When the demo week was set up (only in the demo's own folder, ~/.pako/demo)",
+    "demo-calendar": "The demo week's invented calendar (only in the demo's own folder, ~/.pako/demo)",
     unknown: "A key this version of Pako doesn't know",
   },
 );
@@ -346,7 +353,13 @@ function secretValues(dir: string, env: Env): string[] {
   };
   const secrets = readSecrets(dir) ?? {};
   for (const [k, v] of Object.entries(secrets)) {
-    if (k !== "settings") add(v);
+    if (k === "settings") continue;
+    add(v);
+    // A connection kept as one object (whatsappComputer: Meta's app secret, access token, webhook token, set up in the panel): its secret
+    // fields by their names, in any case (appSecret, accessToken). Defence in depth: the store should never hold them anyway.
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      for (const [f, x] of Object.entries(v as Record<string, unknown>)) if (SECRET_NAME.test(f.toUpperCase())) add(x);
+    }
   }
   const settings = secrets.settings;
   if (settings && typeof settings === "object" && !Array.isArray(settings)) {

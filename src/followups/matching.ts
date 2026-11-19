@@ -1,6 +1,7 @@
 // Matching: candidates made into loops (what a "Not mine" rule excludes dropped, the same thing said again merged into its open loop, a
 // time moved followed), from the bridge's answer to a job or from a meeting review.
 
+import { instructsPako } from "../brief-support.ts";
 import { fold } from "../lists.ts";
 import { candidate, clean, parseAnswer, sameThing } from "./answer.ts";
 import type { Engine } from "./parts.ts";
@@ -34,7 +35,8 @@ export function mountMatching(fu: Engine): Pick<Engine, "ruledOut" | "keep" | "r
       if (ruledOut(s, c, job)) continue;
       // The same thing again: the open loop the run named (of this conversation only), the same title, or (a re-ping worded differently, in a
       // later message) the same kind and check from the same person in the same conversation for the same time.
-      const here = (l: Loop): boolean => !!job.where.channel && l.where.channel === job.where.channel;
+      const here = (l: Loop): boolean =>
+        (!!job.where.channel && l.where.channel === job.where.channel) || (!!job.where.mailThread && l.where.mailThread === job.where.mailThread);
       const checkKind = (k: Check): string => Object.keys(k)[0]!;
       const named = isObject(v) && typeof v.same === "string" && HEX10.test(v.same) ? v.same : "";
       const sameTime = (a?: number, b?: number): boolean => (a === undefined && b === undefined) || (!!a && !!b && Math.abs(a - b) <= SAME_TIME_MS);
@@ -54,13 +56,17 @@ export function mountMatching(fu: Engine): Pick<Engine, "ruledOut" | "keep" | "r
             : Math.max(job.whenSaid + config.delayMs, t);
       if (twin) {
         const repeat = twin.sources.some((x) => x.ref && x.ref === src.ref);
+        const later = job.whenSaid > Math.max(twin.whenSaid, ...twin.sources.map((x) => x.at));
         // Moved in a later message ("can we make it 6:15 instead?"): the loop follows the new time, and is checked and nudged for it afresh.
-        const moved = !repeat && !!c.dueAt && !!twin.dueAt && Math.abs(c.dueAt - twin.dueAt) > SAME_TIME_MS
-          && job.whenSaid > Math.max(twin.whenSaid, ...twin.sources.map((x) => x.at));
-        if (moved) {
+        const moved = !repeat && !!c.dueAt && !!twin.dueAt && Math.abs(c.dueAt - twin.dueAt) > SAME_TIME_MS && later;
+        // A time given later in the same conversation to a loop that had none ("let's do it Friday 3pm", "I'll confirm it tomorrow 10:00"):
+        // the loop takes it, as a moved one does. Only from its own conversation or thread: a time said elsewhere is another matter.
+        const timed = !repeat && !!c.dueAt && !twin.dueAt && here(twin) && later;
+        if (moved || timed) {
           twin.dueAt = c.dueAt;
+          // The zone the new time was said in. A run that gives the owner's own (or none) keeps the zone the loop had: «can we make it 6:15
+          // instead?» of a 5:15 AM ET meeting is still ET, and the same instant written in the owner's zone is no reason to lose it.
           if (c.tz) twin.tz = c.tz;
-          else delete twin.tz;
           if ("zoomMeeting" in twin.check) twin.check.zoomMeeting.around = c.dueAt;
           else if ("calendarEvent" in twin.check) twin.check.calendarEvent.around = c.dueAt;
           if (!theirs) delete twin.escalated;
@@ -92,14 +98,20 @@ export function mountMatching(fu: Engine): Pick<Engine, "ruledOut" | "keep" | "r
         log.error(`the answer to job ${jobId} is not the JSON asked for: nothing kept`);
         return { ok: false, added: 0 };
       }
-      // Closed by what was said later ("nvm, Stan set it up"): only an open loop of this same Slack conversation.
+      // Closed by what was said later ("nvm, Stan set it up", the owner's reply with the signed copy): only an open loop of this same Slack
+      // conversation or email thread.
+      const same = (l: Loop): boolean =>
+        (job.source === "slack" && !!job.where.channel && l.where.channel === job.where.channel)
+        || (job.source === "mail" && !!job.where.mailThread && l.where.mailThread === job.where.mailThread);
       for (const id of answer.closes) {
-        const x = s.loops.find((l) => l.id === id && isOpen(l) && job.source === "slack" && !!job.where.channel && l.where.channel === job.where.channel);
+        const x = s.loops.find((l) => l.id === id && isOpen(l) && same(l));
         if (!x) continue;
         Object.assign(x, { status: "done", closedAt: now(), nextCheckAt: 0 });
         d.control?.log("followup", T(lang())("logClosed", { title: x.title }));
       }
-      return { ok: true, added: keep(s, job, answer.loops, LOOPS_PER_JOB, false) };
+      // An email's words are other people's: a candidate that reads as an order to an assistant is not kept, whatever the run made of it.
+      const loops = job.source === "mail" ? answer.loops.filter((v) => !(isObject(v) && instructsPako(`${v.title ?? ""} ${v.detail ?? ""}`))) : answer.loops;
+      return { ok: true, added: keep(s, job, loops, LOOPS_PER_JOB, false) };
     });
 
   /**

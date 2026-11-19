@@ -144,7 +144,7 @@ test("Yieldy call: extraction -> loops in the engine -> ONE message with the own
   assert.equal(job.id, "review:yieldy==");
   assert.equal(job.text, "", "an older bridge lets it go");
   assert.equal(job.review?.source, "summary");
-  assert.match(job.review!.head, /^Now: 2026-11-12 17:10 \(Europe\/Madrid\)\nThe meeting started: 2026-11-12 16:00 \(Europe\/Madrid\)\nThe owner \(YOU\) is: Marta$/);
+  assert.match(job.review!.head, /^Now: 2026-11-12 17:10, Thursday \(Europe\/Madrid\)\nThe meeting started: 2026-11-12 16:00, Thursday \(Europe\/Madrid\)\nThe owner \(YOU\) is: Marta$/);
 
   assert.deepEqual(await r.reviewer.result(job.id, YIELDY_REVIEW), { ok: true, todos: 2, loops: 4 });
   assert.equal(r.told.length, 1, "one message");

@@ -161,7 +161,7 @@ export interface Door {
   readonly forwardReply: (m: Record<string, unknown>) => Promise<string | null>;
   // src/door/delivery.ts
   readonly graphTo: (digits: string, body: Record<string, unknown>) => Promise<Delivery>;
-  readonly deliver: (p: { digits: string; label: string; text: string; }) => Promise<void>;
+  readonly deliver: (p: { digits: string; label: string; text: string; }) => Promise<boolean>;
   readonly handleStatus: (st: Record<string, unknown>) => Promise<string | null>;
   // src/door/autonomy.ts
   readonly at: (key: Parameters<ReturnType<typeof autonomyText>>[0], vars?: Record<string, string | number>) => string;

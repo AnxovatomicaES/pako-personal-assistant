@@ -34,7 +34,7 @@
       },
       todos: [
         {
-          title: "Set up the 5:15 PM ET call with Samir and Michael",
+          title: "Set up the 5:15 PM ET call with Samir and Maya",
           context: "Samir asked on Slack yesterday at 18:40. 5:15 PM ET is 23:15 here.",
           checked: "no meeting on Zoom or your calendar yet",
           sources: ["s2"], done: false, loopId: "l1",
@@ -66,7 +66,7 @@
         { time: "10:00", end: "10:45", title: "Rohan · pricing", confirmed: true, note: "Moved from Tuesday.", sources: ["c1", "m1"] },
         { time: "13:00", end: "14:00", title: "Lunch with Ana", confirmed: true, sources: ["c1"] },
         { time: "15:00", end: "16:00", title: "Q4 deck review", confirmed: true, sources: ["c1", "s1"] },
-        { time: "23:15", title: "Call with Samir and Michael", confirmed: false, note: "Agreed on Slack, not on any calendar yet.", sources: ["s2"] },
+        { time: "23:15", title: "Call with Samir and Maya", confirmed: false, note: "Agreed on Slack, not on any calendar yet.", sources: ["s2"] },
       ],
       refs,
       sourcesUsed: ["calendar", "mail", "slack", "zoom", "tasks", "people"],

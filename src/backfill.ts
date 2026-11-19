@@ -9,7 +9,8 @@
 //
 // - Inbox mail: summarized in the isolated email run (assistant/bridge.ts, kind "backfill"), never told; worth telling means the follow-ups
 //   look at it, made closed when the owner already replied in the same thread (`replied`).
-// - Sent mail: the owner's own words, where their promises live ("I'll send it Friday"): offered to the follow-ups as loops the owner owes.
+// - Sent mail: the owner's own words, where their promises live ("I'll send it Friday"): read whole by the follow-ups with its thread
+//   (src/mail-followups.ts), as loops the owner owes and replies that close what was asked.
 //
 // The owner hears two calm lines in all: when it starts ("Catching up on the last 14 days…", src/imap.ts) and when it is done ("Caught up: 3
 // things need you, 2 people are waiting on a reply from you."). Kept in the store under "mail-backfill".
@@ -20,6 +21,7 @@
 import { texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import type { Inbound } from "./whatsapp.ts";
+import type { SentMail } from "./mail-followups.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -71,7 +73,7 @@ export function loadBackfillConfig(env: Env): { config: BackfillConfig; problems
 
 type Item =
   | { type: "mail"; m: Inbound; from: string; replied?: boolean }
-  | { type: "sent"; ref: string; label: string; text: string; at: number }
+  | { type: "sent"; ref: string; label: string; text: string; at: number; mail?: SentMail }
   | { type: "chat"; chat: BackfillChat };
 
 /** A chat conversation's last days (src/teams.ts): its messages, handed to the follow-ups as one conversation. */
@@ -112,8 +114,10 @@ export interface BackfillDeps {
   config: BackfillConfig;
   /** The assistant's inbox (src/whatsapp.ts): the same intake as any email. */
   enqueue: (m: Inbound) => Promise<boolean>;
-  /** The follow-ups' offer (src/followups.ts): a sent email's words, as loops the owner owes. */
+  /** The follow-ups' offer (src/followups.ts): a sent email's words, as loops the owner owes (an item queued before `sent` existed). */
   offer?: (o: { source: "mail"; ref: string; label: string; text: string; at: number }) => Promise<boolean>;
+  /** A sent email read whole by the follow-ups, with its thread (src/mail-followups.ts sent). */
+  sent?: (m: SentMail) => Promise<boolean>;
   /** A chat conversation of the catch-up, handed to the follow-ups (src/followups.ts observeSlack, each message). */
   chat?: (c: BackfillChat) => Promise<unknown>;
   /** An email the allowance did not reach: kept with its first lines, marked not analysed (src/mail.ts annotate). */
@@ -211,7 +215,9 @@ export function createBackfill(d: BackfillDeps) {
         s.chats = (s.chats ?? 0) + 1;
         s.done++;
       } else {
-        await d.offer?.({ source: "mail", ref: item.ref, label: item.label, text: item.text, at: item.at }).catch(() => false);
+        // Read whole with its thread when the follow-ups take it; otherwise (or an item from before) its words as one text.
+        const whole = item.mail && d.sent ? await d.sent(item.mail).catch(() => false) : false;
+        if (!whole) await d.offer?.({ source: "mail", ref: item.ref, label: item.label, text: item.text, at: item.at }).catch(() => false);
         s.done++;
       }
       return "sent";
@@ -232,9 +238,10 @@ export function createBackfill(d: BackfillDeps) {
         return true;
       }),
     /** A sent email of the catch-up: the owner's own words, offered to the follow-ups later, paced. */
-    addSent: (o: { ref: string; label: string; text: string; at: number }): Promise<void> =>
+    addSent: (o: { ref: string; label: string; text: string; at: number; mail?: SentMail }): Promise<void> =>
       locked(async (s) => {
-        push(s, { type: "sent", ...o, text: o.text.slice(0, 4000) });
+        const { mail, ...rest } = o;
+        push(s, { type: "sent", ...rest, text: rest.text.slice(0, 4000), ...(mail ? { mail: { ...mail, text: mail.text.slice(0, 4000) } } : {}) });
       }),
     /**
      * A chat conversation of a new connection's catch-up (Teams), handed out later, paced, in the same allowance. A catch-up already

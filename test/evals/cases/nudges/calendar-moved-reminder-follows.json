@@ -1,0 +1,63 @@
+{
+  "suite": "nudges",
+  "behaviour": "an agreed review moved on the calendar from 15:00 to 17:30: the reminder is for 17:30, never once that has passed",
+  "origin": "a moved meeting, from the calendar: the reminder follows the new time",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0YUKI",
+          "label": "Yuki Sato (private)",
+          "msgs": [
+            {
+              "at": "2026-11-18 09:00",
+              "who": "Yuki Sato",
+              "text": "Let's review the forecast today at 15:00, can you set up the Zoom?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Set up the forecast review Zoom with Yuki\",\"detail\":\"Yuki asked on Slack.\",\"who\":\"Yuki\",\"due\":\"2026-11-18 15:00\",\"tz\":\"Europe/Madrid\",\"check\":\"zoomMeeting\",\"hints\":[\"forecast\",\"Yuki\"]}],\"closes\":[]}"
+      },
+      {
+        "calendar": [
+          {
+            "kind": "moved",
+            "title": "Forecast review with Yuki",
+            "start": "2026-11-18 17:30",
+            "was": "2026-11-18 15:00",
+            "at": "2026-11-18 09:05"
+          }
+        ]
+      }
+    ],
+    "timeline": {
+      "until": "2026-11-18 19:00"
+    }
+  },
+  "expect": {
+    "cards": [
+      {
+        "from": "2026-11-18 09:05",
+        "to": "2026-11-18 09:30",
+        "has": [
+          "forecast review",
+          "17:30"
+        ],
+        "hasNot": [
+          "15:00"
+        ]
+      },
+      {
+        "from": "2026-11-18 16:00",
+        "to": "2026-11-18 17:30",
+        "has": [
+          "Not long now",
+          "17:30"
+        ],
+        "hasNot": [
+          "15:00"
+        ]
+      }
+    ]
+  }
+}

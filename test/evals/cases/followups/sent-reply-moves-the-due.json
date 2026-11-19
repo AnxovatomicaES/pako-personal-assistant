@@ -1,0 +1,50 @@
+{
+  "suite": "followups",
+  "behaviour": "Ana asks for the signed SOW by Wednesday; the owner's sent reply «I'll have it to you Friday 12:00» keeps one loop, now due Friday",
+  "origin": "the owner's sent mail: a reply that promises it later gives the same loop again with the new time",
+  "input": {
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-16 09:10",
+          "ref": "m-ana-sow",
+          "from": "Ana Ruiz <ana@client.example>",
+          "to": "Alex <alex@acme.example>",
+          "subject": "SOW",
+          "category": "needs_you",
+          "messageId": "<as1@client.example>",
+          "body": "Hi Alex,\n\nCould you send me the signed SOW by Wednesday 17:00? Procurement wants to close it this week.\n\nThanks,\nAna"
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send Ana the signed SOW\",\"detail\":\"Ana asked by email for the signed SOW.\",\"who\":\"Ana\",\"due\":\"2026-11-18 17:00\",\"tz\":\"Europe/Madrid\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+      },
+      {
+        "mail": {
+          "at": "2026-11-17 18:30",
+          "ref": "s-ana-sow",
+          "mine": true,
+          "from": "Alex <alex@acme.example>",
+          "to": "Ana Ruiz <ana@client.example>",
+          "subject": "Re: SOW",
+          "messageId": "<s9@acme.example>",
+          "inReplyTo": "<as1@client.example>",
+          "references": "<as1@client.example>",
+          "body": "Hi Ana,\n\nLegal still has one comment on clause 4. I'll have the signed SOW to you Friday 12:00.\n\nBest,\nAlex\n\nOn Mon, 16 Nov 2026 at 09:10, Ana Ruiz <ana@client.example> wrote:\n> Could you send me the signed SOW by Wednesday 17:00?"
+        },
+        "recorded": "{\"loops\":[{\"kind\":\"request_to_owner\",\"title\":\"Send Ana the signed SOW\",\"detail\":\"Ana asked by email; you said Friday.\",\"who\":\"Ana\",\"due\":\"2026-11-20 12:00\",\"tz\":\"Europe/Madrid\",\"check\":\"none\",\"reason\":\"email\",\"same\":\"{{loop1}}\"}],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "open": [
+      {
+        "kind": "request_to_owner",
+        "who": "Ana",
+        "titleHas": [
+          "SOW"
+        ],
+        "dueLocal": "2026-11-20 12:00"
+      }
+    ]
+  }
+}

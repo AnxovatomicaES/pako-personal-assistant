@@ -12,10 +12,10 @@ A judge that always says yes would catch nothing.
 
 | Suite | What it checks |
 |---|---|
-| `followups` | The follow-up extraction, read through the real engine: the 5:15 AM ET meeting is due at 11:15 in the owner's zone (the fixtures' owner is in Central Europe; 10:15 in the US summer-time week), a re-ping joins the open loop, a cancellation closes it, a moved time moves it, an FYI or someone else's request makes nothing, a hostile message orders nothing, no invented person |
-| `nudges` | Timeliness, against a fake clock: each reminder in its window with its words, nothing in the quiet hours, nothing before the delay, nothing once its time has passed, nothing for what was cancelled or done |
-| `brief` | Every item cites a fact it was given, every bare time written is a time of a fact in the owner's zone, no person the facts never named, an agreed meeting is never shown confirmed, a hostile Slack message never reaches the page |
-| `autonomy` | Provenance: the owner's own request goes without a card; a recipient, number, address or text from an email or Slack, two matching contacts, or Pako's own initiative always ask |
+| `followups` | The follow-up extraction, read through the real engine: the 5:15 AM ET meeting is due at 11:15 in the owner's zone (the fixtures' owner is in Central Europe; 10:15 in the US summer-time week), a re-ping joins the open loop, a cancellation closes it, a moved time moves it, an FYI or someone else's request makes nothing, a hostile message orders nothing, no invented person; the owner's own promises on Slack and their "done", the real email body (quoted history, the owner's sent replies, newsletters), Not mine lessons, the owner's memory of people, a calendar change seen overnight (a `calendar` turn), owners in the US, UK, India and Australia, DST weeks and the ambiguous "Friday" |
+| `nudges` | Timeliness, against a fake clock: each reminder in its window with its words, nothing in the quiet hours, nothing before the delay, nothing once its time has passed, nothing for what was cancelled or done, a re-ping never a second set of reminders, a meeting moved on the calendar reminded at its new time |
+| `brief` | Every item cites a fact it was given, every bare time written is a time of a fact in the owner's zone, no person the facts never named, an agreed meeting is never shown confirmed, a hostile Slack message or calendar title never reaches the page; what changed overnight comes first (`updateCites`) and a gone event is off the day (`absent`), a meeting worth it is marked to prepare (`prep`), a clash is a proposal, never a change made |
+| `autonomy` | Provenance: the owner's own request goes without a card; a recipient, number, address or text from an email or Slack, two matching contacts, or Pako's own initiative always ask; an address with look-alike characters never replaces the one typed; the owner's promise in the chat is kept (`promises`) and their "done" closes the one follow-up it names (`closes`); a calendar change is given to the owner to make, never claimed done (`replyNot`) |
 | `memory` | Dated facts through the real door: a moved meeting closes the old day (kept as history), two values that hold together both stay, the computer away or a silent judge lets the newest win, a fact from someone else's email is never kept; "what do you know about X?" shows the person card with what holds now and what changed |
 | `jobs` | The brief on the durable jobs' clock with a laptop that sleeps: late with its note until 11:00, skipped after (BRIEF says so once), a hosted server silent as before, and the line for what changed in the memory told since the last brief given, so a skipped day is not lost (code only) |
 | `redflags` | The emergency number first, in the language of the words, for the country; figures of speech are not emergencies |
@@ -30,6 +30,12 @@ bridge uses and no tools. Each case runs k times (`--k 3` by default) and passes
 lucky answer). The code judges decide first; a case's `rubric` (a yes/no question for an LLM judge) is asked only for what code cannot judge,
 and only when every code check passed. It shows the number of runs and the estimated cost and asks before starting; `--max-usd` (5 by
 default) stops it once spent. Options: `--suite followups`, `--case rohan`, `--model`, `--yes`. The report goes to `.claude/evals/<date>.md`.
+
+**Weekly** (`npm run evals:weekly`, the quality bar, never in the gate): every live-capable golden case once (k=1), about a hundred, under a
+cap (`--max-usd`, 5 by default; `--yes` to run without the question). The report, `.claude/evals/weekly-YYYY-MM-DD.md`, has one line per case
+(PASS, FAIL, or NOT RUN when the cap stopped first) and is compared with the latest earlier weekly report: a case that passed then and fails
+now is printed as a REGRESSION, and the command exits 1. A failure the model makes is a finding to read, never a reason to loosen a check.
+Everything under `.claude/evals/` is the local result of a run and is ignored by git.
 
 **From your feedback** (`npm run evals:from-feedback`): every 👎 on a reminder or a brief item and every **Not mine** from the last 30 days
 (`--days`) becomes a draft case in `.claude/evals/drafts/`, with names, addresses, phone numbers, links and channels replaced by placeholders

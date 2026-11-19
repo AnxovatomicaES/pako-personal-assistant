@@ -2,7 +2,7 @@
 
 import { randomBytes } from "node:crypto";
 import { undoOf } from "../calendar-writes.ts";
-import { nothingReverted, undoneText, UNDO_RECENT_MS, type Change, type Reversal, type Reverted, type UndoEntry } from "../undo.ts";
+import { lessonsOfUndo, nothingReverted, undoneText, UNDO_RECENT_MS, type Change, type Reversal, type Reverted, type UndoEntry } from "../undo.ts";
 import { T } from "./texts.ts";
 import type { Door } from "./door.ts";
 import type { Handler } from "./incoming.ts";
@@ -112,6 +112,10 @@ export function mountRevert(door: Door): Pick<Door, "undoNow"> {
     if (out.status !== "done") {
       await sendText(tx(out.status === "already" ? "undoAlready" : out.status === "gone" ? "undoGone" : "undoNone"));
       return `undo ${out.status}`;
+    }
+    // The owner undid it: each thing put back is a lesson for the next runs (src/lessons.ts), from what Pako itself recorded doing.
+    for (const x of lessonsOfUndo(out.entry.changes)) {
+      void d.lessons?.undone(x).catch((err: Error) => logUndo.error(`an undo could not be kept as a lesson: ${err.message}`));
     }
     // One language for the answer, the log line, the note and the button: the summary is the answer's own words.
     const l = lang();

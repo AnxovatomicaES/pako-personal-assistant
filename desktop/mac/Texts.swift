@@ -68,6 +68,8 @@ struct Texts {
     }
     var connectTitle: String { "Connect your Claude account" }
     var connectLead: String { "Use your Claude subscription. No API key." }
+    /// The Connect window's other way in: the panel's demo week (src/demo.ts), invented data, nothing sent.
+    var tryDemo: String { "Try the demo week" }
     var connect: String { connectTitle }
     func planWord(_ plan: String) -> String { "\(plan) plan" }
     var upgrade: String { "Upgrade your plan" }

@@ -12,7 +12,7 @@ import { createLog } from "../log.ts";
 const log = createLog("followups");
 
 export function mountNudges(fu: Engine): Pick<Engine, "quietNow" | "nextAfter" | "tick"> {
-  const { d, now, lang, config, mutate, read, flushBatch, runCheck, nudgeText } = fu;
+  const { d, now, lang, config, mutate, read, flushBatch, flushMailDue, runCheck, nudgeText } = fu;
   const quietNow = (t: number): boolean => {
     const q = config.quiet;
     if (!q) return false;
@@ -49,19 +49,16 @@ export function mountNudges(fu: Engine): Pick<Engine, "quietNow" | "nextAfter" |
         s.batches = s.batches.filter((b) => !ready.includes(b));
         return ready;
       });
-      for (const b of due) {
-        try {
-          await flushBatch(b);
-          out.jobs++;
-        } catch (err) {
-          log.error(`could not queue a Slack conversation: ${(err as Error).message}`);
-        }
-      }
+      // One not queued is back in the store (flushBatch), for the next tick.
+      for (const b of due) if (await flushBatch(b)) out.jobs++;
+      // Email threads too, each one job (src/followups/mail-jobs.ts).
+      out.jobs += await flushMailDue(t);
       if (quietNow(t)) return out;
       const st = await read();
       // A loop whose conversation has a job still unanswered is looked at after that answer: it may say the loop was called off.
       const asking = (l: Loop): boolean =>
-        !!l.where.channel && st.jobs.some((j) => j.source === "slack" && j.where.channel === l.where.channel && j.where.thread === l.where.thread);
+        (!!l.where.channel && st.jobs.some((j) => j.source === "slack" && j.where.channel === l.where.channel && j.where.thread === l.where.thread))
+        || (!!l.where.mailThread && st.jobs.some((j) => j.source === "mail" && j.where.mailThread === l.where.mailThread));
       const ready = st.loops.filter((l) => isOpen(l) && l.nextCheckAt > 0 && l.nextCheckAt <= t && !asking(l));
       for (const l of ready) {
         // Claimed first, in the store: another process (a deploy's overlap) that read the same loop finds it moved on and leaves it.

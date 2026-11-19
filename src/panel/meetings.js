@@ -1,5 +1,5 @@
-// Pako · panel: the meetings reviewed (src/meeting-review.ts answers GET /panel/api/meetings; 404 when Zoom is not connected, and the card never
-// shows). Each meeting: its summary (Zoom's, or the one the computer wrote from the transcript) and what the review found: your to-dos, what
+// Pako · panel: the meetings reviewed (src/meeting-review.ts answers GET /panel/api/meetings; connected: false when Zoom is not connected, and
+// the card never shows). Each meeting: its summary (Zoom's, or the one the computer wrote from the transcript) and what the review found: your to-dos, what
 // others promised, the decisions, the meetings agreed and the open questions. Read only. Everything the server sends is put on the page as
 // text, never as HTML.
 
@@ -84,9 +84,11 @@ function paint() {
 async function load() {
   try {
     const r = await fetch("/panel/api/meetings", { credentials: "same-origin", cache: "no-store" });
-    // 404: Zoom is not connected. 401: signed out (the page itself handles it).
+    // 401: signed out (the page itself handles it).
     if (!r.ok) return;
     const body = await r.json();
+    // Zoom is not connected: no card.
+    if (body?.connected === false) return;
     meetings = Array.isArray(body?.meetings) ? body.meetings : [];
     paint();
   } catch {

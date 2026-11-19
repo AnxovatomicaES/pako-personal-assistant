@@ -1,0 +1,32 @@
+{
+  "suite": "followups",
+  "behaviour": "Kofi asks for the invoice copy and the owner answers two minutes later «Done, just sent it over»: already done, no loop",
+  "origin": "the owner's own Slack reply in the same batch: something they say is done is none",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0KOFI",
+          "label": "Kofi Mensah (private)",
+          "msgs": [
+            {
+              "at": "2026-11-18 10:00",
+              "who": "Kofi Mensah",
+              "text": "Could you send me a copy of the October invoice? Accounts are asking."
+            },
+            {
+              "at": "2026-11-18 10:02",
+              "who": "Alex",
+              "text": "Done, just sent it over by email",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\":[],\"closes\":[]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": []
+  }
+}
