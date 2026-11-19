@@ -80,6 +80,9 @@ export function doorApi(door: Door) {
     askCall,
     /** For the owner's panel: the pending reminders, and what happened to proposed calls and messages. */
     /** `birthday`: a person's yearly one (src/people.ts), which the brief leaves to its own birthdays line. */
+    /** The reminders with their ids, for Pako Relay's sync (src/relay-client.ts): an occurrence is its id and time. */
+    relayReminders: async (): Promise<{ id: string; at: number; text: string; held: boolean }[]> =>
+      (await loadReminders()).map((r) => ({ id: r.id, at: r.at, text: r.text, held: !!r.held })), // no lock: runReminders holds it while it syncs
     reminders: async (): Promise<{ at: number; text: string; held: boolean; every?: Every; birthday?: true }[]> =>
       (await loadReminders()).map((r) => ({
         at: r.at, text: r.text, held: r.held, ...(r.every ? { every: r.every } : {}), ...(r.birthday ? { birthday: true as const } : {}),

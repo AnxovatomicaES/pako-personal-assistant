@@ -351,7 +351,7 @@ test("the bridge reads <fact> tags out of an answer, and the prompts say how to 
   ]);
   assert.match(SYSTEM_PROMPT, /<fact kind=/);
   assert.match(SYSTEM_PROMPT, /never diagnose, never prescribe/i);
-  assert.match(SYSTEM_PROMPT, /say plainly that you are an AI/);
+  assert.match(SYSTEM_PROMPT, /You are an AI and say so plainly/);
   assert.match(PROACTIVE_PROMPT, /NO_REPLY/);
 });
 

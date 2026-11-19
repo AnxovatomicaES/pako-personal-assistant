@@ -38,10 +38,10 @@ message itself, so each draft says TODO where you write it again without persona
 `test/evals/cases/<suite>/` to approve it into the golden set. It only reads Pako's file (`--home`, `~/.pako` by default) and never changes
 it.
 
-**The chat turn, live** (`npm run eval:live`, never in the gate; [eval/README.md](../eval/README.md)): about 30 cases of the owner's own
+**The chat turn, live** (`npm run evals:live -- --suite chat`, never in the gate; [test/evals/README.md](../test/evals/README.md)): about 30 cases of the owner's own
 messages (reminders and time zones, notes, drafting versus sending, injected emails, invites and forwards, language, tasks, refusals,
 ambiguous asks) through the bridge's real code and `claude -p`, k times each, with binary code checks on the tags the bridge read and a
-yes/no judge only where code cannot decide. `npm run eval:promote` turns a 👎, a **Not mine** or a chat message into a draft case.
+yes/no judge only where code cannot decide. `npm run evals:promote` turns a 👎, a **Not mine** or a chat message into a draft case.
 
 ## Checks before every push
 

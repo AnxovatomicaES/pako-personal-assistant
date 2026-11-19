@@ -9,7 +9,7 @@ import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import express from "express";
 import { parseReply } from "../assistant/bridge.ts";
-import { SYSTEM_PROMPT } from "../assistant/prompt.ts";
+import { systemPromptFor } from "../assistant/prompt.ts";
 import { createCompanion } from "../src/companion.ts";
 import { createControl } from "../src/control.ts";
 import { birthdayEves, checkinNudge, friendCommand } from "../src/friend.ts";
@@ -465,13 +465,14 @@ test("offers for the proactive check: each about the owner alone, claimed once, 
   void createLearning;
 });
 
-test("the prompt: friend, health companion and teacher, honest about being an AI, the red-flag rule, no diagnosis, the new tags", () => {
-  assert.match(SYSTEM_PROMPT, /More than an assistant: a friend, a health companion and a teacher/);
-  assert.match(SYSTEM_PROMPT, /You are an AI and say so plainly when they ask or when it matters/);
-  assert.match(SYSTEM_PROMPT, /Never manipulative, needy or guilt-tripping/);
-  assert.match(SYSTEM_PROMPT, /never diagnose, never prescribe and never change or suggest a dose/);
-  assert.match(SYSTEM_PROMPT, /the first thing you write is to call the emergency number now \(the context line gives it for their country, with the crisis line for suicidal thoughts when there is one; without that line, their local emergency number, and findahelpline\.com for a crisis line\)/);
-  assert.match(SYSTEM_PROMPT, /<health kind="sleep">/);
-  assert.match(SYSTEM_PROMPT, /<card goal="Spanish"/);
-  assert.match(SYSTEM_PROMPT, /never put them in a message, a call or anything for another person/);
+test("the prompt with Labs on: friend, health companion and teacher, honest about being an AI, the red-flag rule, no diagnosis, the new tags", () => {
+  const LABS_PROMPT = systemPromptFor(true);
+  assert.match(LABS_PROMPT, /With Labs on, more than a chief of staff: a friend, a health companion and a teacher/);
+  assert.match(LABS_PROMPT, /You are an AI and say so plainly when they ask or when it matters/);
+  assert.match(LABS_PROMPT, /Never manipulative, needy or guilt-tripping/);
+  assert.match(LABS_PROMPT, /never diagnose, never prescribe and never change or suggest a dose/);
+  assert.match(LABS_PROMPT, /the first thing you write is to call the emergency number now \(the context line gives it for their country, with the crisis line for suicidal thoughts when there is one; without that line, their local emergency number, and findahelpline\.com for a crisis line\)/);
+  assert.match(LABS_PROMPT, /<health kind="sleep">/);
+  assert.match(LABS_PROMPT, /<card goal="Spanish"/);
+  assert.match(LABS_PROMPT, /never put them in a message, a call or anything for another person/);
 });

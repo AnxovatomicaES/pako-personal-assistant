@@ -224,6 +224,7 @@ export const T = texts(
     logNotSent: "WhatsApp to {label} not sent (code {code})",
     logReminderSet: "Reminder for {at}: {text}",
     logReminderSent: "Sent: {text}",
+    logReminderRelayed: "Reminder sent by the relay while this computer slept: {text}",
     logListAdded: "List {name}: {items}",
     logListRemoved: "Removed from the {name} list: {items}",
     logTask: "Task: {text}",

@@ -1,24 +1,24 @@
-// npm run eval:promote: the owner's feedback as DRAFT cases for the live chat eval (eval/README.md), so the golden set grows from real misses.
+// npm run evals:promote: the owner's feedback as DRAFT cases for the live chat eval (test/evals/README.md), so the golden set grows from real misses.
 //
-//   npm run eval:promote -- --list                 the 👎 and «Not mine» of the last days, and the owner's latest chat messages, numbered
-//   npm run eval:promote -- --feedback <ref>       a draft from one 👎 or «Not mine» (its ref, from --list)
-//   npm run eval:promote -- --chat <n>             a draft from one of the owner's chat messages (its number, from --list) and Pako's answer
+//   npm run evals:promote -- --list                 the 👎 and «Not mine» of the last days, and the owner's latest chat messages, numbered
+//   npm run evals:promote -- --feedback <ref>       a draft from one 👎 or «Not mine» (its ref, from --list)
+//   npm run evals:promote -- --chat <n>             a draft from one of the owner's chat messages (its number, from --list) and Pako's answer
 //   options: --home <PAKO_HOME> (default: PAKO_HOME, else ~/.pako) --days 30 --tz America/New_York
 //
 // The store is only read (its file, not through Pako): nothing in it changes. Names (the people Pako knows, the contacts, whoever a loop
 // names), addresses, phone numbers, links and channels become placeholders (<person1>, <email1>…) before anything is written, with the
-// scrubber of test/evals/from-feedback.ts. A draft goes to eval/drafts/ (not tracked) and does not load as a case until the owner gives it a
-// behaviour and checks: read it, finish it, then move it into eval/cases/.
+// scrubber of test/evals/from-feedback.ts. A draft goes to test/evals/drafts/ (not tracked) and does not load as a case until the owner gives it a
+// behaviour and checks: read it, finish it, then move it into test/evals/chat-cases/.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CONTACTS_KEY } from "../src/contacts.ts";
-import { FOLLOWUPS_KEY, stateOf } from "../src/followups.ts";
-import { FEEDBACK_KEY, qualityStateOf } from "../src/quality.ts";
-import { readStore, scrubber, type Scrubber } from "../test/evals/from-feedback.ts";
-import type { Area, EvalCase } from "./harness.ts";
+import { CONTACTS_KEY } from "../../src/contacts.ts";
+import { FOLLOWUPS_KEY, stateOf } from "../../src/followups.ts";
+import { FEEDBACK_KEY, qualityStateOf } from "../../src/quality.ts";
+import { readStore, scrubber, type Scrubber } from "./from-feedback.ts";
+import type { Area, EvalCase } from "./chat-harness.ts";
 
 const CHAT_KEY = "pako-local-chat";
 const PEOPLE_KEY = "assistant-people";
@@ -78,7 +78,7 @@ export function feedbackDraft(item: FeedbackItem, get: (key: string) => unknown,
   return {
     area: "followups",
     behaviour: `DRAFT TODO: «${title}» was not the owner's (${item.why}): asked what is pending, Pako does not give it back as theirs`,
-    origin: `${item.why} on ${local(item.at, o.tz).slice(0, 10)} (${item.source}); placeholders replace personal data. Check every field, then move it to eval/cases/`,
+    origin: `${item.why} on ${local(item.at, o.tz).slice(0, 10)} (${item.source}); placeholders replace personal data. Check every field, then move it to test/evals/chat-cases/`,
     input: {
       now: local(Date.now(), o.tz),
       timeZone: o.tz,
@@ -104,7 +104,7 @@ export function chatDraft(chat: ChatLine[], n: number, s: Scrubber, o: { tz: str
     area: "TODO",
     behaviour: "DRAFT TODO: what Pako should have done instead",
     origin: `the owner's chat message ${n} on ${local(asked.at, o.tz).slice(0, 10)}; placeholders replace personal data. Add the context it needs `
-      + "(notes, contacts, emails...), an area, checks that the answer below fails, then move it to eval/cases/",
+      + "(notes, contacts, emails...), an area, checks that the answer below fails, then move it to test/evals/chat-cases/",
     input: { now: local(asked.at, o.tz), timeZone: o.tz, message: s(asked.text), context: {} },
     checks: [],
     answered: answered.join("\n\n"),
@@ -135,8 +135,8 @@ function main(argv: string[]): void {
     const file = join(out, `${name}.json`);
     writeFileSync(file, `${JSON.stringify(d, null, 2)}\n`, { mode: 0o600 });
     console.log(`Draft: ${file}`);
-    console.log("Read every field (placeholders like <person1> stand for names: keep them), finish what says TODO, move it into eval/cases/,");
-    console.log(`then run: npm run eval:live -- --case ${name} --k 3`);
+    console.log("Read every field (placeholders like <person1> stand for names: keep them), finish what says TODO, move it into test/evals/chat-cases/,");
+    console.log(`then run: npm run evals:live -- --suite chat -- --case ${name} --k 3`);
   };
   const ref = arg("feedback");
   const n = arg("chat");

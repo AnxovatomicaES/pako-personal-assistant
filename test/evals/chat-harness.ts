@@ -1,4 +1,4 @@
-// The live chat eval (eval/README.md): one owner's turn through the bridge's own code, end to end. A case gives the owner's message and the
+// The live chat eval (test/evals/README.md): one owner's turn through the bridge's own code, end to end. A case gives the owner's message and the
 // context the server would send (the time, the notes, an email, a calendar line...); the bridge (assistant/bridge.ts createBridge) asks a
 // fake server for that context, builds the prompt with its own contextBlock, runs `claude -p` exactly as it does for the owner, reads the
 // tags with parseReply (and, with Pako's tools on, folds in the tool calls: readReply) and posts the reply, which the fake server keeps.
@@ -7,17 +7,17 @@
 // Each case holds binary checks, judged by code on what the bridge read from the answer: a tag there or not, a reminder's exact time, the
 // language of the words, a pattern in the reply. A case may add one yes/no question for an LLM judge, asked only when every code check passed.
 //
-// test/evals/ is the other harness: golden cases for the server's validators (followups, brief, autonomy, memory) with recorded answers in
+// The other suites in test/evals/ hold golden cases for the server's validators (followups, brief, autonomy, memory) with recorded answers in
 // the gate. This one covers the main chat turn, and only runs live (never in the gate): its cases record no answer.
 
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createBridge, readReply, runClaude, type BridgeConfig, type ClaudeResult, type ParsedReply } from "../assistant/bridge.ts";
-import { zonedTime } from "../src/followups.ts";
-import { locale } from "../src/i18n.ts";
-import { readLanguage } from "../src/language.ts";
-import { fenced, RUBRIC_PROMPT } from "../test/evals/live.ts";
+import { createBridge, readReply, runClaude, type BridgeConfig, type ClaudeResult, type ParsedReply } from "../../assistant/bridge.ts";
+import { zonedTime } from "../../src/followups.ts";
+import { locale } from "../../src/i18n.ts";
+import { readLanguage } from "../../src/language.ts";
+import { fenced, RUBRIC_PROMPT } from "./live.ts";
 
 export const AREAS = ["reminders", "memory", "drafting", "injection", "language", "followups", "refusal", "ambiguous"] as const;
 export type Area = (typeof AREAS)[number];
@@ -70,6 +70,8 @@ export interface EvalCase {
     message: string;
     /** Passed on from someone else (WhatsApp's forwarded flag): the bridge fences it as outside text. */
     forwarded?: boolean;
+    /** Labs on (the health diary, lessons, the companion's prompt): off by default, as most owners have it. */
+    labs?: boolean;
     /** What the server's /assistant/context adds or changes (assistant/bridge.ts Context): notes, contacts, emails, calendar... */
     context?: Record<string, unknown>;
   };
@@ -78,7 +80,7 @@ export interface EvalCase {
   judge?: string;
 }
 
-export const CASES_DIR = new URL("./cases/", import.meta.url);
+export const CASES_DIR = new URL("./chat-cases/", import.meta.url);
 
 const asRegExp = (p: string, where: string): RegExp => {
   try {
@@ -130,7 +132,7 @@ export function validCase(raw: unknown, id: string): EvalCase {
   return { ...c, id };
 }
 
-/** Every case in eval/cases/*.json, sorted by name. */
+/** Every case in test/evals/chat-cases/*.json, sorted by name. */
 export function loadCases(dir: URL = CASES_DIR): EvalCase[] {
   return readdirSync(dir).filter((f) => f.endsWith(".json")).sort()
     .map((f) => validCase(JSON.parse(readFileSync(new URL(f, dir), "utf8")), f.replace(/\.json$/, "")));
@@ -154,7 +156,8 @@ export function contextOf(c: EvalCase): Record<string, unknown> {
     reminders: [],
     lists: [],
     tasks: [],
-    companion: 1,
+    // Labs off, as most owners have it (the chief of staff's prompt); a case about the diary or lessons sets input.labs.
+    ...(c.input.labs === true ? { companion: 1 } : { labsOff: 1 }),
     routinesOn: 1,
     paused: false,
     pauseWhy: null,
