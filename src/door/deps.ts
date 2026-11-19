@@ -107,6 +107,8 @@ export interface WhatsappDeps {
    * A draft for one follow-up (src/brief-v2.ts draftFor): the isolated run that writes the message the owner sends to close it, told in the
    * chat when it is written. Absent when the written brief is off.
    */
+  /** Pako Relay's laptop side (src/relay-client.ts): synced before the due reminders are looked at; what it fired is not sent again. */
+  relay?: { sync: () => Promise<boolean>; firedByRelay: (r: { id: string; at: number; text: string }) => boolean };
   /**
    * This Mac's calendar, written by its app (src/calendar-writes.ts): whether it can be now (a recent push from an app that writes), the event a
    * change means, and the queue the owner's yes goes into. Absent without this Mac's calendars.

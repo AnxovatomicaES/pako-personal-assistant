@@ -4,6 +4,11 @@
 endpoints or relays. What leaves your computer goes only to the services you connect, under their terms (the table below). The public
 privacy notice is at https://pako-os.com/privacy.html.
 
+**Pako Relay, only if you turn it on.** The relay ([docs/relay.md](relay.md)) is a Pako you run yourself on a host that stays awake, so
+reminders still come with your laptop's lid shut. While it is on, that host keeps the text and time of your reminders for the week ahead,
+which ones it sent in the last 30 days (ids and times only), and the bot token you give it. Nothing else of yours goes there. Turning it
+off (unsetting `RELAY_URL`) stops the syncing; `DELETE /relay/sync`, or deleting the host, wipes what it holds.
+
 
 This page is written from the code (`src/data.ts` holds the same facts, and `test/data.test.ts` fails when a module starts keeping
 something this page and that file do not describe). On a computer the panel shows it too: the **Privacy and your
@@ -143,6 +148,7 @@ also capped, as said.
 | `discovery` | What Pako for Mac found on this computer when you said yes to "Can I look at what you have on this Mac?": which apps are installed (Zoom, Slack, Telegram, WhatsApp, Mail, Outlook, Teams), your calendars' names, your mail accounts' addresses, how many contacts you have, the Zoom recordings folder, and which macOS permissions you gave. Never a mail's or an event's text. Forgotten in one click in the connections page | 10 years (until you forget it) |
 | `calendar-local` | The events of the calendars on this Mac you picked, from 2 days ago to 14 ahead: title, times, place and the video call's link (never the notes or the attendees). Forgotten with the discovery | 30 days |
 | `calendar-writes` | The calendar changes you said yes to (move, add, delete: title and times), and what was there before, for Undo (a week) | 8 days |
+| `relay-state` | On a host running as your relay only: your reminders of the week ahead (text and time) and which it sent | 31 days |
 | `assistant-contacts` | The contacts you chose to import from this Mac: name, email addresses, phone numbers and company (5000 at most), listed in the panel and forgotten in one click | 400 days |
 | `people-hidden` | The people you hid from the People list in the panel: only the addresses, numbers or ids that name them (2000 at most), so they stay hidden. The People list itself is not stored: it is worked out each time from the data above (your contacts, the people Pako has seen, your calendar, your mail, your follow-ups and what you told Pako), and what it shows from other people's mail, invitations and Slack never becomes something you said | 400 days |
 | `zoom-local` | Which Zoom recordings on this Mac were already sent to be reviewed (a fingerprint of each folder's name; the captions themselves go to the review like a cloud transcript) | 60 days |

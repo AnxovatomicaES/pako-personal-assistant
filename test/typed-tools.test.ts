@@ -14,7 +14,7 @@ import {
   buildClaudeArgs, createBridge, mcpConfigFor, mcpDownIn, offersMcpTools, parseReply, readReply, readTheWeb, toolDataPath, watchTurn, type BridgeConfig,
 } from "../assistant/bridge.ts";
 import { answerCall, readData } from "../assistant/mcp-server.ts";
-import { SYSTEM_PROMPT, TOOLS_SYSTEM_PROMPT, toolsPrompt } from "../assistant/prompt.ts";
+import { SYSTEM_PROMPT, TOOLS_SYSTEM_PROMPT, toolsPrompt, toolsSystemPromptFor } from "../assistant/prompt.ts";
 import { applyToolCalls, checkArgs, OFFERED_TOOLS, readTool, TOOL_NAMES, toolDataOf, toolId, toolList, TOOLS, type ToolData } from "../assistant/tools.ts";
 import { BLOCK_OPEN } from "../src/quarantine.ts";
 
@@ -343,9 +343,9 @@ test("the conversation's process kept up: each turn has its own tool calls, and 
 });
 
 test("eval harness with tools on: the chat runs with Pako's server and the tools prompt, and a check on <remind> passes from a tool call", async () => {
-  const { loadCases, runChecks, runTurn } = await import("../eval/harness.ts");
+  const { loadCases, runChecks, runTurn } = await import("./evals/chat-harness.ts");
   const { loadBridgeConfig } = await import("../assistant/bridge.ts");
-  const { options } = await import("../eval/live.ts");
+  const { options } = await import("./evals/chat-live.ts");
   assert.equal(options([]).typedTools, "auto");
   assert.equal(options(["--typed-tools", "off"]).typedTools, "off");
   assert.throws(() => options(["--typed-tools", "maybe"]), /--typed-tools/);
@@ -356,7 +356,9 @@ test("eval harness with tools on: the chat runs with Pako's server and the tools
     seen.push({ ...(cfg.systemPrompt ? { system: cfg.systemPrompt } : {}), ...(cfg.mcp ? { mcp: cfg.mcp } : {}) });
     return { text: "Hecho: mañana jueves a las 9:00.", sessionId: "s1", costUsd: 0, toolCalls: [{ name: "remind", input: { at: "2026-11-19 09:00", text: "Enviar la factura a Marta" } }] };
   });
+  // Labs off by default: the tools prompt of the chief of staff (with Labs on it would be toolsSystemPromptFor(true)).
   assert.equal(seen[0]!.system, TOOLS_SYSTEM_PROMPT);
+  assert.equal(TOOLS_SYSTEM_PROMPT, toolsSystemPromptFor(false));
   assert.match(seen[0]!.mcp ?? "", /mcp-server\.ts/);
   assert.deepEqual(o.sent[0]?.remind, [{ at: "2026-11-19 09:00", text: "Enviar la factura a Marta" }]);
   assert.ok(runChecks(c, o).every((x) => x.pass), JSON.stringify(runChecks(c, o)));

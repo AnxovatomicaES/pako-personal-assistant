@@ -5,15 +5,15 @@ case is one message from the owner, sent through the bridge's own code (`assista
 `claude -p` call with the bridge's settings, `parseReply`, and the quarantine marks), and judged on what the bridge read from the answer.
 It uses your Claude plan's quota, so it never runs in the gate.
 
-`test/evals/` is the other harness: golden cases for the server's validators (follow-ups, the brief, autonomy, memory), with recorded
+The other suites in this folder: golden cases for the server's validators (follow-ups, the brief, autonomy, memory), with recorded
 answers in the gate and `npm run evals:live` to run them against the model. This one covers the main chat turn.
 
 ## Run it
 
 ```sh
-npm run eval:live                                # every case, k=3; shows the turns and a cost guess, then asks
-npm run eval:live -- --k 1 --case remind --yes   # a quick look: cases whose name has "remind", once each, no question
-npm run eval:live -- --area injection --k 5      # one area, five times each
+npm run evals:live -- --suite chat                                # every case, k=3; shows the turns and a cost guess, then asks
+npm run evals:live -- --suite chat --k 1 --case remind --yes   # a quick look: cases whose name has "remind", once each, no question
+npm run evals:live -- --suite chat --area injection --k 5      # one area, five times each
 ```
 
 Options: `--k` (1 to 10, default 3), `--case` (part of a case's name; several with commas or repeated), `--area` (`reminders`, `memory`,
@@ -43,12 +43,12 @@ pass^3: 27 of 30 cases; runs passed: 86 of 90 (96%)
 - **rate**: the share of runs that passed, to tell a flaky case (2/3) from a broken one (0/3).
 - A limit or a lost sign-in stops the run, and the cases that did not run all k times count as no pass^k.
 
-The whole run, with every reply, its tags and each check, is in `eval/results/<time>.json` (not tracked). The command exits 1 unless every
+The whole run, with every reply, its tags and each check, is in `test/evals/results/<time>.json` (not tracked). The command exits 1 unless every
 case passed pass^k.
 
 ## A case
 
-One file in `eval/cases/`, its name the case's id:
+One file in `test/evals/chat-cases/`, its name the case's id:
 
 ```json
 {
@@ -67,7 +67,7 @@ One file in `eval/cases/`, its name the case's id:
 }
 ```
 
-`input.context` is what the server's `/assistant/context` adds to an owner with nothing yet (`eval/harness.ts` `contextOf`): `memory`,
+`input.context` is what the server's `/assistant/context` adds to an owner with nothing yet (`test/evals/chat-harness.ts` `contextOf`): `memory`,
 `contacts`, `reminders`, `lists`, `tasks`, `emails` with `mailAddress`, `calendar`, `followups`, `emailOn` with `emailContacts`,
 `chatLanguage`, `emergency`... `input.ownerLanguage` is the language heard from the owner before (any code; Pako's own texts are English
 whatever it is). `input.forwarded: true` sends the message as a forwarded one (fenced as someone else's words).
@@ -93,12 +93,12 @@ It is asked only when every code check passed, in a run of its own with no tools
 ## Grow the golden set from feedback
 
 ```sh
-npm run eval:promote -- --list                # the 👎 and «No es mío» of the last 30 days, and your latest chat messages, numbered
-npm run eval:promote -- --feedback abcdef0123 # a draft from one 👎 or «No es mío»
-npm run eval:promote -- --chat 42             # a draft from your chat message 42 and what Pako answered
+npm run evals:promote -- --list                # the 👎 and «No es mío» of the last 30 days, and your latest chat messages, numbered
+npm run evals:promote -- --feedback abcdef0123 # a draft from one 👎 or «No es mío»
+npm run evals:promote -- --chat 42             # a draft from your chat message 42 and what Pako answered
 ```
 
 It reads Pako's store (`--home`, else `PAKO_HOME`, else `~/.pako`) and changes nothing. Names, addresses, phone numbers, links and channels
-become placeholders (`<person1>`, `<email1>`) before anything is written. The draft goes to `eval/drafts/` (not tracked) and does not load
+become placeholders (`<person1>`, `<email1>`) before anything is written. The draft goes to `test/evals/drafts/` (not tracked) and does not load
 as a case until it is finished: give it an area, a behaviour and the checks that Pako's answer (kept in the draft as `answered`) fails, then
-move it into `eval/cases/` and run it with `npm run eval:live -- --case <name>`.
+move it into `test/evals/chat-cases/` and run it with `npm run evals:live -- --suite chat --case <name>`.

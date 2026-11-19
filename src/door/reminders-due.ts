@@ -35,11 +35,20 @@ export function mountRemindersDue(door: Door): Pick<Door, "runReminders"> {
     if (door.runningReminders) return;
     door.runningReminders = true;
     try {
+      // Pako Relay (src/relay-client.ts): what it sent while this computer slept is heard first, so nothing goes twice.
+      if (d.relay) await d.relay.sync().catch(() => false);
       const list = await loadReminders();
       const t = now();
       let changed = false;
       for (const r of [...list]) {
         if (r.held || r.at > t || (r.retryAt ?? 0) > t) continue;
+        if (d.relay?.firedByRelay(r)) {
+          note(tx("noteReminderSent", { text: r.text }));
+          d.control?.log("reminder", tx("logReminderRelayed", { text: r.text }));
+          if (!repeatNext(r, t)) list.splice(list.indexOf(r), 1);
+          changed = true;
+          continue;
+        }
         // Due while the computer slept (src/jobs.ts: only on a computer): late with a note, or told as missed past 12 hours.
         const late = d.jobs?.slept(r.at) ? t - r.at : 0;
         if (late > REMINDER_LATE_MAX_MS) {

@@ -21,9 +21,9 @@ voice-worker/dist/
 # The Mac app built by npm run mac-app (desktop/mac/build.sh)
 /dist/
 
-# The live chat eval's results and the drafts promoted from feedback (eval/README.md): local only
-/eval/results/
-/eval/drafts/
+# The live chat eval's results and the drafts promoted from feedback (test/evals/README.md): local only
+/test/evals/results/
+/test/evals/drafts/
 
 # Large media live in a GitHub release, not in git (site/media.json, bin/fetch-site-media.mjs): the site fetches them at build time
 /site/social/ig/*.mp4

@@ -1,13 +1,13 @@
-// The live chat eval's own plumbing (eval/), offline: the cases load, a turn goes through the bridge's real code with a fake `claude`, the
+// The live chat eval's own plumbing (test/evals/chat-*), offline: the cases load, a turn goes through the bridge's real code with a fake `claude`, the
 // checks pass and fail when they should, pass^k sums up, and feedback becomes a draft without personal data. No case runs live here.
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { loadBridgeConfig, type ClaudeResult, type runClaude } from "../assistant/bridge.ts";
 import { RUBRIC_PROMPT } from "./evals/live.ts";
-import { AREAS, loadCases, runCheck, runChecks, runTurn, validCase, type EvalCase, type Outcome } from "../eval/harness.ts";
-import { options, runOnce, summarise, table, type CaseResult } from "../eval/live.ts";
-import { chatDraft, feedbackDraft, feedbackItems } from "../eval/promote.ts";
+import { AREAS, loadCases, runCheck, runChecks, runTurn, validCase, type EvalCase, type Outcome } from "./evals/chat-harness.ts";
+import { options, runOnce, summarise, table, type CaseResult } from "./evals/chat-live.ts";
+import { chatDraft, feedbackDraft, feedbackItems } from "./evals/promote.ts";
 import { scrubber } from "./evals/from-feedback.ts";
 import { parseReply } from "../assistant/bridge.ts";
 
@@ -53,6 +53,7 @@ test("eval turn: the bridge builds the prompt from the case's context, runs clau
   assert.match(o.prompt, /^\[Now: Wednesday, 18 November 2026.*\(2026-11-18 10:00\)\.\]/, "the bridge's own first context line, English for a Spanish-writing owner");
   assert.match(o.prompt, /\[Notes you keep about Alex: /);
   assert.ok(o.prompt.endsWith("\n\nRecuérdame mañana a las 9 enviar la factura a Marta"));
+  // Labs off by default, as most owners have it: the chat runs with the bridge's own default prompt, the chief of staff's.
   assert.equal(calls[0]!.system, undefined, "the chat runs with the bridge's own system prompt (buildClaudeArgs' default)");
   assert.deepEqual(o.sent[0]?.remind, [{ at: "2026-11-19 09:00", text: "Enviar la factura a Marta" }], "what the bridge posted to the server");
   assert.equal(o.held, false);

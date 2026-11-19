@@ -5,6 +5,7 @@
 // The report: .claude/evals/<date>.md (not tracked).
 //
 //   npm run evals:live [-- --k 3] [--max-usd 5] [--suite followups] [--case rohan] [--model claude-sonnet-5-5] [--yes]
+//   npm run evals:live -- --suite chat [--case remind] [--area injection]   the chat turn's cases (test/evals/chat-cases/, README.md)
 
 import { randomBytes } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -100,6 +101,12 @@ export const fenced = (text: string, name: string): { prompt: string; fence: str
 };
 
 async function main(argv: string[]): Promise<void> {
+  // The chat turn's suite (test/evals/chat-live.ts, cases in chat-cases/) has a runner of its own: one command for every suite.
+  const at = argv.indexOf("--suite");
+  if (at >= 0 && argv[at + 1] === "chat") {
+    const { main: chat } = await import("./chat-live.ts");
+    return chat([...argv.slice(0, at), ...argv.slice(at + 2)]);
+  }
   const o = options(argv);
   const cases = liveCases(loadCases()).filter((c) => (!o.suite || c.suite === o.suite) && (!o.only || (c.file ?? "").includes(o.only)));
   if (!cases.length) throw new Error("no case with a model step matches");

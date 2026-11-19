@@ -1,20 +1,20 @@
-// npm run eval:live: the chat cases of eval/cases/ through the bridge and the real `claude -p` on the owner's plan, k times each (eval/README.md).
+// npm run evals:live -- --suite chat: the chat cases of test/evals/chat-cases/ through the bridge and the real `claude -p` on the owner's plan, k times each (test/evals/README.md).
 // pass^k: a case passes only when all its k runs pass. Never in the gate: it costs quota and the model's answers vary.
 //
-//   npm run eval:live [-- --k 3] [--case remind] [--area injection] [--parallel 2] [--max-usd 5] [--model <id>] [--typed-tools on|off] [--yes]
+//   npm run evals:live -- --suite chat [-- --k 3] [--case remind] [--area injection] [--parallel 2] [--max-usd 5] [--model <id>] [--typed-tools on|off] [--yes]
 //
 // The bridge's own settings apply (ASSISTANT_MODEL, ASSISTANT_TOOLS, CLAUDE_BIN, ASSISTANT_RUN_TIMEOUT_MS). Pako's typed tools are on when
 // this Claude Code can load them, as for the owner (assistant/run.ts); --typed-tools off runs the tags alone, to compare. Nothing touches a running Pako:
 // the fake server lives in this process, each turn gets a state folder of its own, and PAKO_HOME points at a temporary folder for the run.
-// The result: eval/results/<time>.json (not tracked), and a table here.
+// The result: test/evals/results/<time>.json (not tracked), and a table here.
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
-import { ClaudeError, loadBridgeConfig, offersMcpTools, offersNoBare, runClaude, type BridgeConfig } from "../assistant/bridge.ts";
-import { AREAS, judgeTurn, loadCases, runChecks, runTurn, tagCounts, type CheckResult, type EvalCase } from "./harness.ts";
+import { ClaudeError, loadBridgeConfig, offersMcpTools, offersNoBare, runClaude, type BridgeConfig } from "../../assistant/bridge.ts";
+import { AREAS, judgeTurn, loadCases, runChecks, runTurn, tagCounts, type CheckResult, type EvalCase } from "./chat-harness.ts";
 
 /** A guess to show first, on the plan's notional prices (claude -p reports each run's): not a bill. */
 const USD_PER_TURN = 0.05;
@@ -107,7 +107,7 @@ export function table(rows: CaseResult[], k: number): string {
   return lines.join("\n");
 }
 
-async function main(argv: string[]): Promise<void> {
+export async function main(argv: string[]): Promise<void> {
   const o = options(argv);
   const cases = loadCases().filter((c) => (!o.area || c.area === o.area) && (!o.only.length || o.only.some((s) => c.id.includes(s))));
   if (!cases.length) throw new Error("no case matches");

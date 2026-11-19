@@ -110,6 +110,7 @@ const KEY_LIST = [
   { key: "discovery", keep: 3650 * DAY }, // discovery.ts
   { key: "calendar-local", keep: 30 * DAY }, // calendar-local.ts
   { key: "calendar-writes", keep: 8 * DAY }, // calendar-writes.ts
+  { key: "relay-state", keep: 31 * DAY }, // relay.ts (only on a host running as the relay)
   { key: "assistant-contacts", keep: 400 * DAY }, // contacts.ts
   { key: "people-hidden", keep: 400 * DAY }, // people-directory.ts
   { key: "zoom-local", keep: 60 * DAY }, // zoom-local.ts
@@ -193,6 +194,7 @@ const ABOUT = texts<AboutKey | "unknown">(
     discovery: "What Pako found on this Mac when you let it look: apps, calendar names, mail addresses, how many contacts",
     "calendar-local": "The events of the calendars on this Mac you picked (title, times, place and video-call link), 2 days back and 14 ahead",
     "calendar-writes": "The calendar changes you said yes to (move, add, delete: title and times), and what was there before, for Undo (a week)",
+    "relay-state": "On a host running as your relay only: your reminders of the week ahead (text and time) and which it sent (30 days)",
     "assistant-contacts": "The contacts you imported from this Mac: name, emails, phones and company (5000 at most)",
     "people-hidden": "The people you hid from the People list: only their addresses, numbers or ids, so they stay hidden (2000 at most)",
     "zoom-local": "Which Zoom recordings on this Mac were already reviewed (only a fingerprint of their folder)",

@@ -32,6 +32,8 @@ import { briefMeetings, createMeetingReview, loadReviewConfig, mountMeetingsPane
 import { createCalendarChanges, type CalendarChanges } from "./calendar-changes.ts";
 import { createMeetingPrep, loadMeetingPrepConfig } from "./meeting-prep.ts";
 import { currentAbout, factLine } from "./memory-facts.ts";
+import { createRelay, loadRelayConfig, mountRelay, telegramSender } from "./relay.ts";
+import { createRelayClient, loadRelayClientConfig, type RelayClient } from "./relay-client.ts";
 import { createFollowups, followupsProxy, loadFollowupsConfig, type Followups, type FollowupsDoor } from "./followups.ts";
 import { createQuality, mountQualityPanel, type Quality } from "./quality.ts";
 import { createProactive, loadProactiveConfig, mountProactivePanel, type LifeDoor, type Proactive } from "./proactive.ts";
@@ -100,6 +102,7 @@ const logSlack = createLog("slack");
 const logZoom = createLog("zoom");
 const logReview = createLog("review");
 const logCalendar = createLog("calendar");
+const logRelay = createLog("relay");
 const logBackfill = createLog("backfill");
 const logBrief = createLog("brief");
 const logFollowups = createLog("followups");
@@ -464,6 +467,9 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
       // On a computer, this Mac's calendars too (src/calendar-local.ts), once the Mac app has pushed them: a first push restarts Pako to add them.
       const macCal = local ? createLocalCalendar({ kv: local.kv }) : null;
       // This Mac's calendar written by its app (src/calendar-writes.ts): the queue the owner's yes on a card goes into; the door tells the result.
+      const relayClientCfg = loadRelayClientConfig(env);
+      if (relayClientCfg.problems.length) logRelay.error(relayClientCfg.problems.join("; "));
+      const relayRef: { c: RelayClient | null } = { c: null };
       const calDoorRef: { result: ((w: CalendarWrite) => Promise<void>) | null } = { result: null };
       const calWrites = macCal && local ? createCalendarWrites({ kv: local.kv, onResult: (w) => (calDoorRef.result ? calDoorRef.result(w) : Promise.resolve()) }) : null;
       // Google Calendar, connected with one button (src/google-calendar.ts): one more source of the same calendar.
@@ -739,6 +745,10 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           : {}),
         brief: { now: briefNow, daily: briefCfg.at !== null },
         ...(followupsCfg.config ? { followups: followupsDoor } : {}),
+        // Pako Relay, the laptop's side (src/relay-client.ts): built just below, once the door can list the reminders.
+        ...(relayClientCfg.config
+          ? { relay: { sync: () => (relayRef.c ? relayRef.c.sync() : Promise.resolve(false)), firedByRelay: (r: { id: string; at: number; text: string }) => relayRef.c?.firedByRelay(r) ?? false } }
+          : {}),
         ...(macCal && calWrites
           ? {
               calendarWrites: {
@@ -830,6 +840,20 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
             } : {}),
       });
       calDoorRef.result = (w) => door.calendarResult(w);
+      if (relayClientCfg.config) {
+        relayRef.c = createRelayClient({ config: relayClientCfg.config, reminders: () => door.relayReminders() });
+        relayRef.c.start();
+        logRelay.info(`ON: reminders synced to ${new URL(relayClientCfg.config.url).host} every 2 min`);
+      }
+      // Relay mode (src/relay.ts): this server is the always-awake relay a laptop syncs to; it fires their reminders on Telegram.
+      const relayCfg = loadRelayConfig(env);
+      if (relayCfg.problems.length) logRelay.error(relayCfg.problems.join("; "));
+      if (relayCfg.config) {
+        const relay = createRelay({ kv, send: telegramSender(relayCfg.config) });
+        mountRelay(app, { relay, token: relayCfg.config.token });
+        setInterval(() => void relay.tick().catch((err: Error) => logRelay.error(err.message)), 30_000).unref?.();
+        logRelay.info("ON: relay mode, reminders fired on Telegram (POST /relay/sync, /relay/tick)");
+      }
       tellOwner = (text) => door.notifyOwner(text, { urgent: true });
       tellAssistant = door.note;
       // The watchdog's notices: on Telegram first when it can reach the owner there (a server's WhatsApp may be the part that is down), else
