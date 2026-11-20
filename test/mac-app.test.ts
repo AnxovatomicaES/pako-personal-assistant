@@ -276,7 +276,9 @@ test("mac app: a release is signed inside out with the hardened runtime: node wi
   assert.deepEqual(entitlements(rel), APP_ENTITLEMENTS);
   assert.match(sh("codesign", ["-dv", node]).out, /Identifier=io\.github\.anxovatomicaes\.pako\.node/);
   // sign.sh ran compiled JavaScript with it under the hardened runtime (a node without the entitlements aborts there).
-  assert.match(packaged.out, /node runs compiled code under the hardened runtime: x64 v22\./);
+  // An Apple silicon Mac without Rosetta cannot run the x86_64 slice: sign.sh says so instead (as for arm64 on an Intel Mac, below).
+  const canX64 = sh("arch", ["-x86_64", "/usr/bin/true"]).code === 0;
+  assert.match(packaged.out, canX64 ? /node runs compiled code under the hardened runtime: x64 v22\./ : /node \(x86_64\): this Mac cannot run that slice/);
 });
 
 test("mac app: Apple silicon, checked on this Mac whatever its chip: every arm64 slice is signed, hardened, entitled as allowed, for macOS 13", { skip }, () => {
