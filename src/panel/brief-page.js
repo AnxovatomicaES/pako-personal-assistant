@@ -200,6 +200,8 @@ function render() {
   if (doc.todos.length) {
     const list = el("ul", { class: "todos" });
     doc.todos.forEach((x, i) => {
+      // Parked since the brief was written (gentle mode): not shown; the index stays the brief's own.
+      if (x.parked) return;
       // A follow-up closed from here stays closed: its box cannot be unticked.
       const input = el("input", { type: "checkbox", "aria-label": `${t("markDone")}: ${x.title}`, checked: x.done, disabled: !!(x.done && x.loopId) });
       const li = el("li", { class: `todo${x.done ? " done" : ""}` },

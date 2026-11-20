@@ -10,7 +10,8 @@
 // Live, its input runs like any other: its expectation is what is right.
 // Suites: followups (extraction), nudges (when a reminder goes, against the clock), brief, autonomy (provenance, hostile text), memory
 // (dated facts and the person card, through the door: test/evals/memory-jobs.ts), mail (the triage's category and its one-line ask), jobs,
-// redflags and intents (code only: no model step), drafts (a draft written after the owner corrected an earlier one: src/lessons.ts).
+// redflags and intents (code only: no model step), drafts (a draft written after the owner corrected an earlier one: src/lessons.ts),
+// gentle (a brain dump sorted, a first tiny step, a gentle nudge's tone: test/evals/gentle-cases.ts).
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -36,11 +37,12 @@ import { createMailFollowups } from "../../src/mail-followups.ts";
 import { htmlToText, type RecentMail } from "../../src/mail.ts";
 import { wrap, type OutsideSource } from "../../src/quarantine.ts";
 import { judgeJobs, judgeMemory, runJobs, runMemory } from "./memory-jobs.ts";
+import { runGentle } from "./gentle-cases.ts";
 
-export const SUITES = ["followups", "nudges", "brief", "autonomy", "memory", "mail", "jobs", "redflags", "intents", "drafts"] as const;
+export const SUITES = ["followups", "nudges", "brief", "autonomy", "memory", "mail", "jobs", "redflags", "intents", "drafts", "gentle"] as const;
 export type Suite = (typeof SUITES)[number];
 /** Suites with a model step: the only ones live mode runs. */
-export const MODEL_SUITES: readonly Suite[] = ["followups", "nudges", "brief", "autonomy", "memory", "mail", "drafts"];
+export const MODEL_SUITES: readonly Suite[] = ["followups", "nudges", "brief", "autonomy", "memory", "mail", "drafts", "gentle"];
 export const CASES_DIR = new URL("./cases/", import.meta.url);
 
 export interface Check {
@@ -89,7 +91,9 @@ export function loadCases(dir: URL = CASES_DIR): EvalCase[] {
  * Where a model step's answer comes from. `system`: which of the bridge's prompts the run gets (assistant/prompt.ts); `text`: what goes between
  * its fences, built by the server's own code; `recorded`: the answer the case holds for that step.
  */
-export type Answer = (step: { system: "followup" | "brief" | "task" | "chat" | "judge" | "email"; text: string; recorded: string | undefined }) => Promise<string>;
+export type Answer = (step: {
+  system: "followup" | "brief" | "task" | "chat" | "judge" | "email" | "step"; text: string; recorded: string | undefined;
+}) => Promise<string>;
 /** The gate's: the recorded answer, always. */
 export const recordedAnswer: Answer = async (s) => s.recorded ?? "";
 
@@ -886,6 +890,14 @@ export async function runCase(c: EvalCase, answer: Answer, o: { briefMaterial: (
       answers = [r.raw];
       material = r.material;
       output = r.raw;
+      break;
+    }
+    case "gentle": {
+      const r = await runGentle(c, answer);
+      checks = r.checks;
+      answers = [r.raw];
+      material = r.material;
+      output = r.output;
       break;
     }
     case "redflags":

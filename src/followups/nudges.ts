@@ -6,13 +6,14 @@ import type { Engine } from "./parts.ts";
 import { CLAIM_MS, ESCALATE_BEFORE_MS, RECHECK_FOR_MS, RECHECK_MS } from "./limits.ts";
 import { isOpen } from "./record.ts";
 import { T } from "./texts.ts";
-import type { Batch, Loop } from "./types.ts";
+import type { Batch, CardFeedback, GentleRound, Loop } from "./types.ts";
+import { GT, gentleNudgeText, isStuck, pickVariant, VARIANTS } from "../gentle.ts";
 import { createLog } from "../log.ts";
 
 const log = createLog("followups");
 
 export function mountNudges(fu: Engine): Pick<Engine, "quietNow" | "nextAfter" | "tick"> {
-  const { d, now, lang, config, mutate, read, flushBatch, flushMailDue, runCheck, nudgeText } = fu;
+  const { d, now, lang, config, mutate, read, flushBatch, flushMailDue, runCheck, nudgeText, dueText, sourceText } = fu;
   const quietNow = (t: number): boolean => {
     const q = config.quiet;
     if (!q) return false;
@@ -54,6 +55,9 @@ export function mountNudges(fu: Engine): Pick<Engine, "quietNow" | "nextAfter" |
       // Email threads too, each one job (src/followups/mail-jobs.ts).
       out.jobs += await flushMailDue(t);
       if (quietNow(t)) return out;
+      // Gentle mode (src/gentle.ts): its own cap, words and buttons, and a loop left unanswered twice folded into the brief. Null: as before.
+      const g: GentleRound | null = d.gentle ? await d.gentle().catch(() => null) : null;
+      const cap = g ? g.maxPerDay : config.maxPerDay;
       const st = await read();
       // A loop whose conversation has a job still unanswered is looked at after that answer: it may say the loop was called off.
       const asking = (l: Loop): boolean =>
@@ -82,16 +86,28 @@ export function mountNudges(fu: Engine): Pick<Engine, "quietNow" | "nextAfter" |
           out.done++;
           continue;
         }
+        // Gentle: two nudges with no answer and it is not nudged again; it waits in the brief (and PENDING), where it can be closed or parked.
+        if (g && (l.unanswered ?? 0) >= 2) {
+          await mutate((s) => {
+            const x = s.loops.find((y) => y.id === l.id);
+            if (unchanged(x)) Object.assign(x, { nextCheckAt: 0, folded: true, lastCheck: seen.said, checkedAt: now() });
+          });
+          d.control?.log("followup", GT()("folded", { title: l.title }));
+          continue;
+        }
         // Its time has passed (a late tick, a restart, the quiet hours, the budget): nothing to say any more; the brief may still mention it.
-        if (l.dueAt && t >= l.dueAt) {
+        // Gentle mode asks once instead, "did it happen?", so it is closed or parked rather than left to drift.
+        const after = !!g && !!l.dueAt && t >= l.dueAt && (!l.afterAsked || l.status === "snoozed");
+        if (l.dueAt && t >= l.dueAt && !after) {
           await mutate((s) => {
             const x = s.loops.find((y) => y.id === l.id);
             if (unchanged(x)) Object.assign(x, { nextCheckAt: 0, lastCheck: seen.said, checkedAt: now() });
           });
           continue;
         }
-        const soon = !!l.dueAt && !l.escalated && t >= l.dueAt - ESCALATE_BEFORE_MS && (l.nudges > 0 || !!seen.replied);
-        const wanted = l.status === "snoozed" || soon || (l.nudges === 0 && !seen.replied);
+        const soon = !after && !!l.dueAt && !l.escalated && t >= l.dueAt - ESCALATE_BEFORE_MS && (l.nudges > 0 || !!seen.replied);
+        const wanted = after || l.status === "snoozed" || soon || (l.nudges === 0 && !seen.replied);
+        const variant = g ? pickVariant(VARIANTS[l.kind].length, l.variant, l.id) : undefined;
         // The budget is taken in the same write that records the nudge: two ticks can never both spend the last one.
         const others = wanted ? await (d.othersToday?.() ?? Promise.resolve(0)).catch(() => 0) : 0;
         const go = wanted
@@ -100,7 +116,7 @@ export function mountNudges(fu: Engine): Pick<Engine, "quietNow" | "nextAfter" |
             if (s.budget.day !== day) s.budget = { day, n: 0 };
             const x = s.loops.find((y) => y.id === l.id);
             if (!unchanged(x)) return false;
-            if (s.budget.n + others >= config.maxPerDay) {
+            if (s.budget.n + others >= cap) {
               x.nextCheckAt = now() + 30 * 60_000;
               return false;
             }
@@ -111,7 +127,12 @@ export function mountNudges(fu: Engine): Pick<Engine, "quietNow" | "nextAfter" |
             x.status = "open";
             x.lastCheck = seen.said;
             x.checkedAt = now();
-            x.nextCheckAt = nextAfter(x, now());
+            x.nextCheckAt = after ? 0 : nextAfter(x, now());
+            if (g) {
+              x.unanswered = (x.unanswered ?? 0) + 1;
+              x.variant = variant;
+              if (after) x.afterAsked = true;
+            }
             return true;
           })
           : await mutate((s) => {
@@ -122,13 +143,28 @@ export function mountNudges(fu: Engine): Pick<Engine, "quietNow" | "nextAfter" |
         if (!go) continue;
         // Someone else's promise is theirs to keep: a draft is offered only for what the owner has to do or answer.
         const draftable = !!d.drafts && l.kind !== "other_promise";
-        const body = nudgeText(l, seen.said, soon, lg) + (draftable ? `\n${T(lg)("draftHint")}` : "");
         const tl = T(lg);
-        const buttons = [
-          { id: `f1:${l.id}`, title: tl("btnDone") }, { id: `f2:${l.id}`, title: tl("btnSnooze") }, { id: `f3:${l.id}`, title: tl("btnNotMine") },
-        ];
+        let body: string;
+        let buttons: { id: string; title: string }[];
+        let more: CardFeedback | undefined;
+        if (g) {
+          // A first tiny step only for a stuck one; how long similar meetings took only for a meeting, and only from three or more.
+          const usually = l.kind === "agreed_meeting" && g.usually ? await g.usually(l.title).catch(() => null) : null;
+          body = gentleNudgeText(l, {
+            variant: variant ?? 0, due: dueText(l, lg), checked: seen.said, source: sourceText(l.sources[0], lg),
+            ...(l.step && isStuck(l, t) ? { step: l.step } : {}), usually,
+          }) + (draftable ? `\n${tl("draftHint")}` : "");
+          buttons = [{ id: `f1:${l.id}`, title: GT()("btnDone") }, { id: `f4:${l.id}`, title: GT()("btnSnooze") }, { id: `f7:${l.id}`, title: GT()("btnPark") }];
+          // A stuck one is offered a check-in too: "Check on me in 30 min" (src/gentle-checkins.ts).
+          if (isStuck(l, t) && g.checkin) more = await g.checkin(l.id).catch(() => undefined);
+        } else {
+          body = nudgeText(l, seen.said, soon, lg) + (draftable ? `\n${tl("draftHint")}` : "");
+          buttons = [
+            { id: `f1:${l.id}`, title: tl("btnDone") }, { id: `f2:${l.id}`, title: tl("btnSnooze") }, { id: `f3:${l.id}`, title: tl("btnNotMine") },
+          ];
+        }
         const feedback = d.quality?.ask(l, lg);
-        const sent = await d.card(body, buttons, feedback).catch(() => false);
+        const sent = await d.card(body, buttons, feedback, more).catch(() => false);
         if (!sent) await d.notify(tl("held", { text: body }));
         d.quality?.nudged(l, sent);
         d.control?.log("followup", tl("logNudge", { title: l.title }));

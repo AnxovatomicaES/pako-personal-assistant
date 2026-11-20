@@ -61,6 +61,12 @@ export interface Engine {
   fromChat: NonNullable<FollowupsDoor["fromChat"]>;
   dropFromChat: NonNullable<FollowupsDoor["dropFromChat"]>;
   reopenClosed: NonNullable<FollowupsDoor["reopenClosed"]>;
+  snoozeCard: NonNullable<FollowupsDoor["snoozeCard"]>;
+  parked: NonNullable<FollowupsDoor["parked"]>;
+  parkedText: NonNullable<FollowupsDoor["parkedText"]>;
+  unpark: NonNullable<FollowupsDoor["unpark"]>;
+  setStep: (id: string, step: string) => Promise<boolean>;
+  letGo: (id: string) => Promise<boolean>;
 
   // rehearse.ts
   draft: (o: DraftInput) => Promise<{ job: Job; text: string }>;

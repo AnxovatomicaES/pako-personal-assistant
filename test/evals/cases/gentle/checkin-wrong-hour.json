@@ -1,0 +1,14 @@
+{
+  "suite": "gentle",
+  "behaviour": "a check-in set for 03:00 at night when the owner said “at 3” at 11:00 is caught",
+  "origin": "gentle mode batch B: check-in requests",
+  "label": "fail",
+  "input": {
+    "kind": "checkin",
+    "now": "Monday 2026-11-23 11:00",
+    "timeZone": "Europe/London",
+    "message": "check on me at 3 if I started the deck",
+    "recorded": "Will do.<checkin at=\"2026-11-24 03:00\">the deck</checkin>"
+  },
+  "expect": { "at": "2026-11-23 15:00", "mentions": ["deck"], "maxReplyChars": 200 }
+}

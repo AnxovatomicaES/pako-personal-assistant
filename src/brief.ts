@@ -110,6 +110,8 @@ export interface BriefDeps {
    * given (at least a day back, at most a week): after a skipped brief, what changed is told from then, not only since yesterday.
    */
   extras?: ((o: { now: number; since: number }) => Promise<string | null>)[];
+  /** Lines that come first, right under the greeting (gentle mode's week's focus: src/gentle-reset.ts); null for none. */
+  first?: (() => Promise<string | null>)[];
   /** The name the owner gave, "" for none (the greeting then has none). */
   name?: () => string;
   control?: Control;
@@ -169,6 +171,8 @@ export function createBrief(d: BriefDeps) {
       date: fmt({ weekday: "long", day: "numeric", month: "long" }, l).format(t),
     });
     const sections: string[] = [];
+    const first = (await Promise.all((d.first ?? []).map((x) => x().catch(() => null)))).filter((x): x is string => typeof x === "string" && x.trim() !== "");
+    if (first.length) sections.push(first.join("\n"));
 
     if (calendars.length) {
       const read = await Promise.allSettled(calendars.map((c) => c()));

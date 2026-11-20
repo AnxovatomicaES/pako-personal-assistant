@@ -3,6 +3,9 @@
 import { CLAUDE_BUTTON } from "../claude-connect.ts";
 import { pausedText } from "../control.ts";
 import { FOLLOWUP_BUTTON } from "../followups.ts";
+import type { PressButton } from "../followups/types.ts";
+import { CHECKIN_BUTTON, CHECKIN_LOOP_BUTTON } from "../gentle-checkins.ts";
+import { RESET_BUTTON } from "../gentle-reset.ts";
 import { PROACTIVE_BUTTON } from "../proactive.ts";
 import { PENDING_CALL_MS } from "./shared.ts";
 import { CALENDAR_BUTTON } from "./calendar-cards.ts";
@@ -43,7 +46,50 @@ export function mountButtons(door: Door): Pick<Door, "pressed" | "NO" | "SEND_YE
     }
     const fu = FOLLOWUP_BUTTON.exec(buttonId);
     if (fu) {
-      await sendText(d.followups ? await d.followups.press(fu[1] as "1" | "2" | "3", fu[2]!) : tx("expired"));
+      // Gentle mode's Snooze asks when, on a card of its own (Later today, Tomorrow).
+      const ask = fu[1] === "4" && d.followups?.snoozeCard ? await d.followups.snoozeCard(fu[2]!).catch(() => null) : null;
+      if (ask) {
+        // And a check-in (src/gentle-checkins.ts) as its third: "Check in 30 min", for when the owner is about to start.
+        const ck = d.gentle?.checkinButton ? await d.gentle.checkinButton(fu[2]!).catch(() => null) : null;
+        const buttons = [...ask.buttons, ...(ck ? [ck] : [])].map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } }));
+        if (await door.graph({ type: "interactive", interactive: { type: "button", body: { text: ask.body }, action: { buttons } } })) return;
+      }
+      await sendText(d.followups ? await d.followups.press(fu[1] as PressButton, fu[2]!) : tx("expired"));
+      return;
+    }
+    // Gentle mode's time anchors: "On it" (src/gentle.ts).
+    const anchor = /^ga:([0-9a-f]{10})$/.exec(buttonId);
+    if (anchor) {
+      await sendText(d.gentle ? await d.gentle.anchorPressed(anchor[1]!) : tx("expired"));
+      return;
+    }
+    // Check-ins (src/gentle-checkins.ts): Yes, Not yet, Park on the ask; "Check on me in 30 min" on a follow-up's nudge or Snooze card.
+    const ci = CHECKIN_BUTTON.exec(buttonId);
+    if (ci) {
+      await sendText(d.gentle?.checkinPressed ? await d.gentle.checkinPressed(ci[1] as "1" | "2" | "3", ci[2]!) : tx("expired"));
+      return;
+    }
+    const ck = CHECKIN_LOOP_BUTTON.exec(buttonId);
+    if (ck) {
+      await sendText(d.gentle?.checkinForLoop ? await d.gentle.checkinForLoop(ck[1]!) : tx("expired"));
+      return;
+    }
+    // The weekly reset (src/gentle-reset.ts): This one, Park, Park the rest, Keep them, Let them go.
+    const wr = RESET_BUTTON.exec(buttonId);
+    if (wr) {
+      const r = d.gentle?.resetPressed ? await d.gentle.resetPressed(wr[1]!, wr[2]!) : null;
+      if (!r) return void (await sendText(tx("expired")));
+      await sendText(r.say);
+      if (r.card) {
+        const buttons = r.card.buttons.map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } }));
+        await door.graph({ type: "interactive", interactive: { type: "button", body: { text: r.card.body }, action: { buttons } } });
+      }
+      return;
+    }
+    // A brain dump's card (src/door/dump.ts): Keep all, Undo all, Remove n.
+    const dump = /^d(k|x|\d{1,2}):([0-9a-f]{10})$/.exec(buttonId);
+    if (dump) {
+      await door.dumpPressed(dump[1] === "k" ? "keep" : dump[1] === "x" ? "undo" : Number(dump[1]), dump[2]!, by);
       return;
     }
     const rem = /^r([123]):([0-9a-f]{10})$/.exec(buttonId);

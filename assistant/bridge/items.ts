@@ -73,6 +73,15 @@ export const judgeOf = (m: { judge?: unknown }): JudgeJob | undefined => {
   return j && typeof j.text === "string" && j.text.trim() ? { text: j.text.slice(0, 4000) } : undefined;
 };
 
+/** A first tiny step to write (gentle mode, src/gentle.ts): one stuck follow-up's facts, read in an isolated run that answers strict JSON. */
+export interface StepJob {
+  text: string;
+}
+export const stepOf = (m: { step?: unknown }): StepJob | undefined => {
+  const j = m.step as { text?: unknown } | undefined;
+  return j && typeof j.text === "string" && j.text.trim() ? { text: j.text.slice(0, 8000) } : undefined;
+};
+
 /** A meeting's review (src/meeting-review.ts), as the server passes it on: Zoom's summary, or (beside `meeting`) a transcript to review. */
 export interface Review {
   source: "summary" | "transcript";

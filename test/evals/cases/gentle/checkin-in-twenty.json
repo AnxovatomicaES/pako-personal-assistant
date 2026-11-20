@@ -1,0 +1,13 @@
+{
+  "suite": "gentle",
+  "behaviour": "“ping me in 20 min if I haven't started” is a check-in 20 minutes from now (written as minutes or as the time), with no reminder",
+  "origin": "gentle mode batch B: check-in requests",
+  "input": {
+    "kind": "checkin",
+    "now": "Monday 2026-11-23 16:40",
+    "timeZone": "America/New_York",
+    "message": "ping me in 20 min if I haven't started the expense report",
+    "recorded": "OK, I'll look in at 17:00.<checkin in=\"20\">the expense report</checkin>"
+  },
+  "expect": { "at": "2026-11-23 17:00", "mentions": ["expense", "report"], "maxReplyChars": 200 }
+}

@@ -1,11 +1,11 @@
 // The server's background jobs (follow-ups, proactive checks, the judge of dated facts, the written brief): isolated runs, raw answers back.
 
 import { randomBytes } from "node:crypto";
-import { BRIEF_PROMPT, BRIEF_TASK_PROMPT, FOLLOWUP_PROMPT, JUDGE_PROMPT, PROACTIVE_PROMPT } from "../prompt.ts";
+import { BRIEF_PROMPT, BRIEF_TASK_PROMPT, FOLLOWUP_PROMPT, JUDGE_PROMPT, PROACTIVE_PROMPT, STEP_PROMPT } from "../prompt.ts";
 import type { RunKind } from "../budget.ts";
 import { ClaudeError } from "./claude.ts";
 import { fenced } from "./context.ts";
-import type { BriefJob, FollowupJob, JudgeJob, ProactiveJob } from "./items.ts";
+import type { BriefJob, FollowupJob, JudgeJob, ProactiveJob, StepJob } from "./items.ts";
 import type { AfterLanguage } from "./parts.ts";
 
 export function mountJobs(b: AfterLanguage) {
@@ -159,7 +159,33 @@ export function mountJobs(b: AfterLanguage) {
       return n >= 3;
     }
   };
-  return { handleFollowup, handleProactive, handleJudge, handleBrief };
+  /**
+   * A first-tiny-step job (gentle mode, src/gentle.ts): one stuck follow-up's facts read in a run of its own (no tools, no conversation,
+   * nothing acted on). The answer goes back as raw text; the server checks it before anything is kept, and a failed run sends "": no step.
+   */
+  const handleStep = async (id: string, job: StepJob): Promise<boolean> => {
+    const fence = `PASO-${randomBytes(4).toString("hex")}`;
+    const prompt = [`<<<${fence}`, fenced(job.text, 8000), `${fence}>>>`].join("\n");
+    let text = "";
+    try {
+      const r = await background("step", job.text, prompt, { ...config, tools: [], systemPrompt: STEP_PROMPT.replaceAll("PASO", fence) });
+      if (!("skipped" in r)) {
+        text = r.text.trim().slice(0, 2000);
+        log(`step ${id.slice(-8)}: ${text.length} chars, $${r.costUsd.toFixed(4)}`);
+      }
+    } catch (err) {
+      const kind = err instanceof ClaudeError ? err.kind : "other";
+      log(`claude failed on a step job (${kind}): ${(err as Error).message.slice(0, 200)}`);
+    }
+    try {
+      const r = await api("/assistant/step", { method: "POST", body: { id, text } });
+      if (!r.ok) log(`step answer refused: ${r.status}`);
+    } catch (err) {
+      log(`step answer failed: ${(err as Error).message}`);
+    }
+    return true;
+  };
+  return { handleFollowup, handleProactive, handleJudge, handleBrief, handleStep };
 }
 
 export type Jobs = ReturnType<typeof mountJobs>;

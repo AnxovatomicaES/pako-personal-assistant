@@ -42,7 +42,14 @@ export const TITLE_MAX = 140;
 export const DETAIL_MAX = 300;
 export const WHO_MAX = 60;
 
-/** Button ids: f1 Done, f2 In 1 h, f3 Not mine (src/whatsapp.ts pressed). */
-export const FOLLOWUP_BUTTON = /^f([123]):([0-9a-f]{10})$/;
+/** Button ids: f1 Done, f2 In 1 h, f3 Not mine; gentle mode's f4 Snooze, f5 Later today, f6 Tomorrow, f7 Park (src/door/buttons.ts). */
+export const FOLLOWUP_BUTTON = /^f([1-7]):([0-9a-f]{10})$/;
+/**
+ * A parked loop is kept this long after it was parked (findable in the Parked list), then goes like any closed one. In gentle mode the weekly
+ * reset (src/gentle-reset.ts) asks about it after 30 days ("bring back or let go?") and lets it go a week later, with a note kept.
+ */
+export const PARKED_KEEP_MS = 45 * 24 * 3600_000;
+/** Gentle mode: "later today" brings a snoozed loop back this much later. */
+export const LATER_TODAY_MS = 3 * 3600_000;
 /** The inbox id of an extraction job. */
 export const jobInboxId = (id: string): string => `fu:${id}`;

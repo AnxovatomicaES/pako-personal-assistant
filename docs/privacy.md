@@ -121,7 +121,7 @@ also capped, as said.
 | `zoom-state` | Zoom meetings seen and the last 20 summaries | 60 days |
 | `meeting-reviews` | The last 40 Zoom meetings reviewed: their summary, your to-dos (who waits, by when, the words that show it), what others promised you, the decisions, the meetings agreed and the open questions | 30 days |
 | `lessons` | What Pako learned from your corrections: a short dated line for each "Not mine", undo, 👎 on a reminder or a brief item, and draft you changed before sending it (what you changed, measured: length, greeting, sign-off, language), with how often you taught it, and for a draft both texts (60 at most; Settings › How Pako acts shows and deletes them). Also Pako's drafts of the last 3 days (10 at most), to compare with what you sent | 400 days |
-| `followups` | Open items Pako follows up (what you were asked or promised, with where each was said), the "Not mine" rules and today's reminder count; the new emails of a thread waiting a few minutes to be read together (their newest words, about 4,000 characters each, gone once the thread's job is queued), the ids of the emails already read (600 at most, so none is read twice) and today's count of email reading jobs. No excerpt of an email is kept with an item | 60 days (an open item 14 days, a closed one 7; a waiting email 2 days at most) |
+| `followups` | Open items Pako follows up (what you were asked or promised, with where each was said; in gentle mode also the items you parked, for 45 days (the weekly reset asks about them after 30), and a stuck item's first tiny step), the "Not mine" rules and today's reminder count; the new emails of a thread waiting a few minutes to be read together (their newest words, about 4,000 characters each, gone once the thread's job is queued), the ids of the emails already read (600 at most, so none is read twice) and today's count of email reading jobs. No excerpt of an email is kept with an item | 60 days (an open item 14 days, a closed one 7; a waiting email 2 days at most) |
 | `zoho-refresh` | Access to Zoho Calendar (a secret) | 10 years |
 | `calendar-state` | Which meeting reminders were already sent | 30 days |
 | `meeting-prep` | Which meetings already got their prep note (an id and a time per meeting, a week) | 8 days |
@@ -159,6 +159,12 @@ also capped, as said.
 | `job-claim:<slot>` | A mark while one scheduled run is being done (its slot hashed, and which Pako took it), so two Pakos on one store never do it twice at once | 10 minutes |
 | `demo-seeded` | When the demo week was set up. Only in the demo's own folder, `~/.pako/demo`, deleted by Leave demo | 90 days |
 | `demo-calendar` | The demo week's invented calendar. Only in `~/.pako/demo`, deleted by Leave demo | 90 days |
+| `gentle-settings` | Gentle mode: whether it is on, its nudges a day, how long before a meeting it says to wrap up or leave, the check-ins' minutes and the weekly reset's day and time | 5 years |
+| `gentle-steps` | Gentle mode: the first tiny steps asked today and for which follow-ups (a step itself is kept on its follow-up, in `followups`) | 7 days |
+| `gentle-anchors` | Gentle mode: the meeting nudges already sent, and how long past meetings took, by the words of their titles (for "this usually takes you about") | 200 days |
+| `brain-dumps` | Your last brain dumps (10 at most): each item as it was sorted, and what it changed, so one can be removed or all undone | 2 days |
+| `gentle-checkins` | Your check-ins: what each is about (your words), its time, its "Not yet" count, how it ended; today's count | 10 days (ended: 2 days) |
+| `gentle-reset` | Weekly reset: items each reset listed (id, title, person), the week's focus, parked items asked about, what was let go | 120 days (history: 90) |
 | `places-ok` | That your Google Places key has answered once: a fingerprint of the key (a hash), never the key, so the settings page can say "connected" | 400 days |
 | `jobs` | The runs due at a time (the daily brief, each reminder sent): when each was due, whether it was done, missed (the computer slept past its last hour) or failed, and the error. The brief's and the reminders' own words are not in it | 8 days |
 

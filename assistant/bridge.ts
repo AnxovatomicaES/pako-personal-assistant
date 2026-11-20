@@ -39,7 +39,7 @@ export type { TurnSeen } from "./bridge/mcp.ts";
 export { createWarmClaude } from "./bridge/warm.ts";
 export type { WarmClaude } from "./bridge/warm.ts";
 export { parseReply, readReply } from "./bridge/reply.ts";
-export type { FactTag, KnowTag, ParsedReply, PersonTag } from "./bridge/reply.ts";
+export type { DumpTag, FactTag, KnowTag, ParsedReply, PersonTag } from "./bridge/reply.ts";
 export { parseEmailVerdict } from "./bridge/items.ts";
 export type { BriefJob, Email, FollowupJob, JudgeJob, Meeting, Paper, ProactiveJob, Review } from "./bridge/items.ts";
 export { contextOutside, languageLine, namedPeople } from "./bridge/context.ts";

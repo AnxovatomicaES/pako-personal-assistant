@@ -169,6 +169,37 @@ export const onFollowups: Handler = async (door, { command }) => {
   return null;
 };
 
+/**
+ * Gentle mode's Parked list (src/gentle.ts): "what did I park?" lists it, "bring back <words>" puts one back on the open list. Read at once
+ * by the server, like PENDING; a server without follow-ups lets the words go on to the assistant.
+ */
+export const onParked: Handler = async (door, { command }) => {
+  const { d, sendText } = door;
+  if (!d.followups?.parkedText || !d.followups.unpark) return null;
+  if (/^(what did i park|what have i parked|what s parked|what is parked|parked|parked items|my parked items|show parked|show my parked items)$/.test(command)) {
+    await sendText(await d.followups.parkedText());
+    return "parked shown";
+  }
+  const back = /^(?:bring back|unpark)\s+(.{2,80})$/.exec(command);
+  if (back) {
+    const r = await d.followups.unpark({ words: back[1]! });
+    await sendText(r.say);
+    return r.ok ? "unparked" : "unpark asked";
+  }
+  return null;
+};
+
+/** "park 2" after a weekly reset (src/gentle-reset.ts), where the chat shows three buttons: anything else goes on. */
+export const onResetPark: Handler = async (door, { command }) => {
+  const { d, sendText } = door;
+  const m = /^park ([1-3])$/.exec(command);
+  if (!m || !d.gentle?.resetTyped) return null;
+  const say = await d.gentle.resetTyped(Number(m[1]));
+  if (say === null) return null;
+  await sendText(say);
+  return "reset item parked";
+};
+
 export const onBookings: Handler = async (door, { command }) => {
   const { d, sendText } = door;
   if (d.booking && /^(bookings|my bookings)$/.test(command)) {

@@ -1,0 +1,21 @@
+{
+  "suite": "gentle",
+  "behaviour": "a step that takes an hour, names someone the facts never had and shames the owner is caught",
+  "origin": "gentle mode batch A: first tiny step",
+  "label": "fail",
+  "input": {
+    "kind": "step",
+    "lang": "en",
+    "loop": {
+      "kind": "owner_promise",
+      "title": "Send Ana the Q4 deck",
+      "who": "Ana",
+      "where": "Ana (private)",
+      "detail": "Ana asked on Slack on Monday for the Q4 deck; you said you would send it by Wednesday",
+      "lastCheck": "I have no way to check it (an email)."
+    },
+    "people": [{ "name": "Ana", "text": "Ana Ruiz: your manager at Acme (you told Pako on 2026-11-02)." }],
+    "recorded": "{\"step\": \"Block an hour tonight to finally finish the overdue deck and ask Marcus to check it.\"}"
+  },
+  "expect": { "mentions": ["deck", "Ana"], "maxWords": 20 }
+}

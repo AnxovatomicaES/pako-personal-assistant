@@ -123,6 +123,12 @@ const KEY_LIST = [
   { key: "places-ok", keep: 400 * DAY }, // app.ts (table booking)
   { key: "demo-seeded", keep: 90 * DAY }, // demo.ts (only in ~/.pako/demo)
   { key: "demo-calendar", keep: 90 * DAY },
+  { key: "gentle-settings", keep: 5 * 365 * DAY }, // gentle.ts
+  { key: "gentle-steps", keep: 7 * DAY },
+  { key: "gentle-anchors", keep: 200 * DAY },
+  { key: "brain-dumps", keep: 2 * DAY }, // door/dump.ts
+  { key: "gentle-checkins", keep: 10 * DAY }, // gentle-checkins.ts
+  { key: "gentle-reset", keep: 120 * DAY }, // gentle-reset.ts
 ] as const satisfies readonly KeyFact[];
 
 export const DATA_KEYS: readonly KeyFact[] = KEY_LIST;
@@ -211,6 +217,15 @@ const ABOUT = texts<AboutKey | "unknown">(
     "places-ok": "That your Google Places key has worked once (a fingerprint of the key, never the key)",
     "demo-seeded": "When the demo week was set up (only in the demo's own folder, ~/.pako/demo)",
     "demo-calendar": "The demo week's invented calendar (only in the demo's own folder, ~/.pako/demo)",
+    "gentle-settings": "Gentle mode: whether it is on, its nudges a day and how long before a meeting it reminds you",
+    "gentle-steps": "Gentle mode: the first tiny steps asked today, and for which follow-ups (the steps themselves stay with the follow-up)",
+    "gentle-anchors": "Gentle mode: the meeting reminders already sent, and how long your past meetings took (by the words of their titles), "
+      + "for “this usually takes you about”",
+    "brain-dumps": "Your last brain dumps (10 at most): each item as it was sorted, and what it changed, so one can be removed or all undone",
+    "gentle-checkins": "Your check-ins (“check on me at 10:30”): what each is about, its time, how many “Not yet” it had and how it ended, "
+      + "and today's count (shared with the day's nudges)",
+    "gentle-reset": "Gentle mode's weekly reset: the items each reset listed (by their follow-up), this week's focus, the parked items asked "
+      + "“bring back or let go?”, and what was let go after a month (title, person, dates)",
     unknown: "A key this version of Pako doesn't know",
   },
 );

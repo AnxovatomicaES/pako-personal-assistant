@@ -57,6 +57,7 @@ import { mountDigests } from "./door/digests.ts";
 import { mountHeldReplies } from "./door/held-replies.ts";
 import { mountReply } from "./door/reply.ts";
 import { mountTags } from "./door/tags.ts";
+import { mountDump } from "./door/dump.ts";
 import { doorApi } from "./door/api.ts";
 
 export { loadWhatsappConfig } from "./door/config.ts";
@@ -111,6 +112,7 @@ export function mountWhatsapp(app: Express, d: WhatsappDeps) {
   Object.assign(door, mountHeldReplies(door));
   mountReply(door);
   Object.assign(door, mountTags(door));
+  Object.assign(door, mountDump(door));
   const { routines, runReminders } = door;
   // Due reminders are looked at every half minute (and on every poll of the assistant's computer, which also keeps the free web service awake).
   // Routines due and the watches' look, on the same half-minute clock (src/routines.ts: one look at a time, never throws). With the durable

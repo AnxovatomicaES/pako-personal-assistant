@@ -153,6 +153,8 @@ export interface GatherDeps {
   people?: (words: string[]) => Promise<{ name: string; text: string }[]>;
   /** Since when changes count: the last brief given (absent: the last day). */
   since?: number;
+  /** Gentle mode's week's focus (src/gentle-reset.ts): that follow-up's id, put first among the facts and marked as the owner's pick. */
+  focusLoop?: () => Promise<string | null>;
 }
 
 export interface Gathered {
@@ -170,7 +172,11 @@ const F = texts(
     kinds_other_promise: "promised to you",
     kinds_agreed_meeting: "agreed meeting (on no calendar)",
     kinds_deadline: "deadline",
-    loop: "{kind} · {source}{due} · {title}{who}{detail}{checked}",
+    loop: "{kind} · {source}{due} · {title}{who}{detail}{checked}{step}{folded}{focus}",
+    weekFocus: " · the owner's focus for this week (they picked it in the weekly reset): put it first",
+    // Gentle mode (src/gentle.ts): a stuck follow-up's first tiny step, and one no longer nudged (two reminders went unanswered).
+    step: " · first tiny step (two minutes): {step}",
+    folded: " · no more reminders for it: the brief carries it now",
     due: " · due: {due}",
     who: " · who: {who}",
     detail: " · detail: {detail}",
@@ -268,7 +274,10 @@ export async function gatherFacts(d: GatherDeps): Promise<Gathered> {
     return new Intl.DateTimeFormat(locale(l), { timeZone: tz, weekday: "short", day: "numeric", month: "numeric" }).format(x);
   };
 
-  const loops = (await take(d.loops, null)) ?? [];
+  const focusId = d.focusLoop ? await d.focusLoop().catch(() => null) : null;
+  // Never a parked one (gentle mode): set aside by the owner, it is never listed as open. The week's focus first.
+  const loops = ((await take(d.loops, null)) ?? []).filter((lp) => lp.status !== "parked")
+    .sort((a, b) => (b.id === focusId ? 1 : 0) - (a.id === focusId ? 1 : 0));
   for (const lp of loops.slice(0, 25)) {
     // A follow-up was read from Slack, mail or a meeting: that source counts as read for the footer.
     read.add(iconOfLoop(lp));
@@ -285,6 +294,9 @@ export async function gatherFacts(d: GatherDeps): Promise<Gathered> {
         title: lp.title, who: lp.who ? say("who", { who: lp.who }) : "", detail: lp.detail ? say("detail", { detail: lp.detail }) : "",
         // When the check ran: one from days ago is not presented as current.
         checked: !lp.lastCheck ? "" : lp.checkedAt ? say("checkedAt", { checked: lp.lastCheck, when: when(lp.checkedAt, tz, l) }) : say("checked", { checked: lp.lastCheck }),
+        step: lp.step ? say("step", { step: lp.step }) : "",
+        folded: lp.folded ? say("folded") : "",
+        focus: lp.id === focusId ? say("weekFocus") : "",
       }), 900),
     });
   }
@@ -725,13 +737,17 @@ export function dayItemOver(d: Pick<DayItem, "time" | "end" | "allDay">, hm: str
  * The chat's version: short, plain text (WhatsApp shows no markdown), the page's address last. `now`: when it is read (BRIEF at 17:00):
  * the greeting is said for that hour, and what is over today is counted instead of listed as still ahead.
  */
-export function chatText(doc: BriefDoc, o: { name: string; timeZone: string; url: string | null; lang?: Lang; now?: number }): string {
+export function chatText(
+  doc: BriefDoc, o: { name: string; timeZone: string; url: string | null; lang?: Lang; now?: number; weekFocus?: string | null },
+): string {
   const l = o.lang ?? doc.lang;
   const say = C(l);
   const at = o.now ?? doc.at;
   const minutes = minutesOf(clock24(at, o.timeZone));
   const greeting = say(minutes < 12 * 60 ? "morning" : minutes < 20 * 60 ? "afternoon" : "evening", { name: o.name ? `, ${o.name}` : "" });
   const parts = [doc.opening ? `${greeting} ${doc.opening}` : greeting];
+  // Gentle mode's week's focus (src/gentle-reset.ts): the owner's own pick, first.
+  if (o.weekFocus) parts.push(o.weekFocus);
   if (doc.focus) parts.push(say("focus", { title: doc.focus.title }));
   if (doc.todos.length) parts.push(`${say("todos")}\n${doc.todos.slice(0, 4).map((t) => `• ${t.title}`).join("\n")}`);
   const hm = o.now !== undefined && dayOf(o.now, o.timeZone) === doc.day ? clock24(o.now, o.timeZone) : null;
@@ -823,6 +839,10 @@ export interface BriefV2Deps {
   offerSend?: (o: { mailRef: string; title: string; text: string }) => Promise<unknown>;
   /** What the owner corrected before (src/lessons.ts lines): read by the brief and by each draft. */
   lessons?: (q: LessonQuery) => Promise<string[]>;
+  /** Gentle mode's week's focus line ("🌱 This week's focus: …", src/gentle-reset.ts): first in the chat's version; null when none. */
+  weekFocus?: () => Promise<string | null>;
+  /** The parked follow-ups' ids (gentle mode): a to-do for one is never shown, though it was written before it was parked. */
+  parkedIds?: () => Promise<string[]>;
   /** A draft written for the chat: kept to compare with what the owner sends there (src/lessons.ts drafted). */
   drafted?: (o: { text: string; about: DraftAbout; mailRef?: string }) => Promise<unknown>;
   /** The panel's public address, for the link in the chat; null on a server that has none yet. */
@@ -854,6 +874,13 @@ export function createBriefV2(d: BriefV2Deps) {
   const lang = d.lang ?? ((): Lang => "en");
   let memory: State = empty();
   let chain: Promise<unknown> = Promise.resolve();
+  const focusLine = async (): Promise<string | null> => (d.weekFocus ? d.weekFocus().catch(() => null) : null);
+  const parkedSet = async (): Promise<Set<string>> => new Set(d.parkedIds ? await d.parkedIds().catch(() => [] as string[]) : []);
+  /** The chat's copy of a brief: a to-do whose follow-up was parked since it was written is left out. */
+  const unparked = async (doc: BriefDoc): Promise<BriefDoc> => {
+    const p = await parkedSet();
+    return p.size ? { ...doc, todos: doc.todos.filter((x) => !x.loopId || !p.has(x.loopId)) } : doc;
+  };
 
   const parse = (raw: string | null): State => {
     if (!raw) return empty();
@@ -973,7 +1000,9 @@ export function createBriefV2(d: BriefV2Deps) {
         const monday = d.quality ? await d.quality.monday().catch(() => null) : null;
         const changed = p.since !== undefined && d.changes ? await d.changes(p.since).catch(() => null) : null;
         const text = [
-          chatText(doc, { name: d.name?.() ?? "", timeZone: d.timeZone, url: d.url?.() ?? null, lang: lang(), now: now() }),
+          chatText(await unparked(doc), {
+            name: d.name?.() ?? "", timeZone: d.timeZone, url: d.url?.() ?? null, lang: lang(), now: now(), weekFocus: await focusLine(),
+          }),
           ...(changed?.trim() ? [changed.trim()] : []),
           ...(monday ? [monday] : []),
           ...(d.quality ? [d.quality.line(lang())] : []),
@@ -1053,8 +1082,9 @@ export function createBriefV2(d: BriefV2Deps) {
       const s = await read();
       const doc = s.doc && s.doc.day === dayOf(now(), d.timeZone) ? s.doc : null;
       if (!doc) return [];
+      const parked = await parkedSet();
       return doc.todos
-        .filter((x, i) => !x.done && !s.done.includes(i))
+        .filter((x, i) => !x.done && !s.done.includes(i) && !(x.loopId && parked.has(x.loopId)))
         .slice(0, 6)
         .map((x) => `${x.title}${x.context ? `: ${x.context}` : ""}`.slice(0, 160));
     } catch {
@@ -1065,16 +1095,21 @@ export function createBriefV2(d: BriefV2Deps) {
   /** The chat's short version of today's written brief (BRIEF), null when there is none. */
   const short = async (): Promise<string | null> => {
     const doc = await todayDoc().catch(() => null);
-    return doc ? chatText(doc, { name: d.name?.() ?? "", timeZone: d.timeZone, url: d.url?.() ?? null, lang: lang(), now: now() }) : null;
+    if (!doc) return null;
+    return chatText(await unparked(doc), {
+      name: d.name?.() ?? "", timeZone: d.timeZone, url: d.url?.() ?? null, lang: lang(), now: now(), weekFocus: await focusLine(),
+    });
   };
 
   /** What the page shows: today's brief (with what was ticked), whether one is being written, the documents asked. */
   const view = async () => {
     const s = await read();
+    const parked = await parkedSet();
     const t = now();
     const doc = s.doc && s.doc.day === dayOf(t, d.timeZone) ? s.doc : null;
     return {
-      doc: doc ? { ...doc, todos: doc.todos.map((x, i) => ({ ...x, done: s.done.includes(i) })) } : null,
+      // A to-do whose follow-up was parked is marked so (the page leaves it out; its index stays, for the ticks).
+      doc: doc ? { ...doc, todos: doc.todos.map((x, i) => ({ ...x, done: s.done.includes(i), ...(x.loopId && parked.has(x.loopId) ? { parked: true } : {}) })) } : null,
       // Before today's is written (before the morning, or none yet): the last one, which the dashboard shows "as of" its time.
       latest: !doc && s.doc ? { ...s.doc } : null,
       pending: !!s.pending && t - s.pending.at <= d.config.waitMs,

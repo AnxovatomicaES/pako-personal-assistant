@@ -34,7 +34,7 @@ export function createFollowups(d: FollowupsDeps) {
   Object.assign(fu, mountOwner(fu));
   Object.assign(fu, mountRehearse(fu));
   const { observeSlack, observeMail, offer, result, ingest, tick, press, command, context, open, read, dueText, sourceText, draft, dryAnswer } = fu;
-  const { closeByWords, calendarChanged, reopenClosed, forDraft, draftFacts, fromChat, dropFromChat } = fu;
+  const { closeByWords, calendarChanged, reopenClosed, forDraft, draftFacts, fromChat, dropFromChat, snoozeCard, parked, parkedText, unpark, setStep, letGo } = fu;
   // Loops from the mail triage, and the panel's Done on a mail (src/followups/mail.ts).
   const mail = mountMailLoops(fu);
 
@@ -56,6 +56,13 @@ export function createFollowups(d: FollowupsDeps) {
     fromChat,
     dropFromChat,
     reopenClosed,
+    /** Gentle mode (src/gentle.ts): the Snooze card, the Parked list, bringing one back, and a loop's first tiny step. */
+    snoozeCard,
+    parked,
+    parkedText,
+    unpark,
+    setStep,
+    letGo,
     open,
     read,
     /** Nudges given today: proactive Pako (src/proactive.ts) counts them in the day's shared budget. */
