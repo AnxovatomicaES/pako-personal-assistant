@@ -48,6 +48,8 @@ export function mountContext(door: Door): void {
       // Learning goals and the coming birthdays (src/companion.ts), and that this server keeps the diary, goals and cards; never the diary itself.
       // Without Labs (PAKO_LABS) the bridge drops those tags, and the assistant is told they are off so it never says it kept one.
       ...(companion.labs ? { companion: 1 } : { labsOff: 1 }),
+      // Which labs are on (src/labs.ts): a newer bridge leaves table booking and phone calls out of the prompt and the tools when not listed.
+      ...(d.labsOn ? { labsOn: [...d.labsOn] } : {}),
       ...(await companion.context().catch(() => ({}))),
       // The owner's routines and watches, and that this server makes them (a newer bridge drops <routine> and <watch> for a server without it).
       routinesOn: 1,

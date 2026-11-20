@@ -16,7 +16,7 @@ import { mountTwins } from "./figure-twin.js";
 import { WORDS } from "./settings-words.js";
 import {
   ADVANCED, askApp, cardStates, importedCount, checkField, cleanAppPassword, cleanDiscovery, connectedCount, COUNTED, discoveryChips, inApp, isEmail, nextSuggestion,
-  providerOf, resumable, tellApp, accountLine, mailStatus, cleanClients,
+  providerOf, resumable, tellApp, accountLine, mailStatus, cleanClients, labHiddenCards,
 } from "./settings-model.js";
 import { localeFor } from "./i18n.js";
 
@@ -102,6 +102,8 @@ const S = {
   discovering: false,
   declined: false,
   restarting: false,
+  /** The cards of a lab that is off (labHiddenCards): not drawn. */
+  hidden: new Set(),
 };
 const KEEP = "pako.settings.v1";
 function remember() {
@@ -130,6 +132,8 @@ async function loadAll() {
     read("/panel/api/discovery"), read("/panel/api/calendar/local"), read("/panel/api/people/imported"), read("/panel/api/connections/details"),
     read("/panel/api/claude/connect"), read("/panel/api/connect/clients"),
   ]);
+  // The cards of a lab that is off (Settings › Labs, src/labs.ts) are not drawn.
+  S.hidden = labHiddenCards(await read("/panel/api/labs"));
   // Which connections are one button (the project's own apps, src/connect-clients.ts); an older Pako answers nothing: none are.
   S.data = {
     connections, telegram, whatsapp, claude, discovery: cleanDiscovery(discovery), localCalendar, people, details, claudeConnect, clients: cleanClients(clients),
@@ -376,7 +380,7 @@ function badge(state) {
 function drawCards() {
   // The essentials first; the Advanced group (a developer app on Meta, Slack or Zoom, or a fine detail) in its own list below.
   const slot = (id) => h("li", { class: "card-slot", id: `slot-${id}` });
-  const ids = Object.keys(CARD);
+  const ids = Object.keys(CARD).filter((id) => !S.hidden?.has(id));
   $("#cards").replaceChildren(...ids.filter((id) => !ADVANCED.includes(id) && id !== "mail").map(slot));
   $("#cards-mail")?.replaceChildren(slot("mail"));
   $("#cards-advanced").replaceChildren(...ids.filter((id) => ADVANCED.includes(id)).map(slot));
@@ -1640,7 +1644,7 @@ function drawDiscovery(outcome = "") {
     return paint();
   }
   if (d) {
-    const chips = discoveryChips(d, t);
+    const chips = discoveryChips(d, t).filter((c) => !S.hidden?.has(c.card));
     const denied = Object.entries(d.permissions).filter(([, v]) => v === "denied").map(([k]) => k);
     // Mail closed at the look (its permission never asked, no account): said, with the button that may open it.
     const mailClosed = d.mailState ? d.mailState === "closed" : !d.mailAccounts.length && d.permissions.mail === "notAsked";
@@ -1907,9 +1911,9 @@ function details(id) {
   return null;
 }
 
-// ---------- the tabs: Connections, Mail, Privacy & your data, Move & import, General ----------
+// ---------- the tabs: Connections, Mail, How Pako acts, Privacy & your data, Move & import, Labs, General ----------
 
-const TABS = ["connections", "mail", "acts", "privacy", "move", "general"];
+const TABS = ["connections", "mail", "acts", "privacy", "move", "labs", "general"];
 /** The tab a link lands on: a tab's own name, the mail card (#mail, #imap), or any other card's name (Connections). */
 function tabOf(hash) {
   if (TABS.includes(hash)) return hash;

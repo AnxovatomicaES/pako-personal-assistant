@@ -39,6 +39,15 @@ internet that someone else's servers can call, and a computer at home has none:
 The one thing every part shares: **the computer must be on and awake.** While it sleeps nothing is answered, and what came in is caught up when
 it wakes (reminders late, Slack and Zoom from where they left off).
 
+## Core and Labs
+
+Pako is split in two ([Core and Labs](features.md#core-and-labs)). **Core** is supported and on the "nothing dropped" path: chat (panel and
+Mac app), Telegram, memory and people, reminders, tasks and lists, the brief, follow-ups (Slack, IMAP, AgentMail and Resend, Zoom, Teams),
+calendars (ICS, Mac, Google, Zoho), Gentle mode and the demo week. **Labs** are off for a new install and start nothing while off: table
+booking (Maître drives restaurant sites in a browser), phone calls (Retell, LiveKit and Gemini), WhatsApp (Meta's app, templates and a
+tunnel), the Relay and the health diary with learning. An install that had a lab set up keeps it on. Hosted server mode (with Redis) is not
+a switch, but it is experimental too: the computer is the supported home.
+
 ## The limits
 
 - **One person per Pako.** There are no accounts. Whoever is signed in to the panel is the owner.

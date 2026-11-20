@@ -12,7 +12,7 @@ code reads must be listed here, in `docs/personal-caller.md` or in `assistant/RE
 | `PAKO_HOME` | `~/.pako` | Where local mode keeps its secrets, notes, reminders and chat. |
 | `PAKO_SECRET_STORE` | `auto` | Where local mode keeps its secrets (the bridge token, the phone line's token, the panel's session key, the Telegram bot token, WhatsApp's values and the connections set in the panel). `auto`: in the system's secret store when there is one that works (the macOS login keychain, the Windows Credential Manager, or libsecret's `secret-tool` on a Linux desktop with a session bus, `DBUS_SESSION_BUS_ADDRESS`), else in `~/.pako/secrets.json` (mode 600). `keychain`: the same, but a store that cannot be used is reported at start. `file`: always `secrets.json`; secrets already in the store are moved back into it at the next start. Under the test runner (`NODE_TEST_CONTEXT`), or with a `HOME` that is not your account's own, `auto` means `file`. See [Where it is kept](privacy.md#where-it-is-kept). |
 | `PAKO_NAME` | asked in the panel's welcome | What Pako calls you in local mode. With it set, the panel does not ask. Until a name is given Pako says *friend*. |
-| `PAKO_LABS` | `off` | `on` turns on the parts still in Labs: the health diary (`MY HEALTH`, `log: …`), learning goals and quiz cards (`QUIZ ME`), and the weekly check-in. Off, Pako answers none of them and the assistant is told they are off. A red flag in your own words always gets the emergency answer, Labs or not. |
+| `PAKO_LABS` | empty | The labs that are on, by id with commas (`booking`, `calls`, `whatsapp`, `relay`, `companion`), or `on` for all: [Labs](#labs). |
 | `PAKO_COUNTRY` | the country of your time zone, else of your system's locale | Your country, two letters (`US`, `GB`, `IN`, `DE`…): the emergency number (911, 999, 112…) and the crisis line (988 in the US, 116 123 in the UK) Pako gives for a red flag, the country code of a phone number you write without one, and how dates and times are written (with `en`, 3:05 PM and 11/3 in the US, 15:05 and 3/11 in the UK). Pako has the numbers of US, CA, GB, IE, AU, FR, DE, IT, ES, PT, MX, AR, CO, CL and a few more (112 for the rest of the EU); for another country it says "your local emergency number" and findahelpline.com. See [Languages and countries](languages.md). |
 | `PAKO_LANGUAGE` | ignored | Accepted and ignored, and the log says so once: Pako's own texts are English everywhere, and Claude answers in the language you write in. It can be removed. See [Languages](features.md#languages). |
 | `ANTHROPIC_API_KEY` | empty (Claude uses your sign-in) | Your own Anthropic API key, for Claude without a plan. Passed to the `claude` command only, with Claude's other `ANTHROPIC_*` and `CLAUDE_*` settings. See [With an API key instead of a plan](install.md#with-an-api-key-instead-of-a-plan). |
@@ -87,6 +87,23 @@ code reads must be listed here, in `docs/personal-caller.md` or in `assistant/RE
 | `IMAP_HOST`, `IMAP_USER`, `IMAP_PASSWORD`, `IMAP_OAUTH`, `IMAP_REFRESH_TOKEN`, `IMAP_PORT`, `IMAP_FOLDERS`, `IMAP_POLL_MINUTES` | empty (off); 993; `INBOX`; 5 | Your own mailbox, read only (`src/imap.ts`). An app password, or for Microsoft and Google a sign-in with the provider kept as `IMAP_OAUTH` (`microsoft` or `google`) and `IMAP_REFRESH_TOKEN`, set by the mail card ([Mail with Microsoft or Google](channels.md#mail-with-microsoft-or-google)). |
 | `PAKO_SLACK_CLIENT_ID`, `PAKO_ZOOM_CLIENT_ID`, `PAKO_MS_CLIENT_ID`, `PAKO_GOOGLE_CLIENT_ID`, `PAKO_GOOGLE_CLIENT_SECRET`, `PAKO_GOOGLE_GMAIL` | empty (the built-in IDs in `src/connect-clients.ts`, themselves empty until the project registers its apps) | The project's own public apps that make each connection one button ([owner-app-setup.md](owner-app-setup.md)). A value here wins over the built-in one. Not secrets: a Client ID, and Google's installed-app secret, which Google does not treat as one. `PAKO_GOOGLE_GMAIL=on`: Gmail by Google sign-in (only for an app Google allows the restricted scope). |
 | `GOOGLE_REFRESH_TOKEN`, `GOOGLE_ACCOUNT` | empty | Google Calendar, connected with one button in the Calendar card (`src/google-calendar.ts`). |
+
+### Labs
+
+`PAKO_LABS` names the [labs](features.md#core-and-labs) that are on (`src/labs.ts`), by id with commas:
+
+- `booking`: table booking (Google Places, and Maître, which drives restaurant sites in a browser of its own);
+- `calls`: phone calls (Retell, and the LiveKit and Gemini voice worker);
+- `whatsapp`: WhatsApp from this computer (Meta's app and the tunnel); on a server, its values in the environment keep it on;
+- `relay`: Pako Relay, on your own Pako (`RELAY_URL`) and on the host that is the relay (`RELAY_TOKEN`);
+- `companion`: the health diary (`MY HEALTH`, `log: …`), learning goals and quiz cards (`QUIZ ME`) and the weekly check-in.
+
+`on` or `all` turns every lab on, as `PAKO_LABS=on` always did for the health diary; empty or `off` names none. A lab named here is on, and
+its switch in **Settings › Labs** is locked. For a lab not named, the switch decides; it is kept in `~/.pako/config.json` under `labs`, and
+a change restarts Pako. With no switch set, a lab already set up stays on (grandfathered: a Places key, Retell or LiveKit keys,
+`VOICE_WORKER_URL`, WhatsApp's values, `RELAY_URL` or `RELAY_TOKEN`), with one line in the log; any other is off. Off, a lab starts nothing
+(no timer, no port, no browser, no tunnel) and the assistant is told it is off. A red flag in your own words always gets the emergency
+answer, Labs or not.
 
 ### The assistant's computer (`assistant/.env`, hosted way only)
 

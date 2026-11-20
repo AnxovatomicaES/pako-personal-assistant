@@ -160,6 +160,7 @@ test("MCP server: the read tools answer from the turn's copy of the context; the
   assert.deepEqual([d.notes, d.lists, d.tasks, d.calendar], [["uno", "dos"], [], null, null]);
   assert.deepEqual(d.on, {
     email: true, routines: true, companion: false, life: false, know: false, slack: true, book: false, followups: false, calendarWrites: false, checkins: false,
+    call: true,
   });
   const dir = mkdtempSync(join(tmpdir(), "tools-data-"));
   writeFileSync(join(dir, "d.json"), JSON.stringify(d));

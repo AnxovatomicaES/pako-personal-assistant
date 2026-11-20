@@ -100,6 +100,37 @@ computer except what goes to the services you connect ([privacy notice](https://
   <img src="assets/chat.svg" alt="The chat window of the control panel: a conversation where Pako sets a reminder and offers three restaurants" width="520">
 </p>
 
+## Core and Labs
+
+Pako's one job is that nothing you promised, or were promised, gets dropped. **Core** is what that job stands on, and what is supported:
+
+- the chat, in the panel and in the Mac app; Telegram, the phone channel;
+- memory and the people in your life; reminders; tasks and lists; the morning brief;
+- follow-ups from Slack, mail (your own mailbox by IMAP, Pako's AgentMail inbox, sending through Resend), Zoom and Teams (read only);
+- calendars (an ICS link, the Mac's calendars, Google Calendar, Zoho);
+- [Gentle mode](#gentle-mode) and the [demo week](#try-it-on-a-demo-week).
+
+**Labs** are the parts that work but depend on a service that can change under them without notice. They stay in Pako, and are **off for
+a new install**: while a lab is off, nothing of it starts (no timer, no port, no browser, no tunnel), its cards are hidden in Settings and
+the assistant does not offer it.
+
+| Lab | Id | Why it is in Labs |
+| --- | --- | --- |
+| Table booking (Google Places and Maître) | `booking` | Maître drives restaurant booking sites in a browser of its own, and breaks when a site changes its pages. |
+| Phone calls (Retell, the LiveKit and Gemini voice worker) | `calls` | Three providers, a SIP number and a server of your own. |
+| WhatsApp | `whatsapp` | A Meta developer app, approved templates and a public address (a tunnel or a server) for Meta's webhook. |
+| Pako Relay | `relay` | A second, always-on host of your own. |
+| Health diary, learning and the weekly check-in | `companion` | The newest and least tested roles of the assistant. |
+
+Turn a lab on or off in **Settings › Labs** (Pako starts again), or with `PAKO_LABS` (`PAKO_LABS=booking,calls`, or `on` for all; see
+[Settings reference](configuration.md#settings-reference)). Each one says: *Experimental: may break when the service changes.*
+
+**Nothing set up before Labs is lost.** A lab whose settings are already there (a Places key, Retell or LiveKit keys, WhatsApp's values,
+a relay) stays on by itself, with one line in the log (`[labs] kept on, set up before Labs: ...`); Settings › Labs can still turn it off.
+
+Not a switch: [running Pako on a server](server.md) (with a Redis store, `VOICE_RESULTS_URL`) is a way to run it, not a feature, and a
+computer never uses it. It is experimental in the same way: the computer is the supported home.
+
 ## Languages
 
 - **What Pako writes itself is in English**, for everyone, anywhere: the panel, the welcome, the answers to commands, cards and their
@@ -167,7 +198,7 @@ on a person's card, with a button. Follow-ups, the brief and who a message goes 
 > doctor. If you think you may have an emergency, call your local emergency number.
 
 Pako is also a friend, a health companion and a teacher, in the language you write in, and it says plainly what it is not. **In Labs:** the
-health diary, the lessons and the weekly check-in are off unless `PAKO_LABS=on` (see [Settings reference](configuration.md#settings-reference)); the
+health diary, the lessons and the weekly check-in are off unless the `companion` lab is on ([Core and Labs](#core-and-labs)); the
 emergency answer to a red flag and the birthdays are always on.
 
 - **A friend.** It remembers what you shared and asks about it at the right moment ("how did the interview go?"). The day before the birthday

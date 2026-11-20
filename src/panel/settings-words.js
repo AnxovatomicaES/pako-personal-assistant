@@ -617,6 +617,7 @@ export const WORDS = {
   "acts.lead": "What Pako may do by itself. Table bookings (book directly or ask first) are chosen in Connections, Tables; which mail is worth a message, in Mail.",
   "tab.privacy": "Privacy & your data",
   "tab.move": "Move & import",
+  "tab.labs": "Labs",
   "tab.general": "General",
   "tabs.aria": "Settings sections",
   "mailTab.lead": "How Pako reads your mail, and which mail is worth a message.",

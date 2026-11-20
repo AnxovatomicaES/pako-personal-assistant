@@ -34,7 +34,19 @@ Pako is a personal assistant on your own computer that thinks with your own Clau
 - **It remembers.** The people in your life, with dates: what you last agreed and what is open both ways.
 - **It listens only to you.** Instructions hidden in other people's messages are ignored. **STOP** halts everything; every action has **Undo**.
 
+## Gentle mode: built with ADHD brains in mind
+
+Opt-in, in Settings → How Pako acts.
+- **"Did it happen?"** Nudges ask once, with Done, Snooze or Park. There are at most 4 a day, and none after two you ignored. There are no red overdue counts and no streaks.
+- **Time anchors.** "Wrap up" before a call, "your call starts in 5", and "this usually takes you about 40 min".
+- **A first tiny step** for anything stuck, and a **brain dump**: one messy message, sorted into reminders, promises, tasks and notes.
+- **Check-ins** ("check on me at 10:30") and a **weekly reset**: "3 things are slipping: pick one, I'll park the rest."
+
+It's a productivity feature, not a medical device or a treatment. Details: [docs/features.md](docs/features.md#gentle-mode).
+
 Everything in detail: [docs/features.md](docs/features.md). Chat commands: [docs/commands.md](docs/commands.md).
+
+Experimental features (table booking, phone calls, WhatsApp, the Relay) are in Labs, off by default: [Core and Labs](docs/features.md#core-and-labs).
 
 ## What you need
 

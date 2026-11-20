@@ -103,6 +103,10 @@ export const T = texts(
     learning: "[What they are learning (their goals, with the latest questions they already have; do not repeat them): {list}]",
     labsOff: "[This Pako has the health diary, lessons with quiz cards and the weekly check-in turned off: do not offer them or say you noted anything in them. "
       + "If they ask, say they are turned on with PAKO_LABS=on. A red flag still gets its emergency answer.]",
+    labsAbilitiesOff: "[Turned off on this Pako (Labs): {list}. Do not offer them or say you started one; if they ask, they are turned on in "
+      + "Settings › Labs.]",
+    labBook: "table booking",
+    labCall: "phone calls",
     dates: "[Birthdays in the coming days, of the people in their life: {list}]",
     answer: "Now answer their question from what is here, in the language they asked it in{hint}.",
     answerHint: " (if that does not show, in the one on the first line)",

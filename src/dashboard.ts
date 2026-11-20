@@ -244,6 +244,7 @@ PAGES["people.js"] = "text/javascript"; // the people in the owner's life (src/p
 PAGES["routines.js"] = "text/javascript"; // routines and watches (src/routines.ts)
 PAGES["autostart.js"] = "text/javascript"; // the "start with this computer" switch (src/autostart-panel.ts)
 PAGES["demo.js"] = "text/javascript"; // the demo week's Settings card and banner (src/demo.ts)
+PAGES["labs.js"] = "text/javascript"; // Settings › Labs, the experimental parts' switches (src/labs.ts)
 PAGES["privacy.js"] = "text/javascript"; // what Pako keeps, the export, deleting everything (src/data-panel.ts)
 PAGES["papers.js"] = "text/javascript"; // a photo or a PDF put in the chat (src/papers-panel.ts)
 PAGES["meetings.js"] = "text/javascript"; // the meetings reviewed (src/meeting-review.ts)

@@ -12,6 +12,7 @@ import {
 import type { BriefJob, Email, FollowupJob, JudgeJob, Meeting, Paper, ProactiveJob, Review, StepJob } from "./items.ts";
 import { readReply, tagActions, type ParsedReply } from "./reply.ts";
 import { T } from "./texts.ts";
+import { labsOffOf } from "../prompt.ts";
 import type { AfterJobs } from "./parts.ts";
 
 export function mountTurn(b: AfterJobs) {
@@ -130,13 +131,13 @@ export function mountTurn(b: AfterJobs) {
     writeToolData(msg.id, ctx);
     try {
       try {
-        result = await run(incoming.routine ? "routine" : "message", prompt, chat(ctx.companion === 1 && ctx.labsOff !== 1), state.sessionId || undefined);
+        result = await run(incoming.routine ? "routine" : "message", prompt, chat(ctx.companion === 1 && ctx.labsOff !== 1, labsOffOf(ctx)), state.sessionId || undefined);
       } catch (err) {
         // A conversation that cannot be resumed (cleared on this computer) starts again with everything it needs. A timeout or a limit does not.
         if (!state.sessionId || !sessionMissing((err as Error).message)) throw err;
         log(`could not continue the conversation (${(err as Error).message.slice(0, 120)}): starting a new one`);
         state = { sessionId: "", count: 0, contextHash: "" };
-        result = await run(incoming.routine ? "routine" : "message", `${contextBlock(ctx, true, wasPaused)}${named}\n\n${msg.text}`, chat(ctx.companion === 1 && ctx.labsOff !== 1));
+        result = await run(incoming.routine ? "routine" : "message", `${contextBlock(ctx, true, wasPaused)}${named}\n\n${msg.text}`, chat(ctx.companion === 1 && ctx.labsOff !== 1, labsOffOf(ctx)));
       }
     } catch (err) {
       clearTimeout(notice);

@@ -444,18 +444,18 @@ test("dashboard: the brief shows today's, or the latest one 'as of' its time bef
   assert.equal(model.briefTop!({ doc: null, latest: null }), null);
 });
 
-test("settings: the tabs and their deep links (#mail, #acts, #privacy, #move, #general and the cards); the cards that left the dashboard mount there", () => {
+test("settings: the tabs and their deep links (#mail, #acts, #privacy, #move, #labs, #general and the cards); the cards that left the dashboard mount there", () => {
   const js = read("src/panel/settings.js");
-  assert.match(js, /const TABS = \["connections", "mail", "acts", "privacy", "move", "general"\];/);
+  assert.match(js, /const TABS = \["connections", "mail", "acts", "privacy", "move", "labs", "general"\];/);
   const html = read("src/panel/settings.html");
-  for (const tab of ["connections", "mail", "acts", "privacy", "move", "general"]) assert.match(html, new RegExp(`id="tab-${tab}"`), tab);
-  for (const slot of ["privacy", "move", "autostart", "acts", "health", "mail-categories"]) assert.match(html, new RegExp(`data-mount="${slot}"`), slot);
-  for (const s of ["privacy", "move", "autostart", "acts", "health", "whatsapp"]) assert.match(html, new RegExp(`src="/panel/assets/${s}\\.js"`), s);
+  for (const tab of ["connections", "mail", "acts", "privacy", "move", "labs", "general"]) assert.match(html, new RegExp(`id="tab-${tab}"`), tab);
+  for (const slot of ["privacy", "move", "autostart", "acts", "health", "mail-categories", "labs"]) assert.match(html, new RegExp(`data-mount="${slot}"`), slot);
+  for (const s of ["privacy", "move", "autostart", "acts", "health", "whatsapp", "labs"]) assert.match(html, new RegExp(`src="/panel/assets/${s}\\.js"`), s);
   // tabOf, the page's own: run as the page runs it.
   const body = js.slice(js.indexOf("function tabOf(hash) {"), js.indexOf("function showTab("));
-  const tabOf = new Function("TABS", `${body}; return tabOf;`)(["connections", "mail", "acts", "privacy", "move", "general"]) as (h: string) => string;
-  assert.deepEqual(["privacy", "move", "mail", "acts", "general", "calendar", "slack", "imap", ""].map(tabOf),
-    ["privacy", "move", "mail", "acts", "general", "connections", "connections", "mail", "connections"]);
+  const tabOf = new Function("TABS", `${body}; return tabOf;`)(["connections", "mail", "acts", "privacy", "move", "labs", "general"]) as (h: string) => string;
+  assert.deepEqual(["privacy", "move", "mail", "acts", "labs", "general", "calendar", "slack", "imap", ""].map(tabOf),
+    ["privacy", "move", "mail", "acts", "labs", "general", "connections", "connections", "mail", "connections"]);
   // Delete everything and import still send what their routes need, from their new tab.
   assert.equal((read("src/panel/privacy.js").match(/"x-pako": "1"/g) ?? []).length, 2);
   assert.match(read("src/panel/move.js"), /\[data-mount="move"\]/);

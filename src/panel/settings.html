@@ -19,6 +19,7 @@
   <script type="module" src="/panel/assets/acts.js"></script>
   <script type="module" src="/panel/assets/health.js"></script>
   <script type="module" src="/panel/assets/demo.js"></script>
+  <script type="module" src="/panel/assets/labs.js"></script>
 </head>
 <body>
   <a class="skip" href="#cards-title" data-t="skip">Skip to the connections</a>
@@ -89,6 +90,10 @@
    <!-- Move & import (src/panel/move.js): import from another Pako. -->
    <div class="tab-panel" id="tab-move" role="tabpanel" aria-labelledby="tab-btn-move" hidden>
     <div class="mount" data-mount="move"></div>
+   </div>
+   <!-- Labs (src/panel/labs.js, src/labs.ts): the experimental parts, each with its switch. -->
+   <div class="tab-panel" id="tab-labs" role="tabpanel" aria-labelledby="tab-btn-labs" hidden>
+    <div class="mount" data-mount="labs"></div>
    </div>
    <!-- General: starting with this computer (src/panel/autostart.js), updates, and how Pako is doing (src/panel/health.js, one component). -->
    <div class="tab-panel" id="tab-general" role="tabpanel" aria-labelledby="tab-btn-general" hidden>

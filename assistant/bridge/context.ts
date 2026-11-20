@@ -5,6 +5,7 @@ import type { Lang } from "../../src/i18n.ts";
 import { inline, neutralise, type OutsideSource } from "../../src/quarantine.ts";
 import { paperText } from "../../src/papers.ts";
 import { T } from "./texts.ts";
+import { labsOffOf } from "../prompt.ts";
 
 export interface Context {
   now: string;
@@ -70,6 +71,8 @@ export interface Context {
   companion?: number;
   /** A server whose Labs are off (PAKO_LABS): no health diary, lessons, quiz cards or weekly check-in in this Pako. */
   labsOff?: number;
+  /** The labs on at the server (src/labs.ts): table booking and phone calls are offered only when listed. Absent from an older server. */
+  labsOn?: string[];
   /** The owner's learning goals, each with its latest questions, and the birthdays of the next 7 days (src/companion.ts). */
   learning?: string[];
   dates?: string[];
@@ -294,6 +297,10 @@ export const contextBlock = (ctx: Context, includeKnown: boolean, wasPaused = fa
     }
     // Labs off on the server (PAKO_LABS): the diary, lessons and check-in are not there, so the assistant never claims to keep them.
     if (typeof ctx.labsOff === "number" && ctx.labsOff >= 1) lines.push(t("labsOff"));
+    // Table booking and phone calls off on the server (src/labs.ts): their tags are out of the prompt too (assistant/prompt.ts labsOffOf).
+    const off = labsOffOf(ctx);
+    const offList = [off.book ? t("labBook") : "", off.call ? t("labCall") : ""].filter(Boolean);
+    if (offList.length) lines.push(t("labsAbilitiesOff", { list: offList.join(", ") }));
     if (events.length) lines.push(t("events", { list: events.join(" | ") }));
     // What the owner told about their life (their own words, kept by the server), and the emergency number: only from a server that keeps them.
     const life = Array.isArray(ctx.life) ? ctx.life.filter((e) => typeof e === "string" && e.trim()).slice(0, 30).map(noTags) : [];
