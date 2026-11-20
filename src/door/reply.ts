@@ -7,6 +7,8 @@ import { LIKE_MAX, LIKES_MAX, NAME_MAX, NOTE_MAX as PERSON_NOTE_MAX, RELATION_MA
 import { ATTRIBUTE_MAX, VALUE_MAX } from "../memory-facts.ts";
 import { isRoutineKey } from "../routines.ts";
 import type { Door } from "./door.ts";
+import { dumpItemsOf } from "../gentle-dump.ts";
+import { checkinItemsOf } from "../gentle-checkins.ts";
 import { createLog } from "../log.ts";
 
 const logProactive = createLog("proactive");
@@ -71,6 +73,10 @@ type ReplyBody = {
   health?: unknown;
   goals?: unknown;
   cards?: unknown;
+  /** A newer bridge (<dump>, brain_dump): the owner's brain dump, sorted into reminders, promises, tasks and notes (src/gentle-dump.ts). */
+  dump?: unknown;
+  /** A newer bridge (<checkin>, check_in): check-ins the owner asked for, at a time or in minutes (src/gentle-checkins.ts). */
+  checkins?: unknown;
 };
 
 /**
@@ -203,7 +209,9 @@ const readReply = (door: Door, b: ReplyBody) => {
   };
   const contextActs: HeldActs = { ...acts, unremind: [], lists: listOps.filter((l) => l.op !== "remove"), done: [], closed: [], forget: [], people: undefined };
   const lifeFacts = Array.isArray(b.facts) ? b.facts.slice(0, 3) : [];
-  return { text, acts, contextHeld, contextActs, outside, context, heard, lifeFacts, routineAdds, watchAdds, knowAdds, roleTags, roleCount };
+  const dump = dumpItemsOf(b.dump);
+  const checkins = checkinItemsOf(b.checkins);
+  return { text, acts, contextHeld, contextActs, outside, context, heard, lifeFacts, routineAdds, watchAdds, knowAdds, roleTags, roleCount, dump, checkins };
 };
 
 export function mountReply(door: Door): void {
@@ -216,8 +224,11 @@ export function mountReply(door: Door): void {
     const b = (req.body ?? {}) as ReplyBody;
     const key = keyOf(b.key);
     const actionsDone = key !== "" && replyKeys.has(key);
-    const { text, acts, contextHeld, contextActs, outside, context, heard, lifeFacts, routineAdds, watchAdds, knowAdds, roleTags, roleCount } = readReply(door, b);
-    if (!text && !hasActs(acts) && !routineAdds.length && !watchAdds.length && !lifeFacts.length && !roleCount && !knowAdds.length && !calendarOf(b.calendar).length) {
+    const {
+      text, acts, contextHeld, contextActs, outside, context, heard, lifeFacts, routineAdds, watchAdds, knowAdds, roleTags, roleCount, dump, checkins,
+    } = readReply(door, b);
+    if (!text && !hasActs(acts) && !routineAdds.length && !watchAdds.length && !lifeFacts.length && !roleCount && !knowAdds.length && !calendarOf(b.calendar).length
+      && !dump.length && !checkins.length) {
       res.status(400).json({ error: "Nothing to send." });
       return;
     }
@@ -261,6 +272,15 @@ export function mountReply(door: Door): void {
         for (const p of calendarOf(b.calendar)) await door.proposeCalendar(p, outside.length ? outside : context);
         if (routineAdds.length || watchAdds.length) {
           await door.makeRoutines(routineAdds, watchAdds, outside.length ? "outside" : isRoutineKey(key) ? "fromRoutine" : context.length ? "outside" : null, changes);
+        }
+        // A brain dump: only from the owner's own words (a turn that read outside text, or a routine's run, sorts nothing), its own card.
+        if (dump.length) await door.brainDump(dump, await turnOf(key, heard, b.notice === true || isRoutineKey(key)), { outside: outside.length > 0 || isRoutineKey(key) });
+        // Check-ins: the owner's own asks only (never from a turn that read outside text, nor a routine's run); a time that did not work is said.
+        if (checkins.length && d.gentle?.checkinAdd && !outside.length && !isRoutineKey(key)) {
+          for (const c of checkins) {
+            const r = await d.gentle.checkinAdd(c).catch(() => ({ ok: false, say: "" }));
+            if (!r.ok && r.say) await sendText(r.say);
+          }
         }
       } finally {
         // One receipt for all this answer changed (its notes too), after its text, even when something above failed half way.

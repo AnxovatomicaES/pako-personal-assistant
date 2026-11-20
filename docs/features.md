@@ -326,6 +326,59 @@ emergency number first for a red flag, the health diary on this computer only an
 
 The older assistant lets the check go unread: nothing is said.
 
+## Gentle mode
+
+**Fewer, better-timed nudges and help getting started.** Built with ADHD brains in mind; **not a medical device and not a treatment**. It
+never diagnoses anything and makes no health claim: it changes how Pako reminds you, nothing else. It is off until you turn it on, in
+Settings › **How Pako acts** (or `PAKO_GENTLE=1`), and everything stays on your computer like the rest of Pako.
+
+When it is on:
+- **Fewer nudges.** At most 4 a day by default (you choose, 1 to 20), follow-ups and Pako's own suggestions together; the quiet hours as always.
+- **"Did it happen?"** Each nudge asks, with three buttons: **Done**, **Snooze** (then *Later today* or *Tomorrow* morning) and **Park**.
+  A follow-up whose time passed gets one "did it happen?" instead of going quiet.
+- **Wording that changes.** Six ways to ask for each kind of follow-up, never the same twice in a row for one item, and no words of shame:
+  never "overdue", "failed", "missed", "you forgot" or "again" (a test reads every gentle text for them).
+- **Spacing that adapts.** Two nudges with no answer and that item is not nudged again: the morning brief carries it instead.
+- **Parked, never late.** A parked item gets no nudges and is never shown in red or as due. It waits in the **Parked** list (Settings ›
+  How Pako acts, with a *Bring back* button) and in the chat: *"what did I park?"*, *"bring back deck"*.
+- **Time anchors.** Before a meeting, *"time to wrap up"* (online: 10 minutes before) or *"time to head out"* (a meeting with a place: about
+  25 minutes before), both adjustable. Five minutes before, *"your call starts in 5"*, only when nothing you did since (a message, a press of
+  **On it**) shows you saw it. In your time zone, across clock changes, never in your quiet hours.
+- **Learned durations.** Once three or more past meetings of the same kind are known, the nudge says *"this usually takes you about 40 min"*.
+  With fewer it says nothing.
+- **A first tiny step.** A follow-up stuck for two days, or snoozed twice, gets one concrete step of two minutes or less (*"Open the Q4 deck
+  and write the first line of the email to Ana"*), written on your computer from that item's own facts and what you told Pako about the
+  person. It is checked like the brief's lines (no name, time, number or link the facts do not hold, nothing longer than two minutes, no
+  shame word) and kept with the item; it shows on the nudge and in the brief. A few a day at most. Its nudge also offers a check-in:
+  **Check on me in 30 min** (in the panel's chat and Telegram a fourth button; on WhatsApp the line under the nudge, and a button on its
+  Snooze card).
+- **A weekly reset.** Monday 09:30 by default (Settings › How Pako acts: any day and time, or `GENTLE_RESET`), one message:
+  *"A gentle reset: 3 things are slipping. Pick one to do this week, and I'll park the rest so they stop pulling at you."* Up to three items
+  that are stuck, past their time or carried by the brief, your promises to people first, then the oldest. **This one** makes it the week's
+  focus, the first line of every brief for seven days; **Park** parks one; after a pick, **Park the rest** parks the others (on WhatsApp,
+  with its three buttons, say *"park 2"*). Never in your quiet hours and never during a meeting on your calendar (it waits for the end). In
+  the brief, the week's focus comes first and parked items are never listed.
+- **Parked a month.** The weekly reset gives an item parked 30 days one line, *"bring back or let go?"*. Say *"bring back"* and a few of its
+  words, or press **Let them go**; otherwise it is let go a week later, with a note kept in the Parked list's history (90 days).
+
+**Check-ins** (always on, gentle mode or not): *"check on me at 10:30"*, *"check in at 3 if I started the deck"*, *"ping me in 20 min if I
+haven't started"*. At that time Pako asks *"Started on “the deck”?"* with **Yes** (*"Good. I'll leave you to it."*), **Not yet** (another
+look in 15 minutes, three times at most; then it stops and says the brief will carry it) and **Park** (a reminder's own item goes to the
+Parked list). The rules:
+- never in your quiet hours (moved to their end when that is within two hours of the time you asked; otherwise the brief carries it);
+- never during a meeting on your calendar: moved to just after it, within the same two hours;
+- kept in Pako's store and asked as a durable job, so a restart neither loses one nor sends one twice;
+- no catch-up storm after the computer slept: one more than two hours past its time is not sent (the brief mentions it, quietly), and of
+  several that came due while it slept only the newest goes;
+- the day's cap is the nudge cap (Gentle mode's, or the standard one), shared with follow-up nudges and Pako's own suggestions; only a
+  check-in's first ask counts.
+Only your own ask in the chat sets one: a forwarded message, an email or a web page never does.
+
+**Brain dump** (always on): write *"dump: …"*, or send a long message or a voice note with several things at once, and Pako sorts it into
+reminders (with the times you gave), your own promises (followed up like any other), tasks and notes. One card lists them all: **Keep all**,
+**Undo all**, or *"remove 2"* to drop one (in the panel's chat, a *Remove* button for each). Only your own words are sorted: a forwarded
+message, an email or a web page never is, and an item that is not in what you wrote or said is left out.
+
 ## Deeper help
 
 **The rule first: text written by other people never makes Pako act without your press.** Emails, forwarded messages, calendar titles,

@@ -31,6 +31,11 @@ import { createZoom, loadZoomConfig, type ZoomReader } from "./zoom.ts";
 import { briefMeetings, createMeetingReview, loadReviewConfig, mountMeetingsPanel, type MeetingReviewer, type ReviewDoor } from "./meeting-review.ts";
 import { createCalendarChanges, type CalendarChanges } from "./calendar-changes.ts";
 import { createMeetingPrep, loadMeetingPrepConfig } from "./meeting-prep.ts";
+import {
+  createFirstSteps, createGentleSettings, createTimeAnchors, loadGentleConfig, mountGentlePanel, type FirstSteps, type TimeAnchors,
+} from "./gentle.ts";
+import { createCheckIns, CT, type CheckIns } from "./gentle-checkins.ts";
+import { createWeeklyReset, type WeeklyReset } from "./gentle-reset.ts";
 import { createRelay, loadRelayConfig, mountRelay, telegramSender } from "./relay.ts";
 import { createRelayClient, loadRelayClientConfig, type RelayClient } from "./relay-client.ts";
 import { createFollowups, followupsProxy, loadFollowupsConfig, type Followups, type FollowupsDoor } from "./followups.ts";
@@ -526,6 +531,14 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
       const followupsRef: { engine: Followups | null } = { engine: null };
       // What the owner's memory says about a person (src/person-context.ts), built once the door is: its facts and people graph are the door's.
       const personRef: { c: PersonContext | null } = { c: null };
+      // Gentle mode (src/gentle.ts): opt-in (PAKO_GENTLE=1, or the panel's How Pako acts). Its settings now; its time anchors and first tiny
+      // steps once the door, the calendar and the follow-ups are built (the door reaches them here).
+      const gentleCfg = loadGentleConfig(env);
+      if (gentleCfg.problems.length) logFollowups.error(`${gentleCfg.problems.join("; ")}`);
+      const gentleSettings = createGentleSettings(kv, gentleCfg.config);
+      const gentleRef: { anchors: TimeAnchors | null; steps: FirstSteps | null; checkins: CheckIns | null; reset: WeeklyReset | null } = {
+        anchors: null, steps: null, checkins: null, reset: null,
+      };
       // Every method of the door the engine has, reached through the engine once it is built (src/followups/door-proxy.ts).
       const followupsDoor: FollowupsDoor = followupsProxy(() => followupsRef.engine);
       // The mail the follow-ups read whole (src/mail-followups.ts): the categories that matter, and what the owner sent.
@@ -781,6 +794,19 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           : {}),
         brief: { now: briefNow, daily: briefCfg.at !== null },
         ...(followupsCfg.config ? { followups: followupsDoor } : {}),
+        gentle: {
+          stepResult: (id: string, raw: string) => (gentleRef.steps ? gentleRef.steps.result(id, raw) : Promise.resolve({ ok: false })),
+          anchorPressed: (id: string) => (gentleRef.anchors ? gentleRef.anchors.pressed(id) : Promise.resolve("👍")),
+          // Check-ins (src/gentle-checkins.ts, for everyone) and the weekly reset (src/gentle-reset.ts), built with the jobs' clock below.
+          checkinAdd: (o: { at?: string; inMin?: number; thing: string }) =>
+            (gentleRef.checkins ? gentleRef.checkins.fromChat(o) : Promise.resolve({ ok: false, say: "" })),
+          checkinForLoop: (id: string) => (gentleRef.checkins ? gentleRef.checkins.forLoop(id) : Promise.resolve("")),
+          checkinButton: (id: string) =>
+            (gentleRef.checkins ? gentleRef.checkins.loopButton(id, true) : Promise.reject(new Error("check-ins are not ready"))),
+          checkinPressed: (b: "1" | "2" | "3", id: string) => (gentleRef.checkins ? gentleRef.checkins.pressed(b, id) : Promise.resolve("")),
+          resetPressed: (what: string, id: string) => (gentleRef.reset ? gentleRef.reset.pressed(what, id) : Promise.resolve({ say: "" })),
+          resetTyped: (n: number) => (gentleRef.reset ? gentleRef.reset.typedPark(n) : Promise.resolve(null)),
+        },
         lessons,
         // Pako Relay, the laptop's side (src/relay-client.ts): built just below, once the door can list the reminders.
         ...(relayClientCfg.config
@@ -1082,6 +1108,20 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
       mountPeoplePanel(app, { signedIn: panel.signedIn, people: door.people, local: !!local });
       // Settings: whether messages, emails and calls go at once (with a window to undo) or ask first, and the window's seconds.
       mountAutonomyPanel(app, { signedIn: panel.signedIn, settings: autonomySettings, config: autonomyConfig });
+      // Gentle mode's card in How Pako acts (src/panel/acts.js): the switch, the day's cap, the lead times and the Parked list.
+      mountGentlePanel(app, {
+        signedIn: panel.signedIn,
+        settings: gentleSettings,
+        standardMax: followupsCfg.config?.maxPerDay ?? 6,
+        ...(followupsCfg.config
+          ? {
+              parked: async () => (await followupsDoor.parked!()).map((l) => ({ id: l.id, title: l.title, who: l.who, at: l.parkedAt ?? l.createdAt })),
+              unpark: async (id: string) => (await followupsDoor.unpark!({ id })).ok,
+              // What the weekly reset let go after a month parked (src/gentle-reset.ts): the Parked list's history.
+              history: async () => (gentleRef.reset ? gentleRef.reset.history() : []),
+            }
+          : {}),
+      });
       // Routines and watches the same way: listed everywhere, removed only on a computer.
       mountRoutinesPanel(app, { signedIn: panel.signedIn, routines: door.routines, local: !!local, timeZone });
       // A photo or a PDF put in the panel's chat (a computer only: a server's chat is WhatsApp, where the door takes them itself).
@@ -1387,6 +1427,8 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           // Monday only, and only when the week's nudges did poorly: one line (src/quality.ts).
           () => (quality ? quality.monday() : Promise.resolve(null)),
         ],
+        // Gentle mode: the week's focus first (src/gentle-reset.ts); check-ins kept for the brief after it (src/gentle-checkins.ts).
+        first: [async () => (gentleRef.reset ? gentleRef.reset.briefLine() : null), async () => (gentleRef.checkins ? gentleRef.checkins.briefLine() : null)],
         notify: briefSent,
         notifyNote: (text) => door.notifyOwner(text, { urgent: true }),
         ...(smartCfg.config
@@ -1432,6 +1474,15 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
             ...(calOn ? { calendarChanges: (since: number) => (calChangesRef.c ? calChangesRef.c.since(since) : Promise.resolve([])) } : {}),
             // What the owner's memory says of the day's people (src/person-context.ts): one block each, at most three.
             people: async (words: string[]) => (personRef.c ? (await personRef.c.many(words)).map((b) => ({ name: b.name, text: b.text })) : []),
+            // Gentle mode's week's focus (src/gentle-reset.ts): that follow-up first among the facts.
+            focusLoop: async () => (gentleRef.reset && (await gentleSettings.view()) ? ((await gentleRef.reset.focus())?.loop ?? null) : null),
+          },
+          // A to-do for a follow-up parked since the brief was written is never shown (gentle mode).
+          ...(followupsCfg.config ? { parkedIds: async () => (await followupsDoor.parked!()).map((l) => l.id) } : {}),
+          // And first in the chat's version, with the check-ins kept for the brief (src/gentle-checkins.ts).
+          weekFocus: async () => {
+            const lines = [gentleRef.reset ? await gentleRef.reset.briefLine() : null, gentleRef.checkins ? await gentleRef.checkins.briefLine() : null];
+            return lines.filter((x): x is string => !!x).join("\n") || null;
           },
           enqueue: (m) => door.inbox.add(m),
           // The computer asked for messages in the last three minutes: otherwise the old brief goes at once rather than after the wait.
@@ -1476,6 +1527,18 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           }, 5000);
           live.unref?.();
         }
+        // Gentle mode's time anchors (src/gentle.ts): "leave now" or "wrap up" before a meeting, and "your call starts in 5" when nothing shows
+        // the owner saw it. A look every minute; nothing at all while gentle mode is off.
+        gentleRef.anchors = createTimeAnchors({
+          kv, timeZone, settings: () => gentleSettings.view(),
+          events: () => (calRef.reader ? calRef.reader.load() : Promise.reject(new Error("the calendar is not ready"))),
+          quiet: followupsCfg.config?.quiet ?? null,
+          lastOwner: () => door.lastOwner(),
+          card: (body, buttons) => door.sendCard(body, buttons),
+          log: (text) => control.log("followup", text),
+        });
+        const anchors = gentleRef.anchors;
+        setInterval(() => void anchors.tick(), 60_000).unref?.();
         // A meeting's prep by itself, about 40 minutes before it (src/meeting-prep.ts): the meeting, what is open with its people, what
         // Pako knows of them. MEETING_PREP=off turns it off.
         if (calOn && loadMeetingPrepConfig(env).on) {
@@ -1497,6 +1560,40 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
       // On the jobs' clock: due reminders, then routines and watches (one look each, as before), and the brief's daily slot.
       jobs.define({ kind: "reminders", sweep: () => door.runReminders() });
       jobs.define({ kind: "routines", sweep: () => door.routines.tick() });
+      // Check-ins (src/gentle-checkins.ts): for everyone; asked as durable slots, never in the quiet hours or a meeting, within the day's cap
+      // shared with the follow-ups' nudges and Pako's own suggestions.
+      const meetings = calOn ? () => (calRef.reader ? calRef.reader.load() : Promise.reject(new Error("the calendar is not ready"))) : undefined;
+      gentleRef.checkins = createCheckIns({
+        kv, timeZone, settings: () => gentleSettings.read(), standardMax: followupsCfg.config?.maxPerDay ?? 6,
+        others: async () => ((await followupsRef.engine?.spentToday?.()) ?? 0) + ((await lifeRef.engine?.spentToday()) ?? 0),
+        quiet: followupsCfg.config?.quiet ?? null,
+        ...(meetings ? { events: meetings } : {}),
+        jobs,
+        card: (body, buttons) => door.sendCard(body, buttons),
+        loop: async (id) => (await followupsRef.engine?.open())?.find((l) => l.id === id) ?? null,
+        parkLoop: (id) => followupsDoor.press("7", id),
+        log: (text) => control.log("followup", text),
+      });
+      const checkins = gentleRef.checkins;
+      jobs.define({ kind: "checkins", sweep: () => checkins.sweep() });
+      // Gentle mode's weekly reset (src/gentle-reset.ts): three slipping things, pick one, park the rest; and the month-old parked ones.
+      if (followupsCfg.config) {
+        gentleRef.reset = createWeeklyReset({
+          kv, timeZone, settings: () => gentleSettings.view(),
+          loops: async () => (followupsRef.engine ? followupsRef.engine.open() : []),
+          parked: () => followupsDoor.parked!(),
+          park: async (id) => /^Parked/.test(await followupsDoor.press("7", id)),
+          letGo: async (id) => (followupsRef.engine ? followupsRef.engine.letGo(id) : false),
+          quiet: followupsCfg.config.quiet ?? null,
+          ...(meetings ? { events: meetings } : {}),
+          jobs,
+          roomy: () => door.roomy(),
+          card: (body, buttons) => door.sendButtons(body, buttons),
+          log: (text) => control.log("followup", text),
+        });
+        const reset = gentleRef.reset;
+        jobs.define({ kind: "gentle-reset", sweep: () => reset.sweep() });
+      }
       briefRef.reader.start(jobs);
       jobs.start();
       mountBriefPanel(app, { signedIn: panel.signedIn, brief: briefNow });
@@ -1598,7 +1695,8 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           notify: (text) => door.notifyOwner(text),
           ...(quality ? { quality: quality.followups } : {}),
           // The day's budget is shared with proactive Pako's suggestions.
-          ...(proactiveCfg.config ? { othersToday: () => (lifeRef.engine ? lifeRef.engine.spentToday() : Promise.resolve(0)) } : {}),
+          // And with the check-ins' first asks (src/gentle-checkins.ts).
+          othersToday: async () => ((await lifeRef.engine?.spentToday()) ?? 0) + ((await gentleRef.checkins?.spentToday()) ?? 0),
           ...(zoom.config ? { zoom: () => (zoomRef.reader ? zoomRef.reader.scheduled() : Promise.reject(new Error("Zoom is not ready"))) } : {}),
           ...(calOn && !teamsCfg.config ? { calendar: () => (calRef.reader ? calRef.reader.load() : Promise.reject(new Error("the calendar is not ready"))) } : {}),
           // With Teams, its calendar's Teams meetings count as "it happened" too (src/teams.ts events).
@@ -1624,8 +1722,36 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           lessons,
           // Who the people of a job are to the owner (src/person-context.ts): read by the extraction with its material.
           people: (words: string[]) => (personRef.c ? personRef.c.many(words) : Promise.resolve([])),
+          // Gentle mode, read before each round of nudges: its cap, its words and buttons, and what similar meetings took.
+          gentle: async () => {
+            const g = await gentleSettings.view();
+            if (!g) return null;
+            return {
+              maxPerDay: g.maxPerDay, usually: (title: string) => (gentleRef.anchors ? gentleRef.anchors.usually(title) : Promise.resolve(null)),
+              // A stuck one's nudge offers a check-in: "Check on me in 30 min" (src/gentle-checkins.ts).
+              checkin: async (id: string) => {
+                if (!gentleRef.checkins) throw new Error("check-ins are not ready");
+                return { buttons: [await gentleRef.checkins.loopButton(id)], line: CT()("loopLine", { min: g.checkinMin }) };
+              },
+            };
+          },
         });
         followupsRef.engine.start(jobs);
+        // Gentle mode's first tiny steps (src/gentle.ts): a stuck follow-up gets one, written on the owner's computer, a few a day.
+        const engine = followupsRef.engine;
+        gentleRef.steps = createFirstSteps({
+          kv, timeZone, settings: () => gentleSettings.view(), loops: () => engine.open(),
+          people: (words: string[]) => (personRef.c ? personRef.c.many(words) : Promise.resolve([])),
+          ownerLanguage: () => door.language(),
+          enqueue: (m) => door.inbox.add(m),
+          setStep: (id, step) => engine.setStep(id, step),
+          log: (text) => control.log("followup", text),
+        });
+        const steps = gentleRef.steps;
+        const sweepSteps = (): void => void steps.sweep().catch((err: Error) => logFollowups.error(`first steps: ${err.message}`));
+        // A first look a minute after the start (what got stuck while Pako was off), then every half hour.
+        setTimeout(sweepSteps, 60_000).unref?.();
+        setInterval(sweepSteps, 30 * 60_000).unref?.();
         const fc = followupsCfg.config;
         if (!local) logFollowups.info(`ON: checked ${fc.delayMs / 60_000} min after, at most ${fc.maxPerDay} reminders a day`);
       }
@@ -1648,7 +1774,9 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           ...(box ? { mail: () => box.items(40) } : {}),
           people: async () => (await door.people.store.read()).map((p) => p.name),
           fetch: globalThis.fetch,
-          ...(followupsCfg.config ? { othersToday: async () => (await followupsRef.engine?.spentToday?.()) ?? 0 } : {}),
+          othersToday: async () => ((await followupsRef.engine?.spentToday?.()) ?? 0) + ((await gentleRef.checkins?.spentToday()) ?? 0),
+          // Gentle mode's day: fewer in all, follow-ups' nudges and these together.
+          cap: async () => (await gentleSettings.view())?.maxPerDay ?? null,
           addToList: async (name, item) => {
             const r = await door.lists.add(name, [item], Date.now());
             return r.added.length ? { ok: true, list: r.list } : { ok: false, list: r.list, why: r.full.length ? "full" : "already there" };

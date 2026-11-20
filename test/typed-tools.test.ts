@@ -158,7 +158,9 @@ test("MCP server: the read tools answer from the turn's copy of the context; the
   const ctx = { memory: "uno\ndos", reminders: ["r"], lists: [], calendar: null, autonomy: 1, emailOn: true, routinesOn: 1, companion: 1, labsOff: 1, slack: [] };
   const d = toolDataOf("m1", ctx);
   assert.deepEqual([d.notes, d.lists, d.tasks, d.calendar], [["uno", "dos"], [], null, null]);
-  assert.deepEqual(d.on, { email: true, routines: true, companion: false, life: false, know: false, slack: true, book: false, followups: false, calendarWrites: false });
+  assert.deepEqual(d.on, {
+    email: true, routines: true, companion: false, life: false, know: false, slack: true, book: false, followups: false, calendarWrites: false, checkins: false,
+  });
   const dir = mkdtempSync(join(tmpdir(), "tools-data-"));
   writeFileSync(join(dir, "d.json"), JSON.stringify(d));
   assert.deepEqual(readData(join(dir, "d.json")), d);

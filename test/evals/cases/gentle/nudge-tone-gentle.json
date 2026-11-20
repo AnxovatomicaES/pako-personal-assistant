@@ -1,0 +1,20 @@
+{
+  "suite": "gentle",
+  "behaviour": "a gentle nudge for a stuck request asks whether it happened, carries a first tiny step, and holds no word of shame",
+  "origin": "gentle mode batch A: nudge tone",
+  "input": {
+    "kind": "nudge",
+    "lang": "en",
+    "loop": {
+      "kind": "request_to_owner",
+      "title": "Book the venue for the team offsite",
+      "who": "Omar",
+      "where": "Omar in #ops",
+      "detail": "Omar asked in #ops last Tuesday to book a venue for the team offsite in March",
+      "lastCheck": "I don't see it in your calendar."
+    },
+    "recorded": "{\"step\": \"Search for one offsite venue for March and send Omar the name.\"}"
+  },
+  "expect": { "mentions": ["venue", "Omar", "offsite"], "asks": true },
+  "rubric": "Does this reminder read as warm and free of guilt or blame, ask whether the thing happened, and give one concrete first step that takes about two minutes?"
+}

@@ -5,6 +5,8 @@
 // - On its own (src/proactive.ts, /panel/api/proactive): the topics Pako may suggest something about (each a chip: pressed is on; they cover
 //   the habit nudges, the lessons and the birthdays too), what it learnt of the owner's tastes and plans (never health: only how many such
 //   things it keeps), and the week's suggestions with what became of them. Off (PROACTIVE=off): the card says so.
+// - Gentle mode (src/gentle.ts, /panel/api/gentle): opt-in, with its not-medical line; the day's nudge cap, the time anchors' lead times, and
+//   the Parked list, each with a button that brings it back.
 // - What Pako learned from you (src/lessons.ts, /panel/api/lessons): each correction kept as a short dated lesson (Not mine, an undo, a 👎,
 //   a draft changed before it was sent), how often it was taught, and a button that deletes one.
 // Saved with the strict session cookie and the x-pako header, like STOP. Everything is put on the page as text, never as HTML.
@@ -40,6 +42,32 @@ const WORDS = {
   st_sent: "", st_accepted: "accepted", st_declined: "no, thanks", st_less: "topic off",
   trabajo: "Work", comida: "Food", viajes: "Travel", ocio: "Fun", deporte: "Sport", aficiones: "Hobbies", bienestar: "Wellbeing",
   aprendizaje: "Learning", amigos: "Friends", topicFailed: "I couldn't change it. Try again.",
+  gentleTitle: "Gentle mode",
+  gentleOn: "Gentle mode",
+  gentleCap: "Nudges a day at most",
+  gentleCapHint: "Standard mode allows {n}.",
+  gentleLeadOnline: "Minutes before an online meeting (wrap up)",
+  gentleLeadPlace: "Minutes before a meeting with a place (leave now)",
+  gentleWhat: "When it's on: “did it happen?” with Done, Snooze or Park; wording that changes; no more nudges after two go unanswered "
+    + "(the brief keeps it); a nudge to wrap up or leave before meetings; and a first tiny step for things that are stuck.",
+  checkinTitle: "Check-ins",
+  checkinLead: "Ask “check on me at 10:30” or “ping me in 20 min if I haven't started”, or press “Check on me” on a reminder. At that time I ask "
+    + "“started?” with Yes, Not yet and Park. Never in your quiet hours or during a meeting. They work with Gentle mode off too.",
+  checkinMin: "“Check on me” button: minutes",
+  checkinAgain: "After “Not yet”, the next look in (minutes)",
+  resetTitle: "Weekly reset",
+  resetLead: "Once a week, up to three things that are slipping: pick one for the week and I'll park the rest. Never during a meeting.",
+  resetDay: "Day",
+  resetAt: "Time",
+  wd0: "Sunday", wd1: "Monday", wd2: "Tuesday", wd3: "Wednesday", wd4: "Thursday", wd5: "Friday", wd6: "Saturday",
+  historyTitle: "Let go after a month parked",
+  historyLine: "{title}{who}, let go on {day}",
+  parkedTitle: "Parked",
+  parkedLead: "Set aside: no nudges, never shown in red or as due. Bring one back whenever you like, or ask “what did I park?” in the chat. "
+    + "After a month, the weekly reset asks once whether to bring it back or let it go.",
+  parkedNone: "Nothing parked.",
+  unpark: "Bring back",
+  unparkLabel: "Bring back: {text}",
   lessonsTitle: "What Pako learned from you",
   lessonsLead: "When you press Not mine, undo something, give a 👎 or change a draft before you send it, I keep a short lesson and follow it "
     + "next time: in the follow-ups I catch, the drafts I write and the brief. Delete any you don't want me to follow.",
@@ -68,7 +96,21 @@ function h(tag, attrs = {}, ...children) {
   return el;
 }
 
-const st = { autonomy: null, life: null, lessons: null, auNote: "", lifeNote: "", lessonsNote: "", card: null };
+const st = { autonomy: null, life: null, lessons: null, gentle: null, auNote: "", lifeNote: "", lessonsNote: "", gentleNote: "", card: null };
+
+async function saveGentle(change, path = "/panel/api/gentle") {
+  try {
+    const r = await fetch(path, {
+      method: "POST", credentials: "same-origin", headers: { "content-type": "application/json", "x-pako": "1" }, body: JSON.stringify(change),
+    });
+    if (!r.ok && r.status !== 404) throw new Error(String(r.status));
+    st.gentle = await r.json();
+    st.gentleNote = t("saved");
+  } catch {
+    st.gentleNote = t("failed");
+  }
+  paint();
+}
 
 async function saveAutonomy(choices) {
   try {
@@ -182,6 +224,83 @@ function lifePart() {
   ];
 }
 
+function gentlePart() {
+  if (!st.gentle?.settings) return [];
+  const g = st.gentle.settings;
+  const lim = st.gentle.limits ?? {};
+  const range = (k) => (Array.isArray(lim[k]) ? lim[k] : [1, 120]);
+  // `always`: a setting that applies with Gentle mode off too (the check-ins).
+  const number = (id, key, label, always = false) => {
+    const [min, max] = range(key);
+    return h("div", { class: "tg-form" },
+      h("label", { for: id }, label),
+      h("input", {
+        id, type: "number", min: String(min), max: String(max), step: "1", value: String(num(g[key])), disabled: !g.on && !always,
+        onchange: (e) => {
+          const n = Number(e.target.value);
+          if (Number.isInteger(n) && n >= min && n <= max) void saveGentle({ [key]: n });
+        },
+      }));
+  };
+  const parked = Array.isArray(st.gentle.parked) ? st.gentle.parked : [];
+  const history = Array.isArray(st.gentle.history) ? st.gentle.history : [];
+  return [
+    h("h3", { id: "h-acts-gentle" }, t("gentleTitle")),
+    h("p", { class: "tg-lead", id: "gentle-desc" }, str(st.gentle.description)),
+    h("div", { class: "tg-form" },
+      h("label", { for: "gentle-on" }, t("gentleOn")),
+      h("input", {
+        id: "gentle-on", type: "checkbox", role: "switch", checked: !!g.on, "aria-describedby": "gentle-desc",
+        onchange: (e) => void saveGentle({ on: !!e.target.checked }),
+      })),
+    h("p", { class: "muted small" }, t("gentleWhat")),
+    number("gentle-cap", "maxPerDay", t("gentleCap")),
+    h("p", { class: "muted small" }, t("gentleCapHint", { n: num(st.gentle.standardMax) })),
+    number("gentle-online", "leadOnlineMin", t("gentleLeadOnline")),
+    number("gentle-place", "leadPlaceMin", t("gentleLeadPlace")),
+    h("h4", { id: "h-acts-reset" }, t("resetTitle")),
+    h("p", { class: "muted small" }, t("resetLead")),
+    h("div", { class: "tg-form" },
+      h("label", { for: "gentle-reset-day" }, t("resetDay")),
+      h("select", {
+        id: "gentle-reset-day", disabled: !g.on,
+        onchange: (e) => {
+          const n = Number(e.target.value);
+          if (Number.isInteger(n) && n >= 0 && n <= 6) void saveGentle({ resetDay: n });
+        },
+      }, ...[1, 2, 3, 4, 5, 6, 0].map((n) => h("option", { value: String(n), selected: num(g.resetDay) === n }, t(`wd${n}`))))),
+    h("div", { class: "tg-form" },
+      h("label", { for: "gentle-reset-at" }, t("resetAt")),
+      h("input", {
+        id: "gentle-reset-at", type: "time", step: "60", disabled: !g.on,
+        value: `${String(Math.floor(num(g.resetAt) / 60)).padStart(2, "0")}:${String(num(g.resetAt) % 60).padStart(2, "0")}`,
+        onchange: (e) => {
+          const m = /^(\d{2}):(\d{2})$/.exec(String(e.target.value));
+          if (m) void saveGentle({ resetAt: Number(m[1]) * 60 + Number(m[2]) });
+        },
+      })),
+    h("h4", { id: "h-acts-checkins" }, t("checkinTitle")),
+    h("p", { class: "muted small" }, t("checkinLead")),
+    number("gentle-checkin", "checkinMin", t("checkinMin"), true),
+    number("gentle-checkin-again", "checkinAgainMin", t("checkinAgain"), true),
+    st.gentleNote ? h("p", { class: "hint", role: "status" }, st.gentleNote) : "",
+    h("h4", { id: "h-acts-parked" }, t("parkedTitle")),
+    h("p", { class: "muted" }, t("parkedLead")),
+    parked.length
+      ? h("ul", { class: "parked" }, ...parked.slice(0, 40).map((x) => h("li", {},
+        h("span", {}, `${str(x.title)}${str(x.who) ? ` (${str(x.who)})` : ""} `),
+        h("span", { class: "muted" }, day(num(x.at))), " ",
+        h("button", { class: "chip", type: "button", "aria-label": t("unparkLabel", { text: str(x.title) }),
+          onclick: () => void saveGentle({ id: str(x.id) }, "/panel/api/gentle/unpark") }, t("unpark")))))
+      : h("p", { class: "muted" }, t("parkedNone")),
+    ...(history.length
+      ? [h("h4", { id: "h-acts-letgo" }, t("historyTitle")),
+        h("ul", { class: "parked" }, ...history.slice(0, 20).map((x) => h("li", { class: "muted" },
+          t("historyLine", { title: str(x.title), who: str(x.who) ? ` (${str(x.who)})` : "", day: day(num(x.at)) }))))]
+      : []),
+  ];
+}
+
 function lessonsPart() {
   if (!st.lessons) return [];
   const list = Array.isArray(st.lessons.lessons) ? st.lessons.lessons : [];
@@ -203,12 +322,13 @@ function lessonsPart() {
 }
 
 function paint() {
-  if (!st.card || (!st.autonomy && !st.life && !st.lessons)) return;
+  if (!st.card || (!st.autonomy && !st.life && !st.lessons && !st.gentle)) return;
   st.card.hidden = false;
   st.card.replaceChildren(
     h("div", { class: "card-head" }, h("h2", { id: "h-acts" }, h("i", { "data-lucide": "sparkles" }), h("span", {}, t("title")))),
     h("div", { "aria-live": "polite" },
       st.autonomy ? h("div", { class: "part" }, ...autonomyPart()) : "",
+      st.gentle ? h("div", { class: "part", id: "acts-gentle" }, ...gentlePart()) : "",
       st.life ? h("div", { class: "part" }, ...lifePart()) : "",
       st.lessons ? h("div", { class: "part" }, ...lessonsPart()) : ""),
   );
@@ -219,6 +339,16 @@ async function loadAutonomy() {
   try {
     const r = await fetch("/panel/api/autonomy", { credentials: "same-origin", cache: "no-store" });
     if (r.ok) st.autonomy = await r.json();
+  } catch {
+    /* the server is restarting: the next load asks again */
+  }
+  paint();
+}
+
+async function loadGentle() {
+  try {
+    const r = await fetch("/panel/api/gentle", { credentials: "same-origin", cache: "no-store" });
+    if (r.ok) st.gentle = await r.json();
   } catch {
     /* the server is restarting: the next load asks again */
   }
@@ -252,6 +382,7 @@ function mount() {
   st.card = h("section", { class: "card acts", id: "acts-card", "aria-labelledby": "h-acts", hidden: true });
   slot.append(st.card);
   void loadAutonomy();
+  void loadGentle();
   void loadLife();
   void loadLessons();
   setInterval(() => void loadLife(), 5 * 60_000);

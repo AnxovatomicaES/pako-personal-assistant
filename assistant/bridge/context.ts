@@ -88,6 +88,10 @@ export interface Context {
    * drops <routine> and <watch> and says so, since that server would ignore them while Claude said they were set.
    */
   routinesOn?: number;
+  /** The server sorts a brain dump (<dump>, brain_dump): without it the items go as the ordinary tags. */
+  dumpOn?: number;
+  /** The server keeps check-ins (<checkin>, check_in): without it the bridge drops them and says so. */
+  checkinOn?: number;
   /**
    * The server decides by itself what goes at once and what asks (src/autonomy.ts); `emailOn`: it can send email, to `emailContacts` or an
    * address. An older server leaves them out: the bridge then drops <email> and says so.

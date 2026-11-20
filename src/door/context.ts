@@ -51,6 +51,11 @@ export function mountContext(door: Door): void {
       ...(await companion.context().catch(() => ({}))),
       // The owner's routines and watches, and that this server makes them (a newer bridge drops <routine> and <watch> for a server without it).
       routinesOn: 1,
+      // This server sorts a brain dump (<dump>, brain_dump: src/door/dump.ts); an older one does not say so, and a newer bridge then turns the
+      // items into its ordinary tags instead.
+      dumpOn: 1,
+      // This server keeps check-ins (<checkin>, check_in: src/gentle-checkins.ts); an older one does not say so, and the bridge drops them.
+      ...(d.gentle?.checkinAdd ? { checkinOn: 1 } : {}),
       ...((await routines.contextLines()) ?? {}),
       ...(d.mail ? { mailAddress: d.mail.address, emails: await d.mail.recent().catch(() => []) } : {}),
       ...(await (async () => {

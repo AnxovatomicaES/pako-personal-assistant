@@ -14,6 +14,8 @@ export function doorApi(door: Door) {
     ownerLanguage, graph, sendText, startBooking, askCall, loadReminders, windowOpen, addReminder, sendReminderTemplate, runReminders, hold,
     notifyOwner, askSame, peopleDoor, handleMessage, deliverBooking, removeReminderById,
   } = door;
+  /** The panel's chat and Telegram show more than three buttons; WhatsApp shows three. */
+  const roomy = async (): Promise<boolean> => !!d.local || ((via.getStore() ?? (await startedRoute())) === "telegram" && !!d.telegram);
   return {
     inbox,
     /** The friend, health companion and teacher (src/companion.ts): its `offers` are for the proactive check. */
@@ -24,21 +26,35 @@ export function doorApi(door: Door) {
      */
     sendCard: async (
       body: string, buttons: { id: string; title: string }[], feedback?: { buttons: { id: string; title: string }[]; line: string },
+      more?: { buttons: { id: string; title: string }[]; line: string },
     ): Promise<boolean> => {
       if (!d.local && !(await reachable(now()))) return false;
       // `feedback` (src/quality.ts): its 👍/👎 after the three where the chat has room (Telegram, the panel's chat), else its line under the text.
-      const roomy = !!d.local || ((via.getStore() ?? (await startedRoute())) === "telegram" && !!d.telegram);
-      const all = [...buttons.slice(0, 3), ...(feedback && roomy ? feedback.buttons.slice(0, 2) : [])];
-      const text = feedback && !roomy ? `${body}\n${feedback.line}` : body;
+      // `more` (gentle mode's "Check on me in 30 min"): a fourth button the same way, before the 👍/👎, with room for a longer title.
+      const isRoomy = await roomy();
+      const all = [
+        ...buttons.slice(0, 3).map((b) => ({ ...b, title: b.title.slice(0, 20) })),
+        ...(more && isRoomy ? more.buttons.slice(0, 1).map((b) => ({ ...b, title: b.title.slice(0, 30) })) : []),
+        ...(feedback && isRoomy ? feedback.buttons.slice(0, 2).map((b) => ({ ...b, title: b.title.slice(0, 20) })) : []),
+      ];
+      const text = [body, ...(more && !isRoomy ? [more.line] : []), ...(feedback && !isRoomy ? [feedback.line] : [])].join("\n");
       return graph({
         type: "interactive",
         interactive: {
           type: "button",
           body: { text: text.slice(0, 1000) },
-          action: { buttons: all.map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } })) },
+          action: { buttons: all.map((b) => ({ type: "reply", reply: { id: b.id, title: b.title } })) },
         },
       });
     },
+    /** A card with every button where the chat has room (the weekly reset's This one and Park for each item), the first three elsewhere. */
+    sendButtons: async (body: string, buttons: { id: string; title: string }[]): Promise<boolean> => {
+      if (!d.local && !(await reachable(now()))) return false;
+      const list = buttons.slice(0, (await roomy()) ? 10 : 3).map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } }));
+      return graph({ type: "interactive", interactive: { type: "button", body: { text: body.slice(0, 1000) }, action: { buttons: list } } });
+    },
+    /** Whether the chat now has room for more than three buttons (the panel's chat, Telegram): the weekly reset's per-item Park. */
+    roomy,
     lastPoll: () => door.lastPollAt,
     /** When the owner last wrote (ms; 0: not since this start): proactive Pako speaks only when they have been quiet a while. */
     lastOwner: () => Math.max(door.lastHeardAt, door.lastOwnerAt),

@@ -1,0 +1,13 @@
+{
+  "suite": "gentle",
+  "behaviour": "“check on me at 3” at 11:00 is a check-in at 15:00 today in the owner's zone, about what they named, not a reminder",
+  "origin": "gentle mode batch B: check-in requests",
+  "input": {
+    "kind": "checkin",
+    "now": "Monday 2026-11-23 11:00",
+    "timeZone": "Europe/London",
+    "message": "check on me at 3 if I started the deck",
+    "recorded": "Will do: I'll check at 15:00 whether you've started the deck.<checkin at=\"2026-11-23 15:00\">the deck</checkin>"
+  },
+  "expect": { "at": "2026-11-23 15:00", "mentions": ["deck"], "maxReplyChars": 200 }
+}

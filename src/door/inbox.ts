@@ -54,6 +54,11 @@ export interface Inbound {
    * strict JSON on /assistant/judge. `text` stays empty, so an older bridge lets it go: after JUDGE_MS the newest fact wins.
    */
   judge?: { text: string };
+  /**
+   * A first tiny step to write (gentle mode, src/gentle.ts): one stuck follow-up's own facts, which a newer bridge reads in an isolated run and
+   * answers with strict JSON on /assistant/step. `text` stays empty, so an older bridge lets it go: the nudge simply has no step.
+   */
+  step?: { text: string };
 }
 
 export interface InboundFollowup {
@@ -167,18 +172,19 @@ export function createInbox(kv: Kv | null) {
           ...(m.brief ? { brief: { kind: m.brief.kind, label: m.brief.label.slice(0, 160), text: m.brief.text.slice(0, BRIEF_JOB_MAX) } } : {}),
           ...(m.proactive ? { proactive: { text: m.proactive.text.slice(0, FOLLOWUP_MAX) } } : {}),
           ...(m.judge ? { judge: { text: m.judge.text.slice(0, FOLLOWUP_MAX) } } : {}),
+          ...(m.step ? { step: { text: m.step.text.slice(0, FOLLOWUP_MAX) } } : {}),
         };
         const msgs = [...s.msgs, kept];
         // Follow-up jobs (one per Slack conversation every few minutes) are capped, the oldest dropped: a night of Slack with the computer
         // asleep must not push out a meeting's transcript or an email (src/followups.ts forgets a job never answered). A rehearsal's jobs
         // (src/rehearsal.ts) are counted apart, so they never push out a real one.
-        const real = (x: Inbound): boolean => !!(x.followup || x.proactive || x.judge) && !isRehearsal(x);
+        const real = (x: Inbound): boolean => !!(x.followup || x.proactive || x.judge || x.step) && !isRehearsal(x);
         while (msgs.filter(real).length > MAX_FOLLOWUP_JOBS) msgs.splice(msgs.findIndex(real), 1);
         while (msgs.filter(isRehearsal).length > MAX_REHEARSAL_JOBS) msgs.splice(msgs.findIndex(isRehearsal), 1);
         // Full: a rehearsal's job goes first, then a follow-up job, then an email, then a review, a brief or a transcript, so the owner's own
         // messages go last.
         while (msgs.length > MAX_MSGS) {
-          const order = [isRehearsal, (x: Inbound) => !!(x.followup || x.proactive || x.judge), (x: Inbound) => !!x.email, (x: Inbound) => !!(x.review || x.brief || x.meeting)];
+          const order = [isRehearsal, (x: Inbound) => !!(x.followup || x.proactive || x.judge || x.step), (x: Inbound) => !!x.email, (x: Inbound) => !!(x.review || x.brief || x.meeting)];
           const i = order.map((f) => msgs.findIndex(f)).find((n) => n >= 0) ?? -1;
           msgs.splice(i >= 0 ? i : 0, 1);
         }

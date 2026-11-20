@@ -10,7 +10,8 @@ import type { Inbound } from "../whatsapp.ts";
 
 export const LOOP_KINDS = ["request_to_owner", "owner_promise", "other_promise", "agreed_meeting", "deadline"] as const;
 export type LoopKind = (typeof LOOP_KINDS)[number];
-export type LoopStatus = "open" | "done" | "dismissed" | "snoozed";
+/** "parked" (gentle mode, src/gentle.ts): set aside by the owner: no nudges, never shown as open, kept in the Parked list until brought back. */
+export type LoopStatus = "open" | "done" | "dismissed" | "snoozed" | "parked";
 export type SourceKind = "slack" | "mail" | "meeting" | "chat";
 
 /** Where it was said: a Slack DM or channel (with the channel's id, to look at it again), a Zoom meeting, an email. */
@@ -69,6 +70,17 @@ export interface Loop {
   createdAt: number;
   closedAt?: number;
   sources: LoopSource[];
+  /** Gentle mode (src/gentle.ts): when it was parked; how often it was snoozed; nudges since the owner's last press; the last wording used. */
+  parkedAt?: number;
+  snoozes?: number;
+  unanswered?: number;
+  variant?: number;
+  /** Gentle mode: two nudges went unanswered, so it is no longer nudged and the brief carries it instead. */
+  folded?: boolean;
+  /** Gentle mode: its one "did it happen?" after its time was asked. */
+  afterAsked?: boolean;
+  /** Gentle mode: its first tiny step (two minutes or less), written from its own facts and checked (src/gentle.ts parseStep). */
+  step?: string;
 }
 
 /** What "Not mine" taught: this kind of thing, from this person and place, is not the owner's. */
@@ -229,7 +241,7 @@ export interface FollowupsDeps {
    * A card with buttons when the owner can be written to now (src/whatsapp.ts sendCard); false when it could not go. `feedback`: the quiet
    * 👍/👎, as buttons after the three where the chat has room for them, else as a line under the text.
    */
-  card: (body: string, buttons: { id: string; title: string }[], feedback?: CardFeedback) => Promise<boolean>;
+  card: (body: string, buttons: { id: string; title: string }[], feedback?: CardFeedback, more?: CardFeedback) => Promise<boolean>;
   /** What the quality card counts (src/quality.ts): each nudge given, each press on one, and the 👍/👎 a nudge carries. */
   quality?: FollowupsQuality;
   /** A notice kept for the owner's next message when the card cannot go (src/whatsapp.ts notifyOwner). */
@@ -254,6 +266,23 @@ export interface FollowupsDeps {
    * who they are to the owner, what was last agreed, what is open with them. Absent: the job carries none.
    */
   people?: (words: string[]) => Promise<PersonBlock[]>;
+  /**
+   * Gentle mode (src/gentle.ts), asked before each round: null when it is off (everything as before). On: its day's cap, its words and
+   * buttons (Done, Snooze, Park), and what similar meetings usually took.
+   */
+  gentle?: () => Promise<GentleRound | null>;
+}
+
+/** What a round of nudges reads of gentle mode. */
+export interface GentleRound {
+  maxPerDay: number;
+  /** What similar meetings took, in minutes; null when fewer than three are known. */
+  usually?: (title: string) => Promise<number | null>;
+  /**
+   * A check-in offered on a stuck one's nudge (src/gentle-checkins.ts): "Check on me in 30 min" as a fourth button where the chat has room,
+   * else its line under the text. Absent: none offered.
+   */
+  checkin?: (loopId: string) => Promise<CardFeedback>;
 }
 
 /** The quiet 👍/👎 under a card: buttons where the chat has room for more than three, else a line answered by text. */
@@ -310,7 +339,8 @@ export interface DryOutcome {
 
 /** What src/whatsapp.ts asks of the engine: the buttons, PENDING, the assistant's context, the bridge's answer, and mail and meetings. */
 export interface FollowupsDoor {
-  press(button: "1" | "2" | "3", id: string): Promise<string>;
+  /** 1 Done, 2 In 1 h, 3 Not mine; gentle mode's 4 Snooze (asks when), 5 Later today, 6 Tomorrow, 7 Park. */
+  press(button: PressButton, id: string): Promise<string>;
   command(): Promise<string>;
   context(): Promise<string[]>;
   result(jobId: string, raw: string): Promise<{ ok: boolean; added: number }>;
@@ -352,7 +382,17 @@ export interface FollowupsDoor {
   calendarChanged?(changes: { kind: "added" | "moved" | "cancelled"; title: string; start: number; was?: number }[]): Promise<number>;
   /** Undo of closeByWords: each loop back as it was before, unless something closed or changed it since. */
   reopenClosed?(loops: ClosedLoop[]): Promise<ClosedLoop[]>;
+  /** Gentle mode's Snooze: the card that asks when (Later today, Tomorrow); null when the loop is gone or answered. */
+  snoozeCard?(id: string): Promise<{ body: string; buttons: { id: string; title: string }[] } | null>;
+  /** The parked loops, newest first (the panel's Parked list, and "what did I park?"). */
+  parked?(): Promise<Loop[]>;
+  /** "what did I park?" in the chat: the Parked list as text. */
+  parkedText?(): Promise<string>;
+  /** A parked loop back on the open list (by its id, or the words of its title or person): what to tell the owner. */
+  unpark?(which: { id: string } | { words: string }): Promise<{ ok: boolean; say: string }>;
 }
+
+export type PressButton = "1" | "2" | "3" | "4" | "5" | "6" | "7";
 
 /** A loop as it was just before the chat closed it: what an undo puts back. */
 export interface ClosedLoop {

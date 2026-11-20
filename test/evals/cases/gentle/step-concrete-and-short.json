@@ -1,0 +1,20 @@
+{
+  "suite": "gentle",
+  "behaviour": "a follow-up stuck for days gets one concrete first step of two minutes or less, about this item and from its own facts",
+  "origin": "gentle mode batch A: first tiny step",
+  "input": {
+    "kind": "step",
+    "lang": "en",
+    "loop": {
+      "kind": "owner_promise",
+      "title": "Send Ana the Q4 deck",
+      "who": "Ana",
+      "where": "Ana (private)",
+      "detail": "Ana asked on Slack on Monday for the Q4 deck; you said you would send it by Wednesday",
+      "lastCheck": "I have no way to check it (an email)."
+    },
+    "people": [{ "name": "Ana", "text": "Ana Ruiz: your manager at Acme (you told Pako on 2026-11-02)." }],
+    "recorded": "{\"step\": \"Open the Q4 deck and write Ana a one-line email to go with it.\"}"
+  },
+  "expect": { "mentions": ["deck", "Ana"], "maxWords": 20 }
+}

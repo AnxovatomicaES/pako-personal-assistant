@@ -64,7 +64,7 @@ export function loopOf(v: unknown): Loop | null {
   const where = whereOf(v.where);
   const check = checkOf(v.check);
   const status = v.status;
-  if (!where || !check || (status !== "open" && status !== "done" && status !== "dismissed" && status !== "snoozed")) return null;
+  if (!where || !check || (status !== "open" && status !== "done" && status !== "dismissed" && status !== "snoozed" && status !== "parked")) return null;
   if (typeof v.title !== "string" || !v.title || typeof v.whenSaid !== "number" || typeof v.createdAt !== "number") return null;
   const dueAt = num(v.dueAt);
   const tz = typeof v.tz === "string" && isZone(v.tz) ? v.tz : undefined;
@@ -88,6 +88,14 @@ export function loopOf(v: unknown): Loop | null {
     createdAt: v.createdAt,
     ...(num(v.closedAt) ? { closedAt: num(v.closedAt)! } : {}),
     sources: (Array.isArray(v.sources) ? v.sources : []).map(sourceOf).filter((x): x is LoopSource => x !== null).slice(0, 5),
+    // Gentle mode's own fields (src/gentle.ts): small counters and one checked line.
+    ...(num(v.parkedAt) ? { parkedAt: num(v.parkedAt)! } : {}),
+    ...(num(v.snoozes) ? { snoozes: Math.min(99, num(v.snoozes)!) } : {}),
+    ...(num(v.unanswered) ? { unanswered: Math.min(99, num(v.unanswered)!) } : {}),
+    ...(num(v.variant) !== undefined ? { variant: Math.max(0, Math.min(20, Math.floor(num(v.variant)!))) } : {}),
+    ...(v.folded === true ? { folded: true } : {}),
+    ...(v.afterAsked === true ? { afterAsked: true } : {}),
+    ...(typeof v.step === "string" && v.step.trim() ? { step: v.step.slice(0, 160) } : {}),
   };
 }
 

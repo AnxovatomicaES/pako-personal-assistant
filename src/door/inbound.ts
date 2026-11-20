@@ -9,8 +9,9 @@ import type { Door } from "./door.ts";
 import type { Handler, Incoming } from "./incoming.ts";
 import { onResume, onStop } from "./stop-resume.ts";
 import {
-  onAgenda, onBookings, onBrief, onDraft, onFollowups, onHealth, onLog, onMail, onMeetingTodos, onRehearsal, onSlack, onView, onZoom,
+  onAgenda, onBookings, onBrief, onDraft, onFollowups, onHealth, onLog, onMail, onMeetingTodos, onParked, onRehearsal, onResetPark, onSlack, onView, onZoom,
 } from "./views.ts";
+import { onDumpRemove } from "./dump.ts";
 import { onCodes } from "./codes.ts";
 import { onCompanion, onLifeTopics } from "./life.ts";
 import { onPanel, onTelegram, onTelegramInPanel, onTelegramOff } from "./chats.ts";
@@ -45,6 +46,9 @@ const HANDLERS: readonly Handler[] = [
   onHealth,
   onLifeTopics,
   onFollowups,
+  onParked,
+  onResetPark,
+  onDumpRemove,
   onDraft,
   onBookings,
   onSlack,

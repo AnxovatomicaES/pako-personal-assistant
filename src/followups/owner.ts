@@ -1,11 +1,14 @@
 // The owner's side: the nudge's buttons, PENDING, and the open loops in the assistant's context.
 
 import type { Engine } from "./parts.ts";
-import { NONE_BEFORE_MS, PAST_HIDE_MS, RULES_MAX, SNOOZE_MS } from "./limits.ts";
+import { LATER_TODAY_MS, NONE_BEFORE_MS, PAST_HIDE_MS, RULES_MAX, SNOOZE_MS } from "./limits.ts";
 import { loopsOf } from "./record.ts";
 import { T } from "./texts.ts";
+import { zonedTime } from "./time.ts";
 import type { ClosedLoop, CloseOutcome, FollowupsDoor, Loop } from "./types.ts";
-import { fold } from "../lists.ts";
+import { GT } from "../gentle.ts";
+import { ownerClock } from "../i18n.ts";
+import { fold, today } from "../lists.ts";
 import { createLog } from "../log.ts";
 
 const log = createLog("followups");
@@ -17,8 +20,23 @@ const names = (keys: string[], l: Loop): boolean => {
   return keys.every((k) => words.some((w) => w.startsWith(k)));
 };
 
-export function mountOwner(fu: Engine): Pick<Engine, "press" | "open" | "command" | "context" | "closeByWords" | "calendarChanged" | "reopenClosed" | "forDraft" | "draftFacts"> {
+export function mountOwner(fu: Engine): Pick<
+  Engine,
+  "press" | "open" | "command" | "context" | "closeByWords" | "calendarChanged" | "reopenClosed" | "forDraft" | "draftFacts" | "snoozeCard" | "parked"
+  | "parkedText" | "unpark" | "setStep" | "letGo"
+> {
   const { d, now, lang, mutate, read, dueText, sourceText } = fu;
+  /** Gentle mode's "tomorrow": 09:00 in the owner's zone (or when the quiet hours end, if later), the day after today, whatever DST does. */
+  const tomorrowAt = (t: number): number => {
+    let day = today(t + 24 * 3600_000, d.timeZone);
+    if (day === today(t, d.timeZone)) day = today(t + 26 * 3600_000, d.timeZone);
+    const q = fu.config.quiet;
+    const nine = 9 * 60;
+    const at = q && q.start > q.end && q.end > nine ? q.end : nine;
+    return zonedTime(`${day} ${String(Math.floor(at / 60)).padStart(2, "0")}:${String(at % 60).padStart(2, "0")}`, d.timeZone) ?? t + 24 * 3600_000;
+  };
+  /** Gentle mode's "later today": three hours on; if that falls in the quiet hours, the morning after them. */
+  const laterToday = (t: number): number => (fu.quietNow(t + LATER_TODAY_MS) ? tomorrowAt(t) : t + LATER_TODAY_MS);
   const press: FollowupsDoor["press"] = async (button, id) => {
     const t = T(lang());
     try {
@@ -28,13 +46,29 @@ export function mountOwner(fu: Engine): Pick<Engine, "press" | "open" | "command
         if (!l) return t("pressedGone");
         if (l.status === "done" || l.status === "dismissed") return t("pressedAlready");
         hit = l;
+        // Any press is an answer: gentle mode counts nudges since the last one.
+        delete l.unanswered;
+        delete l.folded;
         if (button === "1") {
           Object.assign(l, { status: "done", closedAt: now(), nextCheckAt: 0 });
-          return t("pressedDone", { title: l.title });
+          return l.variant !== undefined ? GT()("pressedDone", { title: l.title }) : t("pressedDone", { title: l.title });
         }
         if (button === "2") {
-          Object.assign(l, { status: "snoozed", nextCheckAt: now() + SNOOZE_MS });
+          Object.assign(l, { status: "snoozed", nextCheckAt: now() + SNOOZE_MS, snoozes: (l.snoozes ?? 0) + 1 });
           return t("pressedSnooze");
+        }
+        if (button === "4") return GT()("snoozeAsk", { title: l.title });
+        if (button === "5" || button === "6") {
+          const at = button === "5" ? laterToday(now()) : tomorrowAt(now());
+          Object.assign(l, { status: "snoozed", nextCheckAt: at, snoozes: (l.snoozes ?? 0) + 1 });
+          delete l.afterAsked;
+          const sameDay = today(at, d.timeZone) === today(now(), d.timeZone);
+          return GT()(sameDay ? "pressedLater" : "pressedTomorrow", { title: l.title, time: ownerClock(at, d.timeZone) });
+        }
+        if (button === "7") {
+          Object.assign(l, { status: "parked", parkedAt: now(), nextCheckAt: 0 });
+          d.control?.log("followup", GT()("pressedPark", { title: l.title }));
+          return GT()("pressedPark", { title: l.title });
         }
         Object.assign(l, { status: "dismissed", closedAt: now(), nextCheckAt: 0 });
         s.rules = [...s.rules, { at: now(), who: l.who, where: l.where.label, title: l.title }].slice(-RULES_MAX);
@@ -46,7 +80,9 @@ export function mountOwner(fu: Engine): Pick<Engine, "press" | "open" | "command
         return t("pressedNotMine", { title: l.title });
       });
       const pressedOn = hit as Loop | null;
-      if (pressedOn) d.quality?.pressed(button, { id: pressedOn.id, title: pressedOn.title });
+      // The quality card counts Done, a snooze and Not mine; gentle mode's Snooze question and Park are not one of those.
+      const counted = button === "5" || button === "6" ? "2" : button === "1" || button === "2" || button === "3" ? button : null;
+      if (pressedOn && counted) d.quality?.pressed(counted, { id: pressedOn.id, title: pressedOn.title });
       return said;
     } catch (err) {
       log.error(`a press could not be kept: ${(err as Error).message}`);
@@ -197,5 +233,64 @@ export function mountOwner(fu: Engine): Pick<Engine, "press" | "open" | "command
     return n;
   };
 
-  return { press, open, command, context, closeByWords, calendarChanged, reopenClosed, forDraft, draftFacts };
+  /** Gentle mode's Snooze: when to bring it back. Null when it is gone or answered already. */
+  const snoozeCard: Engine["snoozeCard"] = async (id) => {
+    const l = (await read()).loops.find((x) => x.id === id);
+    if (!l || (l.status !== "open" && l.status !== "snoozed")) return null;
+    return {
+      body: GT()("snoozeAsk", { title: l.title }),
+      buttons: [{ id: `f5:${l.id}`, title: GT()("btnLaterToday") }, { id: `f6:${l.id}`, title: GT()("btnTomorrow") }],
+    };
+  };
+  const parked: Engine["parked"] = async () =>
+    (await read()).loops.filter((l) => l.status === "parked").sort((a, b) => (b.parkedAt ?? 0) - (a.parkedAt ?? 0));
+  const parkedText: Engine["parkedText"] = async () => {
+    let list: Loop[];
+    try {
+      list = await parked();
+    } catch {
+      return T(lang())("unread");
+    }
+    if (!list.length) return GT()("parkedNone");
+    const lines = list.slice(0, 20).map((l) => GT()("parkedLine", { title: l.title, who: l.who ? GT()("parkedWho", { who: l.who }) : "" }));
+    return GT()("parkedList", { n: list.length, list: lines.join("\n") });
+  };
+  /** Back on the open list, as it was before it was parked (no nudge at once: the brief and PENDING show it again). */
+  const unpark: Engine["unpark"] = async (which) => {
+    const out = await mutate((s) => {
+      const all = s.loops.filter((l) => l.status === "parked");
+      const hits = "id" in which ? all.filter((l) => l.id === which.id) : all.filter((l) => names(keysOf(which.words), l));
+      if (hits.length !== 1) return { hits: hits.map((l) => l.title) };
+      const l = hits[0]!;
+      Object.assign(l, { status: "open", nextCheckAt: 0 });
+      delete l.parkedAt;
+      delete l.unanswered;
+      delete l.folded;
+      return { title: l.title };
+    });
+    if ("title" in out) return { ok: true, say: GT()("unparked", { title: out.title! }) };
+    if (!out.hits.length) return { ok: false, say: GT()("unparkNone") };
+    return { ok: false, say: GT()("unparkMany", { list: out.hits.slice(0, 5).map((x) => `“${x}”`).join(", ") }) };
+  };
+  /** The first tiny step written for a loop (src/gentle.ts), kept on it while it is open. */
+  const setStep: Engine["setStep"] = (id, step) =>
+    mutate((s) => {
+      const l = s.loops.find((x) => x.id === id);
+      if (!l || (l.status !== "open" && l.status !== "snoozed")) return false;
+      l.step = step.slice(0, 160);
+      return true;
+    });
+
+  /** The weekly reset's "let go" (src/gentle-reset.ts): a parked loop closed for good, like a dismissed one (no lesson: it was not "Not mine"). */
+  const letGo: Engine["letGo"] = (id) =>
+    mutate((s) => {
+      const l = s.loops.find((x) => x.id === id);
+      if (!l || l.status !== "parked") return false;
+      Object.assign(l, { status: "dismissed", closedAt: now(), nextCheckAt: 0 });
+      return true;
+    });
+
+  return {
+    press, open, command, context, closeByWords, calendarChanged, reopenClosed, forDraft, draftFacts, snoozeCard, parked, parkedText, unpark, setStep, letGo,
+  };
 }

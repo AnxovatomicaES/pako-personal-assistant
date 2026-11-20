@@ -51,6 +51,7 @@ export const T = texts(
     routines: "[Their routines (the server runs each at its time; DELETE ROUTINE and its number removes one): {list}.]",
     watches: "[What they asked you to watch for (DELETE WATCH and its number removes one): {list}.]",
     routinesOld: "(I didn't set up the routine or the watch: Pako's server doesn't know them yet; it needs an update.)",
+    checkinsOld: "(I didn't set up the check-in: Pako's server doesn't know them yet; it needs an update. A reminder works meanwhile.)",
     emailOld: "(I didn't send the email: this Pako can't send email right now.)",
     calCreate: "📅 For your calendar (I don't change it, do it in your app): create “{title}”, {start}{end}{place}.",
     calMove: "📅 For your calendar (I don't change it, do it in your app): move “{title}” from {start} to {newStart}.",

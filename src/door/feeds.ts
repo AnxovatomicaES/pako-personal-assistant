@@ -59,6 +59,22 @@ export function mountFeeds(door: Door): void {
     }
   });
 
+  /** The bridge's answer to a first-tiny-step job (src/gentle.ts): its raw text, strict JSON, checked before anything is kept. */
+  app.post("/assistant/step", failed, bridge, json, async (req, res) => {
+    const b = (req.body ?? {}) as { id?: unknown; text?: unknown };
+    const id = typeof b.id === "string" ? /^st:([0-9a-f]{10})$/.exec(b.id)?.[1] : undefined;
+    if (!id || !d.gentle) {
+      res.status(400).json({ error: d.gentle ? "No such job." : "Gentle mode is off." });
+      return;
+    }
+    try {
+      const r = await d.gentle.stepResult(id, typeof b.text === "string" ? b.text.slice(0, 2000) : "");
+      res.status(r.ok ? 200 : 400).json(r);
+    } catch (err) {
+      res.status(503).json({ error: (err as Error).message });
+    }
+  });
+
   /** The bridge's answer to a proactive check (src/proactive.ts): its raw text, NO_REPLY or JSON, which the engine decides on. */
   app.post("/assistant/proactive", failed, bridge, json, async (req, res) => {
     const b = (req.body ?? {}) as { id?: unknown; text?: unknown };

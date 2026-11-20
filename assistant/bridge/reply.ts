@@ -63,7 +63,33 @@ export interface ParsedReply {
   slack: string | null;
   /** A table to look for: what and where, the owner's local time "YYYY-MM-DD HH:MM", how many, and notes for the restaurant. The server searches and asks the owner. */
   book: { what: string; when: string; party: number; notes?: string; name?: string } | null;
+  /**
+   * A brain dump (<dump kind>, brain_dump; src/gentle-dump.ts), present only when the answer has one: the owner's own list sorted into
+   * reminders (with their time), their promises, tasks and notes. The server makes them and shows one card for all of them.
+   */
+  dump?: DumpTag[];
+  /**
+   * Check-ins the owner asked for (<checkin>, check_in; src/gentle-checkins.ts): at their time Pako asks "Started on …?". `at` is
+   * "YYYY-MM-DD HH:MM" in their zone, `in` minutes from now; `text` what it is about ("" for nothing named). Present only when there is one.
+   */
+  checkins?: CheckinTag[];
 }
+
+export interface CheckinTag {
+  text: string;
+  at?: string;
+  in?: number;
+}
+
+export interface DumpTag {
+  kind: "reminder" | "promise" | "task" | "note";
+  text: string;
+  at?: string;
+  who?: string;
+  due?: string;
+}
+/** Items one brain dump may hold (src/gentle-dump.ts DUMP_MAX). */
+export const DUMP_TAGS_MAX = 12;
 
 export interface FactTag {
   kind: string;
@@ -126,6 +152,8 @@ export function parseReply(raw: string): ParsedReply {
   const health: NonNullable<ParsedReply["health"]> = [];
   const goals: string[] = [];
   const cards: NonNullable<ParsedReply["cards"]> = [];
+  const dump: DumpTag[] = [];
+  const checkins: CheckinTag[] = [];
   const attrOf = (attrs: string, n: string): string | undefined => new RegExp(`\\b${n}\\s*=\\s*"([^"<>]{1,60})"`, "i").exec(attrs)?.[1]?.trim();
   const attrLong = (attrs: string, n: string): string =>
     (new RegExp(`\\b${n}\\s*=\\s*"([^"<>]{1,200})"`, "i").exec(attrs)?.[1] ?? "").replace(/\s+/g, " ").trim();
@@ -216,6 +244,28 @@ export function parseReply(raw: string): ParsedReply {
       if (what && promises.length < 2) promises.push({ text: what, ...(who ? { who } : {}), ...(due ? { due } : {}) });
       return "";
     })
+    // A brain dump's items, one tag each: <dump kind="reminder" at="2026-11-20 10:00">call the dentist</dump>.
+    .replace(/<dump(\s+[^<>]{0,300})?>([\s\S]{0,1000}?)<\/dump>/gi, (_m, attrs: string | undefined, body: string) => {
+      const what = body.replace(/\s+/g, " ").trim().slice(0, 200);
+      const kind = attrs ? attrOf(attrs, "kind")?.toLowerCase() : undefined;
+      if (!what || dump.length >= DUMP_TAGS_MAX || (kind !== "reminder" && kind !== "promise" && kind !== "task" && kind !== "note")) return "";
+      const at = attrs ? attrOf(attrs, "at") : undefined;
+      const who = attrs ? attrOf(attrs, "who") : undefined;
+      const due = attrs ? attrOf(attrs, "due") : undefined;
+      dump.push({ kind, text: what, ...(at ? { at } : {}), ...(who ? { who } : {}), ...(due ? { due } : {}) });
+      return "";
+    })
+    // A check-in: <checkin at="2026-11-20 15:00">the deck</checkin>, or in="20" (minutes from now); the body may be empty, or <checkin … />.
+    .replace(/<checkin(\s+[^<>]{0,200}?)?\s*(?:\/>|>([\s\S]{0,400}?)<\/checkin>)/gi, (_m, attrs: string | undefined, body: string | undefined) => {
+      const what = (body ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+      const at = attrs ? attrOf(attrs, "at") : undefined;
+      const mins = attrs ? attrOf(attrs, "in") : undefined;
+      const n = mins && /^\d{1,5}$/.test(mins) ? Number(mins) : NaN;
+      if (checkins.length >= 2) return "";
+      if (n >= 1 && n <= 7 * 24 * 60) checkins.push({ text: what, in: n });
+      else if (at && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(at)) checkins.push({ text: what, at });
+      return "";
+    })
     .replace(/<closed>([\s\S]{0,2000}?)<\/closed>/gi, (_m, w: string) => {
       const words = w.replace(/\s+/g, " ").trim().slice(0, 80);
       if (words && closed.length < 3) closed.push(words);
@@ -281,7 +331,7 @@ export function parseReply(raw: string): ParsedReply {
   // (`<rem<remember>ember>` would otherwise leave a live tag behind).
   for (let before = ""; before !== text; ) {
     before = text;
-    text = text.replace(/<\/?(remember|forget|call|message|send|email|remind|unremind|slack|book|list|task|done|person|routine|watch|fact|know|health|goal|card)\b[^>\n]{0,300}>?/gi, "");
+    text = text.replace(/<\/?(remember|forget|call|message|send|email|remind|unremind|slack|book|list|task|done|person|routine|watch|fact|know|health|goal|card|dump|checkin)\b[^>\n]{0,300}>?/gi, "");
   }
   text = text.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
   return {
@@ -291,7 +341,8 @@ export function parseReply(raw: string): ParsedReply {
     ...(lists.length ? { lists } : {}), ...(tasks.length ? { tasks } : {}), ...(done.length ? { done } : {}), ...(closed.length ? { closed } : {}),
     ...(promises.length ? { promises } : {}), ...(people.length ? { people } : {}), ...(routines.length ? { routines } : {}), ...(watches.length ? { watches } : {}),
     ...(email ? { email } : {}), ...(facts.length ? { facts } : {}), ...(know.length ? { know } : {}),
-    ...(health.length ? { health } : {}), ...(goals.length ? { goals } : {}), ...(cards.length ? { cards } : {}),
+    ...(health.length ? { health } : {}), ...(goals.length ? { goals } : {}), ...(cards.length ? { cards } : {}), ...(dump.length ? { dump } : {}),
+    ...(checkins.length ? { checkins } : {}),
   };
 }
 

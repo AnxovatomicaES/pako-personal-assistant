@@ -30,15 +30,17 @@ export type RunKind =
   /** A draft for one follow-up (a reply, an email: src/brief-v2.ts draftFor), asked by the owner: a "task" written on the writing model. */
   | "draft"
   | "email" | "meeting" | "review" | "followup" | "proactive" | "judge" | "brief"
+  /** Gentle mode's first tiny step for a stuck follow-up (src/gentle.ts): a short verdict, a few a day. */
+  | "step"
   /** The catch-up of a newly connected mailbox: its own one-time allowance, paced by the server (src/backfill.ts), never the day's cap. */
   | "backfill";
 
 /** The owner's own: counted, never refused. */
 const OWNER: ReadonlySet<RunKind> = new Set<RunKind>(["message", "routine", "paper", "slack", "task", "rehearsal", "draft"]);
 /** Background kinds that stop at half the cap. */
-const LOW: ReadonlySet<RunKind> = new Set<RunKind>(["proactive", "judge"]);
+const LOW: ReadonlySet<RunKind> = new Set<RunKind>(["proactive", "judge", "step"]);
 /** Background kinds whose answer is a short verdict: they get the lighter effort (ASSISTANT_BACKGROUND_EFFORT). */
-export const LIGHT: ReadonlySet<RunKind> = new Set<RunKind>(["email", "proactive", "judge", "backfill"]);
+export const LIGHT: ReadonlySet<RunKind> = new Set<RunKind>(["email", "proactive", "judge", "backfill", "step"]);
 /** The kinds whose words the owner reads as written: they run on the writing model (BridgeConfig.writingModel). */
 export const WRITING: ReadonlySet<RunKind> = new Set<RunKind>(["brief", "draft"]);
 /** Counted apart from the day's background runs and never refused here: the server gives them out one a minute, up to their own allowance. */

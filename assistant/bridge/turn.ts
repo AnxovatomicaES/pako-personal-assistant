@@ -7,7 +7,7 @@ import type { State } from "./core.ts";
 import {
   contextBlock, contextOutside, LANGUAGE_FRESH_MS, languageOf, namedPeople, outside, outsideKey, uiOf, zoneOf, type Context,
 } from "./context.ts";
-import type { BriefJob, Email, FollowupJob, JudgeJob, Meeting, Paper, ProactiveJob, Review } from "./items.ts";
+import type { BriefJob, Email, FollowupJob, JudgeJob, Meeting, Paper, ProactiveJob, Review, StepJob } from "./items.ts";
 import { readReply, type ParsedReply } from "./reply.ts";
 import { T } from "./texts.ts";
 import type { AfterJobs } from "./parts.ts";
@@ -16,7 +16,7 @@ export function mountTurn(b: AfterJobs) {
   const {
     config, log, api, say, run, chat, warm, readState, writeState, readSeen, writeSeen, writeToolData, replyCache, attempts, retryAt, waits,
     toldAt, pendingNotes, flushNotes, reportUsage, loginWait, language, listen, handleEmail, handleReview, handleMeeting, handleFollowup,
-    handleBrief, handleProactive, handleJudge, handlePaper, answerWithSlack,
+    handleBrief, handleProactive, handleJudge, handleStep, handlePaper, answerWithSlack,
   } = b;
   /** Answers one message. Returns true when it is done with (answered, or failed in a way that retrying would not fix). */
   const handle = async (incoming: {
@@ -27,6 +27,7 @@ export function mountTurn(b: AfterJobs) {
     brief?: BriefJob;
     proactive?: ProactiveJob;
     judge?: JudgeJob;
+    step?: StepJob;
     /** A routine's run (src/routines.ts): nobody is waiting for it, so no "Un momento…". */
     routine?: boolean;
     /** A proactive check with a newer one behind it in the inbox. */
@@ -39,6 +40,7 @@ export function mountTurn(b: AfterJobs) {
     if (incoming.brief) return handleBrief(incoming.id, incoming.brief);
     if (incoming.proactive) return handleProactive(incoming.id, incoming.proactive, incoming.superseded === true);
     if (incoming.judge) return handleJudge(incoming.id, incoming.judge);
+    if (incoming.step) return handleStep(incoming.id, incoming.step);
     const cached = replyCache.get(incoming.id);
     if (cached) {
       if (await say(cached)) {
@@ -261,6 +263,38 @@ export function mountTurn(b: AfterJobs) {
         calendarOut.length = 0;
       }
     }
+    // A brain dump is the owner's own words only: a turn that read someone else's text (a forward, the web, the calendar) sorts nothing.
+    if (reply.dump && why.length) {
+      log(`dropped a brain dump of ${reply.dump.length} items: the turn read outside text (${why.join(", ")})`);
+      delete reply.dump;
+    }
+    // A server that does not sort a brain dump (an older one: no dumpOn) still gets the items, as its ordinary tags and within their caps.
+    if (reply.dump && !(typeof ctx.dumpOn === "number" && ctx.dumpOn >= 1)) {
+      const d = reply.dump;
+      delete reply.dump;
+      reply = {
+        ...reply,
+        remind: [...reply.remind, ...d.filter((x) => x.kind === "reminder" && x.at).map((x) => ({ at: x.at!, text: x.text }))].slice(0, 2),
+        tasks: [
+          ...(reply.tasks ?? []),
+          ...d.filter((x) => x.kind === "task" || (x.kind === "reminder" && !x.at)).map((x) => ({ text: x.text, ...(x.due ? { due: x.due.slice(0, 10) } : {}) })),
+        ].slice(0, 3),
+        promises: [...(reply.promises ?? []), ...d.filter((x) => x.kind === "promise").map((x) => ({ text: x.text, ...(x.who ? { who: x.who } : {}), ...(x.due ? { due: x.due } : {}) }))].slice(0, 2),
+        remember: [...reply.remember, ...d.filter((x) => x.kind === "note").map((x) => x.text)].slice(0, 3),
+      };
+      if (!reply.tasks?.length) delete reply.tasks;
+      if (!reply.promises?.length) delete reply.promises;
+    }
+    // A check-in is the owner's own ask: a turn that read someone else's text sets none, and a server without check-ins (no checkinOn) gets
+    // none (the answer then says so, so it never promises a look that will not come).
+    if (reply.checkins && (why.length || !(typeof ctx.checkinOn === "number" && ctx.checkinOn >= 1))) {
+      log(`dropped ${reply.checkins.length} check-in(s): ${why.length ? `the turn read outside text (${why.join(", ")})` : "the server does not keep them"}`);
+      if (!why.length) {
+        const note = t("checkinsOld");
+        reply = { ...reply, text: reply.text ? `${reply.text}\n\n${note}` : note };
+      }
+      delete reply.checkins;
+    }
     // A server that keeps no facts ignores <fact>: dropped here (nothing is said: the answer never claims to have kept it).
     if (reply.facts && !(typeof ctx.lifeOn === "number" && ctx.lifeOn >= 1)) delete reply.facts;
     // The same for <know> (src/memory-facts.ts): a server without dated facts would take nothing.
@@ -311,7 +345,9 @@ export function mountTurn(b: AfterJobs) {
       ...(reply.people ? { people: reply.people } : {}),
       ...(reply.routines ? { routines: reply.routines } : {}),
       ...(reply.watches ? { watches: reply.watches } : {}),
-      ...(heard && (reply.call || reply.email || reply.message) ? { heard } : {}),
+      ...(heard && (reply.call || reply.email || reply.message || reply.dump) ? { heard } : {}),
+      ...(reply.dump ? { dump: reply.dump } : {}),
+      ...(reply.checkins ? { checkins: reply.checkins } : {}),
       // Facts go with the turn's mark: the server keeps none from a turn that read outside text.
       ...(reply.facts && (!why.length || serverHolds) ? { facts: reply.facts } : {}),
       ...(reply.know && (!why.length || serverHolds) ? { know: reply.know } : {}),

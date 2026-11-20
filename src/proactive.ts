@@ -407,6 +407,8 @@ export interface ProactiveDeps {
   fetch?: typeof fetch;
   /** Follow-ups' nudges today: the day's budget is shared. */
   othersToday?: () => Promise<number>;
+  /** Gentle mode's day (src/gentle.ts): all that Pako says on its own at most, when lower than the usual total; null when it is off. */
+  cap?: () => Promise<number | null>;
   addToList?: (name: string, item: string) => Promise<{ ok: boolean; list: string; why?: string }>;
   /** A reminder at "YYYY-MM-DD HH:MM" in the owner's zone (src/whatsapp.ts addReminder). */
   remind?: (when: string, text: string) => Promise<{ ok: boolean; say: string }>;
@@ -527,7 +529,9 @@ export function createProactive(d: ProactiveDeps) {
     const day = today(t, d.timeZone);
     const own = s.budget.day === day ? s.budget.n : 0;
     const others = await (d.othersToday?.() ?? Promise.resolve(0)).catch(() => 0);
-    if (own >= config.maxPerDay || own + others >= config.totalPerDay) return "budget";
+    const gentle = await (d.cap?.() ?? Promise.resolve(null)).catch(() => null);
+    const total = gentle === null ? config.totalPerDay : Math.min(config.totalPerDay, gentle);
+    if (own >= config.maxPerDay || own + others >= total) return "budget";
     return null;
   };
 

@@ -18,25 +18,27 @@ import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_MODEL, DEFAULT_WRITING_MODEL, runClaude } from "../../assistant/bridge.ts";
-import { BRIEF_PROMPT, BRIEF_TASK_PROMPT, EMAIL_PROMPT, FOLLOWUP_PROMPT, JUDGE_PROMPT, SYSTEM_PROMPT } from "../../assistant/prompt.ts";
+import { BRIEF_PROMPT, BRIEF_TASK_PROMPT, EMAIL_PROMPT, FOLLOWUP_PROMPT, JUDGE_PROMPT, STEP_PROMPT, SYSTEM_PROMPT } from "../../assistant/prompt.ts";
 import { briefMaterial } from "../../src/brief-v2.ts";
 import { zonedTime } from "../../src/followups.ts";
 import { asTurns, loadCases, MODEL_SUITES, runCase, type Answer, type EvalCase } from "./harness.ts";
 
 /** What one run costs, roughly, on the plan's notional prices (claude -p reports each run's): a guess to show first, not a bill. */
-const USD_PER_RUN: Record<"followup" | "brief" | "task" | "chat" | "judge" | "rubric" | "email", number> = {
-  followup: 0.02, brief: 0.08, task: 0.05, chat: 0.05, judge: 0.01, rubric: 0.02, email: 0.01,
+const USD_PER_RUN: Record<"followup" | "brief" | "task" | "chat" | "judge" | "rubric" | "email" | "step", number> = {
+  followup: 0.02, brief: 0.08, task: 0.05, chat: 0.05, judge: 0.01, rubric: 0.02, email: 0.01, step: 0.01,
 };
 
 /**
  * The model steps of one case: one per turn for followups and nudges, one for a brief or a chat; for memory, a chat per turn and an isolated
  * judge for each turn that may make a judge job (one with a `judge` answer recorded).
  */
-const stepsOf = (c: EvalCase): { system: "followup" | "brief" | "task" | "chat" | "email"; n: number; judges: number } => {
+const stepsOf = (c: EvalCase): { system: "followup" | "brief" | "task" | "chat" | "email" | "step"; n: number; judges: number } => {
   // A press is the owner's and a calendar change the server's: neither is a model step.
   if (c.suite === "followups" || c.suite === "nudges") return { system: "followup", n: asTurns(c).filter((t) => !t.press && !t.calendar).length, judges: 0 };
   if (c.suite === "drafts") return { system: "task", n: 1, judges: 0 };
   if (c.suite === "mail") return { system: "email", n: 1, judges: 0 };
+  // Gentle mode: a brain dump is a chat turn; a first step (alone, or on a nudge) its own isolated run.
+  if (c.suite === "gentle") return { system: c.input.kind === "dump" || c.input.kind === "checkin" ? "chat" : "step", n: 1, judges: 0 };
   if (c.suite === "memory") {
     const turns = Array.isArray(c.input.turns) ? (c.input.turns as { judge?: unknown }[]) : [];
     return { system: "chat", n: turns.length, judges: turns.filter((t) => t.judge !== undefined).length };
@@ -167,6 +169,11 @@ export async function runLive(cases: EvalCase[], o: Options): Promise<LiveRun> {
       // As the bridge runs the mail triage: no tools, its own prompt, the email fenced.
       const f = fenced(step.text, "CORREO");
       return claude(f.prompt, EMAIL_PROMPT.replaceAll("CORREO", f.fence));
+    }
+    if (step.system === "step") {
+      // As the bridge runs a first-tiny-step job: no tools, its own prompt, the loop's facts fenced.
+      const f = fenced(step.text, "PASO");
+      return claude(f.prompt, STEP_PROMPT.replaceAll("PASO", f.fence));
     }
     if (step.system === "judge") {
       // As the bridge runs the isolated judge: no tools, its own prompt, the material fenced.

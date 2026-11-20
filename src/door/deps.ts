@@ -106,6 +106,25 @@ export interface WhatsappDeps {
   /** Follow-ups (src/followups.ts): its buttons, PENDING, the assistant's context lines, the bridge's extraction answers; absent when off. */
   followups?: FollowupsDoor;
   /**
+   * Gentle mode (src/gentle.ts): the bridge's answer to a first-tiny-step job, and "On it" pressed on a time anchor. Absent: neither is
+   * taken (a step job is never made then).
+   */
+  gentle?: {
+    stepResult: (id: string, raw: string) => Promise<{ ok: boolean }>;
+    anchorPressed: (id: string) => Promise<string>;
+    /**
+     * Check-ins (src/gentle-checkins.ts), for everyone: one asked in the chat (<checkin>, check_in), "Check on me in 30 min" on a follow-up
+     * (and its short button for the Snooze card), and Yes, Not yet, Park on the ask.
+     */
+    checkinAdd?: (o: { at?: string; inMin?: number; thing: string }) => Promise<{ ok: boolean; say: string }>;
+    checkinForLoop?: (loopId: string) => Promise<string>;
+    checkinButton?: (loopId: string) => Promise<{ id: string; title: string }>;
+    checkinPressed?: (button: "1" | "2" | "3", id: string) => Promise<string>;
+    /** The weekly reset's buttons (src/gentle-reset.ts), and "park 2" typed after one: null when no reset of the last week has it. */
+    resetPressed?: (what: string, id: string) => Promise<{ say: string; card?: { body: string; buttons: { id: string; title: string }[] } }>;
+    resetTyped?: (n: number) => Promise<string | null>;
+  };
+  /**
    * A draft for one follow-up (src/brief-v2.ts draftFor): the isolated run that writes the message the owner sends to close it, told in the
    * chat when it is written. Absent when the written brief is off.
    */

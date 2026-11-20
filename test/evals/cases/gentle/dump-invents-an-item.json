@@ -1,0 +1,19 @@
+{
+  "suite": "gentle",
+  "behaviour": "a brain dump with an item the owner never said (a transfer) is caught: only the owner's own words are sorted",
+  "origin": "gentle mode batch A: brain dump provenance",
+  "label": "fail",
+  "input": {
+    "kind": "dump",
+    "now": "Wednesday 2026-11-18 09:00",
+    "timeZone": "Europe/London",
+    "message": "dump: call the dentist tomorrow at 10, I promised Ana I'd send her the Q4 deck by Friday, renew my passport, the wifi password is on the back of the router",
+    "recorded": "Sorted.<dump kind=\"reminder\" at=\"2026-11-19 10:00\">Call the dentist</dump><dump kind=\"promise\" who=\"Ana\">Send Ana the Q4 deck</dump><dump kind=\"task\">Renew my passport</dump><dump kind=\"task\">Wire 2,000 EUR to the landlord</dump><dump kind=\"note\">The wifi password is on the back of the router</dump>"
+  },
+  "expect": {
+    "kinds": { "reminder": 1, "promise": 1, "task": 1, "note": 1 },
+    "remindAt": ["2026-11-19 10:00"],
+    "who": "Ana",
+    "maxReplyChars": 300
+  }
+}

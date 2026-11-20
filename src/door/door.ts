@@ -26,6 +26,7 @@ import type { ListStore } from "../lists.ts";
 import type { FactStore } from "../memory-facts.ts";
 import type { PaperStore } from "../papers.ts";
 import type { RateLimitRequestHandler } from "express-rate-limit";
+import type { DumpItem } from "../gentle-dump.ts";
 
 export type Delivery = { ok: boolean; id: string; code: number; detail: string };
 
@@ -292,4 +293,8 @@ export interface Door {
     changes: Change[],
   ) => Promise<void>;
   readonly changeLists: (ops: { name: string; op: "add" | "remove"; items: string[]; }[], adds: { text: string; due: string; }[], done: string[], changes: Change[]) => Promise<void>;
+  // src/door/dump.ts
+  readonly brainDump: (items: DumpItem[], turn: Turn, o: { outside: boolean }) => Promise<number>;
+  readonly dumpPressed: (what: "keep" | "undo" | number, id: string, by?: string) => Promise<void>;
+  readonly dumpRemove: (n: number, by: string) => Promise<boolean>;
 }
