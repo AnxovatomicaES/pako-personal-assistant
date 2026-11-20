@@ -55,19 +55,30 @@ Experimental features (table booking, phone calls, WhatsApp, the Relay) are in L
   ([how](docs/install.md#with-an-api-key-instead-of-a-plan)).
 - [Node.js](https://nodejs.org) 22.18+ and git, except with Pako for Mac, which carries its own.
 
+To try Pako first you need none of the Claude part: the demo week runs with no Claude plan and no sign-in (below).
+
 Pako is free and open source (MIT). Claude is paid by you to Anthropic. Pako is independent, not made or endorsed by Anthropic.
 
 ## Install
 
-**Mac:** open `Pako-<version>.dmg` from [Releases](https://github.com/AnxovatomicaES/pako-personal-assistant/releases), drag Pako to
-Applications, and press **Connect** to sign in to Claude. Not notarized yet: the first time, allow it in System Settings, Privacy & Security
-([details](docs/desktop-mac.md)).
-
-**macOS and Linux:**
+**macOS and Linux** (recommended when you have Node.js 22.18+ and git: nothing goes through a browser download, so macOS shows no
+"could not verify" warning):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/AnxovatomicaES/pako-personal-assistant/main/install.sh | sh
 ```
+
+**Mac app:** open `Pako-<version>.dmg` from [Releases](https://github.com/AnxovatomicaES/pako-personal-assistant/releases), drag Pako to
+Applications, and press **Connect** to sign in to Claude. It carries its own Node.js. It is not notarized by Apple yet, so the first time
+macOS blocks it once:
+
+- **macOS 15 Sequoia and newer:** open Pako; macOS says "Pako" Not Opened: press **Done** (not Move to Trash). Open **System Settings →
+  Privacy & Security**, scroll down to **Security**, press **Open Anyway** next to "Pako" was blocked, enter your Mac password, then press
+  **Open Anyway** once more.
+- **macOS 13 Ventura and 14 Sonoma:** in Applications, Control-click (or right-click) **Pako** and choose **Open**, then **Open** again.
+- **In Terminal instead:** `xattr -dr com.apple.quarantine /Applications/Pako.app`, then open Pako as usual.
+
+After that it opens like any app. More: [docs/desktop-mac.md](docs/desktop-mac.md#install-pako-for-mac).
 
 **Windows** (PowerShell):
 
@@ -81,8 +92,9 @@ The installers never use `sudo` or an administrator, and running them again upda
 Pako then opens its panel with the chat inside. Write in your own words, in any language; `HELP` lists what it can do. The gear connects
 calendar, mail, Slack, Zoom, Telegram and WhatsApp, each optional.
 
-**Try the demo:** press **Try with a demo week** in the welcome (or **Try the demo week** in the Mac app, or `PAKO_DEMO=1 npm start`): an
-invented week with the brief, follow-ups and drafts working at once, nothing sent. **Leave demo** deletes it.
+**Try the demo (no Claude plan needed):** press **Try with a demo week** in the welcome (or **Try the demo week** in the Mac app, or
+`PAKO_DEMO=1 npm start`): an invented week with the brief, follow-ups and drafts working at once, nothing sent. Without Claude signed in it
+shows recorded answers, each marked as a recorded demo answer; with Claude it runs live. **Leave demo** deletes it.
 
 ## Privacy
 

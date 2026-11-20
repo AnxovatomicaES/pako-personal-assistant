@@ -42,6 +42,7 @@ import { createLog } from "./log.ts";
 import {
   dropUnbackedAttachments, instructsPako, keepSupported, mentionsAttachment, payloads, stripPayloads, unsupported, type Ground,
 } from "./brief-support.ts";
+import { groundDraft } from "./draft-grounding.ts";
 import type { CalChange } from "./calendar-changes.ts";
 import { readJsonRecord } from "./json-record.ts";
 
@@ -414,13 +415,18 @@ const PREP_PERSON = "Prepare me for my next meeting with the person in facts P1 
   + "what we last agreed and what I should raise. If no meeting is set, say so and brief me for the next time we talk.";
 /**
  * What every draft holds to: only what its facts say. A live run wrote "the quote is attached", "thanks for your patience" and an offer to
- * coordinate with someone, none of which the facts held; an attachment claim is also checked by code (dropUnbackedAttachments).
+ * coordinate with someone, none of which the facts held; later ones "Lena can confirm", "London time" and "Let me know". Code checks every
+ * draft too (src/draft-grounding.ts groundDraft): a time, date or number its facts lack becomes a [blank]; a person, zone, file or promise
+ * they lack takes its sentence with it.
  */
-const DRAFT_ONLY_FACTS = "Use only what the facts say: never say that anything is attached, done, booked, sent or ready unless the facts "
-  + "show it; when the follow-up is to send something, write the message that goes with that one thing (\"Here is the revised quote\"), "
-  + "never that anything else comes with it. No thanks for patience or apology for a delay the facts do not show, and no offer of anything "
-  + "more (a call, coordinating with someone, sending something else). Someone the facts say acts for that person (their assistant books "
-  + "their meetings) may be named, with no promise about them. Short and natural: two or three sentences, the point first.";
+const DRAFT_ONLY_FACTS = "Use only what the facts say: never add a person, a time, a time zone, a date, a number, a file, an offer or a promise "
+  + "they do not hold (Pako takes out, before I see it, any sentence that does). Never say that anything is attached, enclosed, here, done, "
+  + "booked, sent or ready unless the facts show it; when the follow-up is to send something and no fact shows it attached, write the note "
+  + "that goes with that one thing and leave a [blank] where I attach or paste it (\"The revised quote, as agreed: [blank]\"), never that "
+  + "anything else comes with it. No thanks for patience or apology for a delay the facts do not show, no offer of anything more (a call, "
+  + "coordinating with someone, sending something else), and no closing filler (\"Let me know if you have any questions\", \"Hope you're "
+  + "well\") unless the facts ask them a question back. Someone the facts say acts for that person (their assistant books their meetings) "
+  + "may be named and copied, with nothing about what they can or will do. Short and natural: two or three sentences, the point first.";
 /** A draft for one follow-up: the message the owner sends to close it, which they press send on themselves. */
 const DRAFT_LOOP = "Write the message I send to close the follow-up in fact D1, ready for me to copy and send myself: first one line saying where it goes "
   + "(a reply in that Slack conversation, a reply to that email, a message to that person), then the message, short, in my own voice, in the "
@@ -707,6 +713,8 @@ const C = texts(
     left: "📅 Still ahead today:",
     over: "✓ {n} already over today.",
     nothingLeft: "📅 Nothing left on your calendar today ({n} already over).",
+    closedForYou: "☑️ I closed these for you since your last brief. Wrong? Say “reopen” and a few of its words:",
+    closedMore: "…and {n} more (type PENDING to see what is open).",
     allDay: "all day",
     until: "until {end}",
     logSent: "Daily brief sent",
@@ -792,6 +800,8 @@ export interface BriefTask {
   allow?: string[];
   /** A draft whose facts show an attachment: only then may it say something is attached beyond the thing its follow-up sends. */
   attached?: boolean;
+  /** A draft, until it is written: the text of its material (its facts and the owner's corrections), what it may say (groundDraft). */
+  ground?: string;
 }
 /** Whom a draft is for and where it goes: the loop's person, its place as the owner reads it, its Slack conversation. */
 export interface DraftAbout { who?: string; where?: string; channel?: string }
@@ -843,6 +853,8 @@ export interface BriefV2Deps {
   lessons?: (q: LessonQuery) => Promise<string[]>;
   /** Gentle mode's week's focus line ("🌱 This week's focus: …", src/gentle-reset.ts): first in the chat's version; null when none. */
   weekFocus?: () => Promise<string | null>;
+  /** The follow-ups Pako closed on its own since a moment (src/followups/owner.ts closedForYou): listed after the brief, so no close is silent. */
+  closedForYou?: (since: number) => Promise<{ title: string; why: string }[]>;
   /** The parked follow-ups' ids (gentle mode): a to-do for one is never shown, though it was written before it was parked. */
   parkedIds?: () => Promise<string[]>;
   /** A draft written for the chat: kept to compare with what the owner sends there (src/lessons.ts drafted). */
@@ -877,6 +889,14 @@ export function createBriefV2(d: BriefV2Deps) {
   let memory: State = empty();
   let chain: Promise<unknown> = Promise.resolve();
   const focusLine = async (): Promise<string | null> => (d.weekFocus ? d.weekFocus().catch(() => null) : null);
+  /** "Closed for you": what Pako closed on its own since then, with why, at most five; [] when nothing was. */
+  const closedLines = async (since: number): Promise<string[]> => {
+    const list = d.closedForYou ? await d.closedForYou(since).catch(() => []) : [];
+    if (!list.length) return [];
+    const say = C(lang());
+    const shown = list.slice(0, 5).map((c) => `• ${c.title}${c.why ? ` (${c.why})` : ""}`);
+    return [[say("closedForYou"), ...shown, ...(list.length > 5 ? [say("closedMore", { n: list.length - 5 })] : [])].join("\n")];
+  };
   const parkedSet = async (): Promise<Set<string>> => new Set(d.parkedIds ? await d.parkedIds().catch(() => [] as string[]) : []);
   /** The chat's copy of a brief: a to-do whose follow-up was parked since it was written is left out. */
   const unparked = async (doc: BriefDoc): Promise<BriefDoc> => {
@@ -918,6 +938,14 @@ export function createBriefV2(d: BriefV2Deps) {
   const ownerLang = async (): Promise<string> => (d.ownerLanguage ? await d.ownerLanguage().catch(() => lang()) : lang());
   /** The owner's corrections a run reads; none when they cannot be read. */
   const learned = async (q: LessonQuery): Promise<string[]> => (d.lessons ? await d.lessons(q).catch(() => []) : []);
+  /**
+   * What a draft may lean on (src/draft-grounding.ts): its facts' labels, texts and times (start and end, in the owner's zone, as the
+   * material gives them), the owner's corrections and what the request quotes.
+   */
+  const groundOf = (facts: Fact[], lessons: string[], quoted: string[]): string => {
+    const times = (f: Fact): string => [f.at, f.end].flatMap((x) => (x === undefined ? [] : [` · ${clock24(x, d.timeZone)} ${dayOf(x, d.timeZone)}`])).join("");
+    return [...quoted.filter(Boolean), ...facts.map((f) => `${f.label} · ${f.text}${times(f)}`), ...lessons].join("\n").slice(0, 16_000);
+  };
 
   const gather = (t: number, since?: number): Promise<Gathered> =>
     gatherFacts({ ...d.sources, timeZone: d.timeZone, lang: lang(), now: t, ...(since !== undefined ? { since } : {}) });
@@ -1007,6 +1035,7 @@ export function createBriefV2(d: BriefV2Deps) {
             name: d.name?.() ?? "", timeZone: d.timeZone, url: d.url?.() ?? null, lang: lang(), now: now(), weekFocus: await focusLine(),
           }),
           ...(changed?.trim() ? [changed.trim()] : []),
+          ...(await closedLines(p.since ?? now() - 24 * 3600_000)),
           ...(monday ? [monday] : []),
           ...(d.quality ? [d.quality.line(lang())] : []),
         ].join("\n\n");
@@ -1022,12 +1051,23 @@ export function createBriefV2(d: BriefV2Deps) {
     // A draft the owner sends carries no phone number, IBAN or link but those of their own data about that person: one from anyone else's
     // text (a message that asked to be paid or called there) becomes a [blank] for them to fill.
     // Nor does it say a file is attached that its facts never show (the thing its follow-up sends aside): that sentence is taken out.
-    const text = task.kind === "draft"
-      ? dropUnbackedAttachments(stripPayloads(said, new Set(task.allow ?? []), "[blank]"), { attached: task.attached === true, title: task.title })
-      : said;
+    // And it says nothing its material does not hold (src/draft-grounding.ts): a person, a time, a zone, a date, a number, a file, a promise
+    // about someone else; a draft asked before the material was kept with it has only the attachment check.
+    const safe = task.kind === "draft" ? stripPayloads(said, new Set(task.allow ?? []), "[blank]") : said;
+    const grounded = task.kind === "draft" && task.ground !== undefined
+      ? groundDraft(safe, {
+          text: [task.ground, ...(task.allow ?? [])].join("\n"), now: task.at, timeZone: d.timeZone, owner: d.name?.() ?? "", title: task.title, attached: task.attached === true,
+          ...(task.about?.who ? { who: task.about.who } : {}),
+        })
+      : null;
+    if (grounded?.removed.length) log.info(`a draft held by its facts: took out ${grounded.removed.length} item(s)${grounded.check ? ", marked to check" : ""}`);
+    const text = grounded ? grounded.text
+      : task.kind === "draft" ? dropUnbackedAttachments(safe, { attached: task.attached === true, title: task.title }) : said;
     await mutate((x) => {
       const k = x.tasks.find((y) => y.id === id);
       if (k) Object.assign(k, text ? { status: "done", text } : { status: "failed", text: "" });
+      // The material is only needed until the draft is checked.
+      if (k) delete k.ground;
     });
     if (text) await d.tell?.(C(lang())("doc", { title: task.title, text })).catch(() => undefined);
     // A draft answering an email: the owner can send it as a reply from Pako's inbox, on the email card (they press Send, nothing goes before).
@@ -1180,13 +1220,16 @@ export function createBriefV2(d: BriefV2Deps) {
     // The facts it cites first, then the rest of the day's, so a prep note can find what else is known about those people.
     const facts = [...s.gathered.facts.filter((f) => cited.includes(f.id)), ...s.gathered.facts.filter((f) => !cited.includes(f.id))];
     const t = now();
+    const lessons = kind === "draft" ? await learned(DRAFT_LESSONS) : [];
     const text = briefMaterial({ ...s.gathered, facts }, {
       now: t, timeZone: d.timeZone, lang: lang(), ownerLanguage: await ownerLang(), name: d.name?.() ?? "", request,
-      ...(kind === "draft" ? { lessons: await learned(DRAFT_LESSONS) } : {}),
+      ...(kind === "draft" ? { lessons } : {}),
     });
     const attached = kind === "draft" && mentionsAttachment(facts.map((f) => f.text).join("\n"));
+    const todo = kind === "draft" && ref !== undefined ? doc.todos[ref] : undefined;
     const task: BriefTask = {
       id: newId(), kind, ...(ref !== undefined ? { ref } : {}), title: clean(title, 160), status: "pending", text: "", at: t, ...(attached ? { attached } : {}),
+      ...(kind === "draft" ? { ground: groundOf(facts, lessons, [todo?.title ?? "", todo?.context ?? "", todo?.checked ?? ""]) } : {}),
     };
     await mutate((x) => {
       x.tasks.push(task);
@@ -1271,6 +1314,7 @@ export function createBriefV2(d: BriefV2Deps) {
       id: newId(), kind: "draft", title, status: "pending", text: "", at: t, ...(o.mailRef ? { mailRef: o.mailRef.slice(0, 300) } : {}), ...(about ? { about } : {}),
       ...(o.allow?.length ? { allow: o.allow.slice(0, 20).map((x) => x.slice(0, 200)) } : {}),
       ...(mentionsAttachment(facts.map((f) => f.text).join("\n")) ? { attached: true } : {}),
+      ground: groundOf(facts, lessons, [o.title]),
     };
     await mutate((x) => {
       x.tasks.push(task);

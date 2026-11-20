@@ -1,7 +1,7 @@
 // What each connection IS, for the connections page: which account, which server, which calendars, and how it is doing, so the owner can
 // see at a glance what Pako reads. Read only, and NEVER a secret: no password, token, key or private link leaves this file. A link is shown
-// by its host and calendar name with the rest masked; a phone number by its last digits. The secrecy test (test/connections-details.test.ts)
-// seeds every secret Pako knows and checks none comes out.
+// by its host and calendar name with the rest masked; a phone number by its last digits. The secrecy test (its "details:" test, in
+// test/connections-dashboard.test.ts) seeds every secret Pako knows and checks none comes out.
 //
 //   GET  /panel/api/connections/details      -> { mail, calendar, slack, zoom, telegram, whatsapp, tables, phone, claude }
 //   POST /panel/api/mail/check-now           -> { ok, mail }                 (one look at the IMAP mailbox now)

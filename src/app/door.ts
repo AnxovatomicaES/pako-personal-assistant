@@ -130,7 +130,10 @@ export function wireDoor(ctx: AfterChat) {
     status: { summary: async () => [dog.summary(), ...(quality ? [await quality.weekText(uiLang()).catch(() => "")] : [])] },
     ...(quality
       ? {
-          quality: { press: (id: string) => quality.press(id, judged), answerText: (text: string) => quality.answerText(text), clearAsk: quality.clearAsk },
+          quality: {
+            press: (id: string) => quality.press(id, judged), answerText: (text: string) => quality.answerText(text), clearAsk: quality.clearAsk,
+            missed: quality.missed, reopened: quality.reopened, missedText: (title: string | null) => quality.missedText(title),
+          },
           rehearsal: {
             start: () => (rehearsalRef.r ? rehearsalRef.r.start() : Promise.resolve({ text: "" })),
             answer: (id: string, raw: string) => (rehearsalRef.r ? rehearsalRef.r.answer(id, raw) : Promise.resolve({ ok: false })),

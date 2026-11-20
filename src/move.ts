@@ -1,5 +1,5 @@
 // Moving from a server to a computer: the server's panel gives a file with what Pako keeps for its owner (src/data.ts exportData, with the
-// server's own settings that are not secrets), and the computer's panel takes it in ("Importar de otro Pako"), so nothing is lost on the way.
+// server's own settings that are not secrets), and the computer's panel takes it in ("Import from another Pako"), so nothing is lost on the way.
 //
 //   GET  /panel/api/move              -> { mode: "server" | "computer" }: which card the panel shows
 //   GET  /panel/api/move/export       -> (a server only) the file to take to the computer, as a download

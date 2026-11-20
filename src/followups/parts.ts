@@ -66,6 +66,8 @@ export interface Engine {
   parked: NonNullable<FollowupsDoor["parked"]>;
   parkedText: NonNullable<FollowupsDoor["parkedText"]>;
   unpark: NonNullable<FollowupsDoor["unpark"]>;
+  closedForYou: NonNullable<FollowupsDoor["closedForYou"]>;
+  reopenByWords: NonNullable<FollowupsDoor["reopenByWords"]>;
   setStep: (id: string, step: string) => Promise<boolean>;
   letGo: (id: string) => Promise<boolean>;
   engaged: (id: string) => Promise<boolean>;

@@ -29,6 +29,7 @@ const ASK_MS = 6 * 3600_000;
 const VERDICTS_MAX = 600;
 const NUDGES_MAX = 400;
 const WHAT_MAX = 160;
+const MISSES_MAX = 200;
 const HEX10 = /^[0-9a-f]{10}$/;
 
 /** g1/g0: a nudge's 👍/👎 (the loop's id); h1/h0: the brief's on the chat (the brief's id). */
@@ -51,9 +52,18 @@ interface NudgeSeen {
   /** What the owner pressed on it: Done, In 1 h, Not mine. */
   outcome?: "done" | "snooze" | "notmine";
 }
+/** What the owner said Pako missed ("you missed …"), or a close of Pako's they undid ("reopen …"): the beta's two misses. */
+export interface Miss {
+  at: number;
+  what: string;
+}
 interface State {
   verdicts: Verdict[];
   nudges: NudgeSeen[];
+  /** Promises Pako never caught, as the owner told it. */
+  misses?: Miss[];
+  /** Loops Pako closed that the owner reopened: a close on weak evidence. */
+  reopens?: Miss[];
 }
 
 export interface QualityStats {
@@ -62,6 +72,9 @@ export interface QualityStats {
   brief: { up: number; down: number };
   /** Nudges that did not serve: Not mine or 👎, each nudge once. */
   unhelpful: number;
+  /** What the owner said Pako missed, and closes of Pako's they reopened, in the 7 days. */
+  missed: number;
+  reopened: number;
 }
 
 const T = texts(
@@ -77,6 +90,9 @@ const T = texts(
     week: "Quality, last 7 days: {sent} reminders ({done} done, {notMine} not yours, {ignored} unanswered), 👍 {up} · 👎 {down}; "
       + "the brief, 👍 {bup} · 👎 {bdown}.",
     weekNone: "Quality, last 7 days: no reminders and no 👍/👎 yet.",
+    weekMisses: " Missed: {missed} you told me about; {reopened} I closed and you reopened.",
+    missedThanks: "Thanks: noted as one I missed, so it can be fixed. It is on your open list now: “{title}”.",
+    missedNoted: "Thanks: noted as one I missed, so it can be fixed.",
   },
 );
 
@@ -98,7 +114,9 @@ export function qualityStateOf(raw: unknown): State {
           ...(n.outcome === "done" || n.outcome === "snooze" || n.outcome === "notmine" ? { outcome: n.outcome } : {}),
         }]
       : []);
-  return { verdicts: verdicts.slice(-VERDICTS_MAX), nudges: nudges.slice(-NUDGES_MAX) };
+  const misses = (v: unknown): Miss[] => (Array.isArray(v) ? v : []).flatMap((m): Miss[] =>
+    isObject(m) && typeof m.at === "number" && typeof m.what === "string" ? [{ at: m.at, what: m.what.slice(0, WHAT_MAX) }] : []).slice(-MISSES_MAX);
+  return { verdicts: verdicts.slice(-VERDICTS_MAX), nudges: nudges.slice(-NUDGES_MAX), misses: misses(o.misses), reopens: misses(o.reopens) };
 }
 
 /** The last 7 days, as the panel's card shows them. */
@@ -127,6 +145,8 @@ export function statsOf(s: State, now: number): QualityStats {
     },
     brief: { up: briefVerdicts.filter((v) => v.verdict === "up").length, down: briefVerdicts.filter((v) => v.verdict === "down").length },
     unhelpful: unhelpful.size,
+    missed: (s.misses ?? []).filter((m) => m.at >= since).length,
+    reopened: (s.reopens ?? []).filter((m) => m.at >= since).length,
   };
 }
 
@@ -177,7 +197,7 @@ export function createQuality(d: QualityDeps) {
   const readNow = async (): Promise<State> => {
     if (!d.kv) return structuredClone(memory);
     const raw = await readJsonRecord(d.kv, FEEDBACK_KEY);
-    if (!raw) return { verdicts: [], nudges: [] };
+    if (!raw) return { verdicts: [], nudges: [], misses: [], reopens: [] };
     return qualityStateOf(raw);
   };
   /** One change at a time; what is older than 90 days goes with every write. */
@@ -188,6 +208,8 @@ export function createQuality(d: QualityDeps) {
       const t = now();
       s.verdicts = s.verdicts.filter((v) => t - v.at < KEEP_MS).slice(-VERDICTS_MAX);
       s.nudges = s.nudges.filter((n) => t - n.at < KEEP_MS).slice(-NUDGES_MAX);
+      s.misses = (s.misses ?? []).filter((m) => t - m.at < KEEP_MS).slice(-MISSES_MAX);
+      s.reopens = (s.reopens ?? []).filter((m) => t - m.at < KEEP_MS).slice(-MISSES_MAX);
       if (d.kv) await d.kv.set(FEEDBACK_KEY, JSON.stringify(s), TTL_SECONDS);
       memory = s;
       return out;
@@ -275,14 +297,21 @@ export function createQuality(d: QualityDeps) {
     itemsOf: async (doc: string): Promise<Record<string, "up" | "down">> =>
       Object.fromEntries((await read()).verdicts.filter((v) => v.ref.startsWith(`${doc}.`)).map((v) => [v.ref.slice(doc.length + 1), v.verdict])),
     stats: async (): Promise<QualityStats> => statsOf(await read(), now()),
+    /** "you missed …": a promise Pako never caught, kept for the evals (npm run evals:from-feedback) and the beta report. */
+    missed: (what: string): Promise<void> => mutate((s) => void (s.misses ??= []).push({ at: now(), what: what.slice(0, WHAT_MAX) })),
+    /** "reopen …" found one: a close of Pako's the owner undid. */
+    reopened: (what: string): Promise<void> => mutate((s) => void (s.reopens ??= []).push({ at: now(), what: what.slice(0, WHAT_MAX) })),
+    /** What to tell the owner after "you missed …": with the loop now open, or without one. */
+    missedText: (title: string | null, l: Lang = lang()): string => (title ? T(l)("missedThanks", { title }) : T(l)("missedNoted")),
     /** The Quality card in one line, for HEALTH on the chat. */
     weekText: async (l: Lang = lang()): Promise<string> => {
       const q = statsOf(await read(), now());
       const n = q.nudges;
-      if (!n.sent && !n.up && !n.down && !q.brief.up && !q.brief.down) return T(l)("weekNone");
+      const misses = q.missed || q.reopened ? T(l)("weekMisses", { missed: q.missed, reopened: q.reopened }) : "";
+      if (!n.sent && !n.up && !n.down && !q.brief.up && !q.brief.down) return T(l)("weekNone") + misses;
       return T(l)("week", {
         sent: n.sent, done: n.done, notMine: n.notMine, ignored: n.ignored, up: n.up, down: n.down, bup: q.brief.up, bdown: q.brief.down,
-      });
+      }) + misses;
     },
     /** The Monday brief's one line, only when the week's nudges did poorly; null otherwise (and every other day). */
     monday: async (): Promise<string | null> => {

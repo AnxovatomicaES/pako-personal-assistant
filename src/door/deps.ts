@@ -165,7 +165,11 @@ export interface WhatsappDeps {
    * Quality (src/quality.ts): a 👍/👎 pressed (null: not one of its buttons), a typed yes or no as the answer to the last card or brief that
    * asked (null: not one, and the message goes on), and the question forgotten when anything else is sent.
    */
-  quality?: { press: (buttonId: string) => Promise<string | null>; answerText: (text: string) => Promise<string | null>; clearAsk: () => void };
+  quality?: {
+    press: (buttonId: string) => Promise<string | null>; answerText: (text: string) => Promise<string | null>; clearAsk: () => void;
+    /** "you missed …" and a reopened close of Pako's: the beta's misses (src/quality.ts). */
+    missed?: (what: string) => Promise<void>; reopened?: (what: string) => Promise<void>; missedText?: (title: string | null) => string;
+  };
   /** The rehearsal (src/rehearsal.ts): REHEARSAL, the bridge's answers to its jobs (rh:, rb:), and those an older bridge let go unread. */
   rehearsal?: {
     start: () => Promise<{ text: string }>;

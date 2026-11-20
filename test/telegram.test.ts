@@ -730,7 +730,7 @@ test("webhook: an update the door could not take answers 500, so Telegram sends 
 
 // ---------- chat and meeting bugs: regression tests ----------
 
-test("bugs-chat telegram polling: updates taken just before stop() are confirmed, so the next start does not act on them again", async () => {
+test("telegram polling: updates taken just before stop() are confirmed, so the next start does not act on them again", async () => {
   const tg = fakeTelegram();
   const got: string[] = [];
   let release: () => void = () => {};

@@ -159,7 +159,7 @@ test("fallbacks are logged the first time and every 25th, and counted every time
   assert.equal(log.length, 3, "1st, 25th and 50th");
 });
 
-test("the Salud card: the server keeps the bridge's Claude Code version and its sentence, cleaned, and an older body still reads", async () => {
+test("the Health card: the server keeps the bridge's Claude Code version and its sentence, cleaned, and an older body still reads", async () => {
   const { createWatchdog, readBridgeReport } = await import("../src/watchdog.ts");
   const note = "Claude Code 2.2.0 is newer than Pako has been tested with (up to 2.1.327)";
   assert.deepEqual(readBridgeReport({ cli: { version: "2.2.0", status: "newer", note } }), { cli: { version: "2.2.0", status: "newer", note } });

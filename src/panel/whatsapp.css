@@ -55,7 +55,7 @@
 .wa-url { display: flex; gap: 8px; align-items: center; margin: 12px 0 0; font-size: 13px; overflow-wrap: anywhere; }
 .wa-url svg.lucide { width: 16px; height: 16px; color: var(--wa); flex: none; }
 
-/* Waiting for the owner's "hola". */
+/* Waiting for the owner's "hi". */
 .wa-wait { display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 12px; background: rgba(37, 211, 102, .08); font-weight: 600; }
 .wa-phone { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; background: var(--wa); color: #fff;
   animation: wa-buzz 1.6s infinite; }

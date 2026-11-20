@@ -1,5 +1,5 @@
 // Pako · panel: moving from a server to a computer (src/move.ts). On a server's panel, one button gives the file to take to the computer; on a
-// computer's panel, "Importar de otro Pako" takes that file: first it shows what would come in, what would be replaced and what is left out,
+// computer's panel, "Import from another Pako" takes that file: first it shows what would come in, what would be replaced and what is left out,
 // and only a second press writes anything. Everything the server sends is put on the page as text, never as HTML.
 
 const $ = (s, root = document) => root.querySelector(s);

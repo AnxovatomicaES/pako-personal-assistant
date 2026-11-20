@@ -206,7 +206,7 @@ export function wirePanel(ctx: AfterDoor) {
       return engine ? { all: async () => (await engine.read()).loops, doneFor: (ref) => engine.doneFor(ref), reopen: (ids) => engine.reopen(ids) } : null;
     },
   });
-  // The health of every part (src/watchdog.ts), for the Salud card.
+  // The health of every part (src/watchdog.ts), for the Health card.
   mountHealthPanel(app, { signedIn: panel.signedIn, state: dog.state });
   return { hello, claudeLive, panel, panelLink };
 }

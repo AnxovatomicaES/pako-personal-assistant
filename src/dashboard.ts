@@ -73,11 +73,11 @@ export interface PanelDeps {
     status: () => BridgeStatus;
     /** What the bridge found when it last ran Claude (POST /assistant/health). */
     report?: (claude: BridgeHealth) => void;
-    /** The version the bridge runs (POST /assistant/health), for the watchdog's Salud card (src/watchdog.ts). */
+    /** The version the bridge runs (POST /assistant/health), for the watchdog's Health card (src/watchdog.ts). */
     version?: (v: BridgeVersion) => void;
-    /** The day's runs of Claude the bridge counts (POST /assistant/health), for the Salud card. */
+    /** The day's runs of Claude the bridge counts (POST /assistant/health), for the Health card. */
     usage?: (u: BridgeUsage) => void;
-    /** Which Claude Code the bridge drives against the tested range (POST /assistant/health), for the Salud card. */
+    /** Which Claude Code the bridge drives and how it did in its self-test (POST /assistant/health), for the Health card. */
     cli?: (c: BridgeCli) => void;
     /** Looks again now for the claude command and how it is signed in (src/local.ts superviseBridge), then says the status. */
     refresh?: () => Promise<BridgeStatus>;
@@ -573,7 +573,7 @@ export function mountDashboard(app: Express, d: PanelDeps) {
       standardHeaders: "draft-8",
       legacyHeaders: false,
     });
-    // It also says which version it runs (assistant/update.ts), at its start: for the Salud card.
+    // It also says which version it runs (assistant/update.ts), at its start: for the Health card.
     app.post("/assistant/health", here, healthLimiter, withToken, express.json({ limit: "2kb" }), (req, res) => {
       const r = readBridgeReport(req.body);
       if (!r) {

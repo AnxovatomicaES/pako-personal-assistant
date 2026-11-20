@@ -331,6 +331,27 @@ test("engine: the job (empty text, the facts as material); the answer -> the sho
   assert.equal(r.told.length, 1);
 });
 
+test("engine: what Pako closed on its own since the last brief goes after it, with why and how to reopen; nothing when nothing was", async () => {
+  const asked: number[] = [];
+  const many = Array.from({ length: 7 }, (_, i) => ({ title: `Thing ${i}`, why: i ? "seen on your calendar" : "" }));
+  const r = engine({ closedForYou: async (since) => (asked.push(since), many) });
+  await r.v2.begin(T0);
+  const g = (JSON.parse(r.store.m.get(BRIEF_V2_KEY)!) as { pending: { gathered: Gathered } }).pending.gathered;
+  await r.v2.result(jobId(r.queued[0]!), answer(g));
+  assert.equal(asked.length, 1);
+  assert.ok(asked[0]! <= T0, "since the last brief, or the last day");
+  assert.match(r.told[0]!, /I closed these for you since your last brief\. Wrong\? Say “reopen”/);
+  assert.match(r.told[0]!, /• Thing 1 \(seen on your calendar\)/);
+  assert.match(r.told[0]!, /• Thing 0\n/, "no empty why");
+  assert.ok(!r.told[0]!.includes("Thing 5"), "five at most");
+  assert.match(r.told[0]!, /…and 2 more/);
+  const none = engine({ closedForYou: async () => [] });
+  await none.v2.begin(T0);
+  const g2 = (JSON.parse(none.store.m.get(BRIEF_V2_KEY)!) as { pending: { gathered: Gathered } }).pending.gathered;
+  await none.v2.result(jobId(none.queued[0]!), answer(g2));
+  assert.ok(!none.told[0]!.includes("closed these"));
+});
+
 test("engine: an older bridge's ack, a failed run, an unusable answer, no answer in time, a computer away: the old brief, once", async () => {
   const old = engine();
   await old.v2.begin(T0);
@@ -438,8 +459,10 @@ test("engine: «Draft it» on a follow-up's to-do and DRAFT from the chat: isola
   assert.equal(job.brief?.draft, true, "marked a draft: the bridge writes it on its writing model");
   assert.match(job.brief!.text, /OWNER'S REQUEST: Write the message I send for this to-do/);
   assert.equal((await r.v2.ask("draft", loopTodo))!.id, task.id, "asked twice: the same job");
-  await r.v2.result(jobId(job), "Reply in Slack, Rohan (private):\nDone, invite sent for 11:15.\n(Sources: L1)");
-  assert.match(r.docs.at(-1)!, /^📝 Draft: .+\n\nReply in Slack, Rohan \(private\):\nDone, invite sent for 11:15\.$/);
+  // A time its facts hold stays (the agreed meeting's 11:00); one they do not (11:15) is left for the owner to fill, and a person they
+  // never name takes the sentence with it (src/draft-grounding.ts).
+  await r.v2.result(jobId(job), "Reply in Slack, Rohan (private):\nDone, invite sent for 11:00. Moved to 11:15 for Stan. Rosa will join.\n(Sources: L1)");
+  assert.match(r.docs.at(-1)!, /^📝 Draft: .+\n\nReply in Slack, Rohan \(private\):\nDone, invite sent for 11:00\. Moved to \[blank\] for Stan\.$/);
   const chat = (await r.v2.draftFor({ title: "Send Ana the Q4 deck", facts: [{ label: "Slack · Ana", text: "The owner promised: Send Ana the Q4 deck" }, { label: "Ana", text: "Ana prefers short notes" }] }))!;
   assert.equal(chat.kind, "draft");
   const material = r.queued.at(-1)!.brief!.text;

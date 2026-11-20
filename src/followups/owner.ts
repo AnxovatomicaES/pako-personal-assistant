@@ -1,7 +1,7 @@
 // The owner's side: the nudge's buttons, PENDING, and the open loops in the assistant's context.
 
 import type { Engine } from "./parts.ts";
-import { LATER_TODAY_MS, NONE_BEFORE_MS, PAST_HIDE_MS, RULES_MAX, SNOOZE_MS } from "./limits.ts";
+import { LATER_TODAY_MS, NONE_BEFORE_MS, PAST_HIDE_MS, REOPEN_MS, RULES_MAX, SNOOZE_MS } from "./limits.ts";
 import { loopsOf } from "./record.ts";
 import { T } from "./texts.ts";
 import { zonedTime } from "./time.ts";
@@ -23,7 +23,7 @@ const names = (keys: string[], l: Loop): boolean => {
 export function mountOwner(fu: Engine): Pick<
   Engine,
   "press" | "open" | "command" | "context" | "closeByWords" | "calendarChanged" | "reopenClosed" | "forDraft" | "draftFacts" | "snoozeCard" | "parked"
-  | "parkedText" | "unpark" | "setStep" | "letGo" | "engaged" | "expiredParked"
+  | "parkedText" | "unpark" | "setStep" | "letGo" | "engaged" | "expiredParked" | "closedForYou" | "reopenByWords"
 > {
   const { d, now, lang, mutate, read, dueText, sourceText } = fu;
   /** Gentle mode's "tomorrow": 09:00 in the owner's zone (or when the quiet hours end, if later), the day after today, whatever DST does. */
@@ -328,8 +328,35 @@ export function mountOwner(fu: Engine): Pick<
     });
   const expiredParked: Engine["expiredParked"] = async () => [...((await read()).expired ?? [])].reverse();
 
+  /** What Pako closed on its own since a moment and is still closed, newest first: no close of Pako's is silent. */
+  const closedForYou: Engine["closedForYou"] = async (since) =>
+    (await read()).loops
+      .filter((l) => l.status === "done" && l.autoClosed && l.autoClosed.at >= since)
+      .sort((a, b) => b.autoClosed!.at - a.autoClosed!.at)
+      .map((l) => ({ id: l.id, title: l.title, why: l.autoClosed!.why }));
+
+  /** "reopen <words>": one loop Pako closed in the last week, open again and looked at again as a new one is. */
+  const reopenByWords: Engine["reopenByWords"] = async (words) => {
+    const t = now();
+    const out = await mutate((s) => {
+      const hits = s.loops.filter((l) => l.status === "done" && l.autoClosed && t - l.autoClosed.at < REOPEN_MS && names(keysOf(words), l));
+      if (hits.length !== 1) return { hits: hits.map((l) => l.title) };
+      const l = hits[0]!;
+      Object.assign(l, { status: "open", nextCheckAt: 0, createdAt: Math.max(l.createdAt, t) });
+      if (l.dueAt && l.dueAt > t) l.nextCheckAt = "none" in l.check ? (l.dueAt - NONE_BEFORE_MS > t ? l.dueAt - NONE_BEFORE_MS : 0) : fu.nextAfter(l, t);
+      l.lastCheck = `You reopened it: I had closed it because ${l.autoClosed!.why}.`;
+      delete l.closedAt;
+      delete l.autoClosed;
+      return { title: l.title };
+    });
+    const say = T(lang());
+    if ("title" in out) return { ok: true, say: say("reopened", { title: out.title! }) };
+    if (!out.hits.length) return { ok: false, say: say("reopenNone") };
+    return { ok: false, say: say("reopenMany", { list: out.hits.slice(0, 5).map((x) => `“${x}”`).join(", ") }) };
+  };
+
   return {
     press, open, command, context, closeByWords, calendarChanged, reopenClosed, forDraft, draftFacts, snoozeCard, parked, parkedText, unpark, setStep, letGo,
-    engaged, expiredParked,
+    engaged, expiredParked, closedForYou, reopenByWords,
   };
 }

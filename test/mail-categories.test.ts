@@ -250,7 +250,7 @@ test("loops: Needs you is a request to the owner and Waiting on others a promise
   const wait = readVerdict("WAITING\nWHY: x\nLOOP: Send the signed contract | Nadia | 2026-11-21 17:00\ny")!.verdict;
   assert.equal(loopFromVerdict(readVerdict("IMPORTANT\nWHY: x\ny")!.verdict, "Ana"), null, "Important makes no loop");
   assert.equal(await engine.fromMail({ ref: "m-need", label: "email · Ana", at: T0 - HOUR, loops: [loopFromVerdict(need, "Ana Ruiz")!] }), 1);
-  assert.equal(await engine.fromMail({ ref: "m-wait", label: "email · Nadia", at: T0 - HOUR, loops: [loopFromVerdict(wait, "Nadia")!] }), 1);
+  assert.equal(await engine.fromMail({ ref: "m-wait", label: "email · Nadia", at: T0 - HOUR, loops: [loopFromVerdict(wait, "Nadia")!], thread: "00000000000000aa" }), 1);
   const loops = (await engine.read()).loops;
   const owe = loops.find((l) => l.sources[0]?.ref === "m-need")!;
   assert.equal(owe.kind, "request_to_owner");
@@ -266,12 +266,12 @@ test("loops: Needs you is a request to the owner and Waiting on others a promise
   assert.equal(new Date(owed.dueAt!).toISOString(), "2026-11-21T16:00:00.000Z");
   // The same mail again does not make a second loop.
   assert.equal(await engine.fromMail({ ref: "m-need", label: "email · Ana", at: T0 - HOUR, loops: [loopFromVerdict(need, "Ana Ruiz")!] }), 0);
-  // Nadia writes again: what she owed is closed; what the owner owes Ana is not touched.
-  assert.equal(await engine.answered({ who: ["Nadia", "nadia@vendor.example"], ref: "m-later" }), 1);
+  // Nadia writes again in that thread: what she owed is closed; what the owner owes Ana is not touched.
+  assert.equal(await engine.answered({ who: ["Nadia", "nadia@vendor.example"], ref: "m-later", thread: "00000000000000aa" }), 1);
   const after = (await engine.read()).loops;
   assert.equal(after.find((l) => l.id === owed.id)!.status, "done");
   assert.equal(after.find((l) => l.id === owe.id)!.status, "open");
-  assert.equal(await engine.answered({ who: ["Ana"], ref: "m-later2" }), 0, "an answer from Ana never closes what the owner owes her");
+  assert.equal(await engine.answered({ who: ["Ana"], ref: "m-later2", thread: "00000000000000aa" }), 0, "an answer from Ana never closes what the owner owes her");
 });
 
 // ---------- the panel: tabs, the reader, the links ----------

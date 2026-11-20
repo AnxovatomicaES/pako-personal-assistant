@@ -12,7 +12,7 @@
 // the morning. The incidents are kept in the store (best effort), so a restart neither repeats one nor forgets to say it is over.
 //
 // It also compares the assistant computer's version (it says it on POST /assistant/health, assistant/update.ts) with this server's, and says
-// once when that computer has been more than a day behind. The panel's Salud card (src/panel/health.js) shows every part's state.
+// once when that computer has been more than a day behind. The panel's Health card (src/panel/health.js) shows every part's state.
 
 import { execFileSync } from "node:child_process";
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -124,12 +124,14 @@ export interface BridgeVersion {
 }
 
 /**
- * Which Claude Code the assistant's computer drives, against the range Pako has been tested with (assistant/bridge/cli-version.ts). `note`
- * is the sentence the Salud card shows when it is outside ("Claude Code X.Y is newer than Pako has been tested with").
+ * Which Claude Code the assistant's computer drives, and how it did in the bridge's self-test (assistant/bridge/cli-probe.ts). `note` is the
+ * sentence the Health card shows when it is not plain "ok": "Claude Code X.Y: tested by probe", or, when it failed, what failed and the
+ * command that goes back to the last version that passed. "newer" and "older": the self-test could not run (and from bridges before it).
  */
+export const BRIDGE_CLI_STATUSES = ["ok", "probed", "failed", "newer", "older", "unknown"] as const;
 export interface BridgeCli {
   version: string;
-  status: "ok" | "newer" | "older" | "unknown";
+  status: (typeof BRIDGE_CLI_STATUSES)[number];
   note?: string;
 }
 
@@ -234,7 +236,7 @@ const T = texts(
   },
 );
 
-/** A part as the panel's Salud card shows it. */
+/** A part as the panel's Health card shows it. */
 export interface PartState {
   key: PartKey;
   /** "ok"; "failing": failures, not yet an incident; "down": an incident (the owner was or will be told); "waiting": nothing heard yet; "warn". */
@@ -255,7 +257,7 @@ export interface HealthState {
   server: Version | null;
   /** Today's runs of Claude as the assistant's computer last said them; null before it says any (an older computer never does). */
   usage?: BridgeUsage | null;
-  /** Which Claude Code the assistant's computer drives, against the tested range; null before it says (an older bridge never does). */
+  /** Which Claude Code the assistant's computer drives, and its self-test; null before it says (an older bridge never does). */
   cli?: BridgeCli | null;
 }
 
@@ -660,6 +662,8 @@ export function createWatchdog(d: WatchdogDeps) {
     for (const p of st.parts.filter((x) => x.status === "waiting" && x.key !== "update")) lines.push(t("sum.waiting", { name: nameOf(p.key, l) }));
     const ok = st.parts.filter((x) => x.status === "ok" && x.key !== "update").map((x) => listName(x.key));
     if (ok.length) lines.push(t("sum.ok", { names: ok.join(", ") }));
+    // A Claude Code that failed the bridge's self-test: its own sentence, with the command that goes back (assistant/bridge/cli-probe.ts).
+    if (st.cli?.status === "failed" && st.cli.note) lines.unshift(st.cli.note);
     if (!lines.length) lines.push(t("sum.none"));
     if (st.quietNow && st.parts.some((x) => x.status === "down")) lines.push(t("sum.quiet"));
     return lines.join("\n");
@@ -738,11 +742,10 @@ export function readBridgeReport(
   const out: { claude?: "ok" | "login" | "limit"; version?: BridgeVersion; usage?: BridgeUsage; cli?: BridgeCli } = {};
   if (b.cli !== undefined) {
     const c = (b.cli ?? {}) as { version?: unknown; status?: unknown; note?: unknown };
-    const statuses = ["ok", "newer", "older", "unknown"] as const;
-    const status = statuses.find((x) => x === c.status);
+    const status = BRIDGE_CLI_STATUSES.find((x) => x === c.status);
     if (!status || typeof c.version !== "string" || !/^(\d+\.\d+\.\d+)?$/.test(c.version)) return null;
-    // The sentence is the bridge's own, shown as text on the card: plain characters only, short.
-    const note = typeof c.note === "string" ? c.note.replace(/[^\p{L}\p{N} .,:;/_()'-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 160) : "";
+    // The sentence is the bridge's own, shown as text on the card: plain characters only (and the @ of the npm command that fixes it).
+    const note = typeof c.note === "string" ? c.note.replace(/[^\p{L}\p{N} .,:;/_()'@"-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 400) : "";
     out.cli = { version: c.version, status, ...(note && status !== "ok" ? { note } : {}) };
   }
   if (b.usage !== undefined) {
@@ -805,7 +808,7 @@ export function mountBridgeHealth(app: Express, d: { token: string; watchdog: Pi
   });
 }
 
-/** The panel's Salud card (src/panel/health.js): every part's state, read only, the panel's session. */
+/** The panel's Health card (src/panel/health.js): every part's state, read only, the panel's session. */
 export function mountHealthPanel(app: Express, d: { signedIn: (req: Request) => boolean; state: () => HealthState }): void {
   app.get("/panel/api/health", (req, res) => {
     res.set(HEADERS);

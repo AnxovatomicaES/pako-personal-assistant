@@ -81,3 +81,52 @@ test("catch: no bare catch {} in src without a comment saying why ignoring is sa
   }
   assert.deepEqual(bare, [], "say why the error is ignored (a short comment) or log it");
 });
+
+/** Every file under a folder (subfolders too) whose name matches, as paths from the repository root. */
+const filesOf = (dir: string, ext: RegExp): string[] =>
+  readdirSync(new URL(dir, root)).flatMap((f) => {
+    const path = `${dir}${f}`;
+    if (statSync(new URL(path, root)).isDirectory()) return f === "node_modules" ? [] : filesOf(`${path}/`, ext);
+    return ext.test(f) ? [path] : [];
+  });
+
+/** Common Spanish UI words: the names old buttons, cards and messages carried before Pako's own texts went English only. */
+const SPANISH_UI = new RegExp(
+  "(?<![\\p{L}])(salud|ajustes|guardar|cancelar|enviar|recordatorios?|reuni[oó]n|reuniones|mañana|correo|calendario|configuraci[oó]n|tareas"
+    + "|cerrar|abrir|buscar|borrar|eliminar|aceptar|listo|hecho|pendientes?|cargando|contraseña|también|todavía|ahora|aquí|resumen|importar"
+    + "|personas|hola|gracias|seguimiento|panel de control)(?![\\p{L}])",
+  "giu",
+);
+
+/**
+ * The few places that accept Spanish on purpose: a recognition pattern (a greeting the owner types, the kinds older log lines in the store
+ * still carry, a reason older loops were saved with). Each is a file and the words it may hold; a new one belongs here only for that reason.
+ */
+const SPANISH_ALLOWED: Record<string, string[]> = {
+  "src/door/format.ts": ["hola"], // the greeting a call's message is cleaned of
+  "src/panel/app.js": ["correo", "calendario", "recordatorio", "salud"], // older log lines' kinds, mapped to icons
+  "src/followups/checks.ts": ["correo", "reunion"], // older loops' reasons and hints
+  "assistant/prompt.ts": ["correo", "reunion", "seguimiento"], // the fences' names, which the bridge swaps for random ones: never shown
+};
+
+test("english: Pako's own fixed texts (chat, panel, follow-ups, gentle, prompt, Mac app, site) carry no Spanish UI words", () => {
+  const files = [
+    ...filesOf("src/door/", /\.ts$/),
+    ...filesOf("src/panel/", /\.(js|html|css)$/),
+    ...filesOf("src/followups/", /\.ts$/),
+    "src/followups.ts",
+    ...filesOf("src/", /^gentle.*\.ts$/).filter((f) => !f.slice(4).includes("/")),
+    "assistant/prompt.ts",
+    ...filesOf("desktop/mac/", /\.(swift|strings)$/),
+    ...filesOf("site/", /\.(js|html|css)$/),
+  ];
+  assert.ok(files.length > 100, "the scan found the files");
+  const found: string[] = [];
+  for (const f of files) {
+    const allowed = new Set(SPANISH_ALLOWED[f] ?? []);
+    read(f).split("\n").forEach((l, i) => {
+      for (const m of l.matchAll(SPANISH_UI)) if (!allowed.has(m[1]!.toLowerCase())) found.push(`${f}:${i + 1} "${m[1]}"`);
+    });
+  }
+  assert.deepEqual(found, [], "English only: use the English name the page or the chat shows (or, for a recognition pattern, SPANISH_ALLOWED)");
+});

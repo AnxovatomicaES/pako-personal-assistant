@@ -43,7 +43,7 @@ const checkOf = (v: unknown): Check | null => {
     return { calendarEvent: { ...(around ? { around } : {}), hints: strs(v.calendarEvent.hints, 6, 60) } };
   }
   if (isObject(v.slackReply) && typeof v.slackReply.channel === "string" && CHANNEL.test(v.slackReply.channel) && TS.test(String(v.slackReply.afterTs))) {
-    return { slackReply: { channel: v.slackReply.channel, afterTs: String(v.slackReply.afterTs), ...threadOf(v.slackReply.thread) } };
+    return { slackReply: { channel: v.slackReply.channel, afterTs: String(v.slackReply.afterTs), ...threadOf(v.slackReply.thread), ...(v.slackReply.file === true ? { file: true as const } : {}) } };
   }
   if (isObject(v.slackPost) && typeof v.slackPost.channel === "string" && CHANNEL.test(v.slackPost.channel) && TS.test(String(v.slackPost.afterTs))) {
     const contains = strs(v.slackPost.contains, 3, 40);
@@ -87,6 +87,8 @@ export function loopOf(v: unknown): Loop | null {
     ...(num(v.checkedAt) ? { checkedAt: num(v.checkedAt)! } : {}),
     createdAt: v.createdAt,
     ...(num(v.closedAt) ? { closedAt: num(v.closedAt)! } : {}),
+    ...(isObject(v.autoClosed) && num(v.autoClosed.at) && typeof v.autoClosed.why === "string"
+      ? { autoClosed: { at: num(v.autoClosed.at)!, why: v.autoClosed.why.slice(0, 160) } } : {}),
     sources: (Array.isArray(v.sources) ? v.sources : []).map(sourceOf).filter((x): x is LoopSource => x !== null).slice(0, 5),
     // Gentle mode's own fields (src/gentle.ts): small counters and one checked line.
     ...(num(v.parkedAt) ? { parkedAt: num(v.parkedAt)! } : {}),

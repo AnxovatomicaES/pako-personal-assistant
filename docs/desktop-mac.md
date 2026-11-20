@@ -11,9 +11,18 @@ You need macOS 13 (Ventura) or newer, on an Intel Mac or Apple silicon, and a Cl
 1. **Download** `Pako-<version>.dmg`. (To check the download, compare `shasum -a 256 Pako-<version>.dmg` with the `.sha256` file published
    next to it.)
 2. **Open** it and **drag Pako to Applications**.
-3. **Open Pako** from Applications (or Spotlight). The first time, macOS says it was downloaded from the internet: press **Open**. If you
-   open it straight from the disk image (or from Downloads), Pako offers to **move itself to Applications** and opens again from there:
-   from the disk image it would stop working once the disk is ejected, and it could not start with your Mac.
+3. **Open Pako** from Applications (or Spotlight). Pako is not notarized by Apple yet ([why, and the plan](notarization.md)), so the
+   first time macOS blocks it once:
+   - **macOS 15 Sequoia and newer:** macOS says "Pako" Not Opened (Apple could not verify it): press **Done**, not Move to Trash. Open
+     **System Settings → Privacy & Security**, scroll down to **Security**, press **Open Anyway** next to "Pako" was blocked to protect
+     your Mac, enter your Mac password (or use Touch ID), and press **Open Anyway** once more. Control-click → Open no longer works there.
+   - **macOS 13 Ventura and 14 Sonoma:** in Applications, Control-click (or right-click) **Pako**, choose **Open**, then **Open** again.
+   - **In Terminal instead (any version):** `xattr -dr com.apple.quarantine /Applications/Pako.app`.
+
+   Only once: after that it opens like any app. With no warning at all: the one-line installer (`install.sh`, [docs/install.md](install.md))
+   downloads with git, not a browser, so macOS never asks; it needs Node.js 22.18+ and git.
+   If you open it straight from the disk image (or from Downloads), Pako offers to **move itself to Applications** and opens again from
+   there: from the disk image it would stop working once the disk is ejected, and it could not start with your Mac.
 4. **Connect your Claude account**: one button, below. Pako then works with your own Claude plan.
 5. **Connect your things** (optional, every step can be skipped): right after, a short step goes through what else Pako can use, one at a
    time, with the plain steps for each: **Telegram** first (the one chat that works with no server of your own: you talk to Pako from your
@@ -375,7 +384,8 @@ Developer ID it also asks Gatekeeper (`spctl`) and checks the stapled ticket. `n
 
 ## Make a release
 
-For the owner. The result is `dist/release/Pako-<version>.dmg` and its `.sha256`, to publish (for example as a GitHub release's assets).
+For the owner. The result is `dist/release/Pako-<version>.dmg` and its `.sha256`, to publish (for example as a GitHub release's assets). The costs and the
+one-time Apple steps, as a checklist: [notarization.md](notarization.md).
 
 **Once: a Developer ID.** A Mac that downloads an app checks that Apple notarized it; an ad-hoc app is blocked ("Apple could not verify…",
 and on macOS 15 only *Open Anyway* in System Settings > Privacy & Security gets past it). So a public release needs:

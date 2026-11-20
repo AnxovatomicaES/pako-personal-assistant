@@ -36,6 +36,9 @@ export { buildClaudeArgs, ClaudeError, modelUnavailable, readTheWeb, runClaude, 
 export type { ClaudeResult, FileBlock, RunConfig } from "./bridge/claude.ts";
 export { CLAUDE_CODE_TESTED, cliCompat, compareVersions, parseClaudeVersion, readClaudeVersion } from "./bridge/cli-version.ts";
 export type { CliCompat } from "./bridge/cli-version.ts";
+export { compatFrom, createCliWatch, fixCommand, loadProbeCache, probeCli, recordProbe, PROBE_MODEL, PROBE_SESSION } from "./bridge/cli-probe.ts";
+export type { CliWatch, ProbeCache, ProbeExec, ProbeOutcome, ProbeRun } from "./bridge/cli-probe.ts";
+export { missingEssential, normalizeResult, readResult } from "./bridge/cli-shape.ts";
 export { classifyFailure, errorSignals, sessionMissing } from "./bridge/claude-errors.ts";
 export { fallbackCounts, noteFallback, resetFallbacks, setFallbackLog } from "./bridge/fallbacks.ts";
 export { mcpConfigFor, mcpDownIn, offersMcpTools, toolDataPath, watchTurn } from "./bridge/mcp.ts";
@@ -70,7 +73,7 @@ export function createBridge(d: BridgeDeps) {
     parseReply,
     /** What this computer runs (assistant/update.ts), told to the server on the next round. */
     setVersion,
-    /** Which Claude Code this is against the tested range (bridge/cli-version.ts), told to the server with the version. */
+    /** Which Claude Code this is and how it did in the self-test (bridge/cli-probe.ts), told to the server with the version. */
     setCli,
     /**
      * Something is still under way between two rounds (notes to keep, an answered message whose ack the server has not taken): no

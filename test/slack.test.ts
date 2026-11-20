@@ -171,13 +171,13 @@ test("without the app's values the events address only answers Slack's check", a
 
 // ---------- bug hunt 2: regression tests ----------
 
-test("hunt2 slack: Slack's own markup is made readable, and invisible characters are dropped", () => {
+test("slack: Slack's own markup is made readable, and invisible characters are dropped", () => {
   const names = () => "alguien";
   assert.equal(plainSlack("<!subteam^S1|@equipo> mirad <mailto:ana@x.example|Ana> <#C123> el <!date^1700000000^{date}|15 nov>", names), "@equipo mirad Ana #channel el 15 nov");
   assert.equal(plainSlack("pago\u202e 100\u200b€", names), "pago 100€");
 });
 
-test("hunt2 slack: a DM that arrives while Slack's own API is down for a moment is still told (the event is retried)", async () => {
+test("slack: a DM that arrives while Slack's own API is down for a moment is still told (the event is retried)", async () => {
   const r = await rig({ authFailsOnce: true });
   try {
     await r.message({ channel: "D1", channel_type: "im", user: "UANA", text: "¿hablamos?" });
@@ -189,7 +189,7 @@ test("hunt2 slack: a DM that arrives while Slack's own API is down for a moment 
   }
 });
 
-test("hunt2 slack: a message with hundreds of mentions does not make hundreds of lookups", async () => {
+test("slack: a message with hundreds of mentions does not make hundreds of lookups", async () => {
   const r = await rig();
   try {
     const mentions = Array.from({ length: 300 }, (_, i) => `<@UX${i}>`).join(" ");

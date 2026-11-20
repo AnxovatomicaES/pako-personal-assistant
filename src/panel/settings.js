@@ -429,8 +429,8 @@ function wizard(id) {
   const names = stepNames(id);
   const w = W(id);
   if (w.step >= Math.max(1, names.length)) w.step = 0;
-  // A wizard left on its "Listo" for a connection that is no longer on (disconnected since, or forgotten) starts again. Zoom's recordings on
-  // this Mac are not a "Listo": their last step is the one that turns them on (the card stays off for them).
+  // A wizard left on its "Done" for a connection that is no longer on (disconnected since, or forgotten) starts again. Zoom's recordings on
+  // this Mac are not a "Done": their last step is the one that turns them on (the card stays off for them).
   const lastIsAction = id === "zoom" && w.path === "local";
   if (DONE_LAST.has(id) && !lastIsAction && names.length > 1 && w.step === names.length - 1 && S.states[id] !== "on") w.step = 0;
   const body = VIEWS[id]?.(w) ?? h("p", {}, "");
@@ -784,6 +784,10 @@ async function autoconfig(address) {
     // "guess": imap.<domain>, checked by nobody: the person is asked to confirm it. The note: the server's warning for this provider.
     source: SOURCES.includes(d.source) ? d.source : "builtin",
     note: typeof d.note === "string" ? d.note.slice(0, 500) : "",
+    // What must be on first (2-step verification), and what to do when the provider says no (src/mail-autoconfig.ts advice).
+    before: typeof d.before === "string" ? d.before.slice(0, 500) : "",
+    refused: typeof d.refused === "string" ? d.refused.slice(0, 500) : "",
+    work: d.work === true,
     appPassword: {
       needed: d.appPassword?.needed !== false,
       url: typeof d.appPassword?.url === "string" && /^https:\/\//.test(d.appPassword.url) ? d.appPassword.url : "",
@@ -822,10 +826,12 @@ function passwordStep(w, cfg) {
   const found = guess ? h("div", { class: "found-server warn" }, icon("circle-help"), h("div", {}, h("p", {}, t("mail.guessed")), host))
     : h("div", { class: "found-server" }, icon("wand-sparkles"), h("div", {},
       h("p", {}, t("mail.filled", { address: w.address ?? "" })),
+      // The server is said, not only folded away: someone setting up another mail app with the same steps sees what to type there.
+      h("p", { class: "aside" }, icon("server"), h("span", {}, t("mail.serverLine", { host: cfg.host, port: cfg.port }))),
       h("details", {}, h("summary", {}, t("mail.details")), h("dl", {}, h("dt", {}, t("mail.server")), h("dd", {}, `${cfg.host}:${cfg.port}`),
         h("dt", {}, t("mail.user")), h("dd", {}, cfg.username)))));
   // Microsoft: many accounts can no longer sign in with a password; forwarding is offered first, the password below as the other way.
-  const ms = cfg.provider === "microsoft";
+  const ms = cfg.provider === "microsoft" || cfg.work;
   const note = cfg.note && !guess ? h("div", { class: "note warn", role: "note" }, icon("triangle-alert"), h("div", {}, h("p", {}, cfg.note),
     ms ? actions(btn(t("mail.forwardInstead"), () => go("mail", 1, { path: "forward" }))) : null,
     ms ? h("p", { class: "fix" }, t("mail.orPassword")) : null)) : null;
@@ -840,9 +846,11 @@ function passwordStep(w, cfg) {
       { text: "abcd efgh ijkl mnop", mono: true }], tint: "rose" }) : null,
     children: [
       signIn, note, found,
+      app && cfg.before ? h("p", { class: "aside" }, icon("shield-check"), h("span", {}, cfg.before)) : null,
       app ? h("ol", { class: "how illustrated" }, steps.map((s, i) => h("li", { style: { "--d": `${i * 0.08}s` } }, s))) : null,
       url && app ? actions(outLink(url, t("mail.openPw"), "btn ghost")) : null,
       pw, out,
+      cfg.refused ? h("p", { class: "aside" }, icon("life-buoy"), h("span", {}, cfg.refused)) : null,
       actions(btn(t("back"), () => go("mail", 0), "ghost"), btn(t("saveTest"), async (e) => {
         if (host && !host.check()) return host.input.focus();
         if (!pw.check()) return pw.input.focus();
@@ -874,7 +882,7 @@ function manualServer(w) {
 
 /**
  * The live login (POST /panel/api/mail/connect): the server signs in, read only, and keeps the mailbox only when that worked. A refused
- * password is said on the password field; a server that cannot be reached, with how to fix the server; "Listo" only after a yes.
+ * password is said on the password field; a server that cannot be reached, with how to fix the server; "Done" only after a yes.
  */
 async function connectImap(w, cfg, password, out, pw, button, hostField = null) {
   out.replaceChildren(testing(t("mail.testingLogin", { address: w.address ?? "" })));
@@ -887,7 +895,9 @@ async function connectImap(w, cfg, password, out, pw, button, hostField = null) 
     const why = r.data.why;
     if (why === "auth" || why === "password") {
       pw.error(r.error);
-      if (cfg.provider === "microsoft") out.replaceChildren(actions(btn(t("mail.forwardInstead"), () => go("mail", 1, { path: "forward" }), "ghost")));
+      // Refused: forwarding is the way that always works (a Microsoft 365 or Workspace account may never accept a password). What else to
+      // try is said under the field (cfg.refused).
+      if (why === "auth") out.replaceChildren(actions(btn(t("mail.forwardInstead"), () => go("mail", 1, { path: "forward" }), "ghost")));
       return;
     }
     if ((why === "network" || why === "tls") && hostField) return hostField.error(`${r.error} ${t("mail.fixServer")}`);

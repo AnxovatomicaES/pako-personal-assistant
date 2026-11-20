@@ -1,4 +1,4 @@
-// Pako · panel: the "Resumen de hoy" button. It asks the server for today's brief (POST /panel/api/brief, src/brief.ts) and shows it in a card
+// Pako · panel: the "Today's brief" button. It asks the server for today's brief (POST /panel/api/brief, src/brief.ts) and shows it in a card
 // at the top of the page, as text, never as HTML. Asking counts as today's brief: the morning's does not come again that day.
 // Its words are English, like all of Pako's fixed texts.
 

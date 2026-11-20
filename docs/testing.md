@@ -73,15 +73,25 @@ What the gate runs, in order:
   `launch-surface` is `install-docs`, `assistant-core-hunt` is `assistant-core`, `mail-bugs` is `mail-reader`, `calendar-hunt` is
   `calendar-sources`, `m4-feedback` is `connections-dashboard`, `gentle-b` is `gentle-checkins`, `hardening` is `local-guard`; the nine
   tests of `launch-polish` went to the files of their features (`panel-i18n`, `region`, `windows`, `calendar-writes`, `meeting-prep`,
-  `dashboard`, `data`, `zoom-review`, `claude-errors`).
+  `dashboard`, `data`, `zoom-review`, `claude-errors`). A test's own title says what it pins, not the session that found it (no `hunt2` or
+  `bugs-chat` before it). Newer files under the same rule: `gentle-robust` (Gentle mode when the store fails, items parked or brought
+  back, the weekly reset), `core-labs` (the Labs registry, its switch in Settings, a lab that is off starting nothing), `app-services` (the
+  lifecycle registry's start and stop order), `app-lifecycle` (the real app built, started, stopped, and its process ending by itself),
+  `home-lock-race` (two Pakos started at once on one home), `kv-lease` (one writer on a server's Redis store during a deploy).
 - **No test leans on the process's time zone.** Give the zone explicitly (`timeZone: "Europe/Madrid"`, `PERSONAL_TIMEZONE` in a test's
   settings). A test of what Pako does with *this computer's own* zone sets it with `withSystemZone(zone, fn)` (`test/helpers/zone.ts`), and
   a test that formats dates resets the owner's region (`setOwnerRegion("")`) when an app built before it may have set it.
 - **Claude Code's real outputs.** `test/fixtures/claude-cli/<version>/` holds outputs captured from the installed `claude` (scrubbed: no ids,
-  paths or account data), and `test/claude-errors.test.ts` says how each was made. A new Claude Code version: capture the same outputs into
-  a new folder, run the gate, then raise `CLAUDE_CODE_TESTED.maxTested` in `assistant/bridge/cli-version.ts`.
-- **House rules** (`test/house-rules.test.ts`): every setting documented, no line in `src/` over 200 characters, and no `catch {` in `src/`
-  that throws an error away without a comment saying why that is safe (or a log of what it caught).
+  paths or account data), and `test/claude-errors.test.ts` says how each was made. No release waits on a new Claude Code version: the
+  bridge's self-test (`assistant/bridge/cli-probe.ts`) decides on each person's computer whether it works, and
+  `test/claude-cli-probe.test.ts` plays it against those captures changed the ways a new version could change them (a newer version
+  string, an added or renamed field, a removed flag, an MCP server that does not load). `CLAUDE_CODE_TESTED` in
+  `assistant/bridge/cli-version.ts` only names the versions the captures come from (versions that pass outside it show as "tested by
+  probe"): after capturing a newer version's outputs into a new folder and running the gate, raise its `maxTested`.
+- **House rules** (`test/house-rules.test.ts`): every setting documented, no line in `src/` over 200 characters, no `catch {` in `src/`
+  that throws an error away without a comment saying why that is safe (or a log of what it caught), and no common Spanish UI word in Pako's
+  own English texts (the chat, the panel, follow-ups, Gentle mode, the prompt, the Mac app, the site): the few patterns that accept Spanish
+  input on purpose are named in its `SPANISH_ALLOWED`.
 
 GitHub's checks do not run for this repository, so the gate runs on your computer instead:
 

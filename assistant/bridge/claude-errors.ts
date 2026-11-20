@@ -160,8 +160,9 @@ export function classifyFailure(f: RunFailure): ClaudeError {
  * no structured field for it: "No conversation found with session ID: …" on the error output and exit 1, 2.1.327 (captured,
  * test/fixtures/claude-cli/2.1.327/no-such-session.stderr.txt); the other two wordings were kept from before 2.1.325.
  */
+export const SESSION_MISSING = /no conversation found|could not find (the )?(session|conversation)|session .{0,60}not found/i;
 export function sessionMissing(message: string): boolean {
-  const yes = /no conversation found|could not find (the )?(session|conversation)|session .{0,60}not found/i.test(message);
+  const yes = SESSION_MISSING.test(message);
   if (yes) noteFallback("error-text", "a resume that found no conversation, from the words");
   return yes;
 }

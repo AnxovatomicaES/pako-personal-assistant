@@ -7,7 +7,7 @@ import { fold } from "./lists.ts";
  * Capitalised words that are not people: days, months, the products and sources Pako names, time zones, and the few English words a
  * sentence capitalises mid-line. Folded (lower case, no accents).
  */
-const NOT_NAMES = new Set(("monday tuesday wednesday thursday friday saturday sunday january february march april may june july august"
+export const NOT_NAMES = new Set(("monday tuesday wednesday thursday friday saturday sunday january february march april may june july august"
   + " september october november december today tomorrow tonight yesterday morning afternoon evening noon midnight"
   + " pako slack zoom teams gmail outlook google microsoft apple icloud whatsapp telegram calendar email mail inbox"
   + " utc gmt cet cest bst est edt pst pdt cst cdt mst mdt et pt ct mt am pm ok okay fyi asap eod eow re fwd"
@@ -254,8 +254,31 @@ const SENDS = /\b(send|share|forward|deliver|envia\w*|enviar|manda\w*|mandar|com
 const TITLE_STOP = new Set(("draft send share forward deliver with from that this your their them about before after the for and"
   + " envia enviar manda mandar comparte schick envoyer").split(" "));
 
+/**
+ * Words that hand a document over in the message itself, with no "attached": "Here is the revised quote", "please find the deck below",
+ * "te paso el presupuesto". Only with a document's name in the same sentence ("here is my availability" hands nothing). Folded.
+ */
+const HANDS_OVER = /\b(here is|here s|heres|here are|please find|find (it |them )?below|you ll find|sending you|aqui (tienes|va|van)|te (envio|paso|mando)|os (envio|paso|mando)|anbei)\b/;
+const DOCUMENT = new RegExp("\\b(quote|quotation|deck|slides?|file|document|doc|pdf|report|contract|proposal|model|spreadsheet|sheet|presentation|invoice"
+  + "|agenda|plan|budget|figures|numbers|draft|summary|minutes|cotizacion|presupuesto|propuesta|contrato|informe|documento|archivo|fichero|factura"
+  + "|presentacion|borrador|resumen)s?\\b");
+const claimsFile = (f: string): boolean => ATTACH.test(f) || (HANDS_OVER.test(f.replace(/['’]/g, " ")) && DOCUMENT.test(f));
+
 /** Whether a text (a draft's facts) says a file was attached or comes attached. */
 export const mentionsAttachment = (text: string): boolean => ATTACH.test(fold(text));
+
+/**
+ * What a sentence of a draft says about a file going with it: "none" (nothing), "backed" (a fact shows an attachment), "sent" (the thing
+ * the follow-up sends: the owner attaches it before sending), or "unbacked" (a file no fact shows).
+ */
+export function attachmentOf(sentence: string, o: { attached: boolean; title: string }): "none" | "backed" | "sent" | "unbacked" {
+  const f = fold(sentence);
+  if (!claimsFile(f)) return "none";
+  if (o.attached) return "backed";
+  const title = fold(o.title);
+  const things = SENDS.test(title) ? title.split(" ").filter((w) => w.length >= 4 && !TITLE_STOP.has(w)) : [];
+  return things.some((w) => ` ${f.replace(/[^\p{L}\p{N}]+/gu, " ")} `.includes(` ${w} `)) ? "sent" : "unbacked";
+}
 
 /**
  * A draft with every sentence that says something is attached taken out, unless that is backed: a fact shows an attachment (`attached`),
@@ -266,12 +289,7 @@ export const mentionsAttachment = (text: string): boolean => ATTACH.test(fold(te
  */
 export function dropUnbackedAttachments(draft: string, o: { attached: boolean; title: string }): string {
   if (o.attached) return draft;
-  const title = fold(o.title);
-  const things = SENDS.test(title) ? title.split(" ").filter((w) => w.length >= 4 && !TITLE_STOP.has(w)) : [];
-  const backed = (sentence: string): boolean => {
-    const f = fold(sentence);
-    return !ATTACH.test(f) || things.some((w) => ` ${f} `.includes(` ${w} `));
-  };
+  const backed = (sentence: string): boolean => attachmentOf(sentence, o) !== "unbacked";
   const lines = draft.split("\n");
   const head = lines.length > 1 ? lines[0]! : null;
   // A line left empty by it goes too; a line that was blank (between paragraphs) stays.

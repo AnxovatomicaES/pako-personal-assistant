@@ -70,6 +70,10 @@ export function candidate(v: unknown, job: Job, ownerTz: string): Pick<Loop, "ki
     case "slackReply":
       check = slackOk ? { slackReply: { channel: channel!, afterTs: job.afterTs!, ...thread } } : { none: { reason: "slack" } };
       break;
+    case "slackFile":
+      // A document to send: any later word of the owner's there ("thanks!") is not it; a file or a link is.
+      check = slackOk ? { slackReply: { channel: channel!, afterTs: job.afterTs!, ...thread, file: true } } : { none: { reason: "slack" } };
+      break;
     case "slackPost": {
       const contains = (Array.isArray(v.contains) ? v.contains : []).map((h) => clean(h, 40)).filter((h) => h.length >= 2).slice(0, 3);
       check = slackOk && contains.length ? { slackPost: { channel: channel!, afterTs: job.afterTs!, contains, ...thread } } : { none: { reason: "slack" } };

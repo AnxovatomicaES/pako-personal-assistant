@@ -24,7 +24,7 @@
             }
           ]
         },
-        "recorded": "{\"loops\":[{\"kind\":\"owner_promise\",\"title\":\"Send Mei the pricing model\",\"detail\":\"You told Mei on Slack you'd send the pricing model by Thursday 5pm.\",\"who\":\"Mei\",\"due\":\"2026-11-19 17:00\",\"tz\":\"America/Los_Angeles\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+        "recorded": "{\"loops\":[{\"kind\":\"owner_promise\",\"title\":\"Send Mei the pricing model\",\"detail\":\"You told Mei on Slack you'd send the pricing model by Thursday 5pm.\",\"who\":\"Mei\",\"due\":\"2026-11-19 17:00\",\"tz\":\"America/Los_Angeles\",\"check\":\"slackFile\"}],\"closes\":[]}"
       }
     ]
   },
@@ -37,7 +37,7 @@
           "pricing model"
         ],
         "dueLocal": "2026-11-19 17:00",
-        "check": "none"
+        "check": "slackFile"
       }
     ]
   }

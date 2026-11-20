@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { type Control, createControl } from "../control.ts";
 import { createJobs } from "../jobs.ts";
 import { loadKv } from "../kv.ts";
+import { createWriterLease, hasCommand } from "../kv-lease.ts";
 import { createLog } from "../log.ts";
 import { watchStore } from "../store-guard.ts";
 import { type ClaudeState, createWatchdog, loadWatchdogConfig, readServerVersion, reportingKv, type Version } from "../watchdog.ts";
@@ -24,7 +25,11 @@ export function wireCore(ctx: AfterGuards) {
   } = { tell: null, lastPoll: null };
   // This server's version, read once when first asked (git, or Render's RENDER_GIT_COMMIT): only a server compares it with its computer's.
   let ownVersion: Version | null | undefined;
-  const rawKv = local ? local.kv : loadKv(env.VOICE_RESULTS_URL);
+  // A server's Redis store has one writer (src/kv-lease.ts): during a deploy's overlap the second server waits, read only, until the first
+  // one's lease is free. A computer's file store has its home lock instead (src/local.ts).
+  const hosted = local ? null : loadKv(env.VOICE_RESULTS_URL);
+  const lease = hasCommand(hosted) ? createWriterLease(hosted) : null;
+  const rawKv = local ? local.kv : lease ? lease.kv : hosted;
   const dog = createWatchdog({
     config: dogCfg.config,
     local: !!local,
@@ -64,5 +69,5 @@ export function wireCore(ctx: AfterGuards) {
     if (!adminOnly(req, res)) return;
     res.json({ paused: await control.paused(), log: await control.recent(300) });
   });
-  return { dogRef, dog, store, kv, control, jobs };
+  return { dogRef, dog, store, kv, control, jobs, lease };
 }

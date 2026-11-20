@@ -3,6 +3,8 @@
 // Nothing here reaches the network: fetch, the MX lookup and the IMAP login are fakes.
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 import type { ConnectionsSaver } from "../src/connections-panel.ts";
 import type { ImapClient, ImapConfig } from "../src/imap.ts";
@@ -43,6 +45,45 @@ test("the big providers come from the built-in table, with where to make the app
   assert.match(outlook.note!, /forward your mail/);
   assert.deepEqual(asked, [], "a known provider asks nobody");
   assert.equal(await auto("not an address", "en"), null);
+});
+
+test("guided setup per provider: the app password page, 2-step verification first, the server and port, and what to do when refused", async () => {
+  const auto = createAutoconfig({ resolve: publicDns, fetch: noNet });
+  const want: [string, string, string, RegExp | null, RegExp][] = [
+    ["ana@gmail.com", "imap.gmail.com", "https://myaccount.google.com/apppasswords", /2-Step Verification must be on/, /forward your mail/],
+    ["ana@googlemail.com", "imap.gmail.com", "https://myaccount.google.com/apppasswords", /2-Step Verification/, /Advanced Protection/],
+    ["ana@outlook.com", "outlook.office365.com", "https://account.live.com/proofs/AppPassword", /[Tt]wo-step verification/, /Forward your mail/],
+    ["ana@hotmail.com", "outlook.office365.com", "https://account.live.com/proofs/AppPassword", /[Tt]wo-step/, /Forward your mail/],
+    ["ana@live.com", "outlook.office365.com", "https://account.live.com/proofs/AppPassword", /[Tt]wo-step/, /Forward your mail/],
+    ["ana@icloud.com", "imap.mail.me.com", "https://account.apple.com/account/manage/section/security", /[Tt]wo-factor/, /app-specific password/],
+    ["ana@yahoo.com", "imap.mail.yahoo.com", "https://login.yahoo.com/account/security/app-passwords", /2-step verification/, /usual Yahoo password/],
+    ["ana@fastmail.com", "imap.fastmail.com", "https://app.fastmail.com/settings/security/apps", null, /Mail \(IMAP\)/],
+  ];
+  for (const [address, host, url, before, refused] of want) {
+    const c = (await auto(address, "en"))!;
+    assert.deepEqual([c.host, c.port, c.tls, c.username, c.work], [host, 993, true, address, false], address);
+    assert.equal(c.appPassword.url, url, address);
+    assert.ok(c.appPassword.needed && c.appPassword.steps.length >= 2, address);
+    if (before) assert.match(c.before!, before, address);
+    else assert.equal(c.before, null, address);
+    assert.match(c.refused, refused, address);
+  }
+  // The panel's own fallback link for Yahoo is the same page the server names.
+  assert.match(readFileSync(join(import.meta.dirname, "../src/panel/settings.js"), "utf8"), /yahoo: "https:\/\/login\.yahoo\.com\/account\/security\/app-passwords"/);
+});
+
+test("a work account at Microsoft 365 or Google Workspace (by MX) is told plainly its organisation may block IMAP, and offered forwarding", async () => {
+  const at = (exchange: string) => createAutoconfig({ resolve: publicDns, fetch: noNet, resolveMx: async () => [{ exchange, priority: 0 }] });
+  const ms = (await at("firm-com.mail.protection.outlook.com.")("ana@firm.com", "en"))!;
+  assert.deepEqual([ms.provider, ms.source, ms.work, ms.host], ["microsoft", "mx", true, "outlook.office365.com"]);
+  assert.match(ms.note!, /Microsoft 365 work or school account[\s\S]*block IMAP[\s\S]*Forward your mail/);
+  assert.match(ms.refused, /organisation blocks IMAP[\s\S]*Forward your mail/);
+  const g = (await at("aspmx.l.google.com.")("ana@shop.example", "en"))!;
+  assert.deepEqual([g.provider, g.work], ["google", true]);
+  assert.match(g.note!, /Google Workspace[\s\S]*forward your mail/);
+  assert.match(g.refused, /Workspace admin/);
+  const personal = (await at("aspmx.l.google.com.")("ana@gmail.com", "en"))!;
+  assert.equal(personal.work, false, "a gmail.com address is never a work account");
 });
 
 test("an unknown domain: Mozilla's database by domain only, then the domain's own file, then its MX, then a guess; kept for a day", async () => {

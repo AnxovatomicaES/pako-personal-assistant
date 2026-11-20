@@ -3,11 +3,14 @@
 // - Where the mail server is: a built-in table for the big providers (iCloud, Gmail, Outlook, Yahoo, Fastmail, Zoho); else Mozilla's
 //   database (autoconfig.thunderbird.net, asked for the domain only, never the address); else the domain's own autoconfig file; else its MX
 //   records (a company mailbox at Google or Microsoft); else imap.<domain>, said to be a guess. Within four seconds each, kept for a day (a guess made offline is not kept).
-// - The app password: where to make it and the exact steps, per provider, in English.
+// - The app password: where to make it and the exact steps, per provider, in English; what must be on first (2-step verification), and
+//   what to do when the provider refuses it. A work account at Microsoft 365 or Google Workspace (found by its MX) is told plainly that its
+//   organisation may block IMAP with a password, and offered forwarding: an app password cannot change that.
 // - Then a live login (read only, nothing opened) before anything is kept, with an error that says what to do: "That password doesn't work: Gmail
 //   needs an app password". The values then go where the IMAP card keeps them (src/connections-panel.ts).
 //
-//   GET  /panel/api/mail/autoconfig?address=x  -> { host, port, tls, username, provider, source, appPassword: { needed, url, steps[] }, note? }
+//   GET  /panel/api/mail/autoconfig?address=x  -> { host, port, tls, username, provider, source, work, appPassword: { needed, url, steps[] },
+//                                                   before, refused, note? }
 //   POST /panel/api/mail/connect               { address, password, host?, port?, username? } -> { ok, restarting } | { ok: false, error, why }
 
 import { resolveMx as dnsMx } from "node:dns/promises";
@@ -29,6 +32,12 @@ export interface AutoConfig {
   /** Where it came from: "builtin", "ispdb", "autoconfig", "mx", or "guess" (imap.<domain>, unchecked). */
   source: "builtin" | "ispdb" | "autoconfig" | "mx" | "guess";
   appPassword: { needed: boolean; url: string | null; steps: string[] };
+  /** A company's own domain at a big provider (found by its MX): Microsoft 365 or Google Workspace, whose admin decides about IMAP. */
+  work: boolean;
+  /** What must be on before the app password page shows (2-step verification); null when nothing. */
+  before: string | null;
+  /** What to do when the provider refuses the password: the likely reason and the other way (forwarding). */
+  refused: string;
   /** A word of warning for this provider, in the asked language. */
   note?: string;
 }
@@ -75,7 +84,7 @@ const APP_URLS: Record<MailProvider, string | null> = {
   icloud: "https://account.apple.com/account/manage/section/security",
   google: "https://myaccount.google.com/apppasswords",
   microsoft: "https://account.live.com/proofs/AppPassword",
-  yahoo: "https://login.yahoo.com/myaccount/security/app-password",
+  yahoo: "https://login.yahoo.com/account/security/app-passwords",
   fastmail: "https://app.fastmail.com/settings/security/apps",
   zoho: "https://accounts.zoho.com/home#security/app_password",
   other: null,
@@ -88,7 +97,7 @@ const STEPS = texts(
     google: "Open myaccount.google.com/apppasswords (2-Step Verification must be on)|Type “Pako” as the name and press “Create”|"
       + "Copy the 16 letters shown and paste them here (with or without spaces)",
     microsoft: "Open account.live.com/proofs/AppPassword (two-step verification must be on)|Press “Create a new app password”|Copy it and paste it here",
-    yahoo: "Open login.yahoo.com/myaccount/security/app-password|Type “Pako” and press “Generate password”|Copy it and paste it here",
+    yahoo: "Open login.yahoo.com/account/security/app-passwords|Type “Pako” and press “Generate password”|Copy it and paste it here",
     fastmail: "Open Settings → Privacy & Security → App passwords in Fastmail|Press “New app password”, access “Mail (IMAP)”|Copy it and paste it here",
     zoho: "Turn IMAP on in Zoho Mail: Settings → Mail Accounts → IMAP|Open accounts.zoho.com → Security → App Passwords|"
       + "Make one for “Pako”, copy it and paste it here",
@@ -96,13 +105,55 @@ const STEPS = texts(
     microsoftNote: "Microsoft no longer lets many Outlook and Hotmail accounts sign in with a password. If it doesn't work, forward your mail "
       + "to Pako's inbox (the Mail card) and it reads it just the same.",
     guessNote: "I couldn't find your server's details: I'm trying {host}. If it doesn't work, ask your mail provider for them.",
+    microsoftWorkNote: "This looks like a Microsoft 365 work or school account. Most organisations block IMAP sign-in with a password, and an "
+      + "app password doesn't change that. Forward your mail to Pako's inbox instead (the Mail card), or ask your IT team to allow IMAP.",
+    googleWorkNote: "This looks like a Google Workspace account: your admin decides whether app passwords and IMAP are allowed. If the "
+      + "App passwords page says it isn't available, forward your mail to Pako's inbox instead, or ask your admin.",
   },
 );
 
-function advice(p: MailProvider, l: Lang, host: string, guess: boolean): Pick<AutoConfig, "appPassword" | "note"> {
+/** What must be on first, per provider (2-step verification): without it the provider never shows its app password page. */
+const BEFORE = texts(
+  {
+    icloud: "Two-factor authentication must be on for your Apple Account (account.apple.com → Sign-In and Security). It is on for most accounts.",
+    google: "2-Step Verification must be on first (myaccount.google.com → Security → 2-Step Verification). Without it, Google doesn't show "
+      + "the App passwords page.",
+    microsoft: "Two-step verification must be on first (account.microsoft.com → Security → Advanced security options).",
+    yahoo: "If Yahoo doesn't offer app passwords, turn on 2-step verification first (Account security → 2-step verification).",
+    zoho: "Two-factor authentication must be on first: Zoho makes app passwords only for accounts with it.",
+  },
+);
+
+/** When the provider says no: the likely reason, and the way that always works (forwarding to Pako's inbox). */
+const REFUSED = texts(
+  {
+    icloud: "If iCloud refuses it: make a new app-specific password (changing your Apple Account password cancels the old ones) and use your "
+      + "full iCloud address. Or forward your mail to Pako instead.",
+    google: "If Gmail refuses it: make a new app password and paste it whole. No App passwords page usually means 2-Step Verification is off, "
+      + "or the account uses Advanced Protection or is managed by a school or company. Or forward your mail to Pako instead.",
+    microsoft: "If Outlook refuses it: Microsoft has turned off password sign-in for many accounts, and nothing on your side changes that. "
+      + "Forward your mail to Pako instead: it reads it just the same.",
+    microsoftWork: "If it's refused: your organisation blocks IMAP with a password (most Microsoft 365 work accounts do). Forward your mail "
+      + "to Pako instead, or ask your IT team.",
+    googleWork: "If it's refused: your Workspace admin has turned off app passwords or IMAP. Forward your mail to Pako instead, or ask your admin.",
+    yahoo: "If Yahoo refuses it: generate a new app password (your usual Yahoo password never works here). Or forward your mail to Pako instead.",
+    fastmail: "If Fastmail refuses it: check the app password's access includes Mail (IMAP), or make a new one. Or forward your mail to Pako instead.",
+    zoho: "If Zoho refuses it: check that IMAP access is on in Zoho Mail's settings, then make a new app password. Or forward your mail to Pako.",
+    other: "If it's refused: ask your mail provider whether IMAP is on and whether it needs an app password. Or forward your mail to Pako instead.",
+  },
+);
+
+type Advice = Pick<AutoConfig, "appPassword" | "note" | "work" | "before" | "refused">;
+
+function advice(p: MailProvider, l: Lang, host: string, source: AutoConfig["source"]): Advice {
   const s = STEPS(l);
-  const note = p === "microsoft" ? s("microsoftNote") : guess ? s("guessNote", { host }) : undefined;
-  return { appPassword: { needed: p !== "other", url: APP_URLS[p], steps: s(p).split("|") }, ...(note ? { note } : {}) };
+  // A company's own domain at Microsoft or Google: its organisation decides about IMAP, not the person.
+  const work = source === "mx" && (p === "microsoft" || p === "google");
+  const note = work ? s(p === "microsoft" ? "microsoftWorkNote" : "googleWorkNote")
+    : p === "microsoft" ? s("microsoftNote") : source === "guess" ? s("guessNote", { host }) : undefined;
+  const before = p === "fastmail" || p === "other" ? null : BEFORE(l)(p);
+  const refused = REFUSED(l)(work ? (p === "microsoft" ? "microsoftWork" : "googleWork") : p);
+  return { appPassword: { needed: p !== "other", url: APP_URLS[p], steps: s(p).split("|") }, work, before, refused, ...(note ? { note } : {}) };
 }
 
 /** The IMAP server in a Thunderbird autoconfig file (implicit TLS only: Pako refuses port 143), its user name filled in. */
@@ -216,7 +267,7 @@ export function createAutoconfig(d: AutoconfigDeps = {}) {
       found = await find(address, l);
       if (!(found.source === "guess" && l.unreached)) cache.set(domain, { at: now(), address, found });
     }
-    return { ...found, tls: true, ...advice(found.provider, l, found.host, found.source === "guess") };
+    return { ...found, tls: true, ...advice(found.provider, l, found.host, found.source) };
   };
 }
 

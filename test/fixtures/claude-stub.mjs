@@ -74,6 +74,33 @@ if (args[0] === "auth") {
   process.exit(2);
 }
 
+// The bridge's self-test (assistant/bridge/cli-probe.ts), answered the way Claude Code 2.1.327 answers it and not written to the log (it is
+// not a run of Claude): a model that does not exist is refused with a 404 result, after the init event in stream-json; a resume of a
+// conversation that is not there says so on the error output. CLAUDE_STUB_MCP=down: the init event says Pako's server failed.
+if (flag("--model") === "pako-self-test-no-such-model" || resumed === "00000000-0000-4000-8000-000000000000") {
+  if (resumed) {
+    process.stderr.write(`No conversation found with session ID: ${resumed}\n`);
+    process.exit(1);
+  }
+  const servers = (() => {
+    try {
+      return Object.keys(JSON.parse(flag("--mcp-config") ?? "{}").mcpServers ?? {});
+    } catch {
+      return [];
+    }
+  })();
+  const status = env("CLAUDE_STUB_MCP", "") === "down" ? "failed" : "connected";
+  const refused = {
+    type: "result", subtype: "success", is_error: true, api_error_status: 404, api_error_type: "not_found_error", num_turns: 1, total_cost_usd: 0,
+    session_id: "stub-self-test", result: "There's an issue with the selected model (pako-self-test-no-such-model). It may not exist or you may not have access to it.",
+  };
+  if (flag("--input-format") === "stream-json") {
+    process.stdout.write(`${JSON.stringify({ type: "system", subtype: "init", session_id: "stub-self-test", mcp_servers: servers.map((name) => ({ name, status })) })}\n`);
+  }
+  process.stdout.write(`${JSON.stringify(refused)}\n`);
+  process.exit(1);
+}
+
 note({ event: "start", args });
 await sleep(Number(env("CLAUDE_STUB_START_MS", "0")));
 if (mode === "gone" && resumed) {

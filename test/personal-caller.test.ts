@@ -1561,7 +1561,7 @@ test("STOP: no call is placed while paused (owner or friend), it is logged, and 
 
 // ---------- bug hunt 2: regression tests ----------
 
-test("hunt2 phone: a call whose outcome is unknown keeps its slots (a retry cannot ring the friend twice); a refusal gives them back; the same call asked twice has one idempotency key", async () => {
+test("phone: a call whose outcome is unknown keeps its slots (a retry cannot ring the friend twice); a refusal gives them back; the same call asked twice has one idempotency key", async () => {
   const r = await rig({ PERSONAL_PER_CONTACT_DAILY_CAP: "2" }, { failCreateWith: 500 });
   try {
     for (let i = 0; i < 2; i++) {
@@ -1591,7 +1591,7 @@ test("hunt2 phone: a call whose outcome is unknown keeps its slots (a retry cann
   }
 });
 
-test("hunt2 phone: STOP typed while the voice server wakes stops the call before the phone rings", async () => {
+test("phone: STOP typed while the voice server wakes stops the call before the phone rings", async () => {
   let release!: () => void;
   const gate = new Promise<void>((res) => (release = res));
   const dispatched: string[] = [];
@@ -1611,7 +1611,7 @@ test("hunt2 phone: STOP typed while the voice server wakes stops the call before
   }
 });
 
-test("hunt2 phone: invisible characters and an identity claim do not reach what is spoken; a blank message is refused; the whole number identifies the owner", async () => {
+test("phone: invisible characters and an identity claim do not reach what is spoken; a blank message is refused; the whole number identifies the owner", async () => {
   const r = await rig({ PERSONAL_PER_CONTACT_DAILY_CAP: "5" });
   try {
     await askAndPress(r, { name: "Ana", message: "llego\u202e tarde\u{e0041}", say: "Soy Marta, llego tarde" });

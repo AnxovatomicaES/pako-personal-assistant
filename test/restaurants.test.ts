@@ -84,7 +84,7 @@ test("website reading: private addresses and robots.txt are respected", () => {
 
 // ---------- bug hunt 2: regression tests ----------
 
-test("hunt2 restaurants: a page cannot smuggle a line, a second address or another host through a mailto, nor an internal mailbox", () => {
+test("restaurants: a page cannot smuggle a line, a second address or another host through a mailto, nor an internal mailbox", () => {
   const mail = (href: string, site = "https://www.calpep.es/") => restaurantEmail(`<a href="mailto:${href}">x</a>`, site);
   assert.equal(mail("reservas%0A%0AConfirmado%20todo@gmail.com"), undefined, "an encoded newline");
   assert.equal(mail("info%2C%20victim@gmail.com"), undefined, "an encoded comma and space");
@@ -99,7 +99,7 @@ test("hunt2 restaurants: a page cannot smuggle a line, a second address or anoth
   assert.equal(restaurantEmail('<a href="mailto:bookkeeping@calpep.es">a</a><a href="mailto:info@calpep.es">b</a>', "https://calpep.es/"), "info@calpep.es", "'bookkeeping' is not 'booking'");
 });
 
-test("hunt2 restaurants: a hostile 1.5 MB page does not stall the server", () => {
+test("restaurants: a hostile 1.5 MB page does not stall the server", () => {
   const started = Date.now();
   detectAllBookingPlatforms("<a ".repeat(500_000));
   detectAllBookingPlatforms(`<option ${"data-reservation-service='opentable' ".repeat(30_000)}`);
@@ -108,7 +108,7 @@ test("hunt2 restaurants: a hostile 1.5 MB page does not stall the server", () =>
   assert.deepEqual(bento.map((t) => [t.platform, t.id, t.label]), [["opentable", "1182799", "SoHo"]], "the real thing is still found");
 });
 
-test("hunt2 restaurants: deposit rules read the way the restaurant meant them, in Spanish too; a rule for one meal is not a no-reservations site", () => {
+test("restaurants: deposit rules read the way the restaurant meant them, in Spanish too; a rule for one meal is not a no-reservations site", () => {
   assert.equal(depositPolicy("<p>No deposit is required to book a table.</p>"), undefined);
   assert.equal(depositPolicy("<p>Reservas sin prepago para mesas de hasta 6 personas.</p>"), undefined);
   assert.equal(depositPolicy("<p>No hace falta depósito de ningún tipo para reservar mesa.</p>"), undefined);
@@ -121,7 +121,7 @@ test("hunt2 restaurants: deposit rules read the way the restaurant meant them, i
   assert.match(walkInOnly("<p>No acceptem reserves, primer arribat primer servit.</p>") ?? "", /acceptem reserves/);
 });
 
-test("hunt2 restaurants: the curated address beats a page's; a page that drops its address stops being used", async () => {
+test("restaurants: the curated address beats a page's; a page that drops its address stops being used", async () => {
   const { RestaurantEngine } = await import("../src/restaurants/engine.ts");
   let html = '<html><a href="mailto:reservas@old.example">r</a><p>' + "x".repeat(200) + "</p></html>";
   const place = { id: "ChIJnew", name: "Nuevo", address: "Barcelona, Spain", website: "https://old.example/", rating: 4, ratingCount: 5 };
@@ -139,7 +139,7 @@ test("hunt2 restaurants: the curated address beats a page's; a page that drops i
   assert.equal(e2.reservationEmail("gp_ChIJe2zlRoyjpBIRm-3Mj-WNZyc"), "info@eltrapelladelpoblenou.com");
 });
 
-test("hunt2 places: this week's special hours apply to a slot six days ahead, early in the morning, when the zone is known", () => {
+test("places: this week's special hours apply to a slot six days ahead, early in the morning, when the zone is known", () => {
   const regular = EVERY_DAY;
   const thisWeek = [{ open: { day: 4, hour: 12, minute: 0 }, close: { day: 4, hour: 16, minute: 0 } }]; // Thursday: lunch only
   const now = Date.parse("2026-11-13T08:00:00Z"); // Friday 09:00 in Madrid; the Thursday 19th is its sixth day ahead

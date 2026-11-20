@@ -14,5 +14,5 @@ for f in $FILES; do PATHS="$PATHS test/$f.test.ts"; done
 for zone in ${PAKO_TEST_ZONES:-America/Los_Angeles Asia/Kolkata}; do
   echo "# time-sensitive suites under TZ=$zone"
   # shellcheck disable=SC2086
-  TZ=$zone node --disable-warning=ExperimentalWarning --test $PATHS
+  TZ=$zone sh bin/with-tmp.sh node --disable-warning=ExperimentalWarning --test $PATHS
 done

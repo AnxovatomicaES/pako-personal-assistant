@@ -22,6 +22,7 @@ import { DUMP_WORDS, dumpCardText, dumpItemsOf, ownItems, removeAsk, sortDump } 
 import { CHECKIN_WORDS } from "../src/gentle-checkins.ts";
 import { RESET_WORDS } from "../src/gentle-reset.ts";
 import type { Kv } from "../src/kv.ts";
+import { createQuality } from "../src/quality.ts";
 import { loadMemory } from "../src/voice-memory.ts";
 import { loadVoiceTools } from "../src/voice-tools.ts";
 import { loadWhatsappConfig, mountWhatsapp, type Inbound } from "../src/whatsapp.ts";
@@ -516,7 +517,7 @@ const ENV = {
   ASSISTANT_BRIDGE_TOKEN: "b".repeat(48),
 };
 
-async function doorRig() {
+async function doorRig(o: { quality?: ReturnType<typeof createQuality> } = {}) {
   const fu = rig();
   const sent: Body[] = [];
   const meta = (async (_u: string | URL | Request, init?: RequestInit) => {
@@ -531,6 +532,12 @@ async function doorRig() {
   mountWhatsapp(app, {
     config, tools, memory, kv, control: createControl(kv, () => T0), ownerName: "Alex", timeZone: "Europe/London", contacts: () => [], fetch: meta,
     now: () => T0, callCheckMs: 5, receiptWaitMs: 60_000, followups: followupsProxy(() => fu.engine),
+    ...(o.quality ? {
+      quality: {
+        press: async () => null, answerText: async () => null, clearAsk: () => undefined,
+        missed: o.quality.missed, reopened: o.quality.reopened, missedText: (t: string | null) => o.quality!.missedText(t),
+      },
+    } : {}),
   });
   const server: Server = createServer(app);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
@@ -637,3 +644,43 @@ test("door: gentle buttons — Snooze asks Later today or Tomorrow on a card; Pa
     r.close();
   }
 });
+
+test("door: “reopen <words>” in the chat puts back a loop Pako closed on its own; one the owner closed stays closed", async () => {
+  const r = await doorRig();
+  try {
+    const l = (await r.fu.engine.fromChat({ title: "Renew the passport" }))!;
+    // As a check closes one (src/followups/nudges.ts): done, with why.
+    const st = JSON.parse(r.fu.store.m.get(FOLLOWUPS_KEY)!) as { loops: Loop[] };
+    const at = r.fu.clock.now;
+    Object.assign(st.loops.find((x) => x.id === l.id)!, { status: "done", closedAt: at, autoClosed: { at, why: "seen on your calendar" } });
+    r.fu.store.m.set(FOLLOWUPS_KEY, JSON.stringify(st));
+    await r.hook({ type: "text", text: { body: "Reopen passport" } });
+    assert.match(r.texts().at(-1)!, /Back on your open list: “Renew the passport”/);
+    assert.equal((await r.fu.engine.open()).length, 1);
+    const k = (await r.fu.engine.fromChat({ title: "Book the dentist" }))!;
+    await r.press(`f1:${k.id}`);
+    await r.hook({ type: "text", text: { body: "reopen dentist" } });
+    assert.match(r.texts().at(-1)!, /I don't see something I closed in the last week/);
+  } finally {
+    r.close();
+  }
+});
+
+test("door: “you missed <what>” keeps a miss and puts it on the open list; “missed the train” and other talk go on to the assistant", async () => {
+  const quality = createQuality({ kv: null, timeZone: "Europe/London", now: () => T0 });
+  const r = await doorRig({ quality });
+  try {
+    await r.hook({ type: "text", text: { body: "You missed: send Omar the signed NDA by Friday" } });
+    assert.match(r.texts().at(-1)!, /noted as one I missed[\s\S]*“send Omar the signed NDA by Friday”/);
+    assert.equal((await r.fu.engine.open()).length, 1, "on the open list, not dropped twice");
+    assert.equal((await quality.stats()).missed, 1);
+    const before = r.texts().length;
+    await r.hook({ type: "text", text: { body: "missed the train, running late" } });
+    await r.hook({ type: "text", text: { body: "not done with the report yet" } });
+    assert.ok(!r.texts().slice(before).some((t) => /missed|closed in the last week/.test(t)), "not taken as a miss or a reopen");
+    assert.equal((await quality.stats()).missed, 1);
+  } finally {
+    r.close();
+  }
+});
+
