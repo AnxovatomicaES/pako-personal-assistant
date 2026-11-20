@@ -22,6 +22,7 @@ import { personOf, personReceipt, quotePerson, type Person } from "./people.ts";
 import type { SavedRoutine, SavedWatch } from "./routines.ts";
 import type { ClosedLoop } from "./followups/types.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("undo");
 
@@ -260,15 +261,8 @@ export function createUndoJournal(kv: Kv | null, now: () => number = Date.now) {
     return run;
   };
   const recent = (list: UndoEntry[]): UndoEntry[] => list.filter((e) => now() - e.at < UNDO_KEEP_MS).slice(-KEEP);
-  const parse = (raw: string | null): UndoEntry[] => {
-    let parsed: unknown = [];
-    try {
-      parsed = raw ? JSON.parse(raw) : [];
-    } catch {
-      log.error("the stored journal is not valid JSON: starting again");
-    }
-    return (Array.isArray(parsed) ? parsed : []).map(entryOf).filter((e): e is UndoEntry => e !== null);
-  };
+  /** The journal from its record as read (readJsonRecord: a damaged one is kept aside, and reads as none). */
+  const parse = (parsed: unknown): UndoEntry[] => (Array.isArray(parsed) ? parsed : []).map(entryOf).filter((e): e is UndoEntry => e !== null);
   /** Joins entries to a list, those it has already kept as they are, oldest first. */
   const joined = (list: UndoEntry[], more: UndoEntry[]): UndoEntry[] => {
     const ids = new Set(list.map((e) => e.id));
@@ -277,7 +271,7 @@ export function createUndoJournal(kv: Kv | null, now: () => number = Date.now) {
   /** Throws when the store does not answer: an empty journal in its place would be written over the real one. */
   const load = async (): Promise<UndoEntry[]> => {
     if (entries) return entries;
-    const raw = kv ? await kv.get(KEY) : null;
+    const raw = kv ? await readJsonRecord(kv, KEY) : null;
     if (entries) return entries;
     entries = joined(parse(raw), unsaved.splice(0));
     return entries;
@@ -287,7 +281,7 @@ export function createUndoJournal(kv: Kv | null, now: () => number = Date.now) {
    * one during a deploy) may have recorded an answer's notes since this one read it. Throws when the store does not answer.
    */
   const reread = async (): Promise<UndoEntry[]> => {
-    const raw = kv ? await kv.get(KEY) : null;
+    const raw = kv ? await readJsonRecord(kv, KEY) : null;
     entries = joined(entries ?? [], parse(raw));
     return entries;
   };

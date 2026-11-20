@@ -185,6 +185,7 @@ export function createSlackSocket(d: SlackSocketDeps): SlackSocket {
       try {
         m = JSON.parse(typeof ev.data === "string" ? ev.data : Buffer.from(ev.data as ArrayBuffer).toString("utf8")) as typeof m;
       } catch {
+        /* not JSON: not a Slack envelope */
         return;
       }
       if (!m || typeof m !== "object") return;

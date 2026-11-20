@@ -23,6 +23,7 @@ import type { Control } from "./control.ts";
 import type { Kv } from "./kv.ts";
 import { inQuiet } from "./slack.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const logWatchdog = createLog("watchdog");
 
@@ -120,6 +121,16 @@ export interface BridgeVersion {
   updatedAt?: number;
   /** "on", "off", or why it did not update the last time it looked ("local changes", "on branch x"...). */
   autoupdate?: string;
+}
+
+/**
+ * Which Claude Code the assistant's computer drives, against the range Pako has been tested with (assistant/bridge/cli-version.ts). `note`
+ * is the sentence the Salud card shows when it is outside ("Claude Code X.Y is newer than Pako has been tested with").
+ */
+export interface BridgeCli {
+  version: string;
+  status: "ok" | "newer" | "older" | "unknown";
+  note?: string;
 }
 
 /**
@@ -244,6 +255,8 @@ export interface HealthState {
   server: Version | null;
   /** Today's runs of Claude as the assistant's computer last said them; null before it says any (an older computer never does). */
   usage?: BridgeUsage | null;
+  /** Which Claude Code the assistant's computer drives, against the tested range; null before it says (an older bridge never does). */
+  cli?: BridgeCli | null;
 }
 
 export type ClaudeState = "ok" | "login" | "limit" | "missing" | "starting" | "stopped";
@@ -302,6 +315,7 @@ export function createWatchdog(d: WatchdogDeps) {
   let claudeBadSince: number | null = null;
   let bridgeVersion: BridgeVersion | null = null;
   let bridgeUsage: BridgeUsage | null = null;
+  let bridgeCli: BridgeCli | null = null;
   let differentSince: number | null = null;
   let loaded: Promise<void> | null = null;
   let chain: Promise<unknown> = Promise.resolve();
@@ -330,8 +344,8 @@ export function createWatchdog(d: WatchdogDeps) {
   const load = (): Promise<void> =>
     (loaded ??= (async () => {
       try {
-        const raw = d.kv ? await d.kv.get(KEY) : null;
-        const p = raw ? (JSON.parse(raw) as Record<string, { since?: unknown; told?: unknown }>) : {};
+        const raw = d.kv ? await readJsonRecord(d.kv, KEY) : null;
+        const p = raw ? (raw as Record<string, { since?: unknown; told?: unknown }>) : {};
         for (const [k, v] of Object.entries(p)) {
           const key = k as PartKey;
           if (!ORDER.includes(key) || typeof v?.since !== "number" || incidents.has(key)) continue;
@@ -512,9 +526,13 @@ export function createWatchdog(d: WatchdogDeps) {
   const watch = (key: PartKey): void => void part(key);
 
   /** What the assistant's computer said: how Claude is doing, its version, and the day's runs of Claude. */
-  const bridgeReport = (r: { claude?: "ok" | "login" | "limit"; version?: BridgeVersion; usage?: BridgeUsage }): void => {
+  const bridgeReport = (r: { claude?: "ok" | "login" | "limit"; version?: BridgeVersion; usage?: BridgeUsage; cli?: BridgeCli }): void => {
     const t = now();
     if (r.usage) bridgeUsage = r.usage;
+    if (r.cli) {
+      if (r.cli.note && r.cli.note !== bridgeCli?.note) log(`the assistant's computer: ${r.cli.note}`);
+      bridgeCli = r.cli;
+    }
     if (!r.claude && !r.version) return; // numbers only: nothing to look at again
     if (r.claude) claudeReported = { state: r.claude, at: t };
     if (r.version) {
@@ -618,6 +636,7 @@ export function createWatchdog(d: WatchdogDeps) {
       bridge: bridgeVersion ? { ...bridgeVersion, behind } : null,
       server,
       usage: bridgeUsage,
+      cli: bridgeCli,
     };
   };
 
@@ -712,9 +731,20 @@ export function reportingKv(kv: Kv, report: HealthReport): Kv {
 const HEADERS = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" };
 
 /** What the assistant's computer may say on POST /assistant/health; null when the body says neither thing well. */
-export function readBridgeReport(body: unknown): { claude?: "ok" | "login" | "limit"; version?: BridgeVersion; usage?: BridgeUsage } | null {
-  const b = (body ?? {}) as { claude?: unknown; version?: unknown; usage?: unknown };
-  const out: { claude?: "ok" | "login" | "limit"; version?: BridgeVersion; usage?: BridgeUsage } = {};
+export function readBridgeReport(
+  body: unknown,
+): { claude?: "ok" | "login" | "limit"; version?: BridgeVersion; usage?: BridgeUsage; cli?: BridgeCli } | null {
+  const b = (body ?? {}) as { claude?: unknown; version?: unknown; usage?: unknown; cli?: unknown };
+  const out: { claude?: "ok" | "login" | "limit"; version?: BridgeVersion; usage?: BridgeUsage; cli?: BridgeCli } = {};
+  if (b.cli !== undefined) {
+    const c = (b.cli ?? {}) as { version?: unknown; status?: unknown; note?: unknown };
+    const statuses = ["ok", "newer", "older", "unknown"] as const;
+    const status = statuses.find((x) => x === c.status);
+    if (!status || typeof c.version !== "string" || !/^(\d+\.\d+\.\d+)?$/.test(c.version)) return null;
+    // The sentence is the bridge's own, shown as text on the card: plain characters only, short.
+    const note = typeof c.note === "string" ? c.note.replace(/[^\p{L}\p{N} .,:;/_()'-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 160) : "";
+    out.cli = { version: c.version, status, ...(note && status !== "ok" ? { note } : {}) };
+  }
   if (b.usage !== undefined) {
     const u = (b.usage ?? {}) as Record<string, unknown>;
     const n = (v: unknown): number | null => (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 1e13 ? v : null);
@@ -738,7 +768,7 @@ export function readBridgeReport(body: unknown): { claude?: "ok" | "login" | "li
       ...(typeof v.autoupdate === "string" ? { autoupdate: v.autoupdate.replace(/[^\p{L}\p{N} .,:;/_()'-]+/gu, " ").trim().slice(0, 80) } : {}),
     };
   }
-  return out.claude || out.version || out.usage ? out : null;
+  return out.claude || out.version || out.usage || out.cli ? out : null;
 }
 
 /**

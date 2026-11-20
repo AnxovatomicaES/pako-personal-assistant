@@ -195,6 +195,7 @@ export function tellApp(win, message) {
     win.webkit.messageHandlers.pako.postMessage(message);
     return true;
   } catch {
+    /* the app's bridge is gone: not sent */
     return false;
   }
 }

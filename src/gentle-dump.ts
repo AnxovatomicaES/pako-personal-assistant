@@ -102,6 +102,7 @@ export const DUMP_WORDS = {
   btnRemove: "Remove {i}",
   kept: "All {n} kept. 👍",
   gone: "That brain dump is no longer here to change.",
+  unread: "I couldn't read your brain dumps just now, so nothing changed. Could you try once more in a moment?",
   already: "That one was taken back already.",
   noSuch: "Your last brain dump has no item {i}.",
   none: "Nothing kept from that brain dump, so there is nothing to change.",

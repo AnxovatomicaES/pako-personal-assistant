@@ -24,6 +24,7 @@ import { texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import type { OutsideSource } from "./quarantine.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("autonomy");
 
@@ -408,11 +409,12 @@ export function createAutonomySettings(kv: Kv | null, config: AutonomyConfig): A
   let memory: AutonomyChoices = { types: {}, seconds: {} };
   const read = async (): Promise<AutonomyChoices> => {
     if (!kv) return memory;
-    const raw = await kv.get(SETTINGS_KEY);
+    const raw = await readJsonRecord(kv, SETTINGS_KEY);
     if (!raw) return { types: {}, seconds: {} };
     try {
-      return cleanChoices(JSON.parse(raw));
+      return cleanChoices(raw);
     } catch {
+      /* not JSON: no choices, as a fresh install has */
       return { types: {}, seconds: {} };
     }
   };
@@ -430,6 +432,7 @@ export function createAutonomySettings(kv: Kv | null, config: AutonomyConfig): A
       try {
         c = await read();
       } catch {
+        /* the store did not answer: ask first, the safe default */
         return { mode: "confirm", seconds: config.seconds };
       }
       return {
@@ -512,9 +515,9 @@ export function createHeldQueue(d: HeldQueueDeps): HeldQueue {
   };
   const load = async (): Promise<HeldAction[]> => {
     if (!d.kv) return memory.map((x) => ({ ...x }));
-    const raw = await d.kv.get(HELD_KEY);
+    const raw = await readJsonRecord(d.kv, HELD_KEY);
     if (!raw) return [];
-    const v: unknown = JSON.parse(raw);
+    const v: unknown = raw;
     return Array.isArray(v) ? (v.filter((x) => x && typeof x === "object" && typeof (x as HeldAction).id === "string") as HeldAction[]) : [];
   };
   const save = async (list: HeldAction[]): Promise<void> => {
@@ -645,6 +648,7 @@ export function parseContactEmails(raw: string | undefined, problems: string[] =
   try {
     v = JSON.parse(raw);
   } catch {
+    /* said in the problems list */
     problems.push('PERSONAL_CONTACT_EMAILS must be JSON, for example {"Ana":"ana@example.com"}');
     return [];
   }
@@ -683,14 +687,16 @@ export function mountAutonomyPanel(app: Express, d: { signedIn: (req: Request) =
   app.get("/panel/api/autonomy", auth(false), limit, async (_req, res) => {
     try {
       res.json(answer(await d.settings.read()));
-    } catch {
+    } catch (err) {
+      log.warn(`the autonomy choices could not be read: ${(err as Error).message}`);
       res.status(503).json({ error: "store" });
     }
   });
   app.post("/panel/api/autonomy", auth(true), limit, express.json({ limit: "2kb" }), async (req, res) => {
     try {
       res.json(answer(await d.settings.write(req.body)));
-    } catch {
+    } catch (err) {
+      log.warn(`the autonomy choices could not be kept: ${(err as Error).message}`);
       res.status(503).json({ error: "store" });
     }
   });

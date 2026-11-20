@@ -153,6 +153,7 @@ export class RestaurantEngine {
         try {
           target = saved.targetJson ? (JSON.parse(saved.targetJson) as BookingTarget) : undefined;
         } catch {
+          /* not JSON: no target */
           target = undefined;
         }
         hit = { at: saved.checkedAt, target };
@@ -254,6 +255,7 @@ export class RestaurantEngine {
     try {
       u = new URL(link.trim());
     } catch {
+      /* not a link */
       return undefined;
     }
     const host = u.hostname.toLowerCase();

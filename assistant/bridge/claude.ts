@@ -7,6 +7,8 @@ import { SYSTEM_PROMPT } from "../prompt.ts";
 import { OFFERED_TOOLS, toolId, type ToolCall } from "../tools.ts";
 import type { BridgeConfig } from "./config.ts";
 import { childEnv, claudeCommand } from "./cli.ts";
+import { ClaudeError, classifyFailure, errorSignals, type ResultFields } from "./claude-errors.ts";
+import { noteFallback } from "./fallbacks.ts";
 import { seenFields, watchTurn, type TurnSeen } from "./mcp.ts";
 
 /**
@@ -67,67 +69,49 @@ export interface ClaudeResult {
   model?: string;
 }
 
-export interface ClaudeJson {
+/** The result of a run as `--output-format json` writes it, and the "result" line of stream-json (the fields Pako reads). */
+export interface ClaudeJson extends ResultFields {
   result?: unknown;
   session_id?: unknown;
-  is_error?: unknown;
   total_cost_usd?: unknown;
   num_turns?: unknown;
   usage?: { server_tool_use?: { web_search_requests?: unknown; web_fetch_requests?: unknown } };
 }
 
 /**
- * Whether a run read the web: more than one turn (a tool was called and its result read back) or a web request counted by the API. A result
- * that says neither (an older claude) counts as none, as before this check. `num_turns` is the run's own: Claude Code 2.1.325 starts it at 1
- * for the prompt and adds one per tool result inside that run, whatever --resume loaded before it, so a plain resumed answer is 1.
+ * Whether a run read the web, and what said so. Structured first: the stream's tool_use events (watchTurn: an explicit WebSearch or WebFetch
+ * call, or any tool that is not Pako's), then the API's own web counters in `usage.server_tool_use`. Only a run with no events to read (the
+ * plain JSON output) or whose events explain fewer turns than it took falls back to `num_turns`, and that is counted and logged
+ * (fallbacks.ts): Claude Code 2.1.325 to 2.1.327 start it at 1 for the prompt and add one per tool result inside the run, whatever --resume
+ * loaded before it, but nothing promises that. Captured with 2.1.327 (test/fixtures/claude-cli/2.1.327/web-search.stream.json): a WebSearch
+ * call shows as a tool_use event, while `server_tool_use.web_search_requests` stays 0, so the counters alone would miss it.
+ * `tools`: whether the run could use any tool at all; one that could not read nothing, with no fallback needed.
  */
-export function readTheWeb(doc: ClaudeJson, seen?: TurnSeen): boolean {
+export function webRead(doc: ClaudeJson, seen?: TurnSeen, tools = true): { read: boolean; via: "events" | "usage" | "num_turns" | "none" } {
   const n = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  if (seen?.web || seen?.foreign) return { read: true, via: "events" };
   const web = doc.usage?.server_tool_use;
-  if (n(web?.web_search_requests) > 0 || n(web?.web_fetch_requests) > 0) return true;
-  // A turn whose tool calls were watched: Pako's own tools read nothing from outside (the calendar is marked apart, outsideRead), so only
-  // another tool marks it, or a turn more than the watched calls explain (a tool use the output did not show: the safe side).
-  if (seen) return seen.foreign || n(doc.num_turns) - 1 > seen.toolMessages;
-  return n(doc.num_turns) > 1;
-}
-
-/** Why a run of claude failed: signed out, a limit, the command not on this computer ("missing"), or anything else. */
-export type ClaudeTrouble = "login" | "limit" | "missing" | "other";
-
-export class ClaudeError extends Error {
-  kind: ClaudeTrouble;
-  constructor(message: string, kind: ClaudeTrouble) {
-    super(message);
-    this.kind = kind;
+  if (n(web?.web_search_requests) > 0 || n(web?.web_fetch_requests) > 0) return { read: true, via: "usage" };
+  if (!tools) return { read: false, via: "none" };
+  // A turn whose tool calls were watched: Pako's own tools read nothing from outside (the calendar is marked apart, outsideRead). A turn that
+  // took more turns than the watched calls explain had a tool use the output did not show: the safe side, and the fallback is logged.
+  if (seen) {
+    if (n(doc.num_turns) - 1 > seen.toolMessages) {
+      noteFallback("web-turns", `num_turns ${n(doc.num_turns)} with ${seen.toolMessages} tool message(s) seen: marked as read`);
+      return { read: true, via: "num_turns" };
+    }
+    return { read: false, via: "events" };
   }
+  const read = n(doc.num_turns) > 1;
+  noteFallback("web-turns", `no tool events to read (JSON output): num_turns ${n(doc.num_turns)} says ${read ? "read" : "not read"}`);
+  return { read, via: "num_turns" };
 }
 
-// An API key whose account is out of credits ("Credit balance is too low") waits like a plan's limit: the message is answered once credits are
-// added, instead of being dropped with an apology.
-export const classify = (s: string): ClaudeTrouble =>
-  // The claude command is not there (spawn's ENOENT, here or in the warm process: assistant/bridge/warm.ts): trying again never helps.
-  /could not start .{0,300}\bENOENT\b/.test(s)
-    ? "missing"
-    : /not logged in|please run \/login|invalid api key|authentication|oauth token|unauthori[sz]ed/i.test(s)
-    ? "login"
-    : /rate limit|usage limit|limit reached|overloaded|quota|hit your .{0,40}limit|out of (?:extra )?usage|spend limit|shared budget/i.test(s)
-        || /usage credits?|credit balance|(?:weekly|monthly|5-hour|opus|sonnet) limit/i.test(s)
-      ? "limit"
-      : "other";
+/** Whether a run read the web (webRead's answer alone). */
+export const readTheWeb = (doc: ClaudeJson, seen?: TurnSeen, tools = true): boolean => webRead(doc, seen, tools).read;
 
-/**
- * Whether a failed run says this account cannot use `model` now: the plan does not include it, the model is not there, or a limit that names
- * it ("You've hit your Opus limit"). An overloaded model is not one: that passes. Only asked of a run on the writing model (runs.ts), which
- * then runs again on the general model instead of failing.
- */
-export function modelUnavailable(message: string, model: string): boolean {
-  const family = /(opus|sonnet|haiku)/i.exec(model)?.[1]?.toLowerCase() ?? "";
-  const named = message.toLowerCase().includes(model.toLowerCase()) || (!!family && new RegExp(`\\b${family}\\b`, "i").test(message));
-  const gone = /\b(?:invalid|unknown|unsupported) model\b|not_found_error|\bmodel\b.{0,80}\b(?:not (?:found|available|supported|allowed|enabled|included)|unavailable|does(?: not|n't) exist)/i;
-  const notHere = /not (?:available|found|supported|allowed|enabled|included)|unavailable|does(?: not|n't) exist|(?:no|not have|without) access|upgrade|not part of/i;
-  if (gone.test(message)) return true;
-  return named && (notHere.test(message) || (classify(message) === "limit" && !/overloaded/i.test(message)));
-}
+export { ClaudeError, classify, modelUnavailable } from "./claude-errors.ts";
+export type { ClaudeTrouble } from "./claude-errors.ts";
 
 /** The `claude -p` runs under way, by process id (each the leader of its own group, see runClaude). */
 export const runningClaude = new Set<number>();
@@ -167,7 +151,9 @@ export function runClaude(
 ): Promise<ClaudeResult> {
   return new Promise((resolve, reject) => {
     const stream = !!c.files?.length || !!c.mcp;
-    const watch = c.mcp ? watchTurn() : null;
+    // Streamed, every line is read for tool use (the web, Pako's tools) and for structured error signals.
+    const watch = stream ? watchTurn() : null;
+    const signals = stream ? errorSignals() : null;
     // Always from an empty folder of its own: from inside a project Claude Code would load that project's instruction files into every call.
     if (c.stateDir) mkdirSync(c.stateDir, { recursive: true, mode: 0o700 });
     // Its own process group: a timeout kills the whole group (a wrapper script's children too), and does not wait for pipes a grandchild still holds.
@@ -211,6 +197,7 @@ export function runClaude(
     });
     const keepResult = (l: string): void => {
       watch?.line(l);
+      signals?.line(l);
       if (!/"type"\s*:\s*"result"/.test(l)) return;
       try {
         if ((JSON.parse(l) as { type?: unknown }).type === "result") out = l;
@@ -227,7 +214,7 @@ export function runClaude(
       if (settled) return;
       settled = true;
       const msg = `could not start ${c.claudeBin}: ${e.message}`;
-      reject(new ClaudeError(msg, classify(msg)));
+      reject(classifyFailure({ message: msg, spawnCode: (e as NodeJS.ErrnoException).code }));
     });
     child.on("close", (code) => {
       if (child.pid) runningClaude.delete(child.pid);
@@ -244,14 +231,16 @@ export function runClaude(
       const text = typeof doc?.result === "string" ? doc.result : "";
       if (code !== 0 || !doc || doc.is_error === true || !text.trim()) {
         const why = `${text} ${err}`.replace(/\s+/g, " ").trim().slice(0, 300) || `exit code ${code}`;
-        return reject(new ClaudeError(why, classify(why)));
+        return reject(classifyFailure({ message: why, doc, ...(signals ? { signals: signals.done() } : {}) }));
       }
       const seen = watch?.done() ?? null;
+      // Only a run that asked for Pako's server can find it missing (without one, the init line lists no servers at all).
+      if (seen && !c.mcp) seen.mcpDown = false;
       resolve({
         text,
         sessionId: typeof doc.session_id === "string" ? doc.session_id : "",
         costUsd: typeof doc.total_cost_usd === "number" ? doc.total_cost_usd : 0,
-        ...(readTheWeb(doc, seen ?? undefined) ? { readOutside: true } : {}),
+        ...(readTheWeb(doc, seen ?? undefined, c.tools.length > 0 || !!c.mcp) ? { readOutside: true } : {}),
         ...seenFields(seen),
       });
     });

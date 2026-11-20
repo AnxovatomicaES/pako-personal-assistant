@@ -150,6 +150,7 @@ async function markDone(id) {
   try {
     await call("/panel/api/mail/done", { id });
   } catch {
+    /* offline or refused: shown again, and said */
     st.hidden.delete(id);
     drawNeeds();
     toast("Couldn't mark it done right now");
@@ -162,6 +163,7 @@ async function markDone(id) {
       try {
         await call("/panel/api/mail/undone", { id });
       } catch {
+        /* offline or refused: said in a toast */
         toast("Couldn't undo it right now");
         return;
       }
@@ -193,6 +195,7 @@ function moveSelect(m) {
       m.why = `You moved it to ${LABEL[to]}`;
       toast(`Moved to ${LABEL[to]}. Mail from ${senderName(m.from)} will go there from now on.`);
     } catch {
+      /* offline or refused: said in a toast */
       toast("Couldn't move it right now");
     }
     drawList();
@@ -258,6 +261,7 @@ async function openReader(id) {
   try {
     r = await call(`/panel/api/mail/item?id=${encodeURIComponent(id)}`);
   } catch {
+    /* offline or refused: said in the dialog */
     dlg.replaceChildren(h("p", {}, "This mail can't be opened right now."), h("button", { type: "button", class: "btn", onclick: () => dlg.close() }, "Close"));
     return;
   }
@@ -288,6 +292,7 @@ async function drawSettings(holder) {
   try {
     s = await call("/panel/api/mail/settings");
   } catch {
+    /* offline or refused: said in place */
     holder.replaceChildren(h("p", { class: "muted small" }, "The mail settings can't be read right now."));
     return;
   }
@@ -298,6 +303,7 @@ async function drawSettings(holder) {
       try {
         await call("/panel/api/mail/notify", { key: k, on: box.checked });
       } catch {
+        /* offline or refused: the switch goes back, and a toast says so */
         box.checked = !box.checked;
         toast("Couldn't change it right now");
       }
@@ -312,6 +318,7 @@ async function drawSettings(holder) {
             try {
               await call("/panel/api/mail/rule/delete", { from: r.from });
             } catch {
+              /* offline or refused: said in a toast */
               toast("Couldn't remove it right now");
             }
             void drawSettings(holder);
@@ -340,6 +347,7 @@ async function refreshView() {
   try {
     st.view = await call("/panel/api/mail/view");
   } catch {
+    /* offline: drawn without the view */
     st.view = null;
   }
   drawNeeds();

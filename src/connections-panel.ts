@@ -93,6 +93,7 @@ export async function checkAgentMail(apiKey: string, inbox: string, f: typeof fe
     if (r.ok) return { ok: true };
     return { ok: false, why: r.status === 401 || r.status === 403 ? "mailRefused" : r.status === 404 ? "mailNoInbox" : "mailOther" };
   } catch {
+    /* offline or timed out: said as no answer */
     return { ok: false, why: "mailNoAnswer" };
   }
 }

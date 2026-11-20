@@ -189,6 +189,7 @@ async function act(action, values) {
     } else st.view = 0;
     return !!body.ok;
   } catch {
+    /* offline: said in the error line */
     st.error = t("failed");
     return false;
   } finally {

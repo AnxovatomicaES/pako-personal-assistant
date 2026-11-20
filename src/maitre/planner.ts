@@ -17,6 +17,7 @@ import { forkLink } from "./cartridges/thefork.ts";
 import { tableLink } from "./cartridges/opentable.ts";
 import { createHandoffs, type HandoffEnd, type HandoffReason } from "./handoff.ts";
 import { createLedger, DuplicateBooking, type LedgerEntry, type MailLine } from "./ledger.ts";
+import { readJsonRecord } from "../json-record.ts";
 
 export type Lane = "passport" | "cartridge" | "handoff" | "offweb";
 
@@ -138,10 +139,11 @@ export function createMaitre(d: MaitreDeps) {
   const readPassports = async (): Promise<Record<string, Passport>> => {
     if (passports) return passports;
     try {
-      const raw = d.kv ? await d.kv.get(PASSPORT_KEY) : null;
-      const p = raw ? (JSON.parse(raw) as unknown) : {};
+      const raw = d.kv ? await readJsonRecord(d.kv, PASSPORT_KEY) : null;
+      const p = raw ? (raw as unknown) : {};
       passports = p && typeof p === "object" && !Array.isArray(p) ? (p as Record<string, Passport>) : {};
     } catch {
+      /* not JSON, or the store did not answer: no passports */
       passports = {};
     }
     return passports;

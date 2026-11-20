@@ -52,6 +52,7 @@ async function send(file, button) {
     const why = typeof body?.error === "string" && Object.hasOwn(WORDS, body.error) ? body.error : "failed";
     say(t(why));
   } catch {
+    /* offline: said */
     say(t("failed"));
   } finally {
     busy = false;

@@ -3,6 +3,7 @@
 // welcome's state across a restart, the chat's hello waiting for the name (src/app.ts), and the real entry point (src/server.ts) asking nothing
 // in the terminal: the panel asks, and what it is told applies at once. Pako's fixed texts are English whatever language the owner writes in.
 
+import { readFileSync as readRepoFile } from "node:fs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -280,7 +281,8 @@ test("the page is English from its first paint: <html lang>, the page after a li
 /** Pako in local mode as src/server.ts builds it (its settings, the stand-in name), on a home of its own: a Spanish computer by default. */
 async function localPako(o: { dir?: string; env?: Env } = {}) {
   const dir = o.dir ?? tmp();
-  const given: Env = { LANG: "es_ES.UTF-8", ...o.env };
+  // A Spanish computer: its language and its zone said here, not taken from the zone the suite runs under.
+  const given: Env = { LANG: "es_ES.UTF-8", PERSONAL_TIMEZONE: "Europe/Madrid", ...o.env };
   const home = loadHome({ PAKO_HOME: join(dir, "home"), ...given });
   const settings = createSettings(home.dir, given, home.firstRun === true);
   home.name = settings.name() || STAND_IN_NAME;
@@ -486,4 +488,23 @@ test("start: the terminal asks nothing in local mode; a Spanish computer gets th
   } finally {
     await pako.stop();
   }
+});
+
+
+/** A file of the repository, as text. */
+const repoText = (p: string): string => readRepoFile(new URL(`../${p}`, import.meta.url), "utf8");
+
+// The brief page's clock follows the owner's region, as the chat's brief and the panel's other pages do.
+test("the brief page writes the day's times on the owner's clock: 2:00 PM in the US, 14:00 elsewhere", async () => {
+  const i18n = (await import(new URL("../src/panel/i18n.js", import.meta.url).href)) as {
+    clockOf: (hm: string, locale: string) => string;
+  };
+  assert.equal(i18n.clockOf("14:00", "en-US").replace(/\s/g, " "), "2:00 PM");
+  assert.equal(i18n.clockOf("09:05", "en-US").replace(/\s/g, " "), "9:05 AM");
+  assert.equal(i18n.clockOf("14:00", "en-GB"), "14:00");
+  assert.equal(i18n.clockOf("", "en-US"), "");
+  const page = repoText("src/panel/brief-page.js");
+  assert.doesNotMatch(page, /"time" \}, d\.time,/, "the day's start is written through clockOf, not as kept");
+  assert.match(page, /clockOf\(d\.time/);
+  assert.match(page, /clockOf\(d\.end/);
 });

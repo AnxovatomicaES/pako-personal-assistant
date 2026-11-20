@@ -69,6 +69,7 @@ export async function installCloudflared(o: {
     if (!r.ok) return { ok: false, why: "network" };
     release = (await r.json()) as typeof release;
   } catch {
+    /* offline: said as network */
     return { ok: false, why: "network" };
   }
   const file = (release.assets ?? []).find((a) => a.name === asset);
@@ -87,6 +88,7 @@ export async function installCloudflared(o: {
     bytes = Buffer.from(await r.arrayBuffer());
     if (bytes.length > MAX_BYTES) return { ok: false, why: "network" };
   } catch {
+    /* offline: said as network */
     return { ok: false, why: "network" };
   }
   if (createHash("sha256").update(bytes).digest("hex") !== expected) return { ok: false, why: "checksum" };
@@ -104,7 +106,8 @@ export async function installCloudflared(o: {
     }
     chmodSync(made, 0o755);
     renameSync(made, bin);
-  } catch {
+  } catch (err) {
+    log.warn(`cloudflared could not be put in place: ${(err as Error).message}`);
     return { ok: false, why: "disk" };
   } finally {
     if (work) rmSync(work, { recursive: true, force: true });
@@ -182,7 +185,8 @@ export function createTunnel(o: {
     try {
       // No self-update: the program stays the one whose checksum was checked.
       c = run(got.bin, ["tunnel", "--no-autoupdate", "--url", `http://127.0.0.1:${o.port()}`]);
-    } catch {
+    } catch (err) {
+      log.warn(`cloudflared could not start: ${(err as Error).message}`);
       state = "error";
       why = "start";
       return;

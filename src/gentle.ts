@@ -25,6 +25,7 @@ import { personSection, type PersonBlock } from "./person-context.ts";
 import { inline } from "./quarantine.ts";
 import type { Inbound } from "./whatsapp.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("gentle");
 
@@ -136,11 +137,12 @@ export function createGentleSettings(kv: Kv | null, config: GentleConfig) {
   let memory: GentleChoices = {};
   const choices = async (): Promise<GentleChoices> => {
     if (!kv) return { ...memory };
-    const raw = await kv.get(GENTLE_KEY);
+    const raw = await readJsonRecord(kv, GENTLE_KEY);
     if (!raw) return {};
     try {
-      return choicesOf(JSON.parse(raw));
+      return choicesOf(raw);
     } catch {
+      /* not usable: the defaults hold */
       return {};
     }
   };
@@ -232,6 +234,8 @@ export const GENTLE_WORDS = {
   pressedDone: "Done: “{title}”. Nice one.",
   pressedLater: "OK. I'll bring “{title}” back around {time}.",
   pressedTomorrow: "OK. I'll bring “{title}” back tomorrow around {time}.",
+  backLater: "Brought back from Parked: “{title}”. I'll bring it up around {time}.",
+  backTomorrow: "Brought back from Parked: “{title}”. I'll bring it up tomorrow around {time}.",
   pressedPark: "Parked: “{title}”. No nudges for it; it waits in your Parked list (“what did I park?”) until you want it.",
   folded: "Kept for the brief, no more nudges: {title}",
   parkedNone: "Nothing parked right now.",
@@ -419,14 +423,14 @@ export interface TimeAnchorsDeps {
 export function createTimeAnchors(d: TimeAnchorsDeps) {
   const now = d.now ?? Date.now;
   let memory = emptyAnchors();
-  const load = async (): Promise<AnchorState> => {
-    if (!d.kv) return structuredClone(memory);
-    try {
-      return anchorStateOf(JSON.parse((await d.kv.get(GENTLE_ANCHORS_KEY)) ?? "{}"));
-    } catch {
-      return emptyAnchors();
-    }
-  };
+  // A store that does not answer throws (src/json-record.ts): an empty state in its place would be saved over the learnt durations and the
+  // anchors sent, and the same anchors sent again. The callers that change it then change nothing; the ones that only read get nothing.
+  const load = async (): Promise<AnchorState> =>
+    (d.kv ? anchorStateOf((await readJsonRecord(d.kv, GENTLE_ANCHORS_KEY)) ?? {}) : structuredClone(memory));
+  const peek = (): Promise<AnchorState> => load().catch((err: Error) => {
+    log.warn(`the anchors could not be read: ${err.message}`);
+    return emptyAnchors();
+  });
   const save = async (s: AnchorState): Promise<void> => {
     const t = now();
     s.sent = s.sent.filter((x) => t - x.at < 2 * DAY);
@@ -444,12 +448,13 @@ export function createTimeAnchors(d: TimeAnchorsDeps) {
       const g = await d.settings();
       if (!g) return [];
       const t = now();
-      const events = await d.events().catch(() => [] as CalEvent[]);
       const s = await load();
+      const events = await d.events().catch(() => [] as CalEvent[]);
       // The meetings that ended: their length, for "this usually takes you about".
       for (const e of events) {
         const k = eventKey(e);
-        if (e.allDay || e.response === "declined" || e.end > t || s.measured.includes(k)) continue;
+        // Only meetings on the calendar: one known only from an invitation mail may never have been accepted, or held.
+        if (e.allDay || e.response === "declined" || e.invited || e.end > t || s.measured.includes(k)) continue;
         const min = Math.round((e.end - e.start) / MIN);
         s.measured.push(k);
         if (min >= 5 && min <= 8 * 60 && kindKey(e.title)) s.durations.push({ key: kindKey(e.title), min, at: e.end });
@@ -483,15 +488,19 @@ export function createTimeAnchors(d: TimeAnchorsDeps) {
   const pressed = async (id: string): Promise<string> => {
     const key = buttons.get(id);
     if (key) {
-      const s = await load();
-      if (!s.seen.includes(key)) s.seen.push(key);
-      await save(s);
+      try {
+        const s = await load();
+        if (!s.seen.includes(key)) s.seen.push(key);
+        await save(s);
+      } catch (err) {
+        log.warn(`an On it press could not be kept: ${(err as Error).message}`);
+      }
     }
     return GT()("onIt");
   };
   /** What similar meetings took, for a title (the gentle nudge of an agreed meeting says it too). */
-  const usually = async (title: string): Promise<number | null> => learnedMinutes(title, (await load()).durations);
-  return { tick, pressed, usually, history: async () => (await load()).durations };
+  const usually = async (title: string): Promise<number | null> => learnedMinutes(title, (await peek()).durations);
+  return { tick, pressed, usually, history: async () => (await peek()).durations };
 }
 export type TimeAnchors = ReturnType<typeof createTimeAnchors>;
 
@@ -538,6 +547,7 @@ export function parseStep(raw: string, facts: string): string | null {
     const j = JSON.parse(s.replace(/^```(?:json)?\s*|\s*```$/g, "")) as { step?: unknown };
     step = typeof j?.step === "string" ? j.step : "";
   } catch {
+    /* not JSON: no step */
     return null;
   }
   step = step.replace(/\s+/g, " ").trim();
@@ -594,14 +604,10 @@ export interface FirstStepsDeps {
 export function createFirstSteps(d: FirstStepsDeps) {
   const now = d.now ?? Date.now;
   let memory = emptySteps();
-  const load = async (): Promise<StepState> => {
-    if (!d.kv) return structuredClone(memory);
-    try {
-      return stepStateOf(JSON.parse((await d.kv.get(GENTLE_STEPS_KEY)) ?? "{}"));
-    } catch {
-      return emptySteps();
-    }
-  };
+  // A store that does not answer throws (src/json-record.ts): an empty state in its place would forget the day's count (more steps than
+  // the allowance) and the jobs on their way, and be saved over them. The sweep and a job's answer then change nothing.
+  const load = async (): Promise<StepState> =>
+    (d.kv ? stepStateOf((await readJsonRecord(d.kv, GENTLE_STEPS_KEY)) ?? {}) : structuredClone(memory));
   const save = async (s: StepState): Promise<void> => {
     const t = now();
     s.jobs = s.jobs.filter((j) => t - j.at < DAY);
@@ -670,7 +676,7 @@ export function mountGentlePanel(app: Express, d: {
   parked?: () => Promise<{ id: string; title: string; who: string; at: number }[]>;
   unpark?: (id: string) => Promise<boolean>;
   /** What the weekly reset let go after a month parked (src/gentle-reset.ts), newest first: the Parked list's history. */
-  history?: () => Promise<{ title: string; who: string; parkedAt: number; at: number }[]>;
+  history?: () => Promise<{ title: string; who: string; parkedAt: number; at: number; why?: "reset" | "expired" }[]>;
   standardMax: number;
 }): void {
   const limit = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: "draft-8", legacyHeaders: false });
@@ -696,14 +702,16 @@ export function mountGentlePanel(app: Express, d: {
   app.get("/panel/api/gentle", auth(false), limit, async (_req, res) => {
     try {
       res.json(await answer(await d.settings.read()));
-    } catch {
+    } catch (err) {
+      log.warn(`gentle settings: the store did not answer: ${(err as Error).message}`);
       res.status(503).json({ error: "store" });
     }
   });
   app.post("/panel/api/gentle", auth(true), limit, express.json({ limit: "2kb" }), async (req, res) => {
     try {
       res.json(await answer(await d.settings.write(req.body)));
-    } catch {
+    } catch (err) {
+      log.warn(`gentle settings: the store did not answer: ${(err as Error).message}`);
       res.status(503).json({ error: "store" });
     }
   });
@@ -716,7 +724,8 @@ export function mountGentlePanel(app: Express, d: {
     try {
       const ok = await d.unpark(id);
       res.status(ok ? 200 : 404).json({ ok, ...(await answer(await d.settings.read())) });
-    } catch {
+    } catch (err) {
+      log.warn(`gentle unpark: the store did not answer: ${(err as Error).message}`);
       res.status(503).json({ error: "store" });
     }
   });

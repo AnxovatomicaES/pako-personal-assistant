@@ -9,7 +9,7 @@ import { isZone } from "./time.ts";
 import { MAIL_BODY_MAX, MAIL_THREAD } from "../mail-body.ts";
 import {
   LOOP_KINDS, type Batch, type BatchMsg, type Check, type FollowupsState, type Job, type LearnedRule, type Loop, type LoopKind, type LoopSource,
-  type MailBatch, type MailSeen, type Where,
+  type MailBatch, type MailSeen, type ParkedExpired, type Where,
 } from "./types.ts";
 
 export const HEX10 = /^[0-9a-f]{10}$/;
@@ -140,6 +140,9 @@ const mailBatchOf = (v: unknown): MailBatch | null => {
   return where && mails.length ? { thread: v.thread, where, firstAt: v.firstAt, mails: mails.slice(-MAIL_BATCH_MAX) } : null;
 };
 
+/** Notes of parked loops let go after 45 days, kept at most (and 90 days: src/followups/store.ts). */
+export const EXPIRED_MAX = 50;
+
 /** The stored record, every part checked (what the brief and the Zoom review read from FOLLOWUPS_KEY). */
 export function stateOf(raw: unknown): FollowupsState {
   const o = isObject(raw) ? raw : {};
@@ -147,7 +150,11 @@ export function stateOf(raw: unknown): FollowupsState {
     isObject(r) && typeof r.at === "number" ? [{ at: r.at, who: str(r.who, WHO_MAX), where: str(r.where, 120), title: str(r.title, TITLE_MAX) }] : []);
   const b = isObject(o.budget) ? o.budget : {};
   const mb = isObject(o.mailBudget) ? o.mailBudget : {};
+  const expired = (Array.isArray(o.expired) ? o.expired : []).flatMap((x): ParkedExpired[] =>
+    isObject(x) && typeof x.title === "string" && typeof x.at === "number"
+      ? [{ title: str(x.title, TITLE_MAX), who: str(x.who, WHO_MAX), parkedAt: num(x.parkedAt) ?? 0, at: x.at }] : []).slice(-EXPIRED_MAX);
   return {
+    ...(expired.length ? { expired } : {}),
     loops: (Array.isArray(o.loops) ? o.loops : []).map(loopOf).filter((x): x is Loop => x !== null).slice(-LOOPS_MAX),
     rules: rules.slice(-RULES_MAX),
     jobs: (Array.isArray(o.jobs) ? o.jobs : []).map(jobOf).filter((x): x is Job => x !== null).slice(-JOBS_MAX),

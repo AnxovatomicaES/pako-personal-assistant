@@ -34,7 +34,7 @@ export function createFollowups(d: FollowupsDeps) {
   Object.assign(fu, mountOwner(fu));
   Object.assign(fu, mountRehearse(fu));
   const { observeSlack, observeMail, offer, result, ingest, tick, press, command, context, open, read, dueText, sourceText, draft, dryAnswer } = fu;
-  const { closeByWords, calendarChanged, reopenClosed, forDraft, draftFacts, fromChat, dropFromChat, snoozeCard, parked, parkedText, unpark, setStep, letGo } = fu;
+  const { closeByWords, calendarChanged, reopenClosed, forDraft, draftFacts, fromChat, dropFromChat, snoozeCard, parked, parkedText, unpark, setStep, letGo, engaged, expiredParked } = fu;
   // Loops from the mail triage, and the panel's Done on a mail (src/followups/mail.ts).
   const mail = mountMailLoops(fu);
 
@@ -63,6 +63,10 @@ export function createFollowups(d: FollowupsDeps) {
     unpark,
     setStep,
     letGo,
+    /** The owner engaged with a loop without a Done/Snooze/Park press (a check-in asked from its nudge): its unanswered count starts again. */
+    engaged,
+    /** Parked loops the store let go after PARKED_KEEP_MS, newest first: the Parked list's history (src/gentle-reset.ts). */
+    expiredParked,
     open,
     read,
     /** Nudges given today: proactive Pako (src/proactive.ts) counts them in the day's shared budget. */

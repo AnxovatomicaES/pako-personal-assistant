@@ -11,6 +11,7 @@ import type { Loop } from "./followups.ts";
 import type { Kv } from "./kv.ts";
 import { fold } from "./lists.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("prep");
 
@@ -62,9 +63,10 @@ export function createMeetingPrep(d: MeetingPrepDeps) {
   const load = async (): Promise<State> => {
     if (!d.kv) return structuredClone(memory);
     try {
-      const v = JSON.parse((await d.kv.get(MEETING_PREP_KEY)) ?? "{}") as Partial<State>;
+      const v = ((await readJsonRecord(d.kv, MEETING_PREP_KEY)) ?? {}) as Partial<State>;
       return { done: Array.isArray(v.done) ? v.done.filter((x) => typeof x?.key === "string" && typeof x?.at === "number").slice(-200) : [] };
-    } catch {
+    } catch (err) {
+      log.warn(`the prepared meetings could not be read, starting empty: ${err instanceof SyntaxError ? "not JSON" : (err as Error).message}`);
       return { done: [] };
     }
   };

@@ -81,6 +81,7 @@ async function change(path, body) {
     // A task ticked as done: Pako's figure is glad (pako-figure.js listens).
     else if (r.ok && body.done === true) dispatchEvent(new CustomEvent("pako:happy"));
   } catch {
+    /* offline: said in a toast */
     toast(t("failed"));
   } finally {
     busy = false;

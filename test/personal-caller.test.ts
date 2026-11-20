@@ -20,7 +20,12 @@ const TOKEN = "t0ken_0123456789abcdef01234567";
 const ME = "+34600111222";
 const ANA = "+34611222333";
 const LUIS = "+34622333444";
-const ENV = { PERSONAL_CALLER_TOKEN: TOKEN, PERSONAL_OWNER_NUMBER: ME, PERSONAL_OWNER_NAME: "Marta", PERSONAL_CONTACTS: JSON.stringify({ Ana: ANA, Luis: LUIS }) };
+// Marta lives in Madrid: her zone is said, so the quiet hours and the day's caps do not follow the zone the suite runs under (a computer's own
+// zone as the default is test/region.test.ts's).
+const ENV = {
+  PERSONAL_CALLER_TOKEN: TOKEN, PERSONAL_OWNER_NUMBER: ME, PERSONAL_OWNER_NAME: "Marta", PERSONAL_CONTACTS: JSON.stringify({ Ana: ANA, Luis: LUIS }),
+  PERSONAL_TIMEZONE: "Europe/Madrid",
+};
 const cfg = (extra: Record<string, string> = {}): PersonalConfig => loadPersonalConfig({ ...ENV, ...extra })!;
 
 // ---------- configuration ----------
@@ -69,7 +74,7 @@ test("config: PERSONAL_CONTACTS_EXTRA adds friends under the same rules, on top 
   }
 });
 
-test("config: defaults are dry run, five calls a day for the owner, two per friend, quiet 22:00-09:00 Madrid", () => {
+test("config: defaults are dry run, five calls a day for the owner, two per friend, quiet 22:00-09:00 in the owner's zone", () => {
   const c = cfg();
   assert.equal(c.live, false, "real calls need PERSONAL_LIVE=1");
   assert.equal(cfg({ PERSONAL_LIVE: "1" }).live, true);

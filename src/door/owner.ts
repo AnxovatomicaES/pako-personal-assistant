@@ -31,8 +31,8 @@ export function mountOwner(door: Door): Part {
     try {
       const v = await d.kv.get(BSUID_KEY);
       if (v && BSUID.test(v)) door.ownerBsuid = v;
-    } catch {
-      bsuidLoaded = false; // try again with the next message
+    } catch { // try again with the next message
+      bsuidLoaded = false;
     }
   };
   /** True for the owner. A message that carries both the owner's number and a user id teaches the id (Meta signs the payload, so it cannot be forged). */

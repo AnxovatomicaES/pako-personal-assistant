@@ -11,6 +11,7 @@ import { rateLimit } from "express-rate-limit";
 import { locale, texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("lists");
 
@@ -144,14 +145,9 @@ export function createLists(kv: Kv | null, now: () => number = Date.now): ListSt
   let local: Book = { lists: [], tasks: [] };
   const readStrict = async (): Promise<Book> => {
     if (!kv) return structuredClone(local);
-    const raw = await kv.get(KEY);
+    const raw = await readJsonRecord(kv, KEY);
     if (!raw) return { lists: [], tasks: [] };
-    try {
-      return clean(JSON.parse(raw));
-    } catch {
-      log.error("the stored lists are not valid JSON: starting again");
-      return { lists: [], tasks: [] };
-    }
+    return clean(raw);
   };
   const write = async (b: Book): Promise<void> => {
     // Done tasks go after a week, the oldest first when there are too many: an open task is never pushed out by a done one.

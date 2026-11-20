@@ -14,6 +14,7 @@ import type { FollowupsQuality } from "./followups.ts";
 import { texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("quality");
 
@@ -175,14 +176,9 @@ export function createQuality(d: QualityDeps) {
   };
   const readNow = async (): Promise<State> => {
     if (!d.kv) return structuredClone(memory);
-    const raw = await d.kv.get(FEEDBACK_KEY);
+    const raw = await readJsonRecord(d.kv, FEEDBACK_KEY);
     if (!raw) return { verdicts: [], nudges: [] };
-    try {
-      return qualityStateOf(JSON.parse(raw));
-    } catch {
-      log.error("the stored record is not valid JSON: starting again");
-      return { verdicts: [], nudges: [] };
-    }
+    return qualityStateOf(raw);
   };
   /** One change at a time; what is older than 90 days goes with every write. */
   const mutate = <R>(fn: (s: State) => R): Promise<R> => {

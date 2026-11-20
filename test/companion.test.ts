@@ -24,6 +24,7 @@ import { neutralise } from "../src/quarantine.ts";
 import { loadMemory } from "../src/voice-memory.ts";
 import { loadVoiceTools } from "../src/voice-tools.ts";
 import { loadWhatsappConfig, mountWhatsapp } from "../src/whatsapp.ts";
+import { withSystemZone } from "./helpers/zone.ts";
 
 const OWNER = "+34600111222";
 const OWNER_WA = "34600111222";
@@ -123,7 +124,7 @@ test("red flags in English, and the answer: the number first, nothing before it,
   assert.match(redFlagReply("suicide", "en", "US"), /call 988 now.*call 911/);
   assert.match(redFlagReply("suicide", "en", "NL"), /call 112 now\./, "no crisis line known: the emergency number");
   assert.match(redFlagReply("suicide", "en", "DE"), /call 0800 111 0 111 now\. .*call 112\./, "Germany's crisis line");
-  assert.deepEqual(loadCountry({}), { country: "ES" });
+  assert.deepEqual(withSystemZone("Europe/Madrid", () => loadCountry({})), { country: "ES" }, "a computer in Madrid's zone");
   assert.deepEqual(loadCountry({ PAKO_COUNTRY: "gb" }), { country: "GB" });
   assert.match(loadCountry({ PAKO_COUNTRY: "Spain" }).problem ?? "", /two letters/);
 });

@@ -76,6 +76,7 @@ async function remove(kind, id) {
     });
     if (!r.ok && r.status !== 404) toast(t("failed"));
   } catch {
+    /* offline: said in a toast */
     toast(t("failed"));
   } finally {
     busy = false;

@@ -14,6 +14,7 @@ import type { HeldActs } from "../quarantine.ts";
 import type { Door, Turn } from "./door.ts";
 import type { Handler } from "./incoming.ts";
 import { createLog } from "../log.ts";
+import { readJsonRecord } from "../json-record.ts";
 
 const log = createLog("dump");
 
@@ -35,14 +36,12 @@ const none = (): HeldActs => ({ call: null, message: null, send: null, book: nul
 export function mountDump(door: Door): Pick<Door, "brainDump" | "dumpPressed" | "dumpRemove"> {
   const { d, now, sendText, graph, journal, act } = door;
   let memory: DumpRecord[] = [];
+  // A store that does not answer throws (src/json-record.ts): an empty list in its place would be saved over the other dumps, and their
+  // Undo all and "remove 2" would find nothing. A dump made then keeps its items (and its card), but is not added to the record.
   const load = async (): Promise<DumpRecord[]> => {
     if (!d.kv) return memory;
-    try {
-      const v = JSON.parse((await d.kv.get(BRAIN_DUMPS_KEY)) ?? "[]") as unknown;
-      return (Array.isArray(v) ? v : []).filter((x): x is DumpRecord => !!x && typeof x.id === "string" && Array.isArray(x.items)).slice(-DUMPS_MAX);
-    } catch {
-      return [];
-    }
+    const v = ((await readJsonRecord(d.kv, BRAIN_DUMPS_KEY)) ?? []) as unknown;
+    return (Array.isArray(v) ? v : []).filter((x): x is DumpRecord => !!x && typeof x.id === "string" && Array.isArray(x.items)).slice(-DUMPS_MAX);
   };
   const save = async (list: DumpRecord[]): Promise<void> => {
     memory = list.filter((x) => now() - x.at < KEEP_S * 1000).slice(-DUMPS_MAX);
@@ -129,7 +128,7 @@ export function mountDump(door: Door): Pick<Door, "brainDump" | "dumpPressed" | 
     } catch (err) {
       log.error(`the brain dump's undo entry: ${(err as Error).message}`);
     }
-    await serial(async () => save([...(await load()), r]));
+    await serial(async () => save([...(await load()), r])).catch((err: Error) => log.warn(`the brain dump could not be kept for its buttons: ${err.message}`));
     d.control?.log("note", DT()("logDump", { n: r.items.length }));
     if (!(await card(r, { dropped: dropped.length, failed }))) await sendText(dumpCardText(r.items.map((x) => ({ kind: x.kind, text: x.text, when: x.when })), { dropped: dropped.length, failed }));
     return r.items.length;
@@ -144,7 +143,13 @@ export function mountDump(door: Door): Pick<Door, "brainDump" | "dumpPressed" | 
   /** Keep all (dk), Undo all (dx), Remove n (d1…d12). */
   const dumpPressed = (what: "keep" | "undo" | number, id: string, by = ""): Promise<void> =>
     serial(async () => {
-      const list = await load();
+      let list: DumpRecord[];
+      try {
+        list = await load();
+      } catch (err) {
+        log.warn(`the brain dumps could not be read, nothing changed: ${(err as Error).message}`);
+        return void (await sendText(DT()("unread")));
+      }
       const r = list.find((x) => x.id === id);
       if (!r) return void (await sendText(DT()("gone")));
       if (r.undone) return void (await sendText(DT()("already")));
@@ -166,7 +171,15 @@ export function mountDump(door: Door): Pick<Door, "brainDump" | "dumpPressed" | 
 
   /** "remove 2" typed: the latest brain dump of the last two days. False when there is none (the message goes on as any other). */
   const dumpRemove = async (n: number, by: string): Promise<boolean> => {
-    const last = (await load()).filter((x) => !x.undone).at(-1);
+    let list: DumpRecord[];
+    try {
+      list = await load();
+    } catch (err) {
+      log.warn(`the brain dumps could not be read, nothing changed: ${(err as Error).message}`);
+      await sendText(DT()("unread"));
+      return true;
+    }
+    const last = list.filter((x) => !x.undone).at(-1);
     if (!last) return false;
     await dumpPressed(n, last.id, by);
     return true;

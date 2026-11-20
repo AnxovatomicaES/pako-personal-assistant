@@ -43,6 +43,7 @@ import {
   dropUnbackedAttachments, instructsPako, keepSupported, mentionsAttachment, payloads, stripPayloads, unsupported, type Ground,
 } from "./brief-support.ts";
 import type { CalChange } from "./calendar-changes.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("brief");
 
@@ -525,6 +526,7 @@ function jsonOf(raw: unknown): Record<string, unknown> | null {
     const v = JSON.parse(raw.slice(a, b + 1)) as unknown;
     return isObject(v) ? v : null;
   } catch {
+    /* not JSON: no object in the answer */
     return null;
   }
 }
@@ -882,10 +884,11 @@ export function createBriefV2(d: BriefV2Deps) {
     return p.size ? { ...doc, todos: doc.todos.filter((x) => !x.loopId || !p.has(x.loopId)) } : doc;
   };
 
-  const parse = (raw: string | null): State => {
-    if (!raw) return empty();
+  /** The brief's state from its record as read (readJsonRecord: a damaged one is kept aside, and reads as none). */
+  const parse = (raw: unknown): State => {
+    if (!isObject(raw)) return empty();
     try {
-      const p = JSON.parse(raw) as Partial<State>;
+      const p = raw as Partial<State>;
       return {
         doc: isObject(p.doc) ? (p.doc as unknown as BriefDoc) : null,
         gathered: isObject(p.gathered) ? (p.gathered as unknown as Gathered) : null,
@@ -894,11 +897,11 @@ export function createBriefV2(d: BriefV2Deps) {
         done: Array.isArray(p.done) ? p.done.filter((x): x is number => Number.isInteger(x)) : [],
       };
     } catch {
-      log.error("the stored brief is not valid JSON: starting again");
+      log.error("the stored brief could not be used: starting again");
       return empty();
     }
   };
-  const read = async (): Promise<State> => (d.kv ? parse(await d.kv.get(BRIEF_V2_KEY)) : structuredClone(memory));
+  const read = async (): Promise<State> => (d.kv ? parse(await readJsonRecord(d.kv, BRIEF_V2_KEY)) : structuredClone(memory));
   const mutate = <R>(fn: (s: State) => R | Promise<R>): Promise<R> => {
     const run = chain.then(async () => {
       const s = await read();
@@ -1088,6 +1091,7 @@ export function createBriefV2(d: BriefV2Deps) {
         .slice(0, 6)
         .map((x) => `${x.title}${x.context ? `: ${x.context}` : ""}`.slice(0, 160));
     } catch {
+      /* best effort: the brief goes on without the open to-dos when they cannot be read */
       return [];
     }
   };

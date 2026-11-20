@@ -18,6 +18,7 @@ import { mountPaperUpload } from "./papers-panel.ts";
 import { createControl, type Control } from "./control.ts";
 import { localGuard } from "./guard-http.ts";
 import { createStoreGuard, watchStore, type StoreLost } from "./store-guard.ts";
+import { corruptNotice, onCorruptRecord } from "./json-record.ts";
 import { mountDashboard } from "./dashboard.ts";
 import { calendarLog, createCalendarCore, createZohoSource, loadCalendarConfig, loadCalendarTiming, type CalendarReader } from "./calendar.ts";
 import { createIcsSource, icsHosts, icsWhyText, loadIcsConfig } from "./ics.ts";
@@ -94,7 +95,8 @@ import { createAutonomySettings, loadAutonomyConfig, mountAutonomyPanel, parseCo
 import { mountRoutinesPanel } from "./routines.ts";
 import { createJobs } from "./jobs.ts";
 import {
-  createWatchdog, loadWatchdogConfig, mountBridgeHealth, mountHealthPanel, readServerVersion, reportingKv, type BridgeUsage, type BridgeVersion, type HealthReport, type ClaudeState, type Version,
+  createWatchdog, loadWatchdogConfig, mountBridgeHealth, mountHealthPanel, readServerVersion, reportingKv,
+  type BridgeCli, type BridgeUsage, type BridgeVersion, type HealthReport, type ClaudeState, type Version,
 } from "./watchdog.ts";
 import { createLog } from "./log.ts";
 
@@ -938,6 +940,8 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
         logRelay.info("ON: relay mode, reminders fired on Telegram (POST /relay/sync, /relay/tick)");
       }
       tellOwner = (text) => door.notifyOwner(text, { urgent: true });
+      // A record of the store that no longer parses (src/json-record.ts): kept aside, then the owner told once, here.
+      onCorruptRecord((c) => void door.notifyOwner(corruptNotice(c), { urgent: true }).catch(() => undefined));
       tellAssistant = door.note;
       // The watchdog's notices: on Telegram first when it can reach the owner there (a server's WhatsApp may be the part that is down), else
       // as any urgent notice (a computer: Telegram when paired, with a copy in the panel's chat, which the Mac app notifies about).
@@ -1046,6 +1050,7 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
                 },
                 version: (v: BridgeVersion) => dog.bridgeReport({ version: v }),
                 usage: (u: BridgeUsage) => dog.bridgeReport({ usage: u }),
+                cli: (c: BridgeCli) => dog.bridgeReport({ cli: c }),
                 ...(local.bridge.refresh ? { refresh: local.bridge.refresh } : {}),
                 // What is typed in the window is a message from the owner, handled exactly like one that came by WhatsApp.
                 send: async (text: string) => {
@@ -1061,6 +1066,7 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
         ...(slack.config ? { slack: { alerts: () => (slackRef.reader ? slackRef.reader.alerts() : Promise.resolve([])) } } : {}),
         ...(fakeSlack ? { slack: { alerts: fakeSlack.alerts } } : {}),
         ...(followupsCfg.config ? { loops: async () => (followupsRef.engine ? followupsRef.engine.open() : []) } : {}),
+        gentle: async () => (await gentleSettings.view()) !== null,
         catchUp: async () => (backfillRef.b ? backfillRef.b.progress() : null),
         ...(calOn
           ? {
@@ -1117,7 +1123,7 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           ? {
               parked: async () => (await followupsDoor.parked!()).map((l) => ({ id: l.id, title: l.title, who: l.who, at: l.parkedAt ?? l.createdAt })),
               unpark: async (id: string) => (await followupsDoor.unpark!({ id })).ok,
-              // What the weekly reset let go after a month parked (src/gentle-reset.ts): the Parked list's history.
+              // What the weekly reset let go, and the store after 45 days parked (src/gentle-reset.ts): the Parked list's history.
               history: async () => (gentleRef.reset ? gentleRef.reset.history() : []),
             }
           : {}),
@@ -1570,8 +1576,14 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
         ...(meetings ? { events: meetings } : {}),
         jobs,
         card: (body, buttons) => door.sendCard(body, buttons),
-        loop: async (id) => (await followupsRef.engine?.open())?.find((l) => l.id === id) ?? null,
+        // Not built yet (the first look at start): unknown, not gone, so a waiting check-in is not ended for it.
+        loop: async (id) => {
+          if (!followupsRef.engine) throw new Error("the follow-ups are not ready");
+          return (await followupsRef.engine.open()).find((l) => l.id === id) ?? null;
+        },
         parkLoop: (id) => followupsDoor.press("7", id),
+        // "Check on me in 30 min" on a nudge is an answer: gentle mode's unanswered count starts again.
+        engaged: async (id) => (followupsRef.engine ? followupsRef.engine.engaged(id) : false),
         log: (text) => control.log("followup", text),
       });
       const checkins = gentleRef.checkins;
@@ -1584,6 +1596,8 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
           parked: () => followupsDoor.parked!(),
           park: async (id) => /^Parked/.test(await followupsDoor.press("7", id)),
           letGo: async (id) => (followupsRef.engine ? followupsRef.engine.letGo(id) : false),
+          // What the store let go after 45 days parked: in the Parked list's history even when no reset ever asked about it.
+          expired: async () => (followupsRef.engine ? followupsRef.engine.expiredParked() : []),
           quiet: followupsCfg.config.quiet ?? null,
           ...(meetings ? { events: meetings } : {}),
           jobs,

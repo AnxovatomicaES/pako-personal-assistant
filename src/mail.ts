@@ -26,6 +26,7 @@ import type { Kv } from "./kv.ts";
 import type { Inbound } from "./whatsapp.ts";
 import type { HealthReport } from "./watchdog.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("mail");
 
@@ -420,11 +421,11 @@ export function createMailbox(kv: Kv | null, o: { showCodes?: boolean; lang?: ()
   const load = async (): Promise<MailState> => {
     if (state) return state;
     let s: MailState = { seen: [], recent: [], primed: false };
-    const raw = kv ? await kv.get(STATE_KEY) : null;
+    const raw = kv ? await readJsonRecord(kv, STATE_KEY) : null;
     if (state) return state; // loaded (and maybe changed) by someone else while this read was in flight: theirs is newer
     if (raw) {
       try {
-        const p = JSON.parse(raw) as Partial<MailState>;
+        const p = raw as Partial<MailState>;
         s = {
           seen: (Array.isArray(p.seen) ? p.seen : []).filter((x): x is string => typeof x === "string"),
           recent: (Array.isArray(p.recent) ? p.recent : [])
@@ -433,7 +434,7 @@ export function createMailbox(kv: Kv | null, o: { showCodes?: boolean; lang?: ()
           primed: p.primed === true,
         };
       } catch {
-        log.error("the stored state is not valid JSON: starting again");
+        log.error("the stored state could not be used: starting again");
       }
     }
     state = s;
@@ -456,13 +457,13 @@ export function createMailbox(kv: Kv | null, o: { showCodes?: boolean; lang?: ()
   const loadPrefs = async (): Promise<{ rules: SenderRule[]; notify: NotifyPrefs }> => {
     if (prefs) return prefs;
     let p = { rules: [] as SenderRule[], notify: notifyPrefsOf(null) };
-    const raw = kv ? await kv.get(PREFS_KEY) : null;
+    const raw = kv ? await readJsonRecord(kv, PREFS_KEY) : null;
     if (raw) {
       try {
-        const v = JSON.parse(raw) as { rules?: unknown; notify?: unknown };
+        const v = raw as { rules?: unknown; notify?: unknown };
         p = { rules: rulesOf(v.rules), notify: notifyPrefsOf(v.notify) };
       } catch {
-        log.error("the stored mail choices are not valid JSON: the defaults hold");
+        log.error("the stored mail choices could not be used: the defaults hold");
       }
     }
     prefs ??= p;
@@ -936,6 +937,7 @@ export function mountMail(app: Express, d: MailDeps) {
     try {
       event = JSON.parse(body.toString("utf8")) as typeof event;
     } catch {
+      /* not JSON: refused, the sender sees the 400 */
       res.status(400).type("text").send("Not JSON");
       return;
     }

@@ -3,6 +3,7 @@
 import type { Lang } from "../i18n.ts";
 import type { Seen } from "./checks.ts";
 import type {
+  ParkedExpired,
   Batch, DraftInput, DryOutcome, FollowupsConfig, FollowupsDeps, FollowupsDoor, FollowupsState, Job, Loop, LoopSource, SlackSeen,
 } from "./types.ts";
 
@@ -67,6 +68,8 @@ export interface Engine {
   unpark: NonNullable<FollowupsDoor["unpark"]>;
   setStep: (id: string, step: string) => Promise<boolean>;
   letGo: (id: string) => Promise<boolean>;
+  engaged: (id: string) => Promise<boolean>;
+  expiredParked: () => Promise<ParkedExpired[]>;
 
   // rehearse.ts
   draft: (o: DraftInput) => Promise<{ job: Job; text: string }>;

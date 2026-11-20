@@ -18,6 +18,7 @@ import { tmpdir, uptime } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { before, test } from "node:test";
+import { generateFeedKey, signFeed } from "../desktop/mac/feed-sign.ts";
 
 // git's hook settings (GIT_DIR and the like, when the tests run from a pre-push hook) must not reach the git this file runs in its own
 // throwaway repositories: it would work on the real repository instead.
@@ -33,6 +34,8 @@ const panel = createRequire(import.meta.url)("../bin/panel.cjs") as {
 const hasSwift = process.platform === "darwin" && spawnSync("swiftc", ["--version"], { stdio: "ignore" }).status === 0;
 const skip = hasSwift ? false : "needs macOS with swiftc (the Command Line Tools)";
 const work = mkdtempSync(join(tmpdir(), "pako-mac-app-"));
+/** The release key of these builds (desktop/mac/feed-sign.ts), made for the test: the app carries its public half, the feeds are signed. */
+const KEY = generateFeedKey();
 // Built from a copy of the app's sources in a folder whose path has a space and a quote, into another such folder: build.sh must keep paths whole.
 const copy = join(work, "Pako's folder");
 const app = join(work, "out dir", "Pako.app");
@@ -61,7 +64,7 @@ before(async () => {
   cpSync(join(repo, "desktop", "mac"), join(copy, "desktop", "mac"), { recursive: true });
   cpSync(join(repo, "package.json"), join(copy, "package.json"));
   const [b, c] = await Promise.all([
-    runAsync("sh", [join(copy, "desktop/mac/build.sh"), join(work, "out dir")], { PAKO_DEV_BUILD: "1", PAKO_BUILD: BUILD, PAKO_SIGN_IDENTITY: "" }),
+    runAsync("sh", [join(copy, "desktop/mac/build.sh"), join(work, "out dir")], { PAKO_DEV_BUILD: "1", PAKO_BUILD: BUILD, PAKO_SIGN_IDENTITY: "", PAKO_FEED_PUBLIC_KEY: KEY.publicKey }),
     runAsync("swiftc", ["-Onone", "-swift-version", "5", "desktop/mac/Core.swift", "desktop/mac/DiscoveryCore.swift", "test/fixtures/mac-core/main.swift", "-o", check]),
   ]);
   built = b;
@@ -92,8 +95,10 @@ const plistOf = (bundle: string, key: string): { code: number | null; out: strin
   sh("plutil", ["-extract", key, "raw", "-o", "-", join(bundle, "Contents", "Info.plist")]);
 const plist = (key: string): string => plistOf(app, key).out;
 /** The app's rule, run by the check program: its JSON answer. */
-const swift = (...args: string[]): unknown => {
-  const r = spawnSync(check, args, { encoding: "utf8" });
+const swift = (...args: string[]): unknown => swiftKeyed("", ...args);
+/** The same, with `key` as the app's release key (PAKO_TEST_FEED_KEY). */
+const swiftKeyed = (key: string, ...args: string[]): unknown => {
+  const r = spawnSync(check, args, { encoding: "utf8", env: { ...process.env, PAKO_TEST_FEED_KEY: key } });
   assert.equal(r.status, 0, r.stderr);
   return (JSON.parse(r.stdout) as { r: unknown }).r;
 };
@@ -186,6 +191,7 @@ test("mac app: Info.plist is valid and says what the app is", { skip }, () => {
   assert.equal(plist("LSApplicationCategoryType"), "public.app-category.productivity");
   assert.match(plist("NSHumanReadableCopyright"), /^© 2026 Pako contributors\. MIT License\.$/);
   assert.equal(plist("PakoUpdateFeed"), "", "no update check unless the build is given a feed");
+  assert.equal(plist("PakoFeedPublicKey"), KEY.publicKey, "the release key's public half (PAKO_FEED_PUBLIC_KEY, else desktop/mac/feed-key.pub)");
   // A Dock icon and a window, not only a menu-bar item.
   assert.equal(plist("LSUIElement"), "false");
   assert.equal(plist("NSAppTransportSecurity.NSAllowsLocalNetworking"), "true");
@@ -204,7 +210,9 @@ test("mac app: Info.plist is valid and says what the app is", { skip }, () => {
 });
 
 test("mac app: build.sh refuses a build with no whole build number or a feed that is not https, before compiling anything", { skip }, () => {
-  for (const [name, value, said] of [["PAKO_BUILD", "1.2", /PAKO_BUILD/], ["PAKO_UPDATE_FEED", "http://example.com/f.json", /https/]] as const) {
+  const refusals = [["PAKO_BUILD", "1.2", /PAKO_BUILD/], ["PAKO_UPDATE_FEED", "http://example.com/f.json", /https/],
+    ["PAKO_FEED_PUBLIC_KEY", "not-a-key", /not 32 bytes of base64/], ["PAKO_FEED_PUBLIC_KEY", "A".repeat(42) + "==", /not 32 bytes/]] as const;
+  for (const [name, value, said] of refusals) {
     const r = spawnSync("sh", [join(copy, "desktop/mac/build.sh"), join(work, "refused")], { encoding: "utf8", env: { ...process.env, PAKO_BUILD: "7", [name]: value } });
     assert.equal(r.status, 1, name);
     assert.match(r.stdout, said);
@@ -337,7 +345,7 @@ test("mac app: the self-contained app's rules: its own server first, where it ma
   // The first format (a page to open): still read, not installable.
   assert.deepEqual(swift("feed", JSON.stringify({ version: "0.3.0", url: "https://example.com/Pako-0.3.0.dmg", notes: "Fixes.\nMore." })),
     { version: "0.3.0", url: "https://example.com/Pako-0.3.0.dmg", notes: "Fixes. More.", build: null, sha256: null, minimumMacOS: null, page: null,
-      installable: false });
+      installable: false, signed: false });
   for (const bad of [{ version: "0.3.0", url: "http://example.com/x.dmg" }, { version: "0.3.0", url: "file:///tmp/x" }, { version: "x", url: "https://e.com/" },
     { url: "https://e.com/" }, { version: "0.3.0", url: "javascript:alert(1)" }, { version: "0.3.0", url: "https://user:pw@e.com/x.dmg" }]) {
     assert.equal(swift("feed", JSON.stringify(bad)), null, JSON.stringify(bad));
@@ -349,7 +357,22 @@ test("mac app: the update feed made by feed.sh: a dmg with its SHA-256, build an
   const sha = "a".repeat(64);
   const full = { version: "0.3.0", build: 512, url: "https://github.com/o/r/releases/download/v0.3.0/Pako-0.3.0.dmg", sha256: sha.toUpperCase(),
     minimumMacOS: "13.0", notes: "One line.", page: "https://github.com/o/r/releases/tag/v0.3.0" };
-  assert.deepEqual(swift("feed", JSON.stringify(full)), { ...full, sha256: sha, installable: true });
+  // Signed with the release key the app carries: installable. Unsigned, signed by another key, a field changed after signing, or an app
+  // with no key: never (the SHA-256 is only worth what the feed is).
+  const signed = signFeed(full, KEY.privateKey);
+  assert.deepEqual(swiftKeyed(KEY.publicKey, "feed", JSON.stringify(signed)), { ...full, sha256: sha, installable: true, signed: true });
+  assert.deepEqual(swiftKeyed(KEY.publicKey, "feed", JSON.stringify(full)), { ...full, sha256: sha, installable: false, signed: false });
+  assert.deepEqual(swift("feed", JSON.stringify(signed)), { ...full, sha256: sha, installable: false, signed: false }, "an app with no key");
+  const other = generateFeedKey();
+  assert.equal((swiftKeyed(KEY.publicKey, "feed", JSON.stringify(signFeed(full, other.privateKey))) as { signed: boolean }).signed, false);
+  for (const change of [{ url: "https://evil.example/Pako-0.3.0.dmg" }, { sha256: "b".repeat(64) }, { version: "0.3.1" }, { build: 513 }, { notes: "x" },
+    { page: "https://evil.example/" }, { minimumMacOS: "12.0" }, { signature: "A".repeat(86) + "==" }, { signature: 7 }]) {
+    const out = swiftKeyed(KEY.publicKey, "feed", JSON.stringify({ ...signed, ...change })) as { signed: boolean } | null;
+    assert.equal(out?.signed ?? false, false, JSON.stringify(change));
+  }
+  for (const bad of ["", "abc", "A".repeat(44), other.publicKey]) {
+    assert.equal((swiftKeyed(bad, "feed", JSON.stringify(signed)) as { signed: boolean }).signed, false, bad);
+  }
   // A field that is there but wrong refuses the whole feed.
   for (const bad of [{ sha256: "abc" }, { sha256: "g".repeat(64) }, { sha256: 7 }, { build: 1.5 }, { build: "512" }, { build: true }, { build: 0 },
     { minimumMacOS: "thirteen" }, { minimumMacOS: 13 }]) {
@@ -1147,7 +1170,7 @@ test("mac app: the app updates itself from a local feed: Update pressed, the dmg
   });
   await new Promise<void>((r) => srv.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
-  served = { ...feed, url: `${base}/Pako.dmg` };
+  served = signFeed({ ...feed, url: `${base}/Pako.dmg` }, KEY.privateKey);
   const freePort = () => new Promise<number>((r) => {
     const s = netServer().listen(0, "127.0.0.1", () => {
       const p = (s.address() as AddressInfo).port;
@@ -1225,7 +1248,7 @@ test("mac app: the app updates itself from a local feed: Update pressed, the dmg
     assert.ok(!alive(newPids[0]!) && !alive(pako.pid), "the new version quit with its Pako");
 
     // ---- a download that does not match the feed: refused, and the version in use keeps running, untouched ----
-    served = { ...served, sha256: "0".repeat(64) };
+    served = signFeed({ ...served, sha256: "0".repeat(64) }, KEY.privateKey);
     const two = await startA("two");
     await two.until(/update failed: checksum \(this version keeps running\)/, 180_000);
     await sleep(1500);
@@ -1234,6 +1257,17 @@ test("mac app: the app updates itself from a local feed: Update pressed, the dmg
     assert.deepEqual(readdirSync(two.apps), ["Pako.app"]);
     assert.ok(!existsSync(join(two.user, ".Trash")), "nothing went to the Trash");
     two.child.kill("SIGTERM");
+
+    // ---- a feed not signed by the key this app carries (another key): not offered, nothing downloaded ----
+    const downloads = hits.filter((h) => h === "/Pako.dmg").length;
+    served = signFeed({ ...feed, url: `${base}/Pako.dmg` }, generateFeedKey().privateKey);
+    const three = await startA("three");
+    await three.until(/update: the feed offers Pako [\d.]+, but its signature does not verify against this app's release key: ignored/, 120_000);
+    await sleep(1500);
+    assert.equal(hits.filter((h) => h === "/Pako.dmg").length, downloads, "nothing downloaded");
+    assert.doesNotMatch(three.log(), /update: downloading/);
+    assert.equal(plistOf(three.a, "CFBundleShortVersionString").out, version());
+    three.child.kill("SIGTERM");
   } finally {
     srv.close();
     for (const p of pidsOf(dir)) {

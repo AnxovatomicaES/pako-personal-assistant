@@ -23,20 +23,33 @@ const names = (keys: string[], l: Loop): boolean => {
 export function mountOwner(fu: Engine): Pick<
   Engine,
   "press" | "open" | "command" | "context" | "closeByWords" | "calendarChanged" | "reopenClosed" | "forDraft" | "draftFacts" | "snoozeCard" | "parked"
-  | "parkedText" | "unpark" | "setStep" | "letGo"
+  | "parkedText" | "unpark" | "setStep" | "letGo" | "engaged" | "expiredParked"
 > {
   const { d, now, lang, mutate, read, dueText, sourceText } = fu;
   /** Gentle mode's "tomorrow": 09:00 in the owner's zone (or when the quiet hours end, if later), the day after today, whatever DST does. */
-  const tomorrowAt = (t: number): number => {
-    let day = today(t + 24 * 3600_000, d.timeZone);
-    if (day === today(t, d.timeZone)) day = today(t + 26 * 3600_000, d.timeZone);
+  const morningOf = (day: string): number | null => {
     const q = fu.config.quiet;
     const nine = 9 * 60;
     const at = q && q.start > q.end && q.end > nine ? q.end : nine;
-    return zonedTime(`${day} ${String(Math.floor(at / 60)).padStart(2, "0")}:${String(at % 60).padStart(2, "0")}`, d.timeZone) ?? t + 24 * 3600_000;
+    return zonedTime(`${day} ${String(Math.floor(at / 60)).padStart(2, "0")}:${String(at % 60).padStart(2, "0")}`, d.timeZone);
   };
-  /** Gentle mode's "later today": three hours on; if that falls in the quiet hours, the morning after them. */
-  const laterToday = (t: number): number => (fu.quietNow(t + LATER_TODAY_MS) ? tomorrowAt(t) : t + LATER_TODAY_MS);
+  const tomorrowAt = (t: number): number => {
+    let day = today(t + 24 * 3600_000, d.timeZone);
+    if (day === today(t, d.timeZone)) day = today(t + 26 * 3600_000, d.timeZone);
+    return morningOf(day) ?? t + 24 * 3600_000;
+  };
+  /**
+   * Gentle mode's "later today": three hours on; if that falls in the quiet hours, the morning they end (09:00, or their end if later). Pressed
+   * after midnight (01:00, quiet until 08:00) that is this morning, not the morning after.
+   */
+  const laterToday = (t: number): number => {
+    const at = t + LATER_TODAY_MS;
+    if (!fu.quietNow(at)) return at;
+    let end = at;
+    for (let i = 0; i < 24 * 4 && fu.quietNow(end); i++) end += 15 * 60_000;
+    const morning = morningOf(today(end, d.timeZone));
+    return morning !== null && morning > t ? Math.max(morning, end) : tomorrowAt(t);
+  };
   const press: FollowupsDoor["press"] = async (button, id) => {
     const t = T(lang());
     try {
@@ -60,12 +73,18 @@ export function mountOwner(fu: Engine): Pick<
         if (button === "4") return GT()("snoozeAsk", { title: l.title });
         if (button === "5" || button === "6") {
           const at = button === "5" ? laterToday(now()) : tomorrowAt(now());
+          // An old Snooze card pressed after the item was parked (another chat, or later): it still comes back, and the reply says so.
+          const wasParked = l.status === "parked";
           Object.assign(l, { status: "snoozed", nextCheckAt: at, snoozes: (l.snoozes ?? 0) + 1 });
           delete l.afterAsked;
+          delete l.parkedAt;
           const sameDay = today(at, d.timeZone) === today(now(), d.timeZone);
-          return GT()(sameDay ? "pressedLater" : "pressedTomorrow", { title: l.title, time: ownerClock(at, d.timeZone) });
+          const words = wasParked ? (sameDay ? "backLater" : "backTomorrow") : sameDay ? "pressedLater" : "pressedTomorrow";
+          return GT()(words, { title: l.title, time: ownerClock(at, d.timeZone) });
         }
         if (button === "7") {
+          // Parked already (the same card on another chat, or pressed twice): it keeps when it was parked, and its month runs from then.
+          if (l.status === "parked") return GT()("pressedPark", { title: l.title });
           Object.assign(l, { status: "parked", parkedAt: now(), nextCheckAt: 0 });
           d.control?.log("followup", GT()("pressedPark", { title: l.title }));
           return GT()("pressedPark", { title: l.title });
@@ -103,6 +122,7 @@ export function mountOwner(fu: Engine): Pick<
     try {
       list = await open();
     } catch {
+      /* the store did not answer: said as unread */
       return t("unread");
     }
     if (!list.length) return t("none");
@@ -118,6 +138,7 @@ export function mountOwner(fu: Engine): Pick<
       return (await open()).slice(0, 10).map((l) =>
         t("ctx", { title: l.title, due: dueText(l, lg), source: sourceText(l.sources[0], lg), checked: l.lastCheck ? t("ctxChecked", { checked: l.lastCheck }) : "" }));
     } catch {
+      /* the store did not answer: Claude goes without the loops */
       return [];
     }
   };
@@ -249,6 +270,7 @@ export function mountOwner(fu: Engine): Pick<
     try {
       list = await parked();
     } catch {
+      /* the store did not answer: said as unread */
       return T(lang())("unread");
     }
     if (!list.length) return GT()("parkedNone");
@@ -262,7 +284,12 @@ export function mountOwner(fu: Engine): Pick<
       const hits = "id" in which ? all.filter((l) => l.id === which.id) : all.filter((l) => names(keysOf(which.words), l));
       if (hits.length !== 1) return { hits: hits.map((l) => l.title) };
       const l = hits[0]!;
-      Object.assign(l, { status: "open", nextCheckAt: 0 });
+      // Its time still ahead: looked at again before it, as when it was new (left at 0 it was never nudged again). And it is kept as an open
+      // loop from now (the store keeps one 14 days from when it was made: one parked for weeks was dropped at the next change).
+      const t = now();
+      Object.assign(l, { status: "open", nextCheckAt: 0, createdAt: Math.max(l.createdAt, t) });
+      // As a new one's first look is set (src/followups/matching.ts): two hours before its time when no server can see it, else nextAfter.
+      if (l.dueAt && l.dueAt > t) l.nextCheckAt = "none" in l.check ? (l.dueAt - NONE_BEFORE_MS > t ? l.dueAt - NONE_BEFORE_MS : 0) : fu.nextAfter(l, t);
       delete l.parkedAt;
       delete l.unanswered;
       delete l.folded;
@@ -290,7 +317,19 @@ export function mountOwner(fu: Engine): Pick<
       return true;
     });
 
+  /** A check-in asked from a loop's nudge ("Check on me in 30 min"): the owner engaged, so gentle mode's unanswered count starts again. */
+  const engaged: Engine["engaged"] = (id) =>
+    mutate((s) => {
+      const l = s.loops.find((x) => x.id === id);
+      if (!l || (l.status !== "open" && l.status !== "snoozed")) return false;
+      delete l.unanswered;
+      delete l.folded;
+      return true;
+    });
+  const expiredParked: Engine["expiredParked"] = async () => [...((await read()).expired ?? [])].reverse();
+
   return {
     press, open, command, context, closeByWords, calendarChanged, reopenClosed, forDraft, draftFacts, snoozeCard, parked, parkedText, unpark, setStep, letGo,
+    engaged, expiredParked,
   };
 }

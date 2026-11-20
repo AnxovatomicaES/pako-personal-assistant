@@ -19,6 +19,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Kv } from "./kv.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("jobs");
 
@@ -127,12 +128,16 @@ const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
 const STATES: readonly JobState[] = ["pending", "running", "done", "missed"];
 
 /** The rows as stored, each checked: a row this version cannot read is dropped, never the whole table. */
-export function readRows(raw: string | null): Job[] {
-  let p: unknown = null;
-  try {
-    p = raw ? JSON.parse(raw) : null;
-  } catch {
-    log.error("the job table is not valid JSON: starting again");
+/** The table's rows from its record as read (readJsonRecord), or from its JSON text (this process's own copy when there is no store). */
+export function readRows(raw: unknown): Job[] {
+  let p: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      p = raw ? JSON.parse(raw) : null;
+    } catch {
+      log.error("the job table is not valid JSON: starting again");
+      p = null;
+    }
   }
   const list = Array.isArray(p) ? p : isObject(p) && Array.isArray(p.rows) ? p.rows : [];
   return list.flatMap((x): Job[] => {
@@ -181,7 +186,7 @@ export function createJobs(d: JobsDeps) {
     return run;
   };
   /** Throws when the store cannot be read: guessing an empty table could run a slot already done. */
-  const load = async (): Promise<Job[]> => readRows(d.kv ? await d.kv.get(JOBS_KEY) : memory);
+  const load = async (): Promise<Job[]> => readRows(d.kv ? await readJsonRecord(d.kv, JOBS_KEY) : memory);
   const save = async (rows: Job[]): Promise<void> => {
     const t = now();
     // A finished row goes KEEP_MS after it ended; one never finished (a reminder held for later, a kind gone) KEEP_MS after it was due.

@@ -1,4 +1,4 @@
-// The review's findings on the chief-of-staff pieces, each replayed with fakes: a nudge after the meeting's time, a loop with no time never
+// Follow-ups matched to the right loop and meeting (the chief-of-staff pieces), each replayed with fakes: a nudge after the meeting's time, a loop with no time never
 // looked at again, later messages that cannot close a loop, a re-ping that makes a twin, a standing meeting taken for the one asked for, Slack
 // threads, someone else's promise checked on the owner's Zoom, follow-up jobs crowding the inbox, Zoom summaries held while the computer is
 // off, and two processes during a deploy.

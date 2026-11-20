@@ -115,6 +115,15 @@ function usageLine(u) {
   return parts.join(" · ");
 }
 
+/**
+ * Which Claude Code the assistant's computer drives, when it is outside the versions Pako was tested with (assistant/bridge/cli-version.ts):
+ * the bridge's own sentence ("Claude Code X.Y is newer than Pako has been tested with"); "" when it is in range or never said.
+ */
+function cliLine(c) {
+  if (!c || typeof c !== "object" || c.status === "ok") return "";
+  return str(c.note);
+}
+
 function paint() {
   if (!card || !state) return;
   card.hidden = false;
@@ -134,7 +143,8 @@ function paint() {
       const status = ["ok", "failing", "down", "waiting", "warn"].includes(p.status) ? p.status : "waiting";
       const detail = key === "update"
         ? versionLine(state.bridge)
-        : [line(p), status !== "ok" && key !== "claude" ? str(p.detail) : "", key === "claude" ? usageLine(state.usage) : ""].filter(Boolean).join(" · ");
+        : [line(p), status !== "ok" && key !== "claude" ? str(p.detail) : "", key === "claude" ? usageLine(state.usage) : "",
+          key === "claude" ? cliLine(state.cli) : ""].filter(Boolean).join(" · ");
       const icon = h("i", { "data-lucide": ICONS[key] ?? "circle" });
       return h("div", { class: `svc ${status}` },
         h("div", { class: "name" }, icon, t(`name.${key}`), h("span", { class: "dot" })),

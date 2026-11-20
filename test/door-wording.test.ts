@@ -1,4 +1,4 @@
-// Where the pieces of Phase 1 meet: the pause worded by why (src/control.ts) and told from a text passed on (src/voice-tools.ts), the answers
+// The door's wording where the pieces meet: the pause worded by why (src/control.ts) and told from a text passed on (src/voice-tools.ts), the answers
 // after a friend call, the one-time code's mark in the mail (src/mail.ts), one source for the names of the door's buttons (src/whatsapp.ts),
 // and PAKO_LANGUAGE, accepted and ignored (src/app.ts). Pako's own texts are English only, whatever language the owner writes in.
 

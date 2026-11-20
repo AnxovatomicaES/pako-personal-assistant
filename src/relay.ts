@@ -18,6 +18,7 @@ import { timingSafeEqual } from "node:crypto";
 import express, { type Express, type Request } from "express";
 import type { Kv } from "./kv.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("relay");
 
@@ -92,9 +93,10 @@ export function createRelay(d: {
   const load = async (): Promise<State> => {
     if (!d.kv) return structuredClone(memory);
     try {
-      const v = JSON.parse((await d.kv.get(RELAY_STATE_KEY)) ?? "{}") as Partial<State>;
+      const v = ((await readJsonRecord(d.kv, RELAY_STATE_KEY)) ?? {}) as Partial<State>;
       return { reminders: Array.isArray(v.reminders) ? v.reminders : [], fired: Array.isArray(v.fired) ? v.fired : [], syncedAt: Number(v.syncedAt) || 0 };
-    } catch {
+    } catch (err) {
+      log.warn(`the relay's state could not be read, starting empty: ${err instanceof SyntaxError ? "not JSON" : (err as Error).message}`);
       return { reminders: [], fired: [], syncedAt: 0 };
     }
   };
@@ -188,7 +190,8 @@ export function mountRelay(app: Express, d: { relay: Relay; token: string }): vo
   app.post("/relay/tick", auth, async (_req, res) => {
     try {
       res.json({ sent: await d.relay.tick() });
-    } catch {
+    } catch (err) {
+      log.warn(`the relay's tick failed: ${(err as Error).message}`);
       res.status(503).json({ error: "store" });
     }
   });

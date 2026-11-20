@@ -22,7 +22,7 @@ import type { SlackAlert } from "./slack.ts";
 import type { SavedBooking } from "./booking.ts";
 import type { BridgeHealth, BridgeStatus, ChatMessage, LocalSettings } from "./local.ts";
 import type { MemoryStore } from "./voice-memory.ts";
-import { readBridgeReport, type BridgeUsage, type BridgeVersion } from "./watchdog.ts";
+import { readBridgeReport, type BridgeCli, type BridgeUsage, type BridgeVersion } from "./watchdog.ts";
 import { createLog } from "./log.ts";
 
 const logPanel = createLog("panel");
@@ -77,6 +77,8 @@ export interface PanelDeps {
     version?: (v: BridgeVersion) => void;
     /** The day's runs of Claude the bridge counts (POST /assistant/health), for the Salud card. */
     usage?: (u: BridgeUsage) => void;
+    /** Which Claude Code the bridge drives against the tested range (POST /assistant/health), for the Salud card. */
+    cli?: (c: BridgeCli) => void;
     /** Looks again now for the claude command and how it is signed in (src/local.ts superviseBridge), then says the status. */
     refresh?: () => Promise<BridgeStatus>;
     /** What Pako wrote by itself after a time (ms), for the Mac app's notifications (GET /panel/api/notices). */
@@ -86,6 +88,8 @@ export interface PanelDeps {
   catchUp?: () => Promise<{ running: boolean; percent: number; total: number; notAnalysed: number; days: number } | null>;
   /** The follow-ups' open loops (src/followups.ts): the tiles "Things to do" and "Waiting on others", and the loops list. */
   loops?: () => Promise<{ id: string; kind: string; title: string; who: string; dueAt?: number; status: string }[]>;
+  /** Whether gentle mode is on (src/gentle.ts): a loop whose time passed is then never "overdue" nor red (src/panel/dashboard-model.js). */
+  gentle?: () => Promise<boolean>;
   calendar?: {
     events: () => Promise<CalEvent[]>;
     /** Reads every source again now (the private links fetched, the Mac's events asked for): the dashboard's refresh. */
@@ -133,6 +137,7 @@ export interface Overview {
   catchUp: { running: boolean; percent: number; total: number; notAnalysed: number; days: number } | null;
   /** The open loops (null: follow-ups off): what the owner owes and what others owe them. */
   loops: { id: string; kind: string; title: string; who: string; dueAt?: number; status: string }[] | null;
+  gentle: boolean;
   mail: { address: string; items: RecentMail[] } | null;
   slack: SlackAlert[] | null;
   /** Whether the panel has its own chat window (local mode). */
@@ -187,6 +192,7 @@ export async function overview(d: PanelDeps): Promise<Overview> {
     calendarOn: !!d.calendar,
     calendarSources: d.calendar?.sources ? await safe(d.calendar.sources(), []) : [],
     catchUp: d.catchUp ? await safe(d.catchUp(), null) : null,
+    gentle: d.gentle ? await safe(d.gentle(), false) : false,
     loops: d.loops
       ? (await safe(d.loops(), [])).slice(0, 100).map((l) => ({ id: l.id, kind: l.kind, title: l.title, who: l.who, status: l.status, ...(l.dueAt ? { dueAt: l.dueAt } : {}) }))
       : null,
@@ -306,6 +312,7 @@ export function mountDashboard(app: Express, d: PanelDeps) {
       const u = new URL(base());
       return `${COOKIE}_${u.port || (u.protocol === "https:" ? "443" : "80")}`;
     } catch {
+      /* not a URL: the plain name */
       return COOKIE;
     }
   };
@@ -575,6 +582,7 @@ export function mountDashboard(app: Express, d: PanelDeps) {
       if (r.claude) chat.report?.(r.claude);
       if (r.version) chat.version?.(r.version);
       if (r.usage) chat.usage?.(r.usage);
+      if (r.cli) chat.cli?.(r.cli);
       res.json({ ok: true });
     });
   }

@@ -120,6 +120,7 @@ const KEY_LIST = [
   { key: "friend", keep: 400 * DAY }, // friend.ts
   { key: "jobs", keep: 8 * DAY }, // jobs.ts
   { key: "job-claim:", prefix: true, keep: 10 * 60 },
+  { key: "corrupt:", prefix: true, keep: 180 * DAY, secret: "whole" }, // json-record.ts (a damaged record, kept aside as it was)
   { key: "places-ok", keep: 400 * DAY }, // app.ts (table booking)
   { key: "demo-seeded", keep: 90 * DAY }, // demo.ts (only in ~/.pako/demo)
   { key: "demo-calendar", keep: 90 * DAY },
@@ -214,6 +215,7 @@ const ABOUT = texts<AboutKey | "unknown">(
     friend: "Whether the weekly check-in is on, when it last went, and which birthdays I already mentioned the day before",
     jobs: "What was due at a time (the brief, each reminder sent) and whether it was done, so nothing is done twice or lost while the computer sleeps",
     "job-claim:": "A mark while something scheduled is being done, so it is not done twice at once (10 minutes at most)",
+    "corrupt:": "A copy of one of the records above that was damaged and could not be read, kept aside as it was instead of being overwritten",
     "places-ok": "That your Google Places key has worked once (a fingerprint of the key, never the key)",
     "demo-seeded": "When the demo week was set up (only in the demo's own folder, ~/.pako/demo)",
     "demo-calendar": "The demo week's invented calendar (only in the demo's own folder, ~/.pako/demo)",
@@ -332,6 +334,7 @@ function readObject(path: string): Record<string, unknown> | null {
     const v = JSON.parse(readFileSync(path, "utf8")) as unknown;
     return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
   } catch {
+    /* missing or not JSON: nothing */
     return null;
   }
 }
@@ -397,6 +400,7 @@ const decode = (raw: string): unknown => {
   try {
     return JSON.parse(raw) as unknown;
   } catch {
+    /* not JSON: kept as the text it is */
     return raw;
   }
 };

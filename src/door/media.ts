@@ -31,6 +31,7 @@ export function mountMedia(door: Door): Pick<Door, "downloadMedia"> {
         const u = new URL(doc.url ?? "");
         host = u.protocol === "https:" ? u.hostname : "";
       } catch {
+        /* not a URL: no host */
         host = "";
       }
       if (!doc.url || !MEDIA_HOST.test(host)) return { ok: false, status: 502, why: "WhatsApp did not give the file" };

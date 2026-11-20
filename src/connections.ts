@@ -64,6 +64,7 @@ export function icsLink(raw: string): string | null {
     // A user name or password in the link would be sent along with every request, and shown in logs: the calendar's own private link has none.
     return u.protocol === "https:" && u.hostname && !u.username && !u.password ? u.href : null;
   } catch {
+    /* not a link */
     return null;
   }
 }

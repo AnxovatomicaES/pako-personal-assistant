@@ -12,6 +12,7 @@
 import type { CalEvent } from "./calendar.ts";
 import type { Kv } from "./kv.ts";
 import { icsEvents, parseFeed } from "./ics.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 export const INVITES_KEY = "mail-invites";
 const KEEP_S = 60 * 24 * 3600;
@@ -48,6 +49,7 @@ export function readInvite(ics: string, o: { now: number; timeZone: string; me?:
       .slice(0, 20);
     return { method, events };
   } catch {
+    /* not a calendar file: no invite */
     return null;
   }
 }
@@ -76,10 +78,11 @@ export function createInviteStore(o: { kv: Kv | null; timeZone: string; now?: ()
   const read = async (): Promise<MailInvite[]> => {
     if (!o.kv) return memory;
     try {
-      const raw = await o.kv.get(INVITES_KEY);
-      const list = raw ? (JSON.parse(raw) as unknown) : [];
+      const raw = await readJsonRecord(o.kv, INVITES_KEY);
+      const list = raw ? (raw as unknown) : [];
       return Array.isArray(list) ? (list as MailInvite[]).filter((x) => x && typeof x.uid === "string" && Number.isFinite(x.start)) : [];
     } catch {
+      /* not JSON, or the store did not answer: no invites */
       return [];
     }
   };

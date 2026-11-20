@@ -23,7 +23,8 @@
 //   move <bundle path>                   needsMoveToApplications
 //   agent <existing,...> <arg>...        legacyAgentIsStale
 //   newer <candidate> <current>          isNewerVersion
-//   feed <json> [loopback]               parseUpdateFeed (with loopback http allowed when a second argument is given)
+//   feed <json> [loopback]               parseUpdateFeed (with loopback http allowed when a second argument is given; the release key:
+//                                        PAKO_TEST_FEED_KEY)
 //   release <version> <build|-> <current> <current build|->   isNewerRelease
 //   macos <minimum> <x.y.z>              macOSAtLeast
 //   things <connections JSON|-> <telegram JSON|->             parseThings
@@ -166,9 +167,10 @@ case "agent":
 case "newer":
     out = isNewerVersion(a[1], than: a[2])
 case "feed":
-    out = parseUpdateFeed(Data(a[1].utf8), loopback: a.count > 2).map { u -> [String: Any] in
+    let key = ProcessInfo.processInfo.environment["PAKO_TEST_FEED_KEY"]
+    out = parseUpdateFeed(Data(a[1].utf8), loopback: a.count > 2, publicKey: key).map { u -> [String: Any] in
         ["version": u.version, "url": u.url.absoluteString, "notes": u.notes, "build": u.build ?? NSNull(), "sha256": u.sha256 ?? NSNull(),
-         "minimumMacOS": u.minimumMacOS ?? NSNull(), "page": u.page?.absoluteString ?? NSNull(), "installable": u.installable]
+         "minimumMacOS": u.minimumMacOS ?? NSNull(), "page": u.page?.absoluteString ?? NSNull(), "installable": u.installable, "signed": u.signed]
     } ?? NSNull()
 case "release":
     out = isNewerRelease(version: a[1], build: Int(a[2]), than: a[3], currentBuild: Int(a[4]))

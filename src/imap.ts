@@ -43,6 +43,7 @@ import type { Backfill } from "./backfill.ts";
 import { cleanMailBody } from "./mail-body.ts";
 import type { SentMail } from "./mail-followups.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("imap");
 
@@ -243,6 +244,7 @@ function decodeCharset(bytes: Uint8Array, charset: string | undefined): string {
   try {
     return new TextDecoder(label === "us-ascii" ? "utf-8" : label).decode(bytes);
   } catch {
+    /* a charset this runtime does not know: read as UTF-8 */
     return new TextDecoder("utf-8").decode(bytes);
   }
 }
@@ -253,6 +255,7 @@ function rawHeaderText(s: string): string {
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(s, "latin1"));
   } catch {
+    /* not UTF-8 read as Latin-1: kept as it was */
     return s;
   }
 }
@@ -607,10 +610,10 @@ export function createImapReader(d: ImapDeps) {
   const load = async (): Promise<ImapState> => {
     const empty: ImapState = { who, folders: {}, greeted: false };
     if (!d.kv) return memory?.who === who ? memory : empty;
-    const raw = await d.kv.get(STATE_KEY);
+    const raw = await readJsonRecord(d.kv, STATE_KEY);
     if (!raw) return empty;
     try {
-      const p = JSON.parse(raw) as Partial<ImapState>;
+      const p = raw as Partial<ImapState>;
       if (p.who !== who || !p.folders || typeof p.folders !== "object") return empty;
       const folders: Record<string, FolderState> = {};
       for (const [k, v] of Object.entries(p.folders)) {
@@ -619,7 +622,7 @@ export function createImapReader(d: ImapDeps) {
       // Missing (a state from before the greeting): an account connected long ago, already known to the owner.
       return { who, folders, greeted: p.greeted !== false };
     } catch {
-      log.error("the stored state is not valid JSON: starting again from the last 24 hours");
+      log.error("the stored state could not be used: starting again from the last 24 hours");
       return empty;
     }
   };

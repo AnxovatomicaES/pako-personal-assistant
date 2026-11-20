@@ -24,6 +24,7 @@ import { texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import { localToEpoch } from "./whatsapp.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("calendar");
 
@@ -130,12 +131,13 @@ export interface LocalCalendar {
 export function createLocalCalendar(d: { kv: Kv; now?: () => number; lang?: () => Lang }): LocalCalendar {
   const now = d.now ?? Date.now;
   const read = async (): Promise<Kept | null> => {
-    const raw = await d.kv.get(LOCAL_CALENDAR_KEY);
+    const raw = await readJsonRecord(d.kv, LOCAL_CALENDAR_KEY);
     if (!raw) return null;
     try {
-      const p = JSON.parse(raw) as Kept;
+      const p = raw as Kept;
       return isObject(p) && Array.isArray(p.events) && Array.isArray(p.calendars) && typeof p.at === "number" ? p : null;
     } catch {
+      /* not JSON: nothing kept */
       return null;
     }
   };
@@ -169,6 +171,7 @@ export function hasLocalCalendar(kv: unknown): boolean {
   try {
     return entries.call(kv).some((e) => e.key === LOCAL_CALENDAR_KEY && e.value.length > 0);
   } catch {
+    /* a store whose entries cannot be read: as if empty */
     return false;
   }
 }
@@ -203,7 +206,8 @@ export function mountLocalCalendarPanel(app: Express, d: LocalCalendarPanelDeps 
     try {
       const kept = await d.calendar.read();
       res.json(kept ? { at: kept.at, calendars: kept.calendars, events: kept.events.length } : {});
-    } catch {
+    } catch (err) {
+      log.warn(`the kept calendar could not be read: ${(err as Error).message}`);
       res.status(503).json({ error: "store" });
     }
   });

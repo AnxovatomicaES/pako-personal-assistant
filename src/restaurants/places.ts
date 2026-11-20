@@ -117,6 +117,7 @@ function safeUrl(raw: string | undefined, hosts?: RegExp): string | undefined {
     if (hosts && (u.protocol !== "https:" || !hosts.test(u.hostname))) return undefined;
     return u.href;
   } catch {
+    /* not a URL: none */
     return undefined;
   }
 }

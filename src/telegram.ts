@@ -16,6 +16,7 @@ import type { Kv } from "./kv.ts";
 import type { HealthReport } from "./watchdog.ts";
 import { replaceFormatting, TELEGRAM_ID_PREFIX, TELEGRAM_MEDIA_ID, type TelegramDoor } from "./whatsapp.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("telegram");
 
@@ -232,8 +233,8 @@ export function createTelegram(d: TelegramDeps): TelegramChannel {
     if (off !== undefined) return off;
     try {
       off = d.kv ? (await d.kv.get(OFF_KEY)) === "1" : false;
-    } catch {
-      return true; // the store did not answer: no account is let in by itself until it does
+    } catch { // the store did not answer: no account is let in by itself until it does
+      return true;
     }
     return off;
   };
@@ -244,15 +245,15 @@ export function createTelegram(d: TelegramDeps): TelegramChannel {
   const loadOwner = async (): Promise<Owner | null> => {
     if (owner !== undefined) return owner;
     try {
-      const v = d.kv ? await d.kv.get(OWNER_KEY) : null;
-      const o = v ? (JSON.parse(v) as { userId?: unknown; chatId?: unknown; label?: unknown; bot?: unknown }) : null;
+      const v = d.kv ? await readJsonRecord(d.kv, OWNER_KEY) : null;
+      const o = v ? (v as { userId?: unknown; chatId?: unknown; label?: unknown; bot?: unknown }) : null;
       // A record kept before pairings named their bot has no `bot`: it stays good.
       const ours = o?.bot === undefined || o.bot === botId;
       owner = o && ours && Number.isSafeInteger(o.userId) && Number.isSafeInteger(o.chatId)
         ? { userId: o.userId as number, chatId: o.chatId as number, ...(typeof o.label === "string" && o.label ? { label: o.label.slice(0, 90) } : {}) }
         : null;
-    } catch {
-      return null; // the store did not answer: asked again next time
+    } catch { // the store did not answer: asked again next time
+      return null;
     }
     // A pinned owner (TELEGRAM_OWNER_ID) that changed: the account kept from before is not the owner any more.
     if (owner && d.config.ownerId !== null && owner.userId !== d.config.ownerId) owner = null;
@@ -316,9 +317,10 @@ export function createTelegram(d: TelegramDeps): TelegramChannel {
     let p = pending;
     if (!p && d.kv) {
       try {
-        const v = await d.kv.get(PAIR_KEY);
-        p = v ? (JSON.parse(v) as { hash: string; until: number }) : null;
+        const v = await readJsonRecord(d.kv, PAIR_KEY);
+        p = v ? (v as { hash: string; until: number }) : null;
       } catch {
+        /* not JSON, or the store did not answer: no pairing */
         p = null;
       }
     }
@@ -349,7 +351,8 @@ export function createTelegram(d: TelegramDeps): TelegramChannel {
     const label = labelOf(u);
     try {
       await saveOwner({ userId, chatId, ...(label ? { label } : {}) });
-    } catch {
+    } catch (err) {
+      log.warn(`the new owner could not be kept: ${(err as Error).message}`);
       return false;
     }
     if (before && before.userId !== userId) await sendTo(before.chatId, t("replaced"));
@@ -441,9 +444,10 @@ export function createTelegram(d: TelegramDeps): TelegramChannel {
     let ref = files.get(id);
     if (!ref && d.kv) {
       try {
-        const v = await d.kv.get(FILE_KEY(id));
-        ref = v ? (JSON.parse(v) as { fileId: string; mime: string }) : undefined;
+        const v = await readJsonRecord(d.kv, FILE_KEY(id));
+        ref = v ? (v as { fileId: string; mime: string }) : undefined;
       } catch {
+        /* not JSON, or the store did not answer: no file */
         ref = undefined;
       }
     }
@@ -459,6 +463,7 @@ export function createTelegram(d: TelegramDeps): TelegramChannel {
       const bytes = Buffer.from(await res.arrayBuffer());
       return bytes.length > MEDIA_MAX ? null : { bytes, mime: ref.mime };
     } catch {
+      /* Telegram did not answer: no file */
       return null;
     }
   };
@@ -686,7 +691,8 @@ export function createTelegram(d: TelegramDeps): TelegramChannel {
         await d.kv.set(OWNER_KEY, "", 1);
         await d.kv.set(PAIR_KEY, "", 1);
         return true;
-      } catch {
+      } catch (err) {
+        log.warn(`the account could not be let go: ${(err as Error).message}`);
         return false;
       }
     },

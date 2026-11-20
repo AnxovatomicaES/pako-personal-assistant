@@ -80,6 +80,7 @@ async function toggle() {
       note = typeof body.message === "string" ? body.message : "";
     } else note = typeof body?.error === "string" ? body.error : t("failed");
   } catch {
+    /* offline: said in the note */
     note = t("failed");
   } finally {
     busy = false;

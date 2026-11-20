@@ -92,6 +92,18 @@ sequenceDiagram
   calendar marks the turn like a web search, so its actions wait for your press. Calendar changes are only proposed: no connected calendar
   can be written, so Pako gives you the exact change to make in your app. A Claude Code that cannot load the server gets the tags as before
   (`ASSISTANT_TYPED_TOOLS=off` forces that).
+- **One action path; the tags are deprecated.** The typed tools are the primary way Claude acts. The text tags (`<remember>`,
+  `<remind>`, `<message>` and the rest) are a fallback, used only when MCP is unavailable: an older Claude Code, `ASSISTANT_TYPED_TOOLS=off`,
+  or a run whose MCP server failed to start (the bridge then switches to the tag prompt for the rest of its run). They are not removed yet:
+  older bridges rely on them, and a tag the model writes beside the tools is still honoured rather than dropping what you asked for. Every
+  turn that acts through a tag is counted and logged (`fallback tags` when MCP was unavailable, `fallback tags-beside-tools` when it was
+  loaded; `assistant/bridge/fallbacks.ts`). Once those lines stay at zero across releases, the tag parser goes.
+- **Claude Code is read by its structure, not its words.** A failed run's kind (signed out, a limit, missing) comes from the result's
+  `api_error_status` and `api_error_type`, the stream's error events and spawn's error code (`assistant/bridge/claude-errors.ts`); the English
+  messages are only a fallback, each pattern noted with the Claude Code version it was seen in, and logged when it decides. Whether a turn
+  read the web comes from its WebSearch or WebFetch tool_use events; `num_turns` is the logged fallback. At start the bridge reads
+  `claude --version` and compares it with the range Pako was tested with (`assistant/bridge/cli-version.ts`); outside it, Pako keeps
+  working, logs a warning once and shows it on the Salud card's Claude line.
 - **It says it is an AI.** Every call opens saying so, and every email it sends for you says so.
 
 What Pako protects, what it does not, and how to report a problem: [SECURITY.md](../SECURITY.md).

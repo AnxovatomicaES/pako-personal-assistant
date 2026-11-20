@@ -82,3 +82,17 @@ test("mac app: an update check that could not read the feed (no network yet at l
   assert.match(failed, /defaults\.set\(previous, forKey: "updateCheckedAt"\)/, failed);
   assert.match(check, /let previous = runner\.defaults\.double\(forKey: "updateCheckedAt"\)/);
 });
+
+test("site: the Gentle mode section says how to turn it on and that it is not a medical device, with no health claim", () => {
+  const html = read("site/index.html");
+  const start = html.indexOf('<section class="gentle"');
+  assert.ok(start > 0, "the Gentle mode section is there");
+  const sec = html.slice(start, html.indexOf("</section>", start)).replace(/\s+/g, " ");
+  assert.match(sec, /Built with ADHD brains/);
+  assert.match(sec, /Settings → How Pako acts/);
+  assert.match(sec, /not a medical device or a treatment/);
+  for (const w of ["Done", "Snooze", "Park", "Keep all", "Undo all", "this usually takes you about 40 min"]) assert.ok(sec.includes(w), w);
+  // Wellness and productivity words only: never a claim to treat, cure, diagnose or manage ADHD.
+  const claims = sec.replace("not a medical device or a treatment", "");
+  assert.doesNotMatch(claims, /\b(treats?|treatment|cures?|diagnos\w*|clinically|manages? your)\b/i);
+});

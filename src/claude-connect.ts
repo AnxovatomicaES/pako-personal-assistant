@@ -23,6 +23,7 @@ import { childEnv, claudeCommand } from "../assistant/bridge.ts";
 import { claudeCandidates, claudeInstalled, hasAuthStatus } from "./local.ts";
 import { texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -63,6 +64,7 @@ export function parseClaudeAccount(code: number | null, out: string): ClaudeAcco
     if (!v || typeof v !== "object" || Array.isArray(v)) return null;
     j = v as Record<string, unknown>;
   } catch {
+    /* not JSON: not a status we know */
     return null;
   }
   if (j.loggedIn === undefined && j.authMethod === undefined) return null;
@@ -97,6 +99,7 @@ function runOnce(spawnFn: typeof spawn, cmd: string, args: string[], env: NodeJS
     try {
       child = spawnFn(cmd, args, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true, env });
     } catch {
+      /* the command could not start (not installed): no answer */
       return resolve({ code: null, out: "" });
     }
     let out = "";
@@ -471,9 +474,10 @@ export function createClaudeKeeper(o: KeeperOptions) {
   const load = async (): Promise<{ told: boolean; seen: boolean }> => {
     if (mem) return mem;
     try {
-      const v = JSON.parse((await o.kv?.get(KEY)) ?? "{}") as { told?: unknown; seen?: unknown };
+      const v = ((o.kv ? await readJsonRecord(o.kv, KEY) : undefined) ?? {}) as { told?: unknown; seen?: unknown };
       mem = { told: v.told === true, seen: v.seen === true };
     } catch {
+      /* not JSON, or no store: nothing told yet */
       mem = { told: false, seen: false };
     }
     return mem;

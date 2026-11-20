@@ -82,6 +82,7 @@ async function api(path, { method = "GET", body } = {}) {
     const data = await r.json().catch(() => ({}));
     return { ok: r.ok, status: r.status, data };
   } catch {
+    /* offline: no answer (status 0) */
     return { ok: false, status: 0, data: {} };
   }
 }
@@ -117,6 +118,7 @@ function recall() {
     S.open = typeof v.open === "string" && Object.hasOwn(CARD, v.open) ? v.open : null;
     S.declined = v.declined === true;
   } catch {
+    /* not JSON, or no storage (a private window): started fresh */
     S.wiz = {};
   }
 }
@@ -150,6 +152,7 @@ async function waitForRestart() {
       try {
         up = (await fetch("/health", { cache: "no-store" })).ok;
       } catch {
+        /* still restarting: asked again */
         up = false;
       }
       if (!up) down = true;
@@ -242,6 +245,7 @@ function copyButton(text, label = t("copy")) {
       await navigator.clipboard.writeText(text);
       ok = true;
     } catch {
+      /* no clipboard permission: said on the button */
       ok = false;
     }
     b.classList.add("copied");

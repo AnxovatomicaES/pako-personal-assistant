@@ -157,6 +157,7 @@ async function hide(p, again) {
     toast(r.ok ? t(again ? "unhiddenToast" : "hiddenToast") : t("failed"));
     if (r.ok && state.open === p.key) state.open = null;
   } catch {
+    /* offline: said in a toast */
     toast(t("failed"));
   }
   state.busy = false;

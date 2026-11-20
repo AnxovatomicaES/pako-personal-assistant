@@ -2,6 +2,7 @@
 // call (Stan, Tariq, Rory, Vic) and Friday's call with Florry Chan. Extraction -> loops -> ONE message with the owner's to-dos; no to-dos ->
 // silence; an older bridge, no answer, an unreadable answer -> Zoom's summary as before; then Zoom, the real door and the real bridge.
 
+import { readFileSync as readRepoFile } from "node:fs";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { createServer, type Server } from "node:http";
@@ -553,4 +554,27 @@ test("the real bridge: a transcript with a review is reviewed (not summarized an
     server.close();
     server.closeAllConnections();
   }
+});
+
+
+/** A file of the repository, as text. */
+const repoText = (p: string): string => readRepoFile(new URL(`../${p}`, import.meta.url), "utf8");
+
+// Without Zoom the panel still asks for its meetings at every load: a 404 there was a red console error each time. An empty list, said.
+test("GET /panel/api/meetings without Zoom: 200, no meetings and connected: false; the panel's card stays hidden", async () => {
+  const express = (await import("express")).default;
+  const { mountMeetingsPanel } = await import("../src/meeting-review.ts");
+  const app = express();
+  mountMeetingsPanel(app, { signedIn: () => true, recent: null });
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise((r) => server.once("listening", r));
+  try {
+    const r = await fetch(`http://127.0.0.1:${(server.address() as { port: number }).port}/panel/api/meetings`);
+    assert.equal(r.status, 200);
+    assert.deepEqual(await r.json(), { meetings: [], connected: false });
+  } finally {
+    server.close();
+  }
+  const page = repoText("src/panel/meetings.js");
+  assert.match(page, /body\?\.connected === false/, "the card is not shown when Zoom is not connected");
 });

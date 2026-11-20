@@ -98,7 +98,9 @@ code reads must be listed here, in `docs/personal-caller.md` or in `assistant/RE
 | `CLAUDE_BIN` | `claude` | The Claude Code binary (on Windows a `claude.cmd` works too). |
 | `ASSISTANT_MODEL` | `claude-sonnet-5-5` | Every run of Claude but the writing ones: your chat, follow-ups, mail summaries, verdicts, checks. `off` or empty: the default. |
 | `ASSISTANT_WRITING_MODEL` | `claude-opus-5-5` | The morning brief and the drafts for a follow-up (a reply, an email). `off` or empty: `ASSISTANT_MODEL`. See below. |
-| `BRIDGE_AUTOUPDATE` | `on` | The assistant's computer keeps itself up to date from GitHub (`assistant/update.ts`): `off` to update it by hand. See [assistant/README.md](../assistant/README.md), "It updates itself". |
+| `BRIDGE_AUTO_UPDATE` | off | `1`: the assistant's computer updates itself, only to release tags signed by `BRIDGE_UPDATE_SIGNER`. Off: it logs "update available". See assistant/README.md. |
+| `BRIDGE_UPDATE_SIGNER` | none | The pinned release key: an SSH allowed-signers file (path) or a GPG fingerprint. None, with `BRIDGE_AUTO_UPDATE=1`: it refuses to update. |
+| `BRIDGE_AUTOUPDATE` | | The older setting: `off` stops even the "update available" look. |
 
 The brief is about one run a day and the drafts a few, so they get the stronger model and the frequent, fast work stays on Sonnet. When
 your plan cannot use the writing model (not included, not there, or its own limit reached), that run goes again on `ASSISTANT_MODEL` at once,

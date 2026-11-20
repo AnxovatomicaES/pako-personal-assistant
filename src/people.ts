@@ -17,6 +17,7 @@ import { locale, texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import { fold, today } from "./lists.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("people");
 
@@ -218,14 +219,9 @@ export function createPeople(kv: Kv | null): PeopleStore {
   let local: Person[] = [];
   const readStrict = async (): Promise<Person[]> => {
     if (!kv) return structuredClone(local);
-    const raw = await kv.get(KEY);
+    const raw = await readJsonRecord(kv, KEY);
     if (!raw) return [];
-    try {
-      return clean(JSON.parse(raw));
-    } catch {
-      log.error("the stored record is not valid JSON: starting again");
-      return [];
-    }
+    return clean(raw);
   };
   const write = async (list: Person[]): Promise<void> => {
     if (kv) await kv.set(KEY, JSON.stringify(list), TTL_SECONDS);

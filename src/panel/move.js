@@ -92,6 +92,7 @@ async function download() {
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
     st.note = t("downloaded", { file: name });
   } catch {
+    /* said in the error line */
     st.error = t("downloadFailed");
   } finally {
     st.busy = "";
@@ -129,6 +130,7 @@ async function choose(input) {
     try {
       st.file = JSON.parse(await f.text());
     } catch {
+      /* not JSON: said as such */
       throw new Error(t("notJson"));
     }
     const out = await send(false);
@@ -151,6 +153,7 @@ async function waitForRestart() {
     try {
       up = (await fetch("/health", { cache: "no-store" })).ok;
     } catch {
+      /* still restarting: asked again */
       up = false;
     }
     if (!up) down = true;

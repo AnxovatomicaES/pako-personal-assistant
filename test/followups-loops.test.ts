@@ -1,4 +1,4 @@
-// Follow-ups bugs found before the launch, each pinned by the test that showed it: open loops lost to the store's cap, the wrong loop closed or
+// Follow-up loops kept, matched and closed correctly, each pinned by the test that showed a bug: open loops lost to the store's cap, the wrong loop closed or
 // drafted by a name inside another name, a Slack conversation lost when its job could not be queued, a meeting's agreed meetings cut from its
 // review, a weekday worked out from a bare date, and a meeting moved on a calendar whose event ids carry their start taken for a cancellation.
 import assert from "node:assert/strict";

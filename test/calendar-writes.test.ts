@@ -1,5 +1,6 @@
 // Calendar writes through the Mac app (src/calendar-writes.ts, src/door/calendar-cards.ts): a card first that says where the change came
 // from, the owner's yes queues it under the card's id (the idempotency key), the Mac makes it once, the receipt has Undo that puts it back.
+import { readFileSync as readRepoFile } from "node:fs";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { createServer, type Server } from "node:http";
@@ -43,6 +44,20 @@ test("the queue: a write is queued once by its id, fetched once, sent again if u
   await q.exchange([]);
   assert.equal(told.at(-1)!.status, "failed");
   assert.match(told.at(-1)!.error!, /did not pick it up/);
+});
+
+test("a store that does not answer: the write is refused, and the queued ones are not overwritten with an empty list", async () => {
+  const { kv, m } = memKv();
+  let down = false;
+  const flaky: Kv = { get: async (k) => (down ? Promise.reject(new Error("connection lost")) : kv.get(k)), set: kv.set };
+  const q = createCalendarWrites({ kv: flaky, now: () => T0 });
+  assert.equal(await q.enqueue({ id: "aaaaaaaaaa", op: "move", eventId: "E1", at: T0, start: T0 + 60 * MIN, end: T0 + 90 * MIN, title: "Dentist" }), true);
+  down = true;
+  await assert.rejects(q.enqueue({ id: "bbbbbbbbbb", op: "create", start: T0, end: T0 + MIN, title: "Call" }), /connection lost/);
+  await assert.rejects(q.exchange([]), /connection lost/);
+  down = false;
+  assert.deepEqual(JSON.parse(m.values().next().value!).map((w: CalendarWrite) => w.id), ["aaaaaaaaaa"], "the queued write is still there");
+  assert.deepEqual((await q.exchange([])).map((w) => w.id), ["aaaaaaaaaa"]);
 });
 
 test("undo: a move goes back, a new event goes, a deleted one comes back", () => {
@@ -140,4 +155,60 @@ test("door: move «Dentist» → a card saying it was the owner's words; yes que
     server.close();
     server.closeAllConnections();
   }
+});
+
+
+/** A file of the repository, as text. */
+const repoText = (p: string): string => readRepoFile(new URL(`../${p}`, import.meta.url), "utf8");
+
+// Calendar writes made by the Mac app, and their Undo, when the Mac restarted mid-way or the event was not there.
+test("calendar writes: a re-applied move keeps the original times, a delete of nothing says so, a re-sent delete keeps what to restore", async () => {
+  const { createCalendarWrites, undoOf } = await import("../src/calendar-writes.ts");
+  type W = import("../src/calendar-writes.ts").CalendarWrite;
+  const MIN = 60_000;
+  const T0 = Date.parse("2026-11-16T09:00:00Z");
+  const m = new Map<string, string>();
+  const clock = { now: T0 };
+  const told: W[] = [];
+  const q = createCalendarWrites({
+    kv: { get: async (k) => m.get(k) ?? null, set: async (k, v) => void m.set(k, v) }, now: () => clock.now,
+    onResult: async (w) => void told.push(structuredClone(w)),
+  });
+  const was = { start: T0 + 60 * MIN, end: T0 + 90 * MIN, title: "Dentist", calendarId: "C1" };
+  // (a) The Mac moved it, restarted before answering, and was sent it again: the second time the event is already at the new times.
+  await q.enqueue({ id: "mmmmmmmmmm", op: "move", eventId: "E1", at: was.start, start: T0 + 120 * MIN, end: T0 + 150 * MIN, title: "Dentist", was });
+  await q.exchange([]);
+  clock.now += 3 * MIN;
+  await q.exchange([]);
+  await q.exchange([{ id: "mmmmmmmmmm", ok: true, eventId: "E1", before: { start: T0 + 120 * MIN, end: T0 + 150 * MIN } }]);
+  const moved = told.find((w) => w.id === "mmmmmmmmmm")!;
+  assert.deepEqual(moved.result?.before, { start: was.start, end: was.end }, "Undo puts it back where it was, not where it is");
+  assert.equal(undoOf(moved, "u")!.start, was.start);
+  // (b) A delete of an event that is not there (an older app answers ok with nothing before; this one says notFound): not "deleted".
+  await q.enqueue({ id: "dddddddddd", op: "delete", eventId: "E2", at: was.start, title: "Dentist", was });
+  await q.exchange([]);
+  await q.exchange([{ id: "dddddddddd", ok: true }]);
+  const nothing = told.find((w) => w.id === "dddddddddd")!;
+  assert.equal(nothing.status, "failed");
+  assert.match(nothing.error!, /wasn't found/);
+  await q.enqueue({ id: "eeeeeeeeee", op: "delete", eventId: "E3", at: was.start, title: "Dentist", was });
+  await q.exchange([]);
+  await q.exchange([{ id: "eeeeeeeeee", ok: false, notFound: true, error: "it wasn't found on this Mac's calendars" }]);
+  assert.match(told.find((w) => w.id === "eeeeeeeeee")!.error!, /wasn't found/);
+  // (c) A delete sent again after a restart: the first try deleted it, the second finds nothing. Undo still has what to bring back.
+  await q.enqueue({ id: "ffffffffff", op: "delete", eventId: "E4", at: was.start, title: "Dentist", was });
+  await q.exchange([]);
+  clock.now += 3 * MIN;
+  await q.exchange([]);
+  await q.exchange([{ id: "ffffffffff", ok: true }]);
+  const resent = told.find((w) => w.id === "ffffffffff")!;
+  assert.equal(resent.status, "done");
+  assert.deepEqual(resent.result?.before, was);
+  assert.equal(undoOf(resent, "u2")!.op, "create");
+  // The door keeps the event as the calendar showed it when the owner said yes.
+  assert.match(repoText("src/door/calendar-cards.ts"), /was: \{ start: e\.start, end: e\.end/);
+  // The Mac app keeps the first try's "before" per write, and says when a delete found nothing.
+  const swift = repoText("desktop/mac/Discovery.swift");
+  assert.match(swift, /rememberedBefore\(id\)/);
+  assert.match(swift, /"notFound": true/);
 });

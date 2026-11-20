@@ -57,6 +57,7 @@ export function mountPaperUpload(app: Express, d: PaperUploadDeps): void {
     try {
       name = paperName(decodeURIComponent(String(req.get("x-pako-name") ?? "")));
     } catch {
+      /* a malformed escape: no name */
       name = "";
     }
     let id: string;

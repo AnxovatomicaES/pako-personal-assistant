@@ -13,6 +13,7 @@
 
 import { texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const MARK = texts({ mark: "[code hidden · type CODE]" });
 /** What stands where a code was: the same everywhere, and it says how to see the code. */
@@ -288,13 +289,13 @@ export function createCodeVault(kv: Kv | null) {
   /** Throws when the store cannot be read: an empty list in its place would overwrite the codes kept there. */
   const load = async (): Promise<KeptCodes[]> => {
     if (list) return list;
-    const raw = kv ? await kv.get(CODES_KEY) : null;
+    const raw = kv ? await readJsonRecord(kv, CODES_KEY) : null;
     if (list) return list;
     let p: unknown = [];
     try {
-      p = raw ? JSON.parse(raw) : [];
+      p = raw ? raw : [];
     } catch {
-      console.error("[mail] the kept codes are not valid JSON: starting again");
+      console.error("[mail] the kept codes could not be used: starting again");
     }
     list = (Array.isArray(p) ? p : [])
       .filter((x): x is KeptCodes => !!x && typeof x.id === "string" && typeof x.at === "number" && typeof x.from === "string" && Array.isArray(x.codes))

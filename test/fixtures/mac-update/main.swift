@@ -1,6 +1,7 @@
 // Test only (test/mac-update.test.ts): runs the app's update install (desktop/mac/Update.swift) as the app does once Update is pressed, and
 // prints the outcome as JSON. Nothing is relaunched: the test looks at what is in place afterwards.
-//   install <feed file> <app> <version> <build|-> <team|-> <home> [macOS version]   Updater.install with a loopback feed allowed
+//   install <feed file> <app> <version> <build|-> <team|-> <home> [macOS version]   Updater.install with a loopback feed allowed; the
+//                                                                                   app's release key is PAKO_TEST_FEED_KEY (none when empty)
 //   team <path>                                                                     signingTeam
 //   check <path> <team|->                                                           checkSignature
 //   sha <file>                                                                      fileSHA256
@@ -11,7 +12,7 @@ let a = Array(CommandLine.arguments.dropFirst())
 var out: Any = NSNull()
 switch a.first ?? "" {
 case "install":
-    guard let data = FileManager.default.contents(atPath: a[1]), let info = parseUpdateFeed(data, loopback: true) else {
+    guard let data = FileManager.default.contents(atPath: a[1]), let info = parseUpdateFeed(data, loopback: true, publicKey: ProcessInfo.processInfo.environment["PAKO_TEST_FEED_KEY"]) else {
         out = ["error": "feed"]
         break
     }

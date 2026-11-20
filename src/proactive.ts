@@ -35,6 +35,7 @@ import { fold, today } from "./lists.ts";
 import { inline } from "./quarantine.ts";
 import type { Inbound } from "./whatsapp.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const logProactive = createLog("proactive");
 const logPanel = createLog("panel");
@@ -443,14 +444,9 @@ export function createProactive(d: ProactiveDeps) {
 
   const readStrict = async (): Promise<LifeState> => {
     if (!d.kv) return structuredClone(memory);
-    const raw = await d.kv.get(LIFE_KEY);
+    const raw = await readJsonRecord(d.kv, LIFE_KEY);
     if (!raw) return lifeStateOf({});
-    try {
-      return lifeStateOf(JSON.parse(raw));
-    } catch {
-      logProactive.error("the stored record is not valid JSON: starting again");
-      return lifeStateOf({});
-    }
+    return lifeStateOf(raw);
   };
   /** One change at a time; old suggestions go with every write. */
   const mutate = <R>(fn: (s: LifeState) => R | Promise<R>): Promise<R> => {
@@ -478,11 +474,12 @@ export function createProactive(d: ProactiveDeps) {
   const readHealth = async (): Promise<Fact[]> => {
     if (!d.local || !d.kv || healthLoaded) return health;
     try {
-      const raw = await d.kv.get(HEALTH_KEY);
-      const list = raw ? (JSON.parse(raw) as unknown) : [];
+      const raw = await readJsonRecord(d.kv, HEALTH_KEY);
+      const list = raw ? (raw as unknown) : [];
       health = (Array.isArray(list) ? list : []).map(factOf).filter((f): f is Fact => !!f && HEALTH_KINDS.includes(f.kind));
       healthLoaded = true;
-    } catch {
+    } catch (err) {
+      logProactive.warn(`the health facts could not be read: ${(err as Error).message}`);
       health = [];
     }
     return health;
@@ -550,7 +547,8 @@ export function createProactive(d: ProactiveDeps) {
       const at = (k: string, i: number): string => (typeof dd[k]?.[i] === "number" ? String(Math.round(dd[k]![i] as number)) : "?");
       const days = ["today", "tomorrow"].map((n, i) => `${n}: ${at("temperature_2m_min", i)}–${at("temperature_2m_max", i)} °C, rain ${at("precipitation_probability_max", i)}%`);
       weather = { at: t, text: days.join("; ") };
-    } catch {
+    } catch (err) {
+      logProactive.debug(`the weather could not be read: ${(err as Error).message}`);
       weather = { at: t, text: "" };
     }
     return weather.text;
@@ -753,6 +751,7 @@ export function createProactive(d: ProactiveDeps) {
     try {
       j = start >= 0 && end > start ? JSON.parse(trimmed.slice(start, end + 1)) : null;
     } catch {
+      /* not JSON: no suggestion */
       j = null;
     }
     if (!isObject(j)) return drop("not JSON");

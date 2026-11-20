@@ -23,6 +23,7 @@ import type { RecentMail } from "./mail.ts";
 import type { SlackAlert } from "./slack.ts";
 import type { Inbound } from "./whatsapp.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("rehearsal");
 
@@ -132,11 +133,12 @@ export function createRehearsal(d: RehearsalDeps) {
 
   const read = async (): Promise<RehearsalRun | null> => {
     if (!d.kv) return memory ? structuredClone(memory) : null;
-    const raw = await d.kv.get(REHEARSAL_KEY);
+    const raw = await readJsonRecord(d.kv, REHEARSAL_KEY);
     if (!raw) return null;
     try {
-      return runOf(JSON.parse(raw));
+      return runOf(raw);
     } catch {
+      /* not JSON: no run */
       return null;
     }
   };

@@ -20,6 +20,7 @@ import type { StoreKind } from "./secret-store.ts";
 import { readSecrets, renameRetry, SECRETS_FILE, secretsProblem, secretsWhere, settleSecrets, writeSecrets } from "./secrets.ts";
 import type { StoreLost } from "./store-guard.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const logPako = createLog("pako");
 const logBridge = createLog("bridge");
@@ -72,6 +73,7 @@ function readJson(path: string): Record<string, unknown> {
     const v = JSON.parse(readFileSync(path, "utf8")) as unknown;
     return v && typeof v === "object" ? (v as Record<string, unknown>) : {};
   } catch {
+    /* missing or not JSON: empty */
     return {};
   }
 }
@@ -268,6 +270,7 @@ export function lockHolder(
   try {
     text = readFileSync(join(dir, ".lock"), "utf8");
   } catch {
+    /* no lock file: nobody holds it */
     return null;
   }
   const [first, , up, mark, started] = text.split("\n");
@@ -303,6 +306,7 @@ export function processStart(pid: number): number | null {
     const r = spawnSync("ps", ["-p", String(pid), "-o", "lstart="], { encoding: "utf8", timeout: 3000, env });
     return r.status === 0 ? lstartSeconds(r.stdout ?? "") : null;
   } catch {
+    /* no ps here: unknown */
     return null;
   }
 }
@@ -362,6 +366,7 @@ export function lockHome(dir: string, port?: number, upSeconds: number = uptime(
     try {
       seen = readFileSync(path, "utf8");
     } catch {
+      /* the lock went while we looked: another Pako is starting */
       throw starting();
     }
     const other = lockHolder(dir, upSeconds);
@@ -374,6 +379,7 @@ export function lockHome(dir: string, port?: number, upSeconds: number = uptime(
     try {
       renameSync(path, aside);
     } catch {
+      /* the lock went while we looked: another Pako is starting */
       throw starting();
     }
     let moved = "";
@@ -472,10 +478,11 @@ export function createLocalChannel(o: { kv: Kv | null; now?: () => number }) {
   const all = async (): Promise<ChatMessage[]> => {
     if (messages) return messages;
     try {
-      const raw = o.kv ? await o.kv.get(CHAT_KEY) : null;
-      const list = raw ? (JSON.parse(raw) as ChatMessage[]) : [];
+      const raw = o.kv ? await readJsonRecord(o.kv, CHAT_KEY) : null;
+      const list = raw ? (raw as ChatMessage[]) : [];
       messages = Array.isArray(list) ? list : [];
-    } catch {
+    } catch (err) {
+      logPako.warn(`the chat could not be read, starting empty: ${err instanceof SyntaxError ? "not JSON" : (err as Error).message}`);
       messages = [];
     }
     return messages;
@@ -586,6 +593,7 @@ export function authFromStatus(code: number | null, out: string): ClaudeAuth | n
     method = (j as { authMethod?: unknown }).authMethod;
     if (method === undefined && code === 1 && (j as { loggedIn?: unknown }).loggedIn === false) return "none";
   } catch {
+    /* not JSON: unknown */
     return null;
   }
   if (code === 1) return method === "none" ? "none" : null;
@@ -621,6 +629,7 @@ function output(cmd: string, args: string[], env: NodeJS.ProcessEnv): Promise<{ 
       child.on("error", () => (clearTimeout(timer), resolve(null)));
       child.on("close", (code) => (clearTimeout(timer), resolve({ code, out })));
     } catch {
+      /* the command could not start: unknown */
       resolve(null);
     }
   });
@@ -662,6 +671,7 @@ export function windowsShimTarget(cmdPath: string, read: (p: string) => string =
   try {
     text = read(cmdPath);
   } catch {
+    /* no shim file: nothing to follow */
     return null;
   }
   const targets = [...text.matchAll(/"%~?dp0%?\\?([^"%]+)"/gi)].map((m) => m[1]!).filter((t) => !/(^|\\)node\.exe$/i.test(t));
@@ -721,6 +731,7 @@ export function claudeInstalled(bin: string): Promise<boolean> {
       child.on("error", () => (clearTimeout(timer), resolve(false)));
       child.on("exit", (code) => (clearTimeout(timer), resolve(code === 0)));
     } catch {
+      /* the command could not start: not done */
       resolve(false);
     }
   });

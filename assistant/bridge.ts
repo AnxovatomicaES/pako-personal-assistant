@@ -32,8 +32,12 @@ import type { BridgeDeps } from "./bridge/core.ts";
 export { DEFAULT_MODEL, DEFAULT_WRITING_MODEL, defaultStateDir, loadBridgeConfig, OLD_STATE_DIR_NAME, STATE_DIR_NAME } from "./bridge/config.ts";
 export type { BridgeConfig } from "./bridge/config.ts";
 export { childEnv, claudeCommand, offersFlag, offersNoBare } from "./bridge/cli.ts";
-export { buildClaudeArgs, ClaudeError, modelUnavailable, readTheWeb, runClaude, stopRunningClaude } from "./bridge/claude.ts";
+export { buildClaudeArgs, ClaudeError, modelUnavailable, readTheWeb, runClaude, stopRunningClaude, webRead } from "./bridge/claude.ts";
 export type { ClaudeResult, FileBlock, RunConfig } from "./bridge/claude.ts";
+export { CLAUDE_CODE_TESTED, cliCompat, compareVersions, parseClaudeVersion, readClaudeVersion } from "./bridge/cli-version.ts";
+export type { CliCompat } from "./bridge/cli-version.ts";
+export { classifyFailure, errorSignals, sessionMissing } from "./bridge/claude-errors.ts";
+export { fallbackCounts, noteFallback, resetFallbacks, setFallbackLog } from "./bridge/fallbacks.ts";
 export { mcpConfigFor, mcpDownIn, offersMcpTools, toolDataPath, watchTurn } from "./bridge/mcp.ts";
 export type { TurnSeen } from "./bridge/mcp.ts";
 export { createWarmClaude } from "./bridge/warm.ts";
@@ -58,7 +62,7 @@ export function createBridge(d: BridgeDeps) {
   Object.assign(b, mountPapers(b));
   Object.assign(b, mountTurn(b));
   Object.assign(b, mountTick(b));
-  const { config, budget, warm, chat, readState, pendingNotes, handledUnacked, setVersion, tick, handle } = b;
+  const { config, budget, warm, chat, readState, pendingNotes, handledUnacked, setVersion, setCli, tick, handle } = b;
 
   return {
     tick,
@@ -66,6 +70,8 @@ export function createBridge(d: BridgeDeps) {
     parseReply,
     /** What this computer runs (assistant/update.ts), told to the server on the next round. */
     setVersion,
+    /** Which Claude Code this is against the tested range (bridge/cli-version.ts), told to the server with the version. */
+    setCli,
     /**
      * Something is still under way between two rounds (notes to keep, an answered message whose ack the server has not taken): no
      * self-update now. A message still waiting (for Claude, or for its reply to be sent again) is in the inbox, so its round is not idle.

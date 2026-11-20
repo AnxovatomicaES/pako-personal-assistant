@@ -46,6 +46,7 @@ async function refusal(r: Response): Promise<string> {
     const j = (await r.json()) as { message?: unknown };
     return typeof j?.message === "string" ? j.message.replace(/[\u0000-\u001f\u007f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 160) : "";
   } catch {
+    /* not JSON: no reason */
     return "";
   }
 }
@@ -107,6 +108,7 @@ export async function checkResendKey(apiKey: string, f: typeof fetch = fetch): P
     }
     return { ok: false, why: "resendOther" };
   } catch {
+    /* offline or timed out: said as no answer */
     return { ok: false, why: "resendNoAnswer" };
   }
 }

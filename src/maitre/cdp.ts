@@ -220,6 +220,7 @@ export class Connection {
     try {
       msg = JSON.parse(text);
     } catch {
+      /* not JSON: not a message of the protocol */
       return;
     }
     if (typeof msg.id === "number") {
@@ -481,6 +482,7 @@ export class Page {
               const b = (await this.send("Network.getResponseBody", { requestId: r.requestId })) as { body: string; base64Encoded: boolean };
               return b.base64Encoded ? Buffer.from(b.body, "base64").toString() : b.body;
             } catch {
+              /* the body is gone (a redirect, or evicted): empty */
               return "";
             }
           },

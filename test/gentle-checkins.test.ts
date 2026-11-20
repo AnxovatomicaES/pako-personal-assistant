@@ -1,4 +1,4 @@
-// Gentle mode, batch B (src/gentle-checkins.ts, src/gentle-reset.ts): opt-in check-ins with their rules (quiet hours, a meeting, a restart,
+// Gentle mode's check-ins and weekly reset (src/gentle-checkins.ts, src/gentle-reset.ts): opt-in check-ins with their rules (quiet hours, a meeting, a restart,
 // no storm after a sleep, three "Not yet" at most, the shared cap), the weekly reset (what it picks, its buttons, Park the rest, the month-old
 // parked ones let go), and the brief that leads with the week's focus. Nothing here reaches the network.
 

@@ -19,6 +19,7 @@ import { texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import { nationalNumber, phoneCountry, withoutTrunkZero } from "./region.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("contacts");
 
@@ -120,13 +121,14 @@ export interface ContactsStore {
 export function createContactsStore(kv: Kv): ContactsStore {
   return {
     read: async () => {
-      const raw = await kv.get(CONTACTS_KEY);
+      const raw = await readJsonRecord(kv, CONTACTS_KEY);
       if (!raw) return { at: 0, people: [] };
       try {
-        const p = JSON.parse(raw) as { at?: unknown; people?: unknown };
+        const p = raw as { at?: unknown; people?: unknown };
         const people = (Array.isArray(p.people) ? p.people : []).map((c) => contactOf(c, true)).filter((c): c is Contact => !!c);
         return { at: typeof p.at === "number" ? p.at : 0, people };
       } catch {
+        /* not JSON: no contacts, as a fresh install has */
         return { at: 0, people: [] };
       }
     },
@@ -184,7 +186,8 @@ export function mountContactsPanel(app: Express, d: ContactsPanelDeps | null): v
     try {
       const { at, people } = await d.store.read();
       res.json({ count: people.length, at, people: people.slice(0, SHOWN), more: Math.max(0, people.length - SHOWN) });
-    } catch {
+    } catch (err) {
+      log.warn(`the contacts could not be read: ${(err as Error).message}`);
       res.status(503).json({ error: "store" });
     }
   });
@@ -193,7 +196,8 @@ export function mountContactsPanel(app: Express, d: ContactsPanelDeps | null): v
       await d.store.forget();
       d.control?.log("panel", T(d.lang())("logForgot"));
       res.json({ ok: true });
-    } catch {
+    } catch (err) {
+      log.warn(`the contacts could not be forgotten: ${(err as Error).message}`);
       res.status(503).json({ ok: false, error: "store" });
     }
   });

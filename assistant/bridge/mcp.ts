@@ -13,8 +13,10 @@ export interface TurnSeen {
   calls: ToolCall[];
   /** Messages of the model that called a tool: each adds one to the turn's num_turns. */
   toolMessages: number;
-  /** A tool that is not Pako's was called (the web search or fetch). */
+  /** A tool that is not Pako's was called (the web search or fetch, or one this file does not know: the safe side). */
   foreign: boolean;
+  /** An explicit WebSearch or WebFetch tool_use was seen (stream-json, captured with Claude Code 2.1.327). */
+  web: boolean;
   outside: OutsideSource[];
   mcpDown: boolean;
 }
@@ -37,10 +39,10 @@ export function mcpDownIn(line: string): boolean | null {
 /**
  * Reads one turn's stream-json lines for its tool use: each call to Pako's tools with its arguments and whether its result was an error,
  * the other tools called (the web), and the outside text read before each call (provenance, kept on the call). Lines it does not know are
- * passed over: an older or newer Claude Code that shows less is judged by num_turns, as before.
+ * passed over: an older or newer Claude Code that shows less is judged by num_turns, as before (claude.ts webRead logs that fallback).
  */
 export function watchTurn() {
-  const seen: TurnSeen = { calls: [], toolMessages: 0, foreign: false, outside: [], mcpDown: false };
+  const seen: TurnSeen = { calls: [], toolMessages: 0, foreign: false, web: false, outside: [], mcpDown: false };
   const byId = new Map<string, ToolCall>();
   const messages = new Set<string>();
   const read = new Set<string>();
@@ -69,6 +71,7 @@ export function watchTurn() {
           const name = b.name as string;
           if (!name.startsWith(PAKO_PREFIX)) {
             seen.foreign = true;
+            if (name === "WebSearch" || name === "WebFetch") seen.web = true;
             read.add("web");
             continue;
           }

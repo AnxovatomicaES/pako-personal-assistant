@@ -53,8 +53,35 @@ yes/no judge only where code cannot decide. `npm run evals:promote` turns a 👎
 
 ```bash
 (cd voice-worker && npm ci)   # once: the phone voice is its own package
-npm run gate                  # both type checks and every test (bin/gate.sh)
+npm run gate                  # both type checks, every test, and the time-sensitive tests in two more zones (bin/gate.sh)
 ```
+
+What the gate runs, in order:
+
+1. `tsc` for the server and the bridge, and for the phone voice (`voice-worker/`).
+2. `npm test`: every file in `test/*.test.ts`, under `TZ=Europe/Madrid`.
+3. `npm run test:zones` (`bin/zone-tests.sh`): the time-sensitive files (the brief, the calendar, follow-ups, reminders and routines, the
+   receipts, the phone line's quiet hours, the region) again under `America/Los_Angeles` (behind UTC, US daylight-saving dates) and
+   `Asia/Kolkata` (ahead of UTC by a half hour, no daylight saving); about a minute for both. `PAKO_TEST_ZONES="Asia/Tokyo"` runs other zones.
+   The list is named in the script; a new file whose tests depend on the clock or a zone goes there too.
+
+## Writing tests
+
+- **Named after the feature, not the work session.** `followups-matching.test.ts`, not `chief-fixes.test.ts`; a test found in a bug hunt
+  goes into the file of the feature it pins (or a new file named after that feature). Files renamed under this rule: `phase-1-glue` is
+  `door-wording`, `phase-1-review` is `passed-on-language`, `chief-fixes` is `followups-matching`, `followups-bughunt` is `followups-loops`,
+  `launch-surface` is `install-docs`, `assistant-core-hunt` is `assistant-core`, `mail-bugs` is `mail-reader`, `calendar-hunt` is
+  `calendar-sources`, `m4-feedback` is `connections-dashboard`, `gentle-b` is `gentle-checkins`, `hardening` is `local-guard`; the nine
+  tests of `launch-polish` went to the files of their features (`panel-i18n`, `region`, `windows`, `calendar-writes`, `meeting-prep`,
+  `dashboard`, `data`, `zoom-review`, `claude-errors`).
+- **No test leans on the process's time zone.** Give the zone explicitly (`timeZone: "Europe/Madrid"`, `PERSONAL_TIMEZONE` in a test's
+  settings). A test of what Pako does with *this computer's own* zone sets it with `withSystemZone(zone, fn)` (`test/helpers/zone.ts`), and
+  a test that formats dates resets the owner's region (`setOwnerRegion("")`) when an app built before it may have set it.
+- **Claude Code's real outputs.** `test/fixtures/claude-cli/<version>/` holds outputs captured from the installed `claude` (scrubbed: no ids,
+  paths or account data), and `test/claude-errors.test.ts` says how each was made. A new Claude Code version: capture the same outputs into
+  a new folder, run the gate, then raise `CLAUDE_CODE_TESTED.maxTested` in `assistant/bridge/cli-version.ts`.
+- **House rules** (`test/house-rules.test.ts`): every setting documented, no line in `src/` over 200 characters, and no `catch {` in `src/`
+  that throws an error away without a comment saying why that is safe (or a log of what it caught).
 
 GitHub's checks do not run for this repository, so the gate runs on your computer instead:
 

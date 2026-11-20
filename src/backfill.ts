@@ -22,6 +22,7 @@ import { texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import type { Inbound } from "./whatsapp.ts";
 import type { SentMail } from "./mail-followups.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -145,9 +146,10 @@ export function createBackfill(d: BackfillDeps) {
   const read = async (): Promise<State> => {
     if (!d.kv) return memory;
     try {
-      const raw = await d.kv.get(BACKFILL_KEY);
-      return raw ? { ...fresh(), ...(JSON.parse(raw) as Partial<State>) } : fresh();
+      const raw = await readJsonRecord(d.kv, BACKFILL_KEY);
+      return raw ? { ...fresh(), ...(raw as Partial<State>) } : fresh();
     } catch {
+      /* not JSON, or the store did not answer: started from nothing */
       return fresh();
     }
   };

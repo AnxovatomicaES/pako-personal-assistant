@@ -25,8 +25,8 @@ export function mountLanguage(door: Door): Pick<Door, "hearLanguage" | "ownerLan
           storedLanguage ??= v;
           heardLanguage ??= v;
         }
-      } catch {
-        languageLoading = null; // the store did not answer: asked again next time
+      } catch { // the store did not answer: asked again next time
+        languageLoading = null;
       }
     })());
   void loadLanguage();

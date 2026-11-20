@@ -12,6 +12,7 @@
 import { randomBytes } from "node:crypto";
 import type { Kv } from "../kv.ts";
 import type { Evidence } from "./cartridge.ts";
+import { readJsonRecord } from "../json-record.ts";
 
 export type LedgerState = "planned" | "submitted" | "confirmed" | "failed" | "cancelled";
 
@@ -103,12 +104,13 @@ export function createLedger(d: LedgerDeps) {
   /** The entries. A store that cannot be read THROWS: nothing is submitted without knowing what was. */
   const load = async (): Promise<LedgerEntry[]> => {
     if (memory) return memory;
-    const raw = d.kv ? await d.kv.get(LEDGER_KEY) : null;
+    const raw = d.kv ? await readJsonRecord(d.kv, LEDGER_KEY) : null;
     let list: LedgerEntry[] = [];
     try {
-      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      const parsed: unknown = raw ? raw : [];
       if (Array.isArray(parsed)) list = parsed.filter((e): e is LedgerEntry => !!e && typeof e.id === "string" && typeof e.key === "string" && typeof e.state === "string");
     } catch {
+      /* not JSON: an empty ledger */
       list = [];
     }
     memory = list;
@@ -146,6 +148,7 @@ export function createLedger(d: LedgerDeps) {
       try {
         return (await d.recentMail()).find((m) => confirmsBooking(m, e)) ?? null;
       } catch {
+        /* the mail could not be read: no confirmation */
         return null;
       }
     },

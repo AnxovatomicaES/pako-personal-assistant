@@ -114,6 +114,7 @@ function realOrNull(p: string): string | null {
   try {
     return realpathSync(p);
   } catch {
+    /* not there: no real path */
     return null;
   }
 }
@@ -173,6 +174,7 @@ const realFs: AutostartFs = {
     try {
       return readFileSync(path, "utf8");
     } catch {
+      /* not there yet: nothing to read */
       return null;
     }
   },
@@ -454,6 +456,7 @@ function safeUser(): string {
   try {
     return userInfo().username;
   } catch {
+    /* no user entry (a container): the shell's variable stands in */
     return "$USER";
   }
 }

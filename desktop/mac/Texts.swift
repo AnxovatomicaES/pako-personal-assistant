@@ -290,6 +290,7 @@ struct Texts {
         case .download: return "I couldn't download it. Check the internet connection and try again."
         case .tooLarge: return "The download is far larger than expected, so I won't install it."
         case .checksum: return "The download doesn't match the one Pako announced (its SHA-256 differs), so I won't install it. Try again later."
+        case .feedSignature: return "The update announcement isn't signed with Pako's release key, so I won't install it."
         case .mount: return "I couldn't open the downloaded disk image."
         case .noApp: return "The disk image doesn't contain Pako."
         case .notTheSameApp: return "The downloaded app isn't the announced version, so I won't install it."

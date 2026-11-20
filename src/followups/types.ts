@@ -153,7 +153,17 @@ export interface MailBatch {
   mails: MailSeen[];
 }
 
+/** A parked loop the store let go after PARKED_KEEP_MS (45 days): its note in the Parked list's history, kept 90 days. */
+export interface ParkedExpired {
+  title: string;
+  who: string;
+  parkedAt: number;
+  at: number;
+}
+
 export interface FollowupsState {
+  /** Parked loops the store let go after 45 days (their notes), written in the same change that drops them. */
+  expired?: ParkedExpired[];
   loops: Loop[];
   rules: LearnedRule[];
   jobs: Job[];

@@ -84,8 +84,8 @@ export function mountCalls(door: Door): Pick<Door, "deliverBooking" | "startBook
             const a = await d.tools.run({ callId: CALL_ID, tool: "check_call", args: { call_id: placed.callId }, trusted: true, now: now() });
             const parsed: unknown = JSON.parse(a.say);
             if (parsed && typeof parsed === "object") info = parsed as Record<string, unknown>;
-          } catch {
-            info = null; // not ready, or the lookup failed: ask again
+          } catch { // not ready, or the lookup failed: ask again
+            info = null;
           }
           const status = String(info?.call_status ?? "");
           if (!info || !["ended", "error", "not_connected"].includes(status)) continue;

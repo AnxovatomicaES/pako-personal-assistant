@@ -3,12 +3,14 @@
 import { createHash } from "node:crypto";
 import { heldLocally, wrap, type OutsideSource } from "../../src/quarantine.ts";
 import { ClaudeError, type ClaudeResult } from "./claude.ts";
+import { sessionMissing } from "./claude-errors.ts";
+import { noteFallback } from "./fallbacks.ts";
 import type { State } from "./core.ts";
 import {
   contextBlock, contextOutside, LANGUAGE_FRESH_MS, languageOf, namedPeople, outside, outsideKey, uiOf, zoneOf, type Context,
 } from "./context.ts";
 import type { BriefJob, Email, FollowupJob, JudgeJob, Meeting, Paper, ProactiveJob, Review, StepJob } from "./items.ts";
-import { readReply, type ParsedReply } from "./reply.ts";
+import { readReply, tagActions, type ParsedReply } from "./reply.ts";
 import { T } from "./texts.ts";
 import type { AfterJobs } from "./parts.ts";
 
@@ -131,7 +133,7 @@ export function mountTurn(b: AfterJobs) {
         result = await run(incoming.routine ? "routine" : "message", prompt, chat(ctx.companion === 1 && ctx.labsOff !== 1), state.sessionId || undefined);
       } catch (err) {
         // A conversation that cannot be resumed (cleared on this computer) starts again with everything it needs. A timeout or a limit does not.
-        if (!state.sessionId || !/no conversation found|could not find (the )?(session|conversation)|session .{0,60}not found/i.test((err as Error).message)) throw err;
+        if (!state.sessionId || !sessionMissing((err as Error).message)) throw err;
         log(`could not continue the conversation (${(err as Error).message.slice(0, 120)}): starting a new one`);
         state = { sessionId: "", count: 0, contextHash: "" };
         result = await run(incoming.routine ? "routine" : "message", `${contextBlock(ctx, true, wasPaused)}${named}\n\n${msg.text}`, chat(ctx.companion === 1 && ctx.labsOff !== 1));
@@ -196,6 +198,14 @@ export function mountTurn(b: AfterJobs) {
     // The tags of the answer and the accepted calls to Pako's tools, as one reply: from here on nothing tells them apart.
     const read = readReply(result);
     let reply: ParsedReply = read;
+    // One action path: Pako's typed tools when they loaded for this turn; the text tags are the fallback for a Claude Code without them (or
+    // whose MCP server failed to start). A tag is still honoured either way (an older bridge's prompt relies on them, and an action the owner
+    // asked for is never dropped), but every one is counted and logged, so the tags can be removed once the log shows they are not needed.
+    const tagged = tagActions(result.text);
+    if (tagged.length) {
+      const toolsUp = config.mcpTools === true && !result.mcpDown;
+      noteFallback(toolsUp ? "tags-beside-tools" : "tags", `turn ${msg.id.slice(-8)} acted through the tags ${tagged.join(", ")}`);
+    }
     for (const c of result.toolCalls ?? []) {
       log(`tool ${c.name}${c.rejected ? " refused (the model was told why)" : ""}${c.after?.length ? `, after reading ${c.after.join(", ")}` : ""}`);
     }

@@ -1,6 +1,7 @@
-// House rules the code keeps: every setting it reads is documented, and lines stay readable.
+// House rules the code keeps: every setting it reads is documented, lines stay readable, and no node_modules is ever tracked.
 
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import test from "node:test";
 
@@ -37,4 +38,46 @@ test("size: no line in src is over 200 characters (wrap long ones); src/restaura
     .flatMap((f) => read(f).split("\n").map((l, i) => ({ f, i: i + 1, n: l.length })))
     .filter((l) => l.n > 200);
   assert.deepEqual(long.map((l) => `${l.f}:${l.i}`), []);
+});
+
+test("git: no tracked path is named node_modules (a worktree's node_modules is a symlink, which `node_modules/` in .gitignore did not match)", () => {
+  // git's hook settings (GIT_DIR and the like, from a pre-push hook) must not point this at another repository.
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
+  const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: new URL(".", root), env, encoding: "utf8", maxBuffer: 64 << 20 }).split("\0");
+  assert.ok(tracked.length > 100, "git ls-files listed the repository");
+  assert.deepEqual(tracked.filter((p) => p.split("/").includes("node_modules")), []);
+  // And the ignore rule matches a symlink too: a pattern ending in "/" matches directories only.
+  const ignore = read(".gitignore").split("\n").map((l) => l.trim());
+  assert.ok(ignore.includes("node_modules") || ignore.includes("/node_modules"), ".gitignore has node_modules without a trailing slash");
+  assert.ok(!ignore.includes("node_modules/"), "node_modules/ (with the slash) does not match a symlink");
+});
+
+/** Every .ts and .js file under a folder (subfolders too): the panel's browser code counts as src too. */
+const scripts = (dir: string): string[] =>
+  readdirSync(new URL(dir, root)).flatMap((f) => {
+    const path = `${dir}${f}`;
+    if (statSync(new URL(path, root)).isDirectory()) return f === "node_modules" ? [] : scripts(`${path}/`);
+    return /\.(ts|js)$/.test(f) ? [path] : [];
+  });
+
+/**
+ * A `catch {` with no binding throws the error away. Each one says why that is safe with a comment (on its own line, the line before it, or
+ * the first line inside the block: `catch { /* … *\/ }` is the short form), or logs what it caught.
+ */
+test("catch: no bare catch {} in src without a comment saying why ignoring is safe, or a log", () => {
+  const bare: string[] = [];
+  for (const f of scripts("src/")) {
+    const lines = read(f).split("\n");
+    lines.forEach((l, i) => {
+      const m = /\bcatch\s*\{/.exec(l);
+      if (!m) return;
+      const after = l.slice(m.index + m[0].length);
+      const prev = lines[i - 1] ?? "";
+      const first = (after.trim() ? after : lines[i + 1] ?? "").trim();
+      const said = /\/\/|\/\*/.test(l) || /^\s*(\/\/|\/\*|\*)/.test(prev) || /^(\/\/|\/\*)/.test(first);
+      const logs = /^(?:void\s+)?(?:log[A-Z]\w*|log|console)\.(?:debug|info|warn|error|log)\(/.test(first);
+      if (!said && !logs) bare.push(`${f}:${i + 1}`);
+    });
+  }
+  assert.deepEqual(bare, [], "say why the error is ignored (a short comment) or log it");
 });

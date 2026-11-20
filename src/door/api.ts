@@ -112,6 +112,7 @@ export function doorApi(door: Door) {
       try {
         return birthdaysBrief(await people.read(true), now(), d.timeZone, lang());
       } catch {
+        /* the store did not answer: the brief goes without this line */
         return null;
       }
     },
@@ -124,6 +125,7 @@ export function doorApi(door: Door) {
       try {
         return briefLine(await lists.read(true), now(), d.timeZone, lang());
       } catch {
+        /* the store did not answer: the brief goes without this line */
         return null;
       }
     },
@@ -151,6 +153,7 @@ export function doorApi(door: Door) {
       try {
         return changesBrief(await facts.read(), now(), lang(), d.timeZone, since);
       } catch {
+        /* the store did not answer: the brief goes without this line */
         return null;
       }
     },

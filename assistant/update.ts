@@ -1,17 +1,25 @@
-// The assistant's computer keeps itself up to date (the hosted way: the bridge on the owner's other computer), so nobody has to remember
-// `git pull` there after the server is updated.
+// The assistant's computer can keep itself up to date (the hosted way: the bridge on the owner's other computer). It is OPT-IN: this
+// computer holds the Claude sign-in and the bridge token, so whatever it runs must be something the owner signed, never just "whatever is
+// on GitHub now" (whoever took the GitHub account would run code on every bridge).
 //
-// Every 30 minutes, between two messages (never while one is being answered), it asks origin which branch is its default and where that
-// branch is now. When it has moved, the checkout is clean (no changed tracked file) and on that very branch, and the move is a fast-forward,
-// it runs `git pull --ff-only`, then `npm ci` only when package-lock.json changed, then a self-check (every file of the bridge parses, the
-// bridge and this file import with everything they import, and the new assistant/run.ts starts with --self-check the way the live bridge
-// was started). If all of that worked it starts itself again on the new version; if the install or the check failed it goes back to the
-// commit it ran (`git reset --keep`, and `npm ci` again when the lock had changed) and keeps running as it was, and does not try that same
-// commit again (noted on disk). And a new version that still stops before its first good round is undone at its next start (started()).
+// Off (the default): every 30 minutes, between two messages, it asks origin where its default branch is, and when that is ahead of what
+// runs here it logs "update available" with the commit, once, and does nothing else. Updating is then the owner's own `git pull`.
 //
-// Never with local changes, never a non-fast-forward, never another branch: then it only says why it did not (the Salud card and the
-// server's warning show it). Off with BRIDGE_AUTOUPDATE=off, and always off when the bridge runs beside the server on the same computer
-// (local mode: src/local.ts starts it, and what updates Pako there is the Mac app or the person's own `git pull`).
+// On (BRIDGE_AUTO_UPDATE=1): it only ever moves to a release tag (vX.Y.Z) whose signature verifies against the key the owner pinned in
+// BRIDGE_UPDATE_SIGNER: an SSH allowed-signers file (git verify-tag with gpg.ssh.allowedSignersFile and gpg.minTrustLevel=fully), or a GPG
+// fingerprint (git verify-tag --raw, and the VALIDSIG line must name that key). With no signer pinned it refuses, and says so in its log.
+// It takes the newest such tag when that is a fast-forward of the checkout, the checkout is clean (no changed tracked file) and on origin's
+// default branch: `git merge --ff-only` to the tag's commit, then `npm ci` only when package-lock.json changed, then a self-check (every file
+// of the bridge parses, the bridge and this file import with everything they import, and the new assistant/run.ts starts with --self-check
+// the way the live bridge was started). If all of that worked it starts itself again on the new version; if the install or the check
+// failed it goes back to the commit it ran (`git reset --keep`, and `npm ci` again when the lock had changed) and keeps running as it was,
+// and does not try that same commit again (noted on disk). And a new version that still stops before its first good round is undone at its
+// next start (started()).
+//
+// Never with local changes, never a non-fast-forward, never another branch, never an unsigned or wrongly signed tag: then it only says why
+// it did not (the Salud card and the server's warning show it). BRIDGE_AUTOUPDATE=off (the older setting) stops even the look, and it is
+// always off when the bridge runs beside the server on the same computer (local mode: src/local.ts starts it, and what updates Pako there
+// is the Mac app or the person's own `git pull`).
 //
 // What it runs is git, npm and node, with arguments fixed here: nothing it reads from the repository or the network becomes a command.
 
@@ -63,7 +71,12 @@ export const runCommand: Run = (cmd, args, o) =>
   });
 
 export interface UpdateConfig {
+  /** Updates itself (BRIDGE_AUTO_UPDATE=1), to signed release tags only. */
   on: boolean;
+  /** Off, but still looks and logs "update available" (the default for a hosted bridge). */
+  notify?: boolean;
+  /** BRIDGE_UPDATE_SIGNER: an SSH allowed-signers file, or a GPG fingerprint. "" = none pinned (then it refuses to update). */
+  signer?: string;
   /** Why it is off ("" when on). */
   why: string;
   /** How often it looks (30 minutes); the first look comes `firstMs` after the start. */
@@ -71,14 +84,20 @@ export interface UpdateConfig {
   firstMs: number;
 }
 
-/** BRIDGE_AUTOUPDATE (on unless off); always off for a bridge beside its server (local mode: PAKO_PARENT_PID, or a server on this computer). */
+const truthy = (v: string | undefined): boolean => ["1", "on", "true", "yes"].includes((v ?? "").trim().toLowerCase());
+
+/**
+ * BRIDGE_AUTO_UPDATE=1 turns self-updating on (signed tags only, BRIDGE_UPDATE_SIGNER); unset, it only says "update available". Always off
+ * for a bridge beside its server (local mode: PAKO_PARENT_PID, or a server on this computer), and with BRIDGE_AUTOUPDATE=off.
+ */
 export function loadUpdateConfig(env: Record<string, string | undefined>, server: string): UpdateConfig {
   const base = { everyMs: 30 * 60_000, firstMs: 5 * 60_000 };
-  if ((env.BRIDGE_AUTOUPDATE ?? "").trim().toLowerCase() === "off") return { ...base, on: false, why: "off (BRIDGE_AUTOUPDATE=off)" };
   if ((env.PAKO_PARENT_PID ?? "").trim() || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(server)) {
     return { ...base, on: false, why: "off (it runs beside its server: Pako itself is updated instead)" };
   }
-  return { ...base, on: true, why: "" };
+  if ((env.BRIDGE_AUTOUPDATE ?? "").trim().toLowerCase() === "off") return { ...base, on: false, why: "off (BRIDGE_AUTOUPDATE=off)" };
+  if (!truthy(env.BRIDGE_AUTO_UPDATE)) return { ...base, on: false, notify: true, why: "off (BRIDGE_AUTO_UPDATE=1 turns it on)" };
+  return { ...base, on: true, signer: (env.BRIDGE_UPDATE_SIGNER ?? "").trim(), why: "" };
 }
 
 /** What the bridge says about itself on POST /assistant/health (src/watchdog.ts reads it). */
@@ -93,6 +112,7 @@ export interface SelfVersion {
 export type UpdateOutcome =
   | { kind: "off"; why: string }
   | { kind: "current"; sha: string }
+  | { kind: "available"; sha: string }
   | { kind: "skipped"; why: string }
   | { kind: "updated"; from: string; to: string }
   | { kind: "failed"; why: string; rolledBack: boolean };
@@ -185,8 +205,8 @@ export function createUpdater(d: UpdaterDeps) {
     };
   };
 
-  /** Due when it is on, and the last look (or the start) was long enough ago. */
-  const due = (): boolean => d.config.on && now() - (lastLook || startedAt - d.config.everyMs + d.config.firstMs) >= d.config.everyMs;
+  /** Due when it is on (or only says what is new), and the last look (or the start) was long enough ago. */
+  const due = (): boolean => (d.config.on || !!d.config.notify) && now() - (lastLook || startedAt - d.config.everyMs + d.config.firstMs) >= d.config.everyMs;
 
   // `node --check` says nothing of a .ts file (it passes any), so each file is parsed with Node's own TypeScript parser instead; then the
   // bridge and this file are imported, which loads every file they import. Then the new entry point itself is started the way the live
@@ -228,21 +248,64 @@ export function createUpdater(d: UpdaterDeps) {
 
   const install = async (): Promise<string> => {
     // --ignore-scripts, as the installers (install.sh): no dependency's install script runs on the computer that holds the Claude sign-in and
-    // the bridge token. The update itself is an unsigned fast-forward of origin's default branch; updating only to signed tags or commits
-    // (git verify-tag / verify-commit with a pinned key), or making auto-update opt-in, is a later decision.
+    // the bridge token. What is installed is the lock of a release tag the owner signed (verifyTag): nothing else gets this far.
     const r = await run(npm(), ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: d.repo, timeoutMs: 10 * 60_000 });
     return r.code === 0 ? "" : `npm ci failed: ${line(r.err.split("\n").filter((l) => /err/i.test(l)).slice(-3).join(" ") || r.err)}`;
+  };
+
+  /**
+   * "" when the tag carries a good signature from the pinned signer, else why not. An existing file is an SSH allowed-signers file: git
+   * must name a principal from it ("Good "git" signature for ..."), with gpg.minTrustLevel=fully so a valid signature by an unknown key never
+   * passes. 40 hex characters are a GPG fingerprint: the VALIDSIG line of `verify-tag --raw` must name that key (any other key in the
+   * keyring does not count). A lightweight tag has no signature: git refuses it.
+   */
+  const verifyTag = async (tag: string): Promise<string> => {
+    const signer = d.config.signer ?? "";
+    const fpr = signer.replace(/\s+/g, "").toUpperCase();
+    if (signer && existsSync(signer)) {
+      const r = await git(["-c", `gpg.ssh.allowedSignersFile=${signer}`, "-c", "gpg.minTrustLevel=fully", "verify-tag", tag], 30_000);
+      if (r.code === 0 && /Good "git" signature for /.test(`${r.out}\n${r.err}`)) return "";
+      return `${tag} is not signed by a key in BRIDGE_UPDATE_SIGNER (${line(r.err || r.out) || `exit ${r.code}`})`;
+    }
+    if (/^[0-9A-F]{40}$/.test(fpr)) {
+      const r = await git(["verify-tag", "--raw", tag], 30_000);
+      const valid = `${r.out}\n${r.err}`.split("\n").filter((l) => l.startsWith("[GNUPG:] VALIDSIG "));
+      const ok = valid.some((l) => l.split(/\s+/).slice(2).some((f) => f.toUpperCase() === fpr));
+      if (r.code === 0 && ok) return "";
+      return `${tag} is not signed by the GPG key ${fpr.slice(-16)} (BRIDGE_UPDATE_SIGNER)`;
+    }
+    return "BRIDGE_UPDATE_SIGNER is neither an allowed-signers file that exists nor a 40-character GPG fingerprint";
+  };
+
+  /** Off: only says, once per commit, that origin's default branch is ahead of what runs here. */
+  let announced = "";
+  const notify = async (): Promise<UpdateOutcome> => {
+    try {
+      const remote = await git(["ls-remote", "--symref", "origin", "HEAD"], 30_000);
+      const m = /^([0-9a-f]{40})\s+HEAD$/m.exec(remote.out);
+      const head = (await git(["rev-parse", "HEAD"], 5000)).out.trim();
+      if (remote.code !== 0 || !m || !/^[0-9a-f]{40}$/.test(head)) return { kind: "off", why: d.config.why };
+      const tip = m[1]!;
+      // Already here, or behind what runs here (a commit this checkout has): nothing to say.
+      if (tip === head || (await git(["merge-base", "--is-ancestor", tip, "HEAD"], 15_000)).code === 0) return { kind: "current", sha: head };
+      if (announced !== tip) log(`update available: ${tip} on origin (running ${head.slice(0, 7)}); auto-update is off, so nothing changes here`);
+      announced = tip;
+      return { kind: "available", sha: tip };
+    } catch {
+      return { kind: "off", why: d.config.why };
+    }
   };
 
   /** One look: see the header of this file. Never throws. */
   const check = async (): Promise<UpdateOutcome> => {
     lastLook = now();
-    if (!d.config.on) return { kind: "off", why: d.config.why };
+    if (!d.config.on) return d.config.notify ? notify() : { kind: "off", why: d.config.why };
     const skip = (why: string): UpdateOutcome => {
       if (status !== why) log(`not updating: ${why}`);
       status = why;
       return { kind: "skipped", why };
     };
+    if (!d.config.signer) return skip("no signer pinned (set BRIDGE_UPDATE_SIGNER): auto-update refuses unsigned updates");
     try {
       const head = await git(["symbolic-ref", "--quiet", "--short", "HEAD"], 5000);
       if (head.code !== 0) return skip("not on a branch (a detached checkout)");
@@ -255,23 +318,30 @@ export function createUpdater(d: UpdaterDeps) {
       const dirty = await git(["status", "--porcelain", "--untracked-files=no"], 15_000);
       if (dirty.code !== 0) return skip("git status failed");
       if (dirty.out.trim()) return skip("local changes");
-      const fetched = await git(["fetch", "--quiet", "origin", def], 120_000);
-      if (fetched.code !== 0) return skip("origin cannot be reached");
+      // The branch and its tags; an existing tag is never moved (no --force): a tag that changed on origin makes the fetch fail.
+      const fetched = await git(["fetch", "--quiet", "--tags", "origin", def], 120_000);
+      if (fetched.code !== 0) return skip(`git fetch failed: ${line(fetched.err) || "origin cannot be reached"}`);
+      const tags = (await git(["tag", "--list", "v*", "--sort=-v:refname"], 5000)).out.split("\n").map((t) => t.trim());
+      const tag = tags.find((t) => /^v\d+\.\d+\.\d+$/.test(t));
+      if (!tag) return skip("no release tag (vX.Y.Z) to update to");
       const from = (await git(["rev-parse", "HEAD"], 5000)).out.trim();
-      const target = (await git(["rev-parse", "FETCH_HEAD"], 5000)).out.trim();
+      const target = (await git(["rev-parse", "--verify", "--quiet", `refs/tags/${tag}^{commit}`], 5000)).out.trim();
       if (!/^[0-9a-f]{40}$/.test(from) || !/^[0-9a-f]{40}$/.test(target)) return skip("git rev-parse failed");
-      if (from === target) {
+      // The newest release is what runs here, or behind it (a checkout ahead of the last release): nothing to take.
+      if (from === target || (await git(["merge-base", "--is-ancestor", target, "HEAD"], 15_000)).code === 0) {
         status = "on";
         return { kind: "current", sha: from };
       }
       if ((await git(["merge-base", "--is-ancestor", "HEAD", target], 15_000)).code !== 0) return skip("not a fast-forward (commits here that origin does not have)");
       if (target === refused) return skip(`${target.slice(0, 7)} failed before`);
+      const unsigned = await verifyTag(tag);
+      if (unsigned) return skip(`refusing ${tag}: ${unsigned}`);
       const lockOf = async (rev: string): Promise<string> => (await git(["rev-parse", `${rev}:package-lock.json`], 5000)).out.trim();
       const lockBefore = await lockOf("HEAD");
-      log(`updating ${from.slice(0, 7)} → ${target.slice(0, 7)} (${def})`);
-      // pull.rebase=false: a rebase setting of the owner's must not turn this into anything but a fast-forward.
-      const pulled = await git(["-c", "pull.rebase=false", "pull", "--ff-only", "--quiet", "origin", def], 120_000);
-      if (pulled.code !== 0) return skip(`git pull --ff-only failed: ${line(pulled.err)}`);
+      log(`updating ${from.slice(0, 7)} → ${target.slice(0, 7)} (${tag}, signature verified)`);
+      // The commit the verified tag names, by its id (not the tag's name again): a fast-forward or nothing.
+      const merged = await git(["merge", "--ff-only", "--quiet", target], 120_000);
+      if (merged.code !== 0) return skip(`git merge --ff-only failed: ${line(merged.err)}`);
       const to = (await git(["rev-parse", "HEAD"], 5000)).out.trim();
       const lockChanged = (await lockOf("HEAD")) !== lockBefore;
       const problem = (lockChanged ? await install() : "") || (await selfCheck());

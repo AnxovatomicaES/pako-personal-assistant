@@ -14,6 +14,8 @@ export const WORDS = {
   allClear: "all clear",
   dueToday: "{n} due today",
   overdue: "{n} overdue",
+  /** Gentle mode's words for the same count: no "overdue", never in red (src/gentle.ts, no shame). */
+  pastTime: "{n} past their time",
   nextAt: "next: {title}",
   noneLeft: "none left today",
   invited: "Invited · not answered",
@@ -103,12 +105,14 @@ export function kpiTiles(data, now, timeZone = "UTC") {
   const waiting = open.filter((l) => l.kind === "other_promise");
   const overdue = owe.filter((l) => l.dueAt && l.dueAt < now).length;
   const dueToday = owe.filter((l) => l.dueAt && l.dueAt >= now && l.dueAt < end).length;
-  const parts = [dueToday ? fill(WORDS.dueToday, { n: dueToday }) : "", overdue ? fill(WORDS.overdue, { n: overdue }) : ""].filter(Boolean);
+  // Gentle mode (data.gentle): the count is said without "overdue" and never in red.
+  const gentle = data.gentle === true;
+  const parts = [dueToday ? fill(WORDS.dueToday, { n: dueToday }) : "", overdue ? fill(gentle ? WORDS.pastTime : WORDS.overdue, { n: overdue }) : ""].filter(Boolean);
   const events = (data.events ?? []).filter((e) => !e.allDay && e.start < end && e.end > now - 12 * 3600_000 && e.start >= end - 24 * 3600_000);
   const left = events.filter((e) => e.end > now).sort((a, b) => a.start - b.start);
   // The mail that needs the owner is not a tile: the "Needs you" preview block mounts under the row (#needs-you-mail).
   return {
-    owe: loops ? { n: owe.length, foot: parts.join(" · ") || WORDS.allClear, warn: overdue > 0, href: "#loops" } : null,
+    owe: loops ? { n: owe.length, foot: parts.join(" · ") || WORDS.allClear, warn: overdue > 0 && !gentle, href: "#loops" } : null,
     waiting: loops ? { n: waiting.length, foot: waiting.length ? waiting[0].who || "" : WORDS.allClear, warn: false, href: "#loops" } : null,
     meetings: data.calendarOn ? { n: events.length, foot: left[0] ? fill(WORDS.nextAt, { title: left[0].title }) : WORDS.noneLeft, warn: false, href: "#h-agenda" } : null,
   };

@@ -144,6 +144,7 @@ async function readCapped(res: Response): Promise<string> {
   try {
     return new TextDecoder(label ?? "utf-8").decode(bytes);
   } catch {
+    /* a charset TextDecoder does not know: UTF-8 instead */
     return new TextDecoder().decode(bytes);
   }
 }
@@ -275,6 +276,7 @@ export class PublicPageFetcher implements PageFetcher {
       }
       return undefined;
     } catch {
+      /* blocked, or no answer: no redirect */
       return undefined;
     }
   }
@@ -316,6 +318,7 @@ export class PublicPageFetcher implements PageFetcher {
       const r = await safeFetch(url, this.fetchImpl, this.resolve, "text/html", (u) => this.robotsAllow(u));
       return r?.status === 200 ? r.body : undefined;
     } catch {
+      /* blocked, or no answer: no homepage */
       return undefined;
     }
   }

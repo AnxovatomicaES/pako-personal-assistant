@@ -17,6 +17,7 @@ export function mountReminderTexts(door: Door): Pick<Door, "reminderLines" | "re
     try {
       return (await loadReminders()).filter((r) => !r.birthday).map((r) =>`${localStamp(r.at, d.timeZone)} ${r.text}${repeatNote(r)}${r.held ? tx("reminderHeld") : ""}`);
     } catch {
+      /* the reminders could not be read: Claude goes without them */
       return [];
     }
   };

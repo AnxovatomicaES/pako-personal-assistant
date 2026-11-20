@@ -185,7 +185,7 @@ test("watchTurn: Pako's calls with their results, the web as a foreign tool, pro
 });
 
 test("readTheWeb with the watched calls: Pako's own tool turns are not the web; a foreign tool or turns the calls do not explain are", () => {
-  const seen = { calls: [], toolMessages: 2, foreign: false, outside: [], mcpDown: false };
+  const seen = { calls: [], toolMessages: 2, foreign: false, web: false, outside: [], mcpDown: false };
   assert.equal(readTheWeb({ num_turns: 3 }, seen), false, "two tool messages explain two more turns");
   assert.equal(readTheWeb({ num_turns: 4 }, seen), true, "one turn more than the calls: the safe side");
   assert.equal(readTheWeb({ num_turns: 2 }, { ...seen, foreign: true }), true);

@@ -51,6 +51,7 @@ async function waitForRestart() {
     try {
       up = (await fetch("/health", { cache: "no-store" })).ok;
     } catch {
+      /* still restarting: asked again */
       up = false;
     }
     if (!up) down = true;
@@ -77,6 +78,7 @@ async function change(kind) {
     if (!body.restarting) return void location.reload();
     if (!(await waitForRestart())) note = t("notBack");
   } catch {
+    /* offline: said in the note */
     note = t("failed");
   }
   busy = false;

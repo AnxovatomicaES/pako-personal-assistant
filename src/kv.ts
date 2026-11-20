@@ -55,6 +55,7 @@ export function loadKv(rawUrl: string | undefined, o: { timeoutMs?: number } = {
   try {
     url = new URL((rawUrl ?? "").trim());
   } catch {
+    /* not a URL: no store, results stay in memory (as documented above) */
     return null;
   }
   if (url.protocol !== "redis:" && url.protocol !== "rediss:") return null;
@@ -66,6 +67,7 @@ export function loadKv(rawUrl: string | undefined, o: { timeoutMs?: number } = {
     try {
       return decodeURIComponent(v);
     } catch {
+      /* a malformed escape: kept as typed (above) */
       return v;
     }
   };
