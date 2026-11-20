@@ -192,6 +192,55 @@ test("the owner's example: a Zoom link the owner posted in that conversation aft
   assert.deepEqual(await r.engine.open(), []);
 });
 
+test("a document to send on Slack (slackFile): the owner's \"thanks!\" there does not close it; a file or a link they post does", async () => {
+  const r = rig();
+  await askAndExtract(r, JSON.stringify({ loops: [{ kind: "request_to_owner", title: "Send Rohan the board pack", who: "Rohan", check: "slackFile" }] }));
+  const [loop] = await r.engine.open();
+  assert.deepEqual(loop!.check, { slackReply: { channel: "D0ROHAN", afterTs: String(T0 / 1000), file: true } });
+  r.history.D0ROHAN = [{ ts: String((T0 + 5 * MIN) / 1000), at: T0 + 5 * MIN, mine: true, who: "", text: "thanks, will do!" }];
+  r.clock.now = T0 + 10 * MIN;
+  await r.engine.tick();
+  assert.equal(r.cards.length, 1, "a word of the owner's is not the board pack: the nudge goes");
+  assert.equal((await r.engine.open()).length, 1);
+  r.history.D0ROHAN.push({ ts: String((T0 + 70 * MIN) / 1000), at: T0 + 70 * MIN, mine: true, who: "", text: "here it is", file: true });
+  r.clock.now = T0 + 24 * 3600_000;
+  await r.engine.tick();
+  assert.deepEqual(await r.engine.open(), [], "the file closes it");
+});
+
+test("no silent close: a loop a check closed is listed as closed for you, with why; \"reopen\" with its words brings it back, once", async () => {
+  const r = rig();
+  await askAndExtract(r);
+  r.zoomMeetings.push({ topic: "Samir / Michael / Stan", at: Date.parse("2026-11-16T10:15:00Z"), createdAt: T0 + MIN });
+  r.clock.now = T0 + 10 * MIN;
+  await r.engine.tick();
+  assert.deepEqual(await r.engine.open(), [], "closed by the check");
+  const closed = await r.engine.closedForYou(T0);
+  assert.equal(closed.length, 1);
+  assert.match(closed[0]!.title, /reuni/i);
+  assert.ok(closed[0]!.why.length > 0, "with what it saw");
+  assert.deepEqual(await r.engine.closedForYou(r.clock.now + 1), [], "only since the moment asked");
+  assert.equal((await r.engine.reopenByWords("lunch with Bob")).ok, false, "words that name nothing reopen nothing");
+  const back = await r.engine.reopenByWords("montar reunion");
+  assert.equal(back.ok, true);
+  assert.match(back.say, /Back on your open list/);
+  const [open] = await r.engine.open();
+  assert.equal(open!.status, "open");
+  assert.match(open!.lastCheck!, /You reopened it/);
+  assert.equal(open!.autoClosed, undefined);
+  assert.deepEqual(await r.engine.closedForYou(T0), [], "no longer listed as closed");
+  assert.equal((await r.engine.reopenByWords("montar reunion")).ok, false, "an open one is not reopened again");
+});
+
+test("a loop the owner closed (Done) is theirs: never listed as closed for you, never reopened by words", async () => {
+  const r = rig();
+  await askAndExtract(r);
+  const [loop] = await r.engine.open();
+  await r.engine.press("1", loop!.id);
+  assert.deepEqual(await r.engine.closedForYou(T0), []);
+  assert.equal((await r.engine.reopenByWords("montar reunion")).ok, false);
+});
+
 test("escalation: checked again an hour before; still not there -> one more nudge; there -> silence; then never again", async () => {
   const r = rig();
   await askAndExtract(r);

@@ -199,8 +199,8 @@ test("the extraction, the brief and the draft read the lessons under their headi
   assert.ok(task);
   assert.deepEqual(asked[0], { kinds: ["draft_edit", "undo"], about: ["draft", "email", "message"], who: "Ana", channel: "D0ANA" });
   assert.ok(texts[0]!.includes(`${LESSONS_HEAD}\n- 2026-11-15 · Drafts to Ana: no greeting.`));
-  await brief.result(task.id, "A reply in your Slack conversation with Ana\nDeck coming Friday.");
-  assert.deepEqual(drafted, [{ text: "A reply in your Slack conversation with Ana\nDeck coming Friday.", about: { who: "Ana", channel: "D0ANA" } }]);
+  await brief.result(task.id, "A reply in your Slack conversation with Ana\nDeck coming shortly.");
+  assert.deepEqual(drafted, [{ text: "A reply in your Slack conversation with Ana\nDeck coming shortly.", about: { who: "Ana", channel: "D0ANA" } }]);
 });
 
 test("the panel: the lessons listed with the session; one deleted only with the x-pako header", async () => {

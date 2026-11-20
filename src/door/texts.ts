@@ -172,7 +172,7 @@ export const T = texts(
     helpReviews: "• MEETING TODOS: what is still open from your meetings of the week",
     helpRehearsal: "• REHEARSAL: what I would have told you from the last 48 hours, without sending anything",
     helpHealth: "• HEALTH: whether everything works (Slack, calendar, mail, Claude…) and how useful my reminders are",
-    healthUnread: "I can't read how each part is doing right now: look at the Salud (Health) card on the panel.",
+    healthUnread: "I can't read how each part is doing right now: look at the System card on the panel, under Health.",
     healthRehearsal: "To see what I would tell you now from the last 48 hours, type REHEARSAL (nothing is sent).",
     helpPanel: "• PANEL: a link to your panel",
     helpTelegram: "• TELEGRAM: talk to me on Telegram too (TELEGRAM OFF disconnects it)",

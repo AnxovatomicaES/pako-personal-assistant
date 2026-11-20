@@ -189,6 +189,37 @@ export const onParked: Handler = async (door, { command }) => {
   return null;
 };
 
+/** "reopen <words>": a follow-up Pako closed on its own (listed in the brief as closed for you) back on the open list. */
+export const onReopen: Handler = async (door, { command }) => {
+  const { d, sendText } = door;
+  if (!d.followups?.reopenByWords) return null;
+  const m = /^(?:reopen|re open)\s+(.{2,80})$/.exec(command);
+  if (!m) return null;
+  const r = await d.followups.reopenByWords(m[1]!);
+  // A close the owner undid: counted, so the beta report shows how often Pako closes on weak evidence.
+  if (r.ok) await d.quality?.reopened?.(m[1]!).catch(() => undefined);
+  await sendText(r.say);
+  return r.ok ? "reopened" : "reopen asked";
+};
+
+/**
+ * "you missed <what>": a promise Pako never caught. Kept as a miss (for the evals and the beta report) and put on the open list, so it is not
+ * dropped twice. Read by the server, like PENDING.
+ */
+export const onMissed: Handler = async (door, { command, text }) => {
+  const { d, sendText } = door;
+  if (!d.quality?.missed) return null;
+  const m = /^(?:pako )?(?:you missed|you forgot|you didn t catch|you did not catch)\s+(.{3,160})$/.exec(command);
+  if (!m) return null;
+  // The owner's own words, as typed (the command is folded): the loop's title.
+  const raw = text.trim().replace(/^\s*(?:pako[\s,:]+)?(?:you\s+missed|you\s+forgot|you\s+didn['’]?t\s+catch|you\s+did\s+not\s+catch)\s*:?\s*/i, "").slice(0, 160);
+  const what = raw.length >= 3 ? raw : m[1]!;
+  await d.quality.missed(what);
+  const loop = d.followups?.fromChat ? await d.followups.fromChat({ title: what }).catch(() => null) : null;
+  await sendText(d.quality.missedText ? d.quality.missedText(loop ? loop.title : null) : "Noted.");
+  return "missed";
+};
+
 /** "park 2" after a weekly reset (src/gentle-reset.ts), where the chat shows three buttons: anything else goes on. */
 export const onResetPark: Handler = async (door, { command }) => {
   const { d, sendText } = door;

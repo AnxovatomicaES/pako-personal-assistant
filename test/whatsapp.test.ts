@@ -1392,7 +1392,7 @@ const settleUntil = async (check: () => boolean): Promise<void> => {
   for (let i = 0; i < 200 && !check(); i++) await new Promise((x) => setTimeout(x, 10));
 };
 
-test("hunt2: a table card can be answered in words only by the very next message, whatever kind it is (a command, a voice note, a sticker, another card's yes)", async () => {
+test("a table card can be answered in words only by the very next message, whatever kind it is (a command, a voice note, a sticker, another card's yes)", async () => {
   for (const between of ["command", "audio", "sticker", "text"] as const) {
     const emails: { to: string; subject: string; text: string }[] = [];
     const r = await rig({ booking: huntBooking(emails), control: createControl(null) });
@@ -1413,7 +1413,7 @@ test("hunt2: a table card can be answered in words only by the very next message
   }
 });
 
-test("hunt2: a reaction answers nothing and takes nothing away: the card is still answerable by the next word; and it is never 'only read text'", async () => {
+test("a reaction answers nothing and takes nothing away: the card is still answerable by the next word; and it is never 'only read text'", async () => {
   const emails: { to: string; subject: string; text: string }[] = [];
   const r = await rig({ booking: huntBooking(emails), control: createControl(null) });
   try {
@@ -1432,7 +1432,7 @@ test("hunt2: a reaction answers nothing and takes nothing away: the card is stil
   }
 });
 
-test("hunt2: a call card and a table card are never both armed: the newest one is the only one a typed yes can answer", async () => {
+test("a call card and a table card are never both armed: the newest one is the only one a typed yes can answer", async () => {
   const emails: { to: string; subject: string; text: string }[] = [];
   const r = await rig({ booking: huntBooking(emails), control: createControl(null) });
   try {
@@ -1451,7 +1451,7 @@ test("hunt2: a call card and a table card are never both armed: the newest one i
   }
 });
 
-test("hunt2: STOP is understood the way people type it (iOS ellipsis, an emoji, quotes, spaced letters, 'stop pako'); a sentence that merely contains the word is not STOP", async () => {
+test("STOP is understood the way people type it (iOS ellipsis, an emoji, quotes, spaced letters, 'stop pako'); a sentence that merely contains the word is not STOP", async () => {
   for (const word of ["Stop…", "STOP 🛑", "“stop”", "S T O P", "stop pako", "PAUSE!", "stop,", "STOP!?", "ｓｔｏｐ", "st​op"]) {
     const control = createControl(null);
     const r = await rig({ control });
@@ -1474,7 +1474,7 @@ test("hunt2: STOP is understood the way people type it (iOS ellipsis, an emoji, 
   }
 });
 
-test("hunt2: a message Meta delivers again is not handled again: an old STOP replayed after RESUME does not pause", async () => {
+test("a message Meta delivers again is not handled again: an old STOP replayed after RESUME does not pause", async () => {
   const control = createControl(null);
   const r = await rig({ control });
   try {
@@ -1490,7 +1490,7 @@ test("hunt2: a message Meta delivers again is not handled again: an old STOP rep
   }
 });
 
-test("hunt2: moving a reminder (remove the old words, add the new time) keeps the new one", async () => {
+test("moving a reminder (remove the old words, add the new time) keeps the new one", async () => {
   const r = await rig();
   try {
     await r.hook(r.payload([r.text("hola")]));
@@ -1503,7 +1503,7 @@ test("hunt2: moving a reminder (remove the old words, add the new time) keeps th
   }
 });
 
-test("hunt2: two notices at the same moment after a restart both see that the window is open (the owner wrote an hour ago)", async () => {
+test("two notices at the same moment after a restart both see that the window is open (the owner wrote an hour ago)", async () => {
   const { kv, m } = fakeKv();
   m.set("assistant-last-owner-at", String(Date.parse("2026-11-14T11:00:00Z")));
   const r = await rig({ kv });
@@ -1515,7 +1515,7 @@ test("hunt2: two notices at the same moment after a restart both see that the wi
   }
 });
 
-test("hunt2: a notice kept while the held ones are being given is not wiped with them", async () => {
+test("a notice kept while the held ones are being given is not wiped with them", async () => {
   const { kv } = fakeKv();
   const r = await rig({ kv, env: { WHATSAPP_REMINDER_TEMPLATE: "pako_aviso" } });
   try {
@@ -1533,7 +1533,7 @@ test("hunt2: a notice kept while the held ones are being given is not wiped with
   }
 });
 
-test("hunt2: an answer sent again with the same key does what it asks once (one call card), and only repeats the text that did not arrive", async () => {
+test("an answer sent again with the same key does what it asks once (one call card), and only repeats the text that did not arrive", async () => {
   let refuseText = true;
   const r = await rig({ refuse: (body) => (refuseText && body.type === "text" ? 131047 : null) });
   try {
@@ -1554,7 +1554,7 @@ test("hunt2: an answer sent again with the same key does what it asks once (one 
   }
 });
 
-test("hunt2: a due reminder that Meta refuses is tried again after a wait, not three times in three seconds", async () => {
+test("a due reminder that Meta refuses is tried again after a wait, not three times in three seconds", async () => {
   let refuse = true;
   const r = await rig({ refuse: (body) => (refuse && body.type === "interactive" && String(body.interactive.body.text).startsWith("Reminder") ? 131047 : null) });
   try {

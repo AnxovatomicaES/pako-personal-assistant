@@ -1,5 +1,6 @@
-// A minimal Redis-protocol client (GET and SET with expiry only) for the Render Key Value store that keeps the voice calls'
-// results across restarts of the main server: a free web service forgets its memory and its disk every time it sleeps.
+// A minimal Redis-protocol client (GET, SET with expiry, SET NX, and a raw command for the writer lease) for the Render Key Value store
+// that keeps the voice calls' results across restarts of the main server: a free web service forgets its memory and its disk every time it
+// sleeps.
 // No dependency: one short-lived connection per command is enough at a few calls a day.
 
 import { connect as tcp, type Socket } from "node:net";
@@ -14,6 +15,11 @@ export interface Kv {
    * leaves the jobs on their one-process guard.
    */
   add?(key: string, value: string, ttlSeconds: number): Promise<boolean>;
+  /**
+   * One raw command, its reply as it came (a string, a number or null): what the writer lease (src/kv-lease.ts) needs beyond GET and SET
+   * (SET NX PX, and EVAL for a renewal or a release that touches the lease only while it is still this server's). Only the Redis store has it.
+   */
+  command?(args: string[]): Promise<string | number | null>;
 }
 
 /** Encodes one command in the protocol's array-of-bulk-strings form. */
@@ -121,6 +127,7 @@ export function loadKv(rawUrl: string | undefined, o: { timeoutMs?: number } = {
       // "OK" when written, a nil reply when the key was already there.
       return (await run(["SET", key, value, "NX", "EX", String(Math.max(1, Math.floor(ttlSeconds)))])) === "OK";
     },
+    command: (args) => run(args),
   };
 }
 

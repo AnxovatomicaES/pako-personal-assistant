@@ -1,5 +1,5 @@
-// Which Claude Code this bridge drives, against the range Pako has been tested with. Outside the range the bridge keeps working (each feature
-// is still asked of the CLI itself: offersFlag, offersMcpTools), but it says so once in the log and on the panel's Salud card.
+// Which Claude Code this bridge drives. What decides whether it works is the self-test (cli-probe.ts), run on each new version; the range
+// below is only what Pako's captured outputs (test/fixtures/claude-cli/) come from, and what is said when the self-test could not run.
 
 import { spawnSync } from "node:child_process";
 import { childEnv, claudeCommand } from "./cli.ts";
@@ -11,11 +11,17 @@ import { childEnv, claudeCommand } from "./cli.ts";
  */
 export const CLAUDE_CODE_TESTED = { min: "2.1.325", maxTested: "2.1.327" } as const;
 
-/** How this Claude Code stands against the tested range; `note` is the sentence for the log and the panel, absent when it is in range. */
+/**
+ * How this Claude Code stands; `note` is the sentence for the log and the panel, absent when all is well. "ok": it passed the self-test
+ * (or, untested, is in the captured range); "probed": it passed the self-test, outside the captured range; "failed": it did not, and `note`
+ * says what and how to go back to `lastGood`; "newer" / "older": the self-test could not run, and it is outside the range; "unknown": no version.
+ */
 export interface CliCompat {
   version: string;
-  status: "ok" | "newer" | "older" | "unknown";
+  status: "ok" | "probed" | "failed" | "newer" | "older" | "unknown";
   note?: string;
+  /** The version to go back to, when it failed. */
+  lastGood?: string;
 }
 
 /** The version in `claude --version`'s output ("2.1.327 (Claude Code)"); null when there is none. */
@@ -34,7 +40,7 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-/** Where `out` (`claude --version`'s output, "" when it gave none) stands against CLAUDE_CODE_TESTED. */
+/** Where `out` (`claude --version`'s output, "" when it gave none) stands against CLAUDE_CODE_TESTED alone, with no self-test. */
 export function cliCompat(out: string, tested: { min: string; maxTested: string } = CLAUDE_CODE_TESTED): CliCompat {
   const version = parseClaudeVersion(out);
   if (!version) return { version: "", status: "unknown", note: "Pako could not read which Claude Code this is (claude --version said no version)" };

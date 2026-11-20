@@ -6,6 +6,10 @@ import { LOOPS_PER_JOB, WHO_MAX } from "./limits.ts";
 import { isOpen } from "./record.ts";
 import type { DraftInput, DryOutcome, Job, Loop, WouldBe } from "./types.ts";
 
+/** A check as the extraction names it: a slackReply that needs a file or a link is "slackFile". */
+const checkName = (c: Loop["check"]): WouldBe["check"] =>
+  ("slackReply" in c && c.slackReply.file ? "slackFile" : Object.keys(c)[0]) as WouldBe["check"];
+
 export function mountRehearse(fu: Engine): Pick<Engine, "draft" | "dryAnswer"> {
   const { d, now, lang, read, slackJob, textJob, jobText, keep, ruledOut, runCheck, dueText, sourceText, nudgeText, quietNow } = fu;
   /** A rehearsal's job: the text a real one would carry, built the same way; nothing kept, nothing queued. */
@@ -50,7 +54,7 @@ export function mountRehearse(fu: Engine): Pick<Engine, "draft" | "dryAnswer"> {
       const speaks = outcome === "nudge" || outcome === "later";
       items.push({
         title: l.title, kind: l.kind, who: l.who, due: dueText(l, lg).replace(/^,\s*/, ""), source: sourceText(l.sources[0], lg),
-        check: Object.keys(l.check)[0] as WouldBe["check"], seen: seen.done ? seen.what : seen.said, outcome, checkAt: l.nextCheckAt,
+        check: checkName(l.check), seen: seen.done ? seen.what : seen.said, outcome, checkAt: l.nextCheckAt,
         ...(speaks ? { text: nudgeText(l, seen.said, false, lg), quiet: quietNow(l.nextCheckAt || t) } : {}),
       });
     }

@@ -48,8 +48,10 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
   // What server.ts starts once the server listens and stops on shutdown, in this order and in reverse (src/app/services.ts).
   const lifecycle = createServiceRegistry();
   const afterGuard = { after: ["storeGuard"] };
+  // A server's writer lease on its Redis store (src/kv-lease.ts): renewed while it runs, released on shutdown so the next server takes over.
+  if (core.lease) lifecycle.add(named("writerLease", core.lease));
   // First, before any request is handled: until the store guard has looked at the store, the pause counts as on (src/store-guard.ts).
-  lifecycle.add(named("storeGuard", storeGuard));
+  lifecycle.add(named("storeGuard", storeGuard), { after: ["writerLease"] });
   if (owner?.telegram) lifecycle.add(named("telegram", owner.telegram), afterGuard);
   lifecycle.add(named("watchdog", dog), afterGuard);
   // Slack's Socket Mode (src/slack-socket.ts, SLACK_APP_TOKEN): its connection is opened once the server listens.

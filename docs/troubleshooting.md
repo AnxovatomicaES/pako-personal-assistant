@@ -7,6 +7,9 @@ What to do when Pako does not start or answer, and how Pako tells you when one o
 - **Old Node, or `npm install` not run.** `npm start` checks both first and says what to do.
 - **No Claude Code yet.** Pako still starts, and the chat says what to install. It notices when you do.
 - **Claude not signed in, or out of its limit.** The chat says so. Your message waits and is answered once Claude works again.
+- **Claude Code updated itself and something changed.** Pako tests each new Claude Code version by itself (a few seconds, no usage). If
+  one fails, Pako keeps answering with what still works, and the Health card says what failed with the one command that goes back to
+  the last version that passed, such as `npm i -g @anthropic-ai/claude-code@2.1.327` (or `claude install 2.1.327`).
 - **The sign-in link expired, or you closed the tab.** The link works once, for 10 minutes. Run `npm run panel` in the Pako folder for a new one.
   No restart is needed. A signed-in browser stays signed in for 30 days.
 - **Port 8787 is taken.** `PORT=8788 npm start`.

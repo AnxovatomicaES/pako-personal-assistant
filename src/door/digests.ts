@@ -85,7 +85,8 @@ export function mountDigests(door: Door): void {
         const label = "email";
         const category = verdict?.category ?? categoryOf({ kind: worth ? "aviso" : "guardado", scam, summary });
         if (mail && category !== "suspicious" && fu.answered) {
-          void fu.answered({ who: [senderName(mail.from), senderAddress(mail.from)], ref: id }).catch(() => undefined);
+          void fu.answered({ who: [senderName(mail.from), senderAddress(mail.from)], ref: id, ...(mail.thread ? { thread: mail.thread } : {}) })
+            .catch(() => undefined);
         }
         // The email's own words, read whole: one reading of it, so the triage's loop line is left out when the follow-ups take it.
         const whole = d.mail.followups && category !== "suspicious"

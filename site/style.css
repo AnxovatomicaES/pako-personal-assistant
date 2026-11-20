@@ -133,6 +133,7 @@ main, .nav, .foot { position: relative; z-index: 2; }
 .kicker { margin: 0 0 18px; font-family: var(--mono); font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--sky); }
 .lead { font-size: clamp(18px, 1.6vw, 21px); color: var(--ink-2); max-width: 640px; }
 .fine { font-size: 14px; color: var(--ink-3); }
+ul.fine { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; }
 .section-head { max-width: 900px; margin: 0 auto 64px; text-align: center; }
 .section-head .lead { margin: 22px auto 0; }
 .section-title { margin: 0; font-size: clamp(38px, 5.6vw, 76px); line-height: 1.02; letter-spacing: -0.035em; font-weight: 700; }

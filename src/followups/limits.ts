@@ -53,3 +53,5 @@ export const PARKED_KEEP_MS = 45 * 24 * 3600_000;
 export const LATER_TODAY_MS = 3 * 3600_000;
 /** The inbox id of an extraction job. */
 export const jobInboxId = (id: string): string => `fu:${id}`;
+/** How long a loop Pako closed on its own can be reopened by words ("reopen <words>"), and is shown as "Closed for you". */
+export const REOPEN_MS = 7 * 24 * 3600_000;

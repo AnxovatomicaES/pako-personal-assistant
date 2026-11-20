@@ -80,7 +80,9 @@ export function mountNudges(fu: Engine): Pick<Engine, "quietNow" | "nextAfter" |
         if (seen.done) {
           await mutate((s) => {
             const x = s.loops.find((y) => y.id === l.id);
-            if (x && isOpen(x)) Object.assign(x, { status: "done", closedAt: now(), nextCheckAt: 0, checkedAt: now() });
+            if (x && isOpen(x)) {
+              Object.assign(x, { status: "done", closedAt: now(), nextCheckAt: 0, checkedAt: now(), autoClosed: { at: now(), why: seen.what } });
+            }
           });
           d.control?.log("followup", T(lg)("logDone", { what: seen.what, title: l.title }));
           out.done++;

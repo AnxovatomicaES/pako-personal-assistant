@@ -88,7 +88,7 @@ function localRig(home: string) {
   return { zl, queued, make };
 }
 
-test("bugs-chat zoom-local: captions still being written (the file changed a minute ago, the folder an hour ago) wait for the next look", async () => {
+test("zoom-local: captions still being written (the file changed a minute ago, the folder an hour ago) wait for the next look", async () => {
   const r = localRig(mkdtempSync(join(tmpdir(), "pako-zl-")));
   // Zoom appends to the captions file as people speak: the file's time moves, the folder's does not.
   r.make("2026-11-16 11.00.00 Long call 84512345678", "[Ana] 11:00:03\nFirst half only\n", { fileAt: NOW - 60_000 });
@@ -96,7 +96,7 @@ test("bugs-chat zoom-local: captions still being written (the file changed a min
   assert.equal(r.queued.length, 0);
 });
 
-test("bugs-chat zoom-local: one folder that cannot be read does not stop the meetings after it", { skip: process.getuid?.() === 0 }, async () => {
+test("zoom-local: one folder that cannot be read does not stop the meetings after it", { skip: process.getuid?.() === 0 }, async () => {
   const r = localRig(mkdtempSync(join(tmpdir(), "pako-zl-")));
   const bad = r.make("2026-11-16 09.00.00 Locked 84512345678", "[Ana] 09:00:03\nlocked\n");
   r.make("2026-11-16 10.00.00 Weekly sync 84512345678", "[Ana] 10:00:03\nTe paso el informe el viernes\n");

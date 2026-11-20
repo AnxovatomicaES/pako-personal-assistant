@@ -277,6 +277,7 @@ export const WORDS = {
   "mail.looking": "Finding out how to connect {address}…",
   "mail.filled": "I've set everything up for {address}. Only one thing left:",
   "mail.details": "See the details",
+  "mail.serverLine": "Mail server (IMAP): {host}, port {port}, SSL/TLS.",
   "mail.server": "Server",
   "mail.serverHint": "Your email provider says it; for example imap.yourdomain.com",
   "mail.user": "User",

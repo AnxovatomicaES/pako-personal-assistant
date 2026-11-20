@@ -192,7 +192,7 @@ test("connector: Pako Assistant offers find_restaurants (reads only) and book_re
 
 // ---------- bug hunt 2: regression tests ----------
 
-test("hunt2 booking: what the card shows is what the email says (notes are cut once, to the same length)", async () => {
+test("booking: what the card shows is what the email says (notes are cut once, to the same length)", async () => {
   const r = rig();
   const notes = `${"a".repeat(150)}ENLACE-OCULTO http://evil.example`;
   await r.booking.start({ what: "tapas, Barcelona", when: WHEN, party: 2, notes });
@@ -202,7 +202,7 @@ test("hunt2 booking: what the card shows is what the email says (notes are cut o
   assert.ok(!r.sent[0]!.text.includes("ENLACE-OCULTO"), "nothing reaches the restaurant that the owner could not see");
 });
 
-test("hunt2 booking: a send whose outcome is unknown counts as sent (no second email); a refusal does not; two presses cannot both pass", async () => {
+test("booking: a send whose outcome is unknown counts as sent (no second email); a refusal does not; two presses cannot both pass", async () => {
   // A timeout (no status): it may have been delivered.
   const slow = rig({ failMail: "The operation was aborted due to timeout" });
   await slow.booking.start({ what: "tapas", when: WHEN, party: 2 });
@@ -231,7 +231,7 @@ test("hunt2 booking: a send whose outcome is unknown counts as sent (no second e
   assert.deepEqual(sent, ["reservas@calpep.example"]);
 });
 
-test("hunt2 booking: a store that cannot be read neither lets an email through nor overwrites what it holds", async () => {
+test("booking: a store that cannot be read neither lets an email through nor overwrites what it holds", async () => {
   const data = new Map<string, string>();
   let broken = true;
   const kv: Kv = { get: async (k) => { if (broken) throw new Error("store down"); return data.get(k) ?? null; }, set: async (k, v) => void data.set(k, v) };
@@ -252,7 +252,7 @@ test("hunt2 booking: a store that cannot be read neither lets an email through n
   assert.match(await c.list(), /You have no bookings/);
 });
 
-test("hunt2 booking: the list offers only what exists; a restaurant the owner named is not pushed out by better rated strangers; a lone emoji cut never breaks the link", async () => {
+test("booking: the list offers only what exists; a restaurant the owner named is not pushed out by better rated strangers; a lone emoji cut never breaks the link", async () => {
   const { engine } = fakeEngine([
     { id: "A", name: "La Fonda Pepita", address: "Carrer X, 08001 Barcelona, Spain", rating: 4.0, ratingCount: 50, phone: "+34931111111", periods: [0, 1, 2, 3, 4, 5, 6].map((day) => ({ open: { day, hour: 12, minute: 0 }, close: { day, hour: 23, minute: 59 } })) },
     ...["B", "C", "D"].map((id) => ({ id, name: `Pepita's ${id}`, address: "Carrer Y, 08002 Barcelona, Spain", rating: 4.6, ratingCount: 900, phone: "+34932222222", periods: [0, 1, 2, 3, 4, 5, 6].map((day) => ({ open: { day, hour: 12, minute: 0 }, close: { day, hour: 23, minute: 59 } })) })),
@@ -271,7 +271,7 @@ test("hunt2 booking: the list offers only what exists; a restaurant the owner na
   assert.match(say, /wa\.me\/34626728492\?text=/);
 });
 
-test("hunt2 booking: bad requests are refused by the connector tool itself, and a skipped hour says so; one person is '1 person'", async () => {
+test("booking: bad requests are refused by the connector tool itself, and a skipped hour says so; one person is '1 person'", async () => {
   const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
   const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
   const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
@@ -301,7 +301,7 @@ test("hunt2 booking: bad requests are refused by the connector tool itself, and 
   assert.match(one.sent[0]!.subject, /^Table request: 1 person,/);
 });
 
-test("hunt2 booking: an email-only restaurant is not lost when Pako has no inbox to write from; a site that says walk-ins only is said so on the card", async () => {
+test("booking: an email-only restaurant is not lost when Pako has no inbox to write from; a site that says walk-ins only is said so on the card", async () => {
   const noMail = createBooking({ engine: fakeEngine([{ id: "ChIJcalpep", name: "Cal Pep", address: "Barcelona, Spain", website: "https://calpep.example/", rating: 4.6, ratingCount: 10 }]).engine, kv: memoryKv(), ownerName: "Marta", timeZone: "Europe/Madrid", now: () => NOW });
   const say = (await noMail.start({ what: "Cal Pep, Barcelona", when: WHEN, party: 2 })).say;
   assert.match(say, /✉️ Booking email \(I can't write from here\): reservas@calpep\.example/);

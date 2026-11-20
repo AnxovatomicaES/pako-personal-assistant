@@ -34,7 +34,8 @@ export function createFollowups(d: FollowupsDeps) {
   Object.assign(fu, mountOwner(fu));
   Object.assign(fu, mountRehearse(fu));
   const { observeSlack, observeMail, offer, result, ingest, tick, press, command, context, open, read, dueText, sourceText, draft, dryAnswer } = fu;
-  const { closeByWords, calendarChanged, reopenClosed, forDraft, draftFacts, fromChat, dropFromChat, snoozeCard, parked, parkedText, unpark, setStep, letGo, engaged, expiredParked } = fu;
+  const { closeByWords, calendarChanged, reopenClosed, forDraft, draftFacts, fromChat, dropFromChat, snoozeCard, parked, parkedText, unpark,
+    setStep, letGo, engaged, expiredParked, closedForYou, reopenByWords } = fu;
   // Loops from the mail triage, and the panel's Done on a mail (src/followups/mail.ts).
   const mail = mountMailLoops(fu);
 
@@ -67,6 +68,9 @@ export function createFollowups(d: FollowupsDeps) {
     engaged,
     /** Parked loops the store let go after PARKED_KEEP_MS, newest first: the Parked list's history (src/gentle-reset.ts). */
     expiredParked,
+    /** What Pako closed on its own (the brief's "Closed for you"), and "reopen <words>" for one of them. */
+    closedForYou,
+    reopenByWords,
     open,
     read,
     /** Nudges given today: proactive Pako (src/proactive.ts) counts them in the day's shared budget. */

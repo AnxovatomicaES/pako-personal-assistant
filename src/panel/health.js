@@ -1,4 +1,4 @@
-// Pako · panel: the Salud (Health) card. Every moving part Pako watches (src/watchdog.ts answers GET /panel/api/health): the assistant's
+// Pako · panel: the Health part of the System card. Every moving part Pako watches (src/watchdog.ts answers GET /panel/api/health): the assistant's
 // computer and Claude, the data store, WhatsApp, Telegram, the calendar, the mail, Slack and Zoom, each with its state, since when it fails
 // or when it last worked, and the version the assistant's computer runs. Read only. Everything the server sends is put on the page as text,
 // never as HTML. Its words are its own (English, here).
@@ -116,8 +116,8 @@ function usageLine(u) {
 }
 
 /**
- * Which Claude Code the assistant's computer drives, when it is outside the versions Pako was tested with (assistant/bridge/cli-version.ts):
- * the bridge's own sentence ("Claude Code X.Y is newer than Pako has been tested with"); "" when it is in range or never said.
+ * Which Claude Code the assistant's computer drives, when there is something to say (assistant/bridge/cli-probe.ts): the bridge's own
+ * sentence ("Claude Code X.Y: tested by probe", or what failed its self-test and how to go back); "" when it is plain ok or never said.
  */
 function cliLine(c) {
   if (!c || typeof c !== "object" || c.status === "ok") return "";

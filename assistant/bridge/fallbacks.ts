@@ -3,11 +3,12 @@
 //   error-text:  a failure's kind decided by its English words (claude-errors.ts), not by a status, an error type or a stream event;
 //   web-turns:   whether a run read the web decided by num_turns (claude.ts webRead), not by a WebSearch/WebFetch tool_use event;
 //   tags:        an action taken from a text tag of the answer instead of a typed tool call (turn.ts): MCP was not available for the turn;
-//   tags-beside-tools: an action taken from a tag although Pako's typed tools were loaded (the model wrote the old way; still honoured).
+//   tags-beside-tools: an action taken from a tag although Pako's typed tools were loaded (the model wrote the old way; still honoured);
+//   result-shape: a field of a run's result found under another name than the one Claude Code 2.1.327 writes (cli-shape.ts).
 
-export type FallbackKind = "error-text" | "web-turns" | "tags" | "tags-beside-tools";
+export type FallbackKind = "error-text" | "web-turns" | "tags" | "tags-beside-tools" | "result-shape";
 
-const counts: Record<FallbackKind, number> = { "error-text": 0, "web-turns": 0, tags: 0, "tags-beside-tools": 0 };
+const counts: Record<FallbackKind, number> = { "error-text": 0, "web-turns": 0, tags: 0, "tags-beside-tools": 0, "result-shape": 0 };
 let logLine: (line: string) => void = (line) => console.log(`${new Date().toISOString()} ${line}`);
 
 /** Where the lines go (the bridge's own log, set when it is built). */

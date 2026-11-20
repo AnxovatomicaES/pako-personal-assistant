@@ -1,6 +1,6 @@
 // Loops from mail: what the mail triage found owed (src/mail-categories.ts, "Needs you" and "Waiting on others") kept as loops with the person,
 // the date and the email as their source, without a second run of Claude; a later email from someone the owner is waiting on closes what they
-// owed; and the panel's Done on a mail closes its loops the way the nudge's Hecho button does (and its Undo opens them again).
+// owed; and the panel's Done on a mail closes its loops the way the nudge's Done button does (and its Undo opens them again).
 
 import { fold } from "../lists.ts";
 import { MAIL_THREAD } from "../mail-body.ts";
@@ -12,8 +12,8 @@ import type { Job, Loop } from "./types.ts";
 export interface MailLoops {
   /** Loops the triage found in one email (candidates as the extraction gives them): kept like an answer to a job of that email. */
   fromMail: (o: { ref: string; label: string; at: number; loops: unknown[]; closed?: boolean; thread?: string }) => Promise<number>;
-  /** A new email from these names or addresses: the open loops they owed the owner from mail are closed (they answered). */
-  answered: (o: { who: string[]; ref: string }) => Promise<number>;
+  /** A new email from these names or addresses, in the thread of what they owed the owner by mail: that loop is closed (they answered). */
+  answered: (o: { who: string[]; ref: string; thread?: string }) => Promise<number>;
   /** Every loop (open or closed) that came from this email, newest first. */
   forRef: (ref: string) => Promise<Loop[]>;
   /** The owner marked the email done: its open loops closed through the button's own path. The ids closed. */
@@ -52,7 +52,13 @@ export function mountMailLoops(fu: Engine): MailLoops {
         const who = wordsOf(l.who);
         const within = (a: string[], b: string[]): boolean => a.every((w) => b.includes(w));
         if (!who.length || !names.some((x) => within(who, x) || within(x, who))) continue;
-        Object.assign(l, { status: "done", closedAt: now(), nextCheckAt: 0, lastCheck: "They answered by email." });
+        // Only an email in the thread of the promise is its answer: one in another thread is noted, and the loop stays open.
+        if (!o.thread || l.where.mailThread !== o.thread) {
+          l.lastCheck = `${l.who} emailed you since, in another thread: not taken as this.`;
+          continue;
+        }
+        const why = "They answered in that email thread.";
+        Object.assign(l, { status: "done", closedAt: now(), nextCheckAt: 0, lastCheck: why, autoClosed: { at: now(), why } });
         n++;
       }
       return n;

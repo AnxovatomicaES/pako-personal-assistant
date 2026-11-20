@@ -29,7 +29,10 @@ What differs from a computer:
 
 Free hosts sleep and restart: set `VOICE_RESULTS_URL` (a Redis-protocol store, e.g. Render's Key Value) so STOP, notes, reminders and the inbox
 survive. A store without persistence (Render's free Key Value) loses everything when the host restarts it: Pako then starts paused and tells you
-what may be lost. A paid plan with persistence avoids it.
+what may be lost. A paid plan with persistence avoids it. During a deploy the new server and the old one share the store for a moment: only
+the one holding the store's writer lease (a `pako-writer` key, renewed every 10 seconds) writes; on the other a job's claim answers
+"taken" and a write waits for the lease (up to 36 seconds) instead of being dropped, so a message that reaches the new server first is
+kept. It says so in its log and takes over once the old one stops (src/kv-lease.ts).
 
 ## Move from a server to your Mac
 

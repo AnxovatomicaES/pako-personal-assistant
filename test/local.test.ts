@@ -140,7 +140,7 @@ test("a hosted server has no chat window: its routes answer 404, and local mode 
 
 // ---------- bug hunt 2: regression tests ----------
 
-test("hunt2 local: one Pako per home (a live one blocks, a dead one's lock is taken over); blank settings do not wipe the defaults; the bridge pair cannot be overridden", async () => {
+test("local: one Pako per home (a live one blocks, a dead one's lock is taken over); blank settings do not wipe the defaults; the bridge pair cannot be overridden", async () => {
   const { spawn } = await import("node:child_process");
   const { lockHome } = await import("../src/local.ts");
   const { writeFileSync } = await import("node:fs");
@@ -165,7 +165,8 @@ test("hunt2 local: one Pako per home (a live one blocks, a dead one's lock is ta
   assert.equal(env.PERSONAL_LIVE, "", "and no live call to the stand-in number");
 });
 
-test("hunt2 local: the chat is answered 'sign in' before anything is counted, so anonymous requests cannot use up the owner's allowance; the sign-in page fits local mode; the cookie is per port; a made-up asset name is a 404", async () => {
+test("local: the chat is answered 'sign in' before anything is counted, so anonymous requests cannot use up the owner's allowance; "
+  + "the sign-in page fits local mode; the cookie is per port; a made-up asset name is a 404", async () => {
   const r = await rig();
   try {
     for (let i = 0; i < 80; i++) await fetch(`${r.base}/panel/api/chat`, { method: "POST", headers: { "content-type": "text/plain" }, body: "x" });

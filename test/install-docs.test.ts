@@ -96,3 +96,27 @@ test("site: the Gentle mode section says how to turn it on and that it is not a 
   const claims = sec.replace("not a medical device or a treatment", "");
   assert.doesNotMatch(claims, /\b(treats?|treatment|cures?|diagnos\w*|clinically|manages? your)\b/i);
 });
+
+test("mac app, not notarized yet: README, site and the Mac doc give the exact first-run steps, and the no-warning installer", () => {
+  for (const f of ["README.md", "site/index.html", "docs/desktop-mac.md"]) {
+    const t = read(f).replace(/\s+/g, " ").replace(/&amp;/g, "&");
+    assert.match(t, /macOS 15 Sequoia and newer/, f);
+    assert.match(t, /Privacy & Security/, f);
+    assert.match(t, /Open Anyway[\s\S]*Open Anyway/, `${f}: Open Anyway is pressed twice on macOS 15`);
+    assert.match(t, /not Move to Trash/, f);
+    assert.match(t, /Control-click/, `${f}: macOS 13 and 14`);
+  }
+  // The one-line installer downloads with git (no quarantine mark): recommended first in the README's install.
+  const readme = read("README.md");
+  assert.ok(readme.indexOf("install.sh | sh") < readme.indexOf("**Mac app:**"), "the one-line installer comes first");
+  assert.match(readme.replace(/\s+/g, " "), /no "could not verify" warning/);
+});
+
+test("docs/notarization.md: the owner's costs, Apple steps and where they plug into the release script", () => {
+  const t = read("docs/notarization.md").replace(/\s+/g, " ");
+  for (const s of ["99 USD a year", "Developer ID Application", "xcrun notarytool store-credentials", "stapler", "desktop/mac/release.sh",
+    "PAKO_SIGN_IDENTITY", "PAKO_NOTARY_PROFILE", "npm run mac-release"]) assert.ok(t.includes(s), s);
+  // What it names must exist: the release script calls notarize.sh only with the profile set.
+  assert.match(read("desktop/mac/release.sh"), /PAKO_NOTARY_PROFILE[\s\S]*notarize\.sh/);
+  assert.match(read("package.json"), /"mac-release":/);
+});

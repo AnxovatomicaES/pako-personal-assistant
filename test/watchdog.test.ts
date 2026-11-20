@@ -228,7 +228,7 @@ test("on a computer: Claude not signed in is the Claude keeper's one notice, not
   await r.dog.tick();
   await r.settle();
   assert.deepEqual(r.said, [], "src/claude-connect.ts tells it once, with its Sign in again button");
-  assert.equal(r.dog.state().parts.find((p) => p.key === "claude")?.detail, "login", "the Salud card still shows it");
+  assert.equal(r.dog.state().parts.find((p) => p.key === "claude")?.detail, "login", "the Health card still shows it");
   claude = "ok";
   await r.dog.tick();
   await r.settle();

@@ -59,6 +59,10 @@ const SEEN_KEEP = 60;
 const IDS_KEEP = 400;
 const KEEP_S = 60 * 24 * 3600;
 const WAIT_MAX_MS = 30_000;
+/** A group chat's members, once read, are kept this long; a failed read is asked again after MEMBERS_RETRY_MS, doubling up to the max. */
+const MEMBERS_TTL_MS = 6 * 3600_000;
+const MEMBERS_RETRY_MS = 2 * 60_000;
+const MEMBERS_RETRY_MAX_MS = 3600_000;
 
 export interface TeamsConfig {
   clientId: string;
@@ -363,6 +367,8 @@ interface GraphMessage {
   deletedDateTime?: string | null;
   from?: { user?: { id?: string; displayName?: string } | null; application?: unknown } | null;
   body?: { contentType?: string; content?: string };
+  /** Files and cards sent with the message. */
+  attachments?: unknown[];
   mentions?: { mentioned?: { user?: { id?: string } | null } | null }[];
   replyToId?: string | null;
   chatId?: string | null;
@@ -519,20 +525,33 @@ export function createTeams(d: TeamsDeps) {
     }
     return out;
   };
-  /** The chat's members' names (for a group's label), asked once per chat and kept in memory. */
-  const members = new Map<string, GraphChat["members"]>();
+  /**
+   * The chat's members' names (for a group's label). A good answer is kept for MEMBERS_TTL_MS, then asked again (people join and leave). A
+   * failed one is not kept: the chat goes on with the plain label and asks again after a backoff (doubling from MEMBERS_RETRY_MS, at most
+   * MEMBERS_RETRY_MAX_MS), so one bad moment does not leave a group without its names for the rest of the process.
+   */
+  const members = new Map<string, { list: NonNullable<GraphChat["members"]>; until: number }>();
+  const membersFailed = new Map<string, { tries: number; next: number }>();
   const withMembers = async (c: GraphChat): Promise<GraphChat> => {
     if (c.topic || c.chatType === "oneOnOne") return c;
-    if (!members.has(c.id!)) {
-      try {
-        const j = await get(`/me/chats/${encodeURIComponent(c.id!)}/members`, "a chat's members");
-        members.set(c.id!, (Array.isArray(j.value) ? (j.value as GraphChat["members"]) : [])!.slice(0, 10));
-      } catch {
-        /* the members could not be read: none for this chat */
-        members.set(c.id!, []);
-      }
+    const id = c.id!;
+    const kept = members.get(id);
+    if (kept && kept.until > now()) return { ...c, members: kept.list };
+    const failed = membersFailed.get(id);
+    if (failed && failed.next > now()) return { ...c, members: kept?.list ?? [] };
+    try {
+      const j = await get(`/me/chats/${encodeURIComponent(id)}/members`, "a chat's members");
+      const list = (Array.isArray(j.value) ? (j.value as NonNullable<GraphChat["members"]>) : []).slice(0, 10);
+      members.set(id, { list, until: now() + MEMBERS_TTL_MS });
+      membersFailed.delete(id);
+      return { ...c, members: list };
+    } catch (err) {
+      const tries = (failed?.tries ?? 0) + 1;
+      membersFailed.set(id, { tries, next: now() + Math.min(MEMBERS_RETRY_MS * 2 ** (tries - 1), MEMBERS_RETRY_MAX_MS) });
+      log.error(`a chat's members could not be read (asked again later): ${(err as Error).message}`);
+      // An older good answer is still better than none while it is asked again.
+      return { ...c, members: kept?.list ?? [] };
     }
-    return { ...c, members: members.get(c.id!) ?? [] };
   };
 
   const readChats = async (s: State, self: string): Promise<number> => {
@@ -785,7 +804,7 @@ export function createTeams(d: TeamsDeps) {
      * A Teams conversation's latest messages, oldest first, the owner's marked `mine` (what src/followups.ts asks Slack's history for: the
      * context of an extraction and the checks of a later reply). Throws when the conversation is not one Pako knows.
      */
-    history: async (channel: string, o: { limit?: number; oldest?: string } = {}): Promise<{ ts: string; at: number; mine: boolean; who: string; text: string }[]> => {
+    history: async (channel: string, o: { limit?: number; oldest?: string } = {}): Promise<{ ts: string; at: number; mine: boolean; who: string; text: string; file?: boolean }[]> => {
       const s = await load();
       const conv = s.ids[channel];
       if (!conv) throw new Error("Teams: that conversation is not known here");
@@ -806,7 +825,9 @@ export function createTeams(d: TeamsDeps) {
       const out = msgs.filter(usable).map((m) => {
         const at = Date.parse(m.createdDateTime!);
         const mine = m.from!.user!.id === self;
-        return { ts: teamsTs(at), at, mine, who: mine ? "" : (m.from!.user!.displayName ?? "").slice(0, 80) || say("someone"), text: plainTeams(m.body) || say("noText") };
+        // A file or a link: what a document sent there is seen by.
+        const file = (Array.isArray(m.attachments) && m.attachments.length > 0) || /https?:\/\//.test(m.body?.content ?? "");
+        return { ts: teamsTs(at), at, mine, who: mine ? "" : (m.from!.user!.displayName ?? "").slice(0, 80) || say("someone"), text: plainTeams(m.body) || say("noText"), ...(file ? { file } : {}) };
       });
       out.sort((a, b) => a.at - b.at);
       return (o.oldest ? out.filter((m) => Number(m.ts) > Number(o.oldest)) : out).slice(-limit);

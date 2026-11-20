@@ -50,6 +50,18 @@ export interface ClaudeAccount {
 const clean = (v: unknown, max: number): string => (typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f]+/g, " ").trim().slice(0, max) : "");
 
 /**
+ * The status's fields, each under the name Claude Code 2.1.327 writes first, then the other spellings a later one could use (snake_case);
+ * any other field is ignored.
+ */
+const STATUS_NAMES = {
+  loggedIn: ["loggedIn", "logged_in"],
+  authMethod: ["authMethod", "auth_method"],
+  email: ["email", "emailAddress", "email_address"],
+  subscriptionType: ["subscriptionType", "subscription_type", "plan"],
+  loginExpiresAt: ["loginExpiresAt", "login_expires_at", "expiresAt", "expires_at"],
+} as const;
+
+/**
  * Reads `claude auth status --json` (exit 0 signed in, 1 not; https://code.claude.com/docs/en/cli-reference). null for anything that is not
  * that answer (an older Claude Code, an error), so a check that could not tell never counts as signed out.
  */
@@ -62,7 +74,8 @@ export function parseClaudeAccount(code: number | null, out: string): ClaudeAcco
   try {
     const v = JSON.parse(out.slice(start, end + 1)) as unknown;
     if (!v || typeof v !== "object" || Array.isArray(v)) return null;
-    j = v as Record<string, unknown>;
+    const raw = v as Record<string, unknown>;
+    j = Object.fromEntries(Object.entries(STATUS_NAMES).map(([k, names]) => [k, names.map((n) => raw[n]).find((x) => x !== undefined && x !== null)]));
   } catch {
     /* not JSON: not a status we know */
     return null;

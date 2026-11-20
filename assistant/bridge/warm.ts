@@ -6,6 +6,7 @@ import { SYSTEM_PROMPT } from "../prompt.ts";
 import { childEnv, claudeCommand } from "./cli.ts";
 import { buildClaudeArgs, ClaudeError, readTheWeb, runClaude, runningClaude, type ClaudeJson, type ClaudeResult, type RunConfig } from "./claude.ts";
 import { classifyFailure, errorSignals } from "./claude-errors.ts";
+import { missingEssential, readResult } from "./cli-shape.ts";
 import { mcpDownIn, seenFields, watchTurn } from "./mcp.ts";
 
 /**
@@ -147,13 +148,13 @@ export function createWarmClaude(o: { idleMs: number; log?: (line: string) => vo
             const msg = (why ?? "").replace(/\s+/g, " ").trim().slice(0, 300) || "the claude process ended";
             return reject(classifyFailure({ message: msg, ...(x.spawnCode ? { spawnCode: x.spawnCode } : {}), signals: x.signals?.done() ?? {} }));
           }
-          let doc: ClaudeJson | null = null;
-          try {
-            doc = JSON.parse(line) as ClaudeJson;
-          } catch {
-            /* handled below */
-          }
+          const doc = readResult(line) as ClaudeJson | null;
           const text = typeof doc?.result === "string" ? doc.result : "";
+          const shape = doc && doc.is_error !== true ? missingEssential(doc as Record<string, unknown>) : null;
+          if (shape) {
+            end(x);
+            return reject(new ClaudeError(shape, "other", { via: "none" }));
+          }
           if (!doc || doc.is_error === true || !text.trim()) {
             end(x);
             const msg = `${text} ${x.err}`.replace(/\s+/g, " ").trim().slice(0, 300) || "an empty answer";

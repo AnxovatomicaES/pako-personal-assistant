@@ -991,7 +991,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
                     used?(false, 0, nil)
                     return self.answer(wv, "pakoImported", nil)
                 }
-                // The person confirmed the import in the panel ("Importar N personas"): written now (the route's preview is for a page that
+                // The person confirmed the import in the panel ("Import N people"): written now (the route's preview is for a page that
                 // asks first).
                 self.panelSend(wv, "POST", "/panel/api/people/import", ["people": people, "confirm": true]) { ok, body in
                     self.answer(wv, "pakoImported", ok ? (body ?? ["people": people.count]) : nil)

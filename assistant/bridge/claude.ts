@@ -8,6 +8,7 @@ import { OFFERED_TOOLS, toolId, type ToolCall } from "../tools.ts";
 import type { BridgeConfig } from "./config.ts";
 import { childEnv, claudeCommand } from "./cli.ts";
 import { ClaudeError, classifyFailure, errorSignals, type ResultFields } from "./claude-errors.ts";
+import { missingEssential, readResult } from "./cli-shape.ts";
 import { noteFallback } from "./fallbacks.ts";
 import { seenFields, watchTurn, type TurnSeen } from "./mcp.ts";
 
@@ -222,13 +223,11 @@ export function runClaude(
       if (settled || timedOut) return;
       settled = true;
       if (stream && partial) keepResult(partial);
-      let doc: ClaudeJson | null = null;
-      try {
-        doc = JSON.parse(out) as ClaudeJson;
-      } catch {
-        /* not JSON: handled below */
-      }
+      // Read tolerantly (cli-shape.ts): other fields ignored, a renamed one found; a result with no answer text at all says so plainly.
+      const doc = readResult(out) as ClaudeJson | null;
       const text = typeof doc?.result === "string" ? doc.result : "";
+      const shape = code === 0 && doc && doc.is_error !== true ? missingEssential(doc as Record<string, unknown>) : null;
+      if (shape) return reject(new ClaudeError(shape, "other", { via: "none" }));
       if (code !== 0 || !doc || doc.is_error === true || !text.trim()) {
         const why = `${text} ${err}`.replace(/\s+/g, " ").trim().slice(0, 300) || `exit code ${code}`;
         return reject(classifyFailure({ message: why, doc, ...(signals ? { signals: signals.done() } : {}) }));

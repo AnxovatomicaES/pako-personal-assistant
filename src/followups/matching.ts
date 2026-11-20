@@ -106,7 +106,7 @@ export function mountMatching(fu: Engine): Pick<Engine, "ruledOut" | "keep" | "r
       for (const id of answer.closes) {
         const x = s.loops.find((l) => l.id === id && isOpen(l) && same(l));
         if (!x) continue;
-        Object.assign(x, { status: "done", closedAt: now(), nextCheckAt: 0 });
+        Object.assign(x, { status: "done", closedAt: now(), nextCheckAt: 0, autoClosed: { at: now(), why: T(lang())("whyLater") } });
         d.control?.log("followup", T(lang())("logClosed", { title: x.title }));
       }
       // An email's words are other people's: a candidate that reads as an order to an assistant is not kept, whatever the run made of it.

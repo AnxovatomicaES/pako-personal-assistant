@@ -163,7 +163,7 @@ test("bug hunt: days follow the calendar on a DST change day; an all-day invitat
 
 // ---------- bug hunt 2: regression tests ----------
 
-test("hunt2 calendar: one calendar that fails, or one event in an odd time zone, does not take the agenda down; all failing is an outage", async () => {
+test("calendar: one calendar that fails, or one event in an odd time zone, does not take the agenda down; all failing is an outage", async () => {
   const odd = { uid: "odd", title: "Raro", dateandtime: { start: "20261115T120000", end: "20261115T130000", timezone: "W. Europe Standard Time" } };
   const some = rig({ cal2Fails: true, extraEvents: [odd] });
   assert.match(await some.cal.day(0), /10:00–11:00 Comité/);
@@ -171,13 +171,13 @@ test("hunt2 calendar: one calendar that fails, or one event in an odd time zone,
   await assert.rejects(() => none.cal.day(0), /no calendar could be read/);
 });
 
-test("hunt2 calendar: an all-day event ends at the next local midnight, also on the 23-hour day when the clocks go forward", async () => {
+test("calendar: an all-day event ends at the next local midnight, also on the 23-hour day when the clocks go forward", async () => {
   const r = rig({ startAt: "2026-03-28T10:00:00Z", extraEvents: [{ uid: "ad", title: "Fiesta", isallday: true, dateandtime: { start: "20260329", end: "20260329", timezone: "Europe/Madrid" } }] });
   assert.match(await r.cal.day(1), /all day Fiesta/);
   assert.match(await r.cal.day(2), /nothing on the calendar/, "it does not spill into the 30th");
 });
 
-test("hunt2 calendar: a refused access token is not used again; a look-alike host is not Zoom; two ticks at once remind once", async () => {
+test("calendar: a refused access token is not used again; a look-alike host is not Zoom; two ticks at once remind once", async () => {
   const r = rig({ unauthorizedOnce: true });
   assert.match(await r.cal.day(0), /nothing on the calendar/, "the refused calendar is missing from this partial agenda");
   const tokenCalls = () => r.asked.filter((a) => a.url.startsWith("https://accounts.zoho.eu/oauth/v2/token?") && /grant_type=refresh_token/.test(a.url)).length;

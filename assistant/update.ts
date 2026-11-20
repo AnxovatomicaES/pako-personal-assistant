@@ -17,7 +17,7 @@
 // next start (started()).
 //
 // Never with local changes, never a non-fast-forward, never another branch, never an unsigned or wrongly signed tag: then it only says why
-// it did not (the Salud card and the server's warning show it). BRIDGE_AUTOUPDATE=off (the older setting) stops even the look, and it is
+// it did not (the Health card and the server's warning show it). BRIDGE_AUTOUPDATE=off (the older setting) stops even the look, and it is
 // always off when the bridge runs beside the server on the same computer (local mode: src/local.ts starts it, and what updates Pako there
 // is the Mac app or the person's own `git pull`).
 //

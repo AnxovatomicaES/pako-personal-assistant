@@ -182,7 +182,7 @@ test("bug hunt: a first look that fails is not counted as primed, so the next on
 
 const RECORDING = { uuid: "u-rec", topic: "Planificación", start_time: "2026-11-14T09:00:00Z", recording_files: [{ file_type: "TRANSCRIPT", status: "completed", recording_end: "2026-11-14T10:00:00Z" }] };
 
-test("hunt2 zoom: a transcript whose queueing failed is tried again on the next look, not lost", async () => {
+test("zoom: a transcript whose queueing failed is tried again on the next look, not lost", async () => {
   let fail = true;
   const queued: Inbound[] = [];
   const r = rig({ enqueue: async (m) => { if (fail) throw new Error("store down"); queued.push(m); return true; } });
@@ -195,7 +195,8 @@ test("hunt2 zoom: a transcript whose queueing failed is tried again on the next 
   assert.equal((await r.zoom.poll()).transcripts, 0, "and only once");
 });
 
-test("hunt2 zoom: a summary that cannot be fetched does not hold back the ones behind it (and is given up after three tries); a meeting without a recording end waits before its transcript goes", async () => {
+test("zoom: a summary that cannot be fetched does not hold back the ones behind it (and is given up after three tries); "
+  + "a meeting without a recording end waits before its transcript goes", async () => {
   const r = rig({ summaryDoc404: ["u-bad"] });
   await r.zoom.poll();
   r.world.summaries = [{ meeting_uuid: "u-bad", meeting_topic: "Rota" }, { meeting_uuid: "u-good", meeting_topic: "Comité" }];
@@ -210,7 +211,7 @@ test("hunt2 zoom: a summary that cannot be fetched does not hold back the ones b
   assert.equal((await noEnd.zoom.poll()).transcripts, 0, "no end given: two hours after the start, not at once");
 });
 
-test("hunt2 zoom: each source is primed by its own first listing (a recordings outage does not make new summaries 'already seen')", async () => {
+test("zoom: each source is primed by its own first listing (a recordings outage does not make new summaries 'already seen')", async () => {
   const r = rig({ recordingsFail: true });
   await r.zoom.poll(); // summaries primed (empty), recordings failing
   r.world.summaries = [{ meeting_uuid: "u-new", meeting_topic: "Comité" }];
@@ -259,7 +260,7 @@ test("zoom by polling only: a listing that failed does not move the mark, so the
 
 // ---------- chat and meeting bugs: regression tests ----------
 
-test("bugs-chat zoom: a recording that cannot be fetched does not hold back the transcripts behind it (given up after three tries)", async () => {
+test("zoom: a recording that cannot be fetched does not hold back the transcripts behind it (given up after three tries)", async () => {
   const r = rig({ detail404: ["u-gone"] });
   await r.zoom.poll();
   r.world.recordings = [{ ...RECORDING, uuid: "u-gone", topic: "Borrada" }, { ...RECORDING, uuid: "u-ok", topic: "Planificación" }];
@@ -275,7 +276,7 @@ test("bugs-chat zoom: a recording that cannot be fetched does not hold back the 
   assert.equal(r.queued.length, 1);
 });
 
-test("bugs-chat zoom: a meeting whose transcript went to the Mac is not told again when Zoom's own summary comes later", async () => {
+test("zoom: a meeting whose transcript went to the Mac is not told again when Zoom's own summary comes later", async () => {
   const r = rig();
   await r.zoom.poll();
   r.world.recordings = [RECORDING];

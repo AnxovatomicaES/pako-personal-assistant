@@ -119,7 +119,7 @@ test("the project's app before the Slack Marketplace (one history call a minute)
 
 // ---------- chat and meeting bugs: regression tests ----------
 
-test("bugs-chat slack poll: the owner's own promise in a DM reaches the follow-ups (observed as theirs) and is never told back", async () => {
+test("slack poll: the owner's own promise in a DM reaches the follow-ups (observed as theirs) and is never told back", async () => {
   let clock = 1_800_000_000_000;
   const msgs: { ts: string; user: string; text: string }[] = [];
   const fake = (async (input: string | URL | Request) => {
@@ -150,7 +150,7 @@ test("bugs-chat slack poll: the owner's own promise in a DM reaches the follow-u
   assert.deepEqual(told, [], "and never told back to them");
 });
 
-test("bugs-chat slack poll: a DM with more new messages than one page loses none of them", async () => {
+test("slack poll: a DM with more new messages than one page loses none of them", async () => {
   let clock = 1_800_000_000_000;
   const all: { ts: string; user: string; text: string }[] = [];
   const api = async (method: string, params: Record<string, string>): Promise<Record<string, unknown>> => {
@@ -175,7 +175,7 @@ test("bugs-chat slack poll: a DM with more new messages than one page loses none
   assert.equal((await poll.round()).dms, 0, "and none twice");
 });
 
-test("bugs-chat slack poll: stop() before the first look means no look at all", async () => {
+test("slack poll: stop() before the first look means no look at all", async () => {
   mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
   try {
     let calls = 0;

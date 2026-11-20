@@ -27,7 +27,7 @@ const WORDS = {
   out_replied: "Wouldn't remind you: you replied there", out_silent: "Would keep it open, no reminder (nothing to check)",
   out_past: "Its time has passed: would say nothing",
   check: "Would check: {what}", checked: "Now it finds: {what}", quiet: "(would wait for your quiet hours to end)",
-  ch_zoomMeeting: "your Zoom and calendar", ch_calendarEvent: "your calendar", ch_slackReply: "your reply on Slack",
+  ch_zoomMeeting: "your Zoom and calendar", ch_calendarEvent: "your calendar", ch_slackReply: "your reply on Slack", ch_slackFile: "a file or link of yours on Slack",
   ch_slackPost: "a message of yours on Slack", ch_none: "nothing (it can't see it)",
   brief: "Today's brief", chat: "What the chat would get", todos: "To-dos", updates: "Updates", day: "Your day",
   k_slack: "Slack", k_mail: "Email", k_meeting: "Meeting", k_brief: "Brief",
@@ -213,7 +213,7 @@ function mount() {
     h("div", { class: "card-head" }, h("h2", { id: "h-rehearsal" }, h("i", { "data-lucide": "flask-conical" }), h("span", { "data-r-title": true })), run),
     h("p", { class: "muted", "data-r-lead": true }),
     h("div", { "data-r-body": true, "aria-live": "polite" }));
-  // Right after Salud (src/panel/health.js) whichever script runs first: how Pako runs, then how useful it is.
+  // Right after Health (src/panel/health.js) whichever script runs first: how Pako runs, then how useful it is.
   const health = document.querySelector("#health-card");
   if (health) health.after(qCard, rCard);
   else grid.append(qCard, rCard);

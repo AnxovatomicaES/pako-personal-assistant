@@ -646,7 +646,7 @@ const gm = (id: string, at: number, text: string, from = ANA, mentions: string[]
   mentions: mentions.map((u) => ({ mentioned: { user: { id: u } } })),
 });
 
-test("bugs-chat teams: a chat with more new messages than one page loses none of them (@odata.nextLink is followed)", async () => {
+test("teams: a chat with more new messages than one page loses none of them (@odata.nextLink is followed)", async () => {
   const msgs: ReturnType<typeof gm>[] = [];
   const r = pagedGraph({
     granted: ["User.Read", "Chat.Read"],
@@ -670,7 +670,7 @@ test("bugs-chat teams: a chat with more new messages than one page loses none of
   assert.equal(await r.teams.round(), 0, "and none twice");
 });
 
-test("bugs-chat teams: one chat Graph will not show (403) does not stop the other chats from being read", async () => {
+test("teams: one chat Graph will not show (403) does not stop the other chats from being read", async () => {
   const LOCKED = "19:locked@unq.gbl.spaces";
   let ready = false;
   const r = pagedGraph({
@@ -703,7 +703,7 @@ test("bugs-chat teams: one chat Graph will not show (403) does not stop the othe
   assert.equal(locked(), before, "the chat it may not read is not asked again until it has something newer");
 });
 
-test("bugs-chat teams: a channel with more pages than one round reads goes on from there next round, never handing a mention twice", async () => {
+test("teams: a channel with more pages than one round reads goes on from there next round, never handing a mention twice", async () => {
   const TEAM = "team-1";
   const CH = "19:general@thread.tacv2";
   const pages = 7;
@@ -730,4 +730,46 @@ test("bugs-chat teams: a channel with more pages than one round reads goes on fr
   const texts = r.seen.map((m) => m.text);
   assert.equal(new Set(texts).size, texts.length, `no mention twice: ${texts.join(" | ")}`);
   assert.equal(texts.length, pages, "and every page's mention is reached");
+});
+
+test("teams members: a failed lookup is not kept for the process; it is asked again after a backoff, and a good one is kept only for a while", async () => {
+  const GROUP = "19:group@thread.v2";
+  const msgs: ReturnType<typeof gm>[] = [];
+  let fail = true;
+  const r = pagedGraph({
+    granted: ["User.Read", "Chat.Read"],
+    route: (path) => {
+      if (path === "/me/chats") {
+        return { value: msgs.length ? [{ id: GROUP, chatType: "group", lastMessagePreview: { createdDateTime: msgs.at(-1)!.createdDateTime } }] : [] };
+      }
+      if (path === `/me/chats/${GROUP}/messages`) return { value: [...msgs].reverse() };
+      if (path === `/me/chats/${GROUP}/members`) {
+        if (fail) return new Response(JSON.stringify({ error: { code: "InternalServerError" } }), { status: 500, headers: { "content-type": "application/json" } });
+        return { value: [{ userId: ME, displayName: "Owner Person" }, { userId: ANA, displayName: "Ana" }] };
+      }
+      return undefined;
+    },
+  });
+  const memberCalls = () => r.paths.filter((p) => p === `/me/chats/${GROUP}/members`).length;
+  let n = 0;
+  const say = async (at: number) => {
+    r.clock.now = at;
+    msgs.push(gm(`g${++n}`, at - 1000, `message ${n}`));
+    await r.quiet(() => r.teams.round());
+    return r.seen.at(-1)!.where;
+  };
+  await r.teams.round();
+  assert.match(await say(T0 + 5 * MIN), /in a group chat$/, "the members could not be read: the plain label");
+  const failed = memberCalls();
+  assert.ok(failed >= 1);
+  fail = false;
+  assert.match(await say(T0 + 5 * MIN + 30_000), /in a group chat$/, "within the backoff it is not asked again");
+  assert.equal(memberCalls(), failed);
+  assert.match(await say(T0 + 30 * MIN), / in Ana$/, "after the backoff it is asked again, and the names come back");
+  const good = memberCalls();
+  assert.equal(good, failed + 1);
+  await say(T0 + 60 * MIN);
+  assert.equal(memberCalls(), good, "a good lookup is kept");
+  await say(T0 + 30 * MIN + 7 * 60 * MIN);
+  assert.equal(memberCalls(), good + 1, "and asked again once it is old");
 });

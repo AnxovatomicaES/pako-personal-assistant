@@ -280,7 +280,7 @@ test("sendEmail: one POST from the assistant's inbox with the key; a read-only k
 
 // ---------- bug hunt 2: regression tests ----------
 
-test("hunt2 mail: a hostile body cannot freeze the server (the HTML is only read when there is no text, and in linear time); entities decode once", () => {
+test("mail: a hostile body cannot freeze the server (the HTML is only read when there is no text, and in linear time); entities decode once", () => {
   // CPU time, not the wall clock: on a machine busy with other work the wall clock says nothing about this code's own cost.
   const t0 = process.cpuUsage();
   assert.equal(bodyText({ text: "hola", html: "<".repeat(65_536) }), "hola", "a text part is never traded for the HTML");
@@ -296,13 +296,13 @@ test("hunt2 mail: a hostile body cannot freeze the server (the HTML is only read
   assert.equal(htmlToText("a < b and c > d"), "a < b and c > d", "a lone < is text");
 });
 
-test("hunt2 mail: a display name that looks like an address does not make a VIP; invisible characters are removed from what reaches the phone", () => {
+test("mail: a display name that looks like an address does not make a VIP; invisible characters are removed from what reaches the phone", () => {
   assert.equal(isVip('"<ceo@jefe.example>" <attacker@evil.example>', ["@jefe.example"]), false);
   assert.equal(isVip('"Jefe" <ceo@jefe.example>', ["@jefe.example"]), true);
   assert.equal(bodyText({ text: "pagar‮ 100​€" }), "pagar 100€");
 });
 
-test("hunt2 mail: what the assistant itself sent is not announced as incoming mail, and a date in the future is today", async () => {
+test("mail: what the assistant itself sent is not announced as incoming mail, and a date in the future is today", async () => {
   let listed: Record<string, unknown>[] = [];
   const r = await rig(async (input) => {
     const url = String(input);

@@ -90,6 +90,9 @@ export function mountChecks(fu: Engine): Pick<Engine, "runCheck"> {
         // A thread's replies are not in the channel's history: a check of a thread reads the thread.
         const posts = (await d.slackHistory(channel, { oldest: afterTs, limit: 50, ...(thread ? { thread } : {}) }))
           .filter((p) => p.mine && Number(p.ts) > Number(afterTs));
+        if ("slackReply" in c && c.slackReply.file) {
+          return posts.some((p) => p.file) ? { done: true, what: t("slackWhere"), said: "" } : { done: false, what: "", said: t("noFile") };
+        }
         if ("slackReply" in c) return posts.length ? { done: true, what: t("slackWhere"), said: "" } : { done: false, what: "", said: t("noReply") };
         const words = c.slackPost.contains.map(fold);
         const hit = posts.some((p) => words.some((w) => fold(p.text).includes(w)));

@@ -30,7 +30,7 @@ export interface Where {
 export type Check =
   | { zoomMeeting: { around?: number; attendeesHints: string[] } }
   | { calendarEvent: { around?: number; hints: string[] } }
-  | { slackReply: { channel: string; afterTs: string; thread?: string } }
+  | { slackReply: { channel: string; afterTs: string; thread?: string; /** Done only by a post with a file or a link (a document to send). */ file?: true } }
   | { slackPost: { channel: string; afterTs: string; contains: string[]; thread?: string } }
   | { none: { reason: string } };
 
@@ -69,6 +69,11 @@ export interface Loop {
   checkedAt?: number;
   createdAt: number;
   closedAt?: number;
+  /**
+   * Closed by Pako, not by the owner (a check saw it, an email or a later message said so): when, and why, as the owner reads it. The brief
+   * lists these as "Closed for you" and "reopen <words>" brings one back: no close is silent.
+   */
+  autoClosed?: { at: number; why: string };
   sources: LoopSource[];
   /** Gentle mode (src/gentle.ts): when it was parked; how often it was snoozed; nudges since the owner's last press; the last wording used. */
   parkedAt?: number;
@@ -214,6 +219,8 @@ export interface SlackLine {
   mine: boolean;
   who: string;
   text: string;
+  /** The message carries a file or a link (what a "send me the deck" is seen done by). */
+  file?: boolean;
 }
 /** A meeting on the owner's Zoom (src/zoom.ts scheduled). */
 export interface ZoomSeen {
@@ -318,10 +325,10 @@ export interface WouldBe {
   title: string;
   kind: LoopKind;
   who: string;
-  /** Its time, as a nudge says it ("a las 17:00"); "" without one. */
+  /** Its time, as a nudge says it (", at 17:00"); "" without one. */
   due: string;
   source: string;
-  check: "zoomMeeting" | "calendarEvent" | "slackReply" | "slackPost" | "none";
+  check: "zoomMeeting" | "calendarEvent" | "slackReply" | "slackFile" | "slackPost" | "none";
   /** What the check found now: where it saw it done, or what a nudge would say was checked. */
   seen: string;
   /**
@@ -363,8 +370,15 @@ export interface FollowupsDoor {
    * when it is not taken: read already, no words, or the day's email jobs are spent (the caller falls back to the triage's own lines).
    */
   observeMail?(m: MailSeen, label: string): Promise<boolean>;
-  /** A new email from these people: what they owed the owner by mail is closed. */
-  answered?(o: { who: string[]; ref: string }): Promise<number>;
+  /**
+   * A new email from these people: what they owed the owner by mail in that same thread is closed. One in another thread closes nothing (Ana
+   * writing about lunch is not the contract she promised): it is noted on the loop instead.
+   */
+  answered?(o: { who: string[]; ref: string; thread?: string }): Promise<number>;
+  /** The loops Pako closed on its own since a moment, newest first: the brief's "Closed for you". */
+  closedForYou?(since: number): Promise<{ id: string; title: string; why: string }[]>;
+  /** "reopen <words>": a loop Pako closed in the last week back on the open list; what to tell the owner. */
+  reopenByWords?(words: string): Promise<{ ok: boolean; say: string }>;
   /**
    * The owner said in the chat that something is handled ("I sent Ana the deck"): the one open loop whose title and person hold all these
    * words is closed as done. None, or several, close nothing and say so. Absent on an engine from before.

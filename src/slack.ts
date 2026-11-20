@@ -173,6 +173,8 @@ export interface SlackEvent {
   ts?: string;
   /** Set on a message in a thread: the thread's parent ts. */
   thread_ts?: string;
+  /** The files shared with the message (a file_share). */
+  files?: unknown[];
 }
 
 export interface SlackDeps {
@@ -543,19 +545,21 @@ export function mountSlack(app: Express, d: SlackDeps) {
      */
     history: async (
       channel: string, o: { limit?: number; oldest?: string; thread?: string } = {},
-    ): Promise<{ ts: string; at: number; mine: boolean; who: string; text: string }[]> => {
+    ): Promise<{ ts: string; at: number; mine: boolean; who: string; text: string; file?: boolean }[]> => {
       const self = await whoAmI();
       const limit = Math.min(100, Math.max(1, o.limit ?? 15));
       const q = { channel, limit: String(o.thread ? 100 : limit), ...(o.oldest ? { oldest: o.oldest } : {}), ...(o.thread ? { ts: o.thread } : {}) };
       const j = await api(o.thread ? "conversations.replies" : "conversations.history", q);
       const l = lang();
       const t = T(l);
-      const out: { ts: string; at: number; mine: boolean; who: string; text: string }[] = [];
+      const out: { ts: string; at: number; mine: boolean; who: string; text: string; file?: boolean }[] = [];
       for (const m of ((j.messages as SlackEvent[] | undefined) ?? []).slice(0, 100)) {
         if (!m.ts || (m.subtype && m.subtype !== "thread_broadcast" && m.subtype !== "file_share")) continue;
         const mine = !!self && m.user === self;
         const who = mine ? "" : m.user ? await nameOf(m.user) : t("someone");
-        out.push({ ts: m.ts, at: Number(m.ts) * 1000, mine, who, text: plainSlack(m.text ?? "", (id) => people.get(id) ?? t("someone"), l).slice(0, TEXT_MAX) });
+        // A file or a link (Slack writes a link as <https://...>): what a document sent there is seen by.
+        const file = (Array.isArray(m.files) && m.files.length > 0) || /<https?:\/\//.test(m.text ?? "");
+        out.push({ ts: m.ts, at: Number(m.ts) * 1000, mine, who, text: plainSlack(m.text ?? "", (id) => people.get(id) ?? t("someone"), l).slice(0, TEXT_MAX), ...(file ? { file } : {}) });
       }
       out.sort((a, b) => a.at - b.at);
       // A thread comes oldest first: its parent (who asked what, for when) and its latest replies.

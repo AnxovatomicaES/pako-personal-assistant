@@ -17,7 +17,7 @@
             }
           ]
         },
-        "recorded": "{\"loops\":[{\"kind\":\"owner_promise\",\"title\":\"Send Ana the Q4 deck\",\"detail\":\"You told Ana on Slack you'd send the Q4 deck by Friday.\",\"who\":\"Ana\",\"due\":\"2026-11-20 17:00\",\"tz\":\"Europe/Madrid\",\"check\":\"none\",\"reason\":\"email\"}],\"closes\":[]}"
+        "recorded": "{\"loops\":[{\"kind\":\"owner_promise\",\"title\":\"Send Ana the Q4 deck\",\"detail\":\"You told Ana on Slack you'd send the Q4 deck by Friday.\",\"who\":\"Ana\",\"due\":\"2026-11-20 17:00\",\"tz\":\"Europe/Madrid\",\"check\":\"slackFile\"}],\"closes\":[]}"
       }
     ]
   },
@@ -30,7 +30,7 @@
           "deck"
         ],
         "dueLocal": "2026-11-20 17:00",
-        "check": "none"
+        "check": "slackFile"
       }
     ]
   }

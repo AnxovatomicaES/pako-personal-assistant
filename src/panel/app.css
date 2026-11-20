@@ -327,7 +327,7 @@ h2 svg.lucide { color: var(--accent); }
 .svc .dot { color: var(--ok); }
 .svc.off .dot { color: var(--text-3); animation: none; }
 .svc.off { opacity: .7; }
-/* the Salud card (src/panel/health.js): a dot per part, amber while failing, red when the owner was told */
+/* the Health part of the System card (src/panel/health.js): a dot per part, amber while failing, red when the owner was told */
 .health .svc .name .dot { margin-left: auto; }
 .health .svc.failing .dot, .health .svc.warn .dot { color: var(--warn); }
 .health .svc.down .dot { color: var(--danger); }

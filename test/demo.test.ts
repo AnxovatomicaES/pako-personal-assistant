@@ -277,3 +277,14 @@ test("the welcome, Settings and the Mac app offer the demo", () => {
   const app = readFileSync(new URL("../desktop/mac/App.swift", import.meta.url), "utf8");
   assert.match(app, /window\.pakoTryDemo/);
 });
+
+test("the demo needs no Claude plan and no sign-in: recorded answers say they are recorded, and the README and site say no plan is needed", () => {
+  // Not live (no Claude signed in): every chat answer ends with the label, and a question it has no recording for says so.
+  for (const q of ["What did I promise Ana?", "what's on today?", "what am I forgetting?"]) assert.match(recordedAnswer(q), /Recorded demo answer/);
+  assert.match(DEMO_TEXTS.recordedNone, /without Claude connected/);
+  const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8").replace(/\s+/g, " ");
+  assert.match(readme, /Try the demo \(no Claude plan needed\)/);
+  assert.match(readme, /demo week runs with no Claude plan and no sign-in/);
+  const site = readFileSync(new URL("../site/index.html", import.meta.url), "utf8").replace(/\s+/g, " ");
+  assert.match(site, /No Claude plan or sign-in needed/);
+});

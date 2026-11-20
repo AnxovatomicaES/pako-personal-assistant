@@ -1,5 +1,5 @@
 // The plan's quota and the owner's wait: the budget of background runs (assistant/budget.ts), what the bridge answers without Claude when
-// it says no, the conversation's claude process kept up between messages (createWarmClaude), and the day's numbers on the Salud card.
+// it says no, the conversation's claude process kept up between messages (createWarmClaude), and the day's numbers on the Health card.
 
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -293,7 +293,7 @@ test("bridge: the day's numbers go to the server with the health reports, and a 
   assert.ok(readBridgeReport(sent[0]), "the server's reader takes what the bridge sends");
 });
 
-test("the server: the bridge's numbers are read strictly and shown on the Salud card's state", () => {
+test("the server: the bridge's numbers are read strictly and shown on the Health card's state", () => {
   const usage = { day: "2026-11-18", interactive: 12, background: 7, perDay: 40, skipped: { cap: 0, paused: 1, same: 3 }, pausedUntil: 0 };
   assert.deepEqual(readBridgeReport({ usage }), { usage });
   assert.equal(readBridgeReport({ usage: { ...usage, background: -1 } }), null);

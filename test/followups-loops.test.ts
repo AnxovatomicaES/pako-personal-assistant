@@ -54,14 +54,22 @@ test("store: the cap drops closed loops before an open one, however old the open
   assert.ok(!s.loops.some((l) => l.id === "c000000000"), "the oldest closed one went instead");
 });
 
-test("mail: an email from Mariana does not close what Ana owes; one from Ana (or her address) does", async () => {
-  const theirs = (id: string, who: string) => loop(id, `Send the signed contract (${who})`, who, { kind: "other_promise" });
+test("mail: an email from Mariana does not close what Ana owes; one from Ana in that thread does, one from Ana in another thread does not", async () => {
+  const TH = "0123456789abcdef";
+  const theirs = (id: string, who: string) =>
+    loop(id, `Send the signed contract (${who})`, who, { kind: "other_promise", where: { type: "mail", label: "email", mailThread: TH } });
   const r = rig([theirs("a000000001", "Ana"), theirs("a000000002", "Ruiz")]);
-  assert.equal(await r.engine.answered({ who: ["Mariana Lopez", "mariana.lopez@example.com"], ref: "new-1" }), 0);
-  assert.equal(await r.engine.answered({ who: ["Peter Druiz", "peter@example.com"], ref: "new-2" }), 0);
+  assert.equal(await r.engine.answered({ who: ["Mariana Lopez", "mariana.lopez@example.com"], ref: "new-1", thread: TH }), 0);
+  assert.equal(await r.engine.answered({ who: ["Peter Druiz", "peter@example.com"], ref: "new-2", thread: TH }), 0);
   assert.deepEqual(r.stored().loops.map((l) => l.status), ["open", "open"]);
-  assert.equal(await r.engine.answered({ who: ["", "ana.garcia@example.com"], ref: "new-3" }), 1);
-  assert.equal(r.stored().loops[0]!.status, "done");
+  // Ana writes about lunch, in another thread: not the contract she promised.
+  assert.equal(await r.engine.answered({ who: ["", "ana.garcia@example.com"], ref: "new-3", thread: "fedcba9876543210" }), 0);
+  assert.equal(await r.engine.answered({ who: ["", "ana.garcia@example.com"], ref: "new-4" }), 0, "no thread known: not taken as the answer");
+  assert.equal(r.stored().loops[0]!.status, "open");
+  assert.equal(await r.engine.answered({ who: ["", "ana.garcia@example.com"], ref: "new-5", thread: TH }), 1);
+  const ana = r.stored().loops[0] as unknown as { status: string; autoClosed?: { why: string } };
+  assert.equal(ana.status, "done");
+  assert.match(ana.autoClosed!.why, /answered in that email thread/, "closed by Pako, with why: the brief lists it");
 });
 
 test("chat: «done, Ana's deck» closes Ana's loop, not Mariana's; with only Mariana's open it closes nothing", async () => {

@@ -101,9 +101,18 @@ sequenceDiagram
 - **Claude Code is read by its structure, not its words.** A failed run's kind (signed out, a limit, missing) comes from the result's
   `api_error_status` and `api_error_type`, the stream's error events and spawn's error code (`assistant/bridge/claude-errors.ts`); the English
   messages are only a fallback, each pattern noted with the Claude Code version it was seen in, and logged when it decides. Whether a turn
-  read the web comes from its WebSearch or WebFetch tool_use events; `num_turns` is the logged fallback. At start the bridge reads
-  `claude --version` and compares it with the range Pako was tested with (`assistant/bridge/cli-version.ts`); outside it, Pako keeps
-  working, logs a warning once and shows it on the Salud card's Claude line.
+  read the web comes from its WebSearch or WebFetch tool_use events; `num_turns` is the logged fallback. A result is read tolerantly
+  (`assistant/bridge/cli-shape.ts`): fields Pako does not know are ignored, a renamed field is found under its camelCase spelling or a known
+  alternative (logged as a fallback), and only a result with no answer text at all is an error, one that names the fields it had.
+- **Claude Code is tested by what it does, not pinned to a version.** At start, and whenever `claude --version` changes (Claude Code
+  updates itself), the bridge runs a self-test (`assistant/bridge/cli-probe.ts`): its own flags in three short `claude -p` runs side by
+  side, about three seconds, no model tokens (a model that does not exist, which the API refuses before generating anything, and a
+  conversation id that is not there). It checks that every flag is accepted, that stream-json starts Pako's MCP server and lists its tools
+  (an MCP round trip through Claude Code), that the JSON and stream-json results parse, and that a missing conversation is still said in
+  words the bridge knows. The outcome is kept per version in `cli-probe.json` in the state folder. A version that passes is used and shown
+  on the Health card as "tested by probe"; one that fails keeps running with what still works (stream-json broken: a run per message and the
+  tags; Pako's MCP server not loading: the tags), and the card and the HEALTH summary show what failed with the command that goes back to
+  the last version that passed (`npm i -g @anthropic-ai/claude-code@<version>`, or `claude install <version>` for the native install).
 - **It says it is an AI.** Every call opens saying so, and every email it sends for you says so.
 
 What Pako protects, what it does not, and how to report a problem: [SECURITY.md](../SECURITY.md).

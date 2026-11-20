@@ -8,7 +8,7 @@ import type { FollowupsDoor } from "./types.ts";
 /** The door's methods, as the proxy carries them. */
 export const PROXIED = [
   "press", "command", "context", "result", "offer", "fromMail", "answered", "closeByWords", "calendarChanged", "reopenClosed", "fromChat", "dropFromChat",
-  "forDraft", "draftFacts", "observeMail", "snoozeCard", "parked", "parkedText", "unpark",
+  "forDraft", "draftFacts", "observeMail", "snoozeCard", "parked", "parkedText", "unpark", "closedForYou", "reopenByWords",
 ] as const satisfies readonly (keyof FollowupsDoor)[];
 
 export function followupsProxy(engine: () => Followups | null): FollowupsDoor & Required<Pick<FollowupsDoor, (typeof PROXIED)[number]>> {
@@ -33,5 +33,7 @@ export function followupsProxy(engine: () => Followups | null): FollowupsDoor & 
     parked: () => (e() ? e()!.parked() : Promise.resolve([])),
     parkedText: () => (e() ? e()!.parkedText() : Promise.resolve("")),
     unpark: (w) => (e() ? e()!.unpark(w) : Promise.resolve({ ok: false, say: "" })),
+    closedForYou: (since) => (e() ? e()!.closedForYou(since) : Promise.resolve([])),
+    reopenByWords: (w) => (e() ? e()!.reopenByWords(w) : Promise.resolve({ ok: false, say: "" })),
   };
 }

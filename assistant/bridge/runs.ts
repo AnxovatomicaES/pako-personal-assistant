@@ -43,7 +43,7 @@ export function mountRuns(b: AfterCore) {
   };
   // The version this computer runs and whether it updates itself (assistant/update.ts), said once at the start and again when it changes:
   // the server's watchdog (src/watchdog.ts) shows it, and warns the owner when this computer stays more than a day behind. With it, which
-  // Claude Code this is against the tested range (cli-version.ts): the Salud card says when it is outside. An older server reads only what
+  // Claude Code this is and how it did in the self-test (cli-probe.ts): the Health card says it. An older server reads only what
   // it knows of the body (the version), and one that takes no `cli` alone answers 400: not asked again until either changes.
   let version: { sha: string; committedAt: number; updatedAt?: number; autoupdate: string } | null = null;
   let cli: CliCompat | null = null;
@@ -62,7 +62,7 @@ export function mountRuns(b: AfterCore) {
       log(`version report failed: ${(err as Error).message} (sent again on the next round)`);
     }
   };
-  // The day's numbers (assistant/budget.ts) go to the server with the health reports, for the panel's Salud card, and to the log now and then.
+  // The day's numbers (assistant/budget.ts) go to the server with the health reports, for the panel's Health card, and to the log now and then.
   // A server that does not take them (an older one answers 400) is not sent them again until this process starts again.
   let usageSent = "";
   let usageSentAt = 0;
@@ -94,7 +94,8 @@ export function mountRuns(b: AfterCore) {
   const run = async (kind: RunKind, prompt: string, c: RunConfig, sessionId?: string): Promise<ClaudeResult> => {
     budget.started(kind);
     const once = (rc: RunConfig): Promise<ClaudeResult> =>
-      warm && (kind === "message" || kind === "routine") ? warm.run(prompt, rc, sessionId) : runOnce(prompt, rc, sessionId);
+      // config.warmMs at 0 (the self-test found this Claude Code's stream-json broken, cli-probe.ts): every message on a run of its own.
+      warm && config.warmMs !== 0 && (kind === "message" || kind === "routine") ? warm.run(prompt, rc, sessionId) : runOnce(prompt, rc, sessionId);
     try {
       const strong = writingModel(kind, c.model);
       let result: ClaudeResult | null = null;
@@ -168,7 +169,7 @@ export function mountRuns(b: AfterCore) {
   const setVersion = (v: { sha: string; committedAt: number; updatedAt?: number; autoupdate: string }): void => {
     version = v;
   };
-  /** Which Claude Code this is against the tested range (cli-version.ts), told to the server with the version. */
+  /** Which Claude Code this is and how it did in the self-test (cli-probe.ts), told to the server with the version. */
   const setCli = (c: CliCompat): void => {
     cli = c;
   };

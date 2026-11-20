@@ -105,6 +105,8 @@ export function wireBrief(ctx: AfterCalendar) {
       },
       // A to-do for a follow-up parked since the brief was written is never shown (gentle mode).
       ...(followupsCfg.config ? { parkedIds: async () => (await followupsDoor.parked!()).map((l) => l.id) } : {}),
+      // What Pako closed on its own since the last brief, with why: listed after it, so no close is silent ("reopen <words>" undoes one).
+      ...(followupsCfg.config ? { closedForYou: (since: number) => followupsDoor.closedForYou!(since) } : {}),
       // And first in the chat's version, with the check-ins kept for the brief (src/gentle-checkins.ts).
       weekFocus: async () => {
         const lines = [gentleRef.reset ? await gentleRef.reset.briefLine() : null, gentleRef.checkins ? await gentleRef.checkins.briefLine() : null];

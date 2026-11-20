@@ -114,6 +114,8 @@ const at = (s: unknown, tz: string): number => {
   if (t === null) throw new Error(`not a time: ${String(s)}`);
   return t;
 };
+/** A check's name as the extraction says it: a slackReply that needs a file is "slackFile". */
+const checkName = (c: object): string => ("slackReply" in c && (c as { slackReply: { file?: true } }).slackReply.file ? "slackFile" : Object.keys(c)[0]!);
 const check = (name: string, pass: boolean, detail?: string): Check => ({ name, pass, ...(pass || !detail ? {} : { detail }) });
 /** Words all found (case and accents aside) in a text. */
 const hasAll = (text: string, words: string[]): boolean => words.every((w) => fold(text).includes(fold(w)));
@@ -345,7 +347,7 @@ const loopMatches = (l: Loop, e: Record<string, unknown>, tz: string): boolean =
   && hasAll(l.title, strs(e.titleHas))
   && (e.dueLocal === undefined || (e.dueLocal === null ? l.dueAt === undefined : !!l.dueAt && clock(l.dueAt, tz) === e.dueLocal))
   && (!e.tz || l.tz === e.tz)
-  && (!e.check || Object.keys(l.check)[0] === e.check);
+  && (!e.check || checkName(l.check) === e.check);
 
 /** Each expected item matched to a different actual one (greedy, in order). */
 function matchAll<T>(actual: T[], expected: Record<string, unknown>[], fits: (a: T, e: Record<string, unknown>) => boolean): number[] {
@@ -370,7 +372,7 @@ export function judgeFollowups(c: EvalCase, r: FollowupsRun): Check[] {
   checks.push(check("the answer is the JSON asked for", parseAnswer(last) !== null, last.slice(0, 120)));
   const want = asArr(e.loops).map(asObj);
   const missing = matchAll(r.added, want, (l, x) => loopMatches(l, x, r.timeZone));
-  const seen = r.added.map((l) => `${l.kind} «${l.title}» ${l.who} ${l.dueAt ? clock(l.dueAt, r.timeZone) : "-"} ${Object.keys(l.check)[0]}`);
+  const seen = r.added.map((l) => `${l.kind} «${l.title}» ${l.who} ${l.dueAt ? clock(l.dueAt, r.timeZone) : "-"} ${checkName(l.check)}`);
   checks.push(check("every expected loop is there", !missing.length, `missing ${JSON.stringify(missing.map((i) => want[i]))}; got ${seen.join(" | ")}`));
   if (e.exact !== false) checks.push(check("no loop beyond those expected", r.added.length === want.length, `got ${r.added.length}: ${seen.join(" | ")}`));
   if (typeof e.closed === "number") checks.push(check("the loops called off are closed", r.closed.length === e.closed, `closed ${r.closed.length}`));
@@ -735,7 +737,11 @@ export function judgeIntent(c: EvalCase): Check[] {
 
 // ---------- drafts: what the owner changed in a draft, learnt, and the next draft ----------
 
-export interface DraftsRun { raw: string; material: string; message: string; lessons: Lesson[] }
+export interface DraftsRun {
+  raw: string; material: string; message: string; lessons: Lesson[];
+  /** The draft as the server keeps it, first line included: what the owner is shown, and what a rubric judges. */
+  shown: string;
+}
 
 /**
  * Runs a drafts case: each earlier draft and what the owner sent instead go through the server's own capture (src/lessons.ts drafted, then
@@ -778,7 +784,7 @@ export async function runDrafts(c: EvalCase, answer: Answer): Promise<DraftsRun>
   const raw = await answer({ system: "task", text: material, recorded: typeof c.input.recorded === "string" ? c.input.recorded : undefined });
   // Through the server's own handling of the answer (src/brief-v2.ts result): what reaches the owner is what is judged.
   if (task) await brief.result(task.id, raw);
-  return { raw, material, message: draftMessage(kept), lessons: await lessons.list() };
+  return { raw, material, message: draftMessage(kept), lessons: await lessons.list(), shown: kept || raw };
 }
 
 const GREETS = /^(hi|hello|hey|dear|good (morning|afternoon|evening)|hola|buenos|buenas|querid|estimad)\b/i;
@@ -889,7 +895,8 @@ export async function runCase(c: EvalCase, answer: Answer, o: { briefMaterial: (
       checks = judgeDrafts(c, r);
       answers = [r.raw];
       material = r.material;
-      output = r.raw;
+      // What the owner is shown, after the server's checks (src/draft-grounding.ts), not the model's raw answer.
+      output = r.shown;
       break;
     }
     case "gentle": {

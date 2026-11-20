@@ -153,7 +153,7 @@
         <ol class="steps">
           <li><b>Download Pako for Mac</b>, open the file and drag <b>Pako</b> to Applications.</li>
           <li><b>Open it and press Try the demo week.</b> An invented week of people, mail, Slack and meetings: the brief, follow-ups, drafts and
-            meeting prep work at once. Nothing is sent.</li>
+            meeting prep work at once. Nothing is sent. No Claude plan or sign-in needed: the demo shows recorded answers, marked as such.</li>
           <li><b>Connect your Claude plan when you're ready</b>, then leave the demo with one click and start with your own.</li>
         </ol>
         <a class="btn btn-primary magnetic" href="https://github.com/AnxovatomicaES/pako-personal-assistant/releases/latest"><span>Download for Mac</span></a>
@@ -476,7 +476,12 @@
             <li><b>Say hi.</b> Then connect your calendar, mail and phone when you like.</li>
           </ol>
           <a class="btn btn-primary magnetic" href="https://github.com/AnxovatomicaES/pako-personal-assistant/releases/latest"><span>Download for Mac</span></a>
-          <p class="fine">macOS 13 or newer, Intel or Apple silicon. This preview is not yet signed by Apple: the first time, macOS says it could not verify Pako. Open <b>System Settings → Privacy &amp; Security</b>, click <b>Open Anyway</b> next to Pako, and confirm. Once.</p>
+          <p class="fine">macOS 13 or newer, Intel or Apple silicon. This preview is not yet notarized by Apple, so macOS blocks it the first time. Once only:</p>
+          <ul class="fine">
+            <li><b>macOS 15 Sequoia and newer:</b> open Pako and press <b>Done</b> (not Move to Trash). Then <b>System Settings → Privacy &amp; Security</b>, scroll to <b>Security</b>, press <b>Open Anyway</b> next to Pako, enter your Mac password and press <b>Open Anyway</b> again.</li>
+            <li><b>macOS 13 and 14:</b> Control-click <b>Pako</b> in Applications, choose <b>Open</b>, then <b>Open</b> again.</li>
+            <li><b>No warning at all:</b> with Node.js 22.18+ and git, use the one-line installer in the <b>macOS · Linux</b> tab.</li>
+          </ul>
         </div>
         <div class="tab-panel" role="tabpanel" id="t-unix" aria-labelledby="tab-unix" hidden>
           <p>One line. It checks Node.js and git, installs Pako in <code>~/pako</code>, starts it and opens the panel. Never <code>sudo</code>.</p>
@@ -495,7 +500,7 @@
     <section class="faq" data-mood="idle">
       <div class="section-head"><p class="kicker reveal-up">Questions</p><h2 class="section-title"><span class="split-words">Plainly answered.</span></h2></div>
       <div class="faq-list">
-        <details class="reveal-up"><summary>What do I need for Claude?</summary><p>Your own paid Claude plan (Pro, Max, Team or Enterprise): no API key needed. Pako sets up Claude Code, Anthropic's official command-line tool, with one button, and you sign in with your Claude account. Usage counts against your plan's limits, under Anthropic's terms. An Anthropic API key works too, if you prefer one. If you use Pako for work, use a Claude Team or Enterprise plan or an API key: in the EU, Anthropic's consumer plans are for personal use.</p></details>
+        <details class="reveal-up"><summary>What do I need for Claude?</summary><p>Your own paid Claude plan (Pro, Max, Team or Enterprise): no API key needed. The demo week needs no plan and no sign-in, to see Pako before you pay. Pako sets up Claude Code, Anthropic's official command-line tool, with one button, and you sign in with your Claude account. Usage counts against your plan's limits, under Anthropic's terms. An Anthropic API key works too, if you prefer one. If you use Pako for work, use a Claude Team or Enterprise plan or an API key: in the EU, Anthropic's consumer plans are for personal use.</p></details>
         <details class="reveal-up"><summary>What does it cost?</summary><p>Pako is free (MIT license). Claude is paid by you to Anthropic. Everything else is optional.</p></details>
         <details class="reveal-up"><summary>Does my computer have to stay on?</summary><p>To answer, yes: Pako runs where you start it. What came in while it slept is caught up when it wakes. Reminders can still reach you with the lid shut through the optional Pako Relay, a small Pako you run on a host that stays awake.</p></details>
         <details class="reveal-up"><summary>Where is my data?</summary><p>In one folder on your computer, readable only by you. What you write goes to Anthropic through Claude, and to a service only if you connect it. Export or delete everything from the panel.</p></details>

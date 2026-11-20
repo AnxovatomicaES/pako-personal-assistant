@@ -5,7 +5,7 @@
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
-  cliCompat, createBridge, loadBridgeConfig, offersFlag, offersMcpTools, offersNoBare, readClaudeVersion, stopRunningClaude, type BridgeConfig,
+  createBridge, createCliWatch, loadBridgeConfig, offersFlag, offersMcpTools, offersNoBare, stopRunningClaude, type BridgeConfig,
 } from "./bridge.ts";
 import { createUpdater, loadUpdateConfig, restartSelf } from "./update.ts";
 
@@ -31,14 +31,15 @@ if (config.warmMs && !offersFlag(config.claudeBin, "--input-format")) {
 // Pako's typed tools (assistant/mcp-server.ts) only from a Claude Code that loads an MCP config and streams JSON, and when the server starts
 // here; ASSISTANT_TYPED_TOOLS=off keeps the tags alone.
 config.mcpTools = (process.env.ASSISTANT_TYPED_TOOLS ?? "").trim().toLowerCase() !== "off" && offersMcpTools(config.claudeBin);
+// Whether this Claude Code works the way the bridge drives it (assistant/bridge/cli-probe.ts): a self-test of the bridge's own flags and of
+// the outputs it reads, run once per version, no model tokens spent. Before the bridge is built, so what it finds broken is off from the
+// first message; the outcome is logged and shown on the panel's Health card, and looked at again when Claude Code updates itself. Not in
+// `--self-check` (assistant/update.ts): that only asks whether this code loads, and runs nothing of Claude Code's.
+const cliWatch = createCliWatch({ config });
+const cliAtStart = process.argv.includes("--self-check") ? null : await cliWatch.check();
 console.log(config.mcpTools ? "Pako's tools are on: Claude acts through typed tool calls (the tags still work)" : "Pako's tools are off: Claude acts through tags");
 const bridge = createBridge({ config });
-// Which Claude Code this is, against the range Pako was tested with (assistant/bridge/cli-version.ts): outside it, everything keeps working,
-// and a warning is logged once here and shown on the panel's Salud card.
-const cli = cliCompat(readClaudeVersion(config.claudeBin));
-if (cli.note) console.warn(`Warning: ${cli.note}`);
-else console.log(`Claude Code ${cli.version}: within the versions Pako has been tested with`);
-bridge.setCli(cli);
+if (cliAtStart) bridge.setCli(cliAtStart);
 let stopping = false;
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {
@@ -65,7 +66,7 @@ if (Number.isInteger(parent) && parent > 1) {
 }
 
 // Keeping itself up to date (assistant/update.ts): on a server's computer only, between two messages, every half hour. Its version goes to
-// the server on the next round, for the panel's Salud card and the server's warning when this computer falls behind.
+// the server on the next round, for the panel's Health card and the server's warning when this computer falls behind.
 const updater = createUpdater({ repo: fileURLToPath(new URL("..", import.meta.url)), stateDir: config.stateDir, config: loadUpdateConfig(process.env, config.server) });
 // `--self-check` (assistant/update.ts, before it restarts onto a new version): everything above loaded, the settings were accepted, the
 // bridge was built. That is all it asks: stop here, before the loop.
@@ -102,6 +103,16 @@ while (!stopping) {
     updater.proved();
     // Messages were waiting but none could be handled (the server's context did not answer): do not spin.
     if (seen > 0 && done === 0) await sleep(5000);
+    // Idle: Claude Code may have updated itself since the last look (every ten minutes); a new version gets the self-test.
+    if (seen === 0 && !bridge.busy() && !stopping && cliWatch.due()) {
+      const before = cliWatch.compat();
+      const now = await cliWatch.check();
+      if (now !== before) {
+        bridge.setCli(now);
+        // The self-test found this Claude Code's stream-json broken: the process kept up for the conversation goes too.
+        if (config.warmMs === 0) bridge.stopWarm();
+      }
+    }
     // Idle (nothing came in this round, nothing under way): the time for the half-hourly look at origin.
     if (seen === 0 && !bridge.busy() && !stopping && updater.due()) {
       const outcome = await updater.check();

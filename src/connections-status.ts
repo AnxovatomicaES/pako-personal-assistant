@@ -1,4 +1,4 @@
-// One look at every connection, for the connections page and the Salud card: is it connected, does it need something from the person, is it
+// One look at every connection, for the connections page and the Health card: is it connected, does it need something from the person, is it
 // not set up, or is it failing, since when, and the one thing to do next. It reads what is already known, and asks no service anything:
 // - the settings (src/connections.ts: every required value set, or some, or none) and what a running connection says is wrong (IMAP's login);
 // - the watchdog (src/watchdog.ts), which already follows each part's rounds: a part "down" is an error, "failing" needs a look;
