@@ -321,13 +321,21 @@ export function lstartSeconds(text: string): number | null {
  * One Pako per home folder: two instances would each keep the whole file in memory and overwrite each other's notes, reminders and STOP. The lock is a
  * file with the process id, the port (so `npm run panel`, bin/panel.cjs, finds the running server whatever its terminal's settings say), how long
  * the computer had been up, and "service" when launchd or systemd started it (`service`). A lock left by a process that is gone, or from before
- * the computer last restarted, is taken over. Returns a function that gives it back.
+ * the computer last restarted, is taken over. Returns a function that gives it back. `startOf` reads when a process started (a test slows it down).
  */
-export function lockHome(dir: string, port?: number, upSeconds: number = uptime(), service = false): () => void {
+export function lockHome(
+  dir: string, port?: number, upSeconds: number = uptime(), service = false, startOf: (pid: number) => number | null = processStart,
+): () => void {
   const path = join(dir, ".lock");
+  // How long the computer has been up when the lock found here is judged, not when this start began: the ps below can take seconds on a busy
+  // machine, and a Pako that started a second later and linked its lock first then writes a larger uptime than ours. Read against our earlier
+  // one, its fresh lock looked "from before the computer restarted" and was taken over while it ran: both held the folder. The uptime passed in
+  // (a test sets it) moves on by the time that has really gone by.
+  const entered = uptime();
+  const upNow = (): number => upSeconds + (uptime() - entered);
   // Its fifth line: when this process started (processStart), so that a lock whose number now belongs to another program is not trusted.
   // Worked out before the lock is looked at, so the look and the write follow each other at once.
-  const started = port ? processStart(process.pid) : null;
+  const started = port ? startOf(process.pid) : null;
   const lines = port
     ? `${process.pid}\n${port}\n${Math.floor(upSeconds)}\n${service ? "service" : ""}\n${started ?? ""}\n`
     : String(process.pid);
@@ -369,7 +377,7 @@ export function lockHome(dir: string, port?: number, upSeconds: number = uptime(
       /* the lock went while we looked: another Pako is starting */
       throw starting();
     }
-    const other = lockHolder(dir, upSeconds);
+    const other = lockHolder(dir, upNow(), startOf);
     if (other) throw running(other.pid);
     // An empty lock is one another Pako has just created and not yet written (unless it is old: then its writer died).
     if (!seen.trim() && Date.now() - (statSync(path, { throwIfNoEntry: false })?.mtimeMs ?? Date.now()) < 10_000) throw starting();

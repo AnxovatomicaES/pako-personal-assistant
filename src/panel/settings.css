@@ -535,3 +535,15 @@ body.ready .card-slot:nth-child(8) { animation-delay: 280ms; } body.ready .card-
   background: rgba(139, 123, 255, .08); }
 .demo-connect h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: 18px; }
 .demo-connect p { margin: 0 0 12px; }
+/* Settings › Labs (labs.js): one row per lab, its name and why, and its switch at the end. */
+.labs { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 10px; }
+.labs .lab { display: flex; gap: 14px; align-items: flex-start; justify-content: space-between; padding: 12px 14px; border: 1px solid var(--line);
+  border-radius: 14px; }
+.labs .lab-words { min-width: 0; }
+.labs .lab-words p { margin: 2px 0 0; }
+.labs .lab-name { font-weight: 600; cursor: pointer; }
+.labs .lab-switch { flex: none; width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); cursor: pointer; }
+.labs-note { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-radius: 12px; background: var(--warn-soft); margin: 8px 0 0; }
+.labs-note svg.lucide { width: 16px; height: 16px; color: var(--warn); flex: none; }
+.labs-card .muted { color: var(--text-2); }
+.labs-card .small { font-size: 13px; }

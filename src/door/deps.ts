@@ -225,6 +225,8 @@ export interface WhatsappDeps {
   healthOnDisk?: boolean;
   /** Labs (PAKO_LABS=on, src/app.ts): the health diary, learning and the weekly check-in (src/companion.ts). Default on. */
   labs?: boolean;
+  /** The labs that are on (src/labs.ts), for the assistant's context: it offers a lab's abilities only when it is listed. Absent: not said. */
+  labsOn?: readonly string[];
   /** What the watches look at (src/routines.ts): the mail, the calendar and Slack the server already has; read each time. */
   watchSources?: () => WatchSources;
   /** How long a routine's claim waits before it reads itself back (default 1.5 s; the tests use a few milliseconds). */

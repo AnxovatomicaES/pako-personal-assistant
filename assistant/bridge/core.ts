@@ -3,7 +3,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { outsideOf, type OutsideSource } from "../../src/quarantine.ts";
-import { systemPromptFor, toolsSystemPromptFor } from "../prompt.ts";
+import { systemPromptFor, toolsSystemPromptFor, type LabsOff } from "../prompt.ts";
 import { toolDataOf } from "../tools.ts";
 import { createBudget, loadBudgetConfig, type Budget } from "../budget.ts";
 import type { VoiceConfig } from "../voice.ts";
@@ -65,11 +65,14 @@ export function mountCore(b: Base) {
   // The persona follows the server's Labs (beta-plan step 4): a chief of staff, and the friend, health companion and teacher only with Labs
   // on. Kept from the last turn's context, so the process warmed for the next turn has the same prompt (its key includes the prompt).
   let companion = false;
-  const chat = (labs?: boolean): RunConfig => {
+  // The labs off on the server (table booking, phone calls: src/labs.ts), kept the same way: their tags leave the prompt.
+  let off: LabsOff = {};
+  const chat = (labs?: boolean, labsOff?: LabsOff): RunConfig => {
     if (labs !== undefined) companion = labs;
-    // Without Labs and without tools, exactly the settings as before (the default system prompt).
-    if (config.mcpTools) return { ...config, systemPrompt: toolsSystemPromptFor(companion), mcp: mcpConfigFor(config.stateDir) };
-    return companion ? { ...config, systemPrompt: systemPromptFor(true) } : config;
+    if (labsOff !== undefined) off = labsOff;
+    if (config.mcpTools) return { ...config, systemPrompt: toolsSystemPromptFor(companion, off), mcp: mcpConfigFor(config.stateDir) };
+    // Without Labs, without a lab off and without tools, exactly the settings as before (the default system prompt).
+    return companion || off.book || off.call ? { ...config, systemPrompt: systemPromptFor(companion, off) } : config;
   };
   /** The copy of this turn's context the read tools answer from, and the flags that say which actions this server takes. */
   const writeToolData = (turn: string, ctx: Context): void => {

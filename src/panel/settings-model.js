@@ -24,6 +24,19 @@ export const CARDS = ["claude", "calendar", "mail", "telegram", "whatsapp", "sla
 export const COUNTED = ["calendar", "mail", "telegram", "contacts"];
 /** The cards of the Advanced group, in this order: each needs a developer app or an account somewhere else, or is a fine detail. */
 export const ADVANCED = ["whatsapp", "slack", "zoom", "teams", "tables", "resend", "phone", "more"];
+/** The cards that belong to a lab (src/labs.ts LABS cards): hidden while that lab is off. */
+export const LAB_CARDS = { tables: "booking", phone: "calls", whatsapp: "whatsapp" };
+
+/**
+ * The cards hidden because their lab is off, from GET /panel/api/labs ({ labs: [{ id, on }] }). Null (an older Pako, a server): none hidden.
+ */
+export function labHiddenCards(labs) {
+  const list = Array.isArray(labs?.labs) ? labs.labs : null;
+  if (!list) return new Set();
+  const off = new Set(list.filter((l) => l && l.on === false).map((l) => l.id));
+  return new Set(Object.entries(LAB_CARDS).filter(([, lab]) => off.has(lab)).map(([card]) => card));
+}
+
 /** What helps most first, for "What would help you most next". */
 const PRIORITY = ["calendar", "mail", "telegram", "contacts"];
 

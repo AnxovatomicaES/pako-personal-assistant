@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createApp, loadAppConfig, STAND_IN_NAME, type LocalContext } from "./app.ts";
+import { appServices } from "./app/services.ts";
 import { lastingExitCode, runAutostartCli } from "./autostart.ts";
 import { appliedAtStart, applyStoredSettings } from "./connections.ts";
 import { createSettings, createLocalChannel, isLocalMode, loadEnvFiles, loadHome, localEnv, lockHome, openBrowser, pakoHome, superviseBridge } from "./local.ts";
@@ -171,21 +172,13 @@ async function main(): Promise<void> {
   const app = createApp(config, process.env, local);
   // Local mode answers this computer only: nothing on the network can reach the panel or the chat.
   const host = localMode ? (process.env.PAKO_HOST ?? "").trim() || "127.0.0.1" : undefined;
-  const telegram = app.locals.telegram as { start(): void; stop(): void } | undefined;
-  // Slack's Socket Mode (src/slack-socket.ts, SLACK_APP_TOKEN): its connection is opened once the server listens and closed on shutdown.
-  const slackSocket = app.locals.slackSocket as { start(): void; stop(): void } | undefined;
-  const storeGuard = app.locals.storeGuard as { start(): void; stop(): void } | undefined;
-  const watchdog = app.locals.watchdog as { start(): void; stop(): void } | undefined;
-  // The owner's WhatsApp set up in the panel (src/whatsapp-computer.ts): its tunnel comes back with Pako, and goes with it.
-  const whatsappComputer = app.locals.whatsappComputer as { start(): void; stop(): void } | undefined;
+  // What starts once the server listens and stops on shutdown, in its order: the store guard first, then Telegram, the watchdog, Slack's
+  // Socket Mode and the owner's WhatsApp on this computer (src/app/services.ts, wired in src/app.ts).
+  const services = appServices(app);
   const onListening = (err?: Error): void => {
     if (err) return; // Express 5 calls this with the error when listening fails: the error handler below tells the person, and nothing is started
     // First, before any request is handled: until the store guard has looked at the store, the pause counts as on (src/store-guard.ts).
-    storeGuard?.start();
-    telegram?.start();
-    watchdog?.start();
-    slackSocket?.start();
-    whatsappComputer?.start();
+    void services.lifecycle.start();
     if (!localMode) {
       console.log(`assistant listening on port ${config.port}`);
       console.log(`  Phone line: ${config.personalCaller ? (config.personalCaller.live ? "live" : "dry run") : "off (PERSONAL_CALLER_TOKEN unset or a setting is wrong)"}`);
@@ -200,7 +193,7 @@ async function main(): Promise<void> {
     if (!printsLink(process.env)) {
       console.log("\n  Pako is running for you on this computer. Open its panel from the Pako app, or with `npm run panel` in its folder.\n");
     } else {
-      const link = (app.locals.panelLink as (() => string) | undefined)?.() ?? `http://127.0.0.1:${config.port}/panel`;
+      const link = services.panelLink() ?? `http://127.0.0.1:${config.port}/panel`;
       console.log(
         `\n  Pako is running for you on this computer.\n\n    ${link}\n\n  (${open ? "opening your browser; " : ""}that link works once, for 10 minutes: `
         + "`npm run panel` in this folder gives a new one. Ctrl+C stops Pako.)\n",
@@ -237,11 +230,8 @@ async function main(): Promise<void> {
     stopping = true;
     console.log(restart ? "Restarting: shutting down first." : `${signal} received: shutting down.`);
     bridge?.stop();
-    telegram?.stop();
-    slackSocket?.stop();
-    whatsappComputer?.stop();
-    storeGuard?.stop();
-    watchdog?.stop();
+    // In reverse of the start order, each one even if another fails. Every stop there is returns at once: all run in this same turn.
+    void services.lifecycle.stop();
     let done = false;
     const end = (code: number): void => {
       if (done) return;

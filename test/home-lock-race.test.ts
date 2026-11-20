@@ -41,3 +41,28 @@ test("a stale lock is still taken over, and a lock held by a live Pako still ref
   writeFileSync(join(dir, ".lock"), `${process.ppid}\n18999\n1\n\n\n`);
   assert.throws(() => lockHome(dir, 18999, 10), /already running/);
 });
+
+test("a Pako that started a second later but locked first is not taken for one from before a restart", async () => {
+  // The race that let both hold the folder (4 of 400 races on a loaded machine): this start reads the uptime (U), then its own start time with
+  // ps, slow under load; meanwhile another Pako, started when the uptime had ticked to U+1, links its lock first. Judged against the U read
+  // before ps, that live lock looked older than the last restart and was taken over.
+  const { lockHome, processStart } = await import("../src/local.ts");
+  const { uptime } = await import("node:os");
+  const { writeFileSync, readFileSync } = await import("node:fs");
+  const dir = mkdtempSync(join(tmpdir(), "pako-hunt-lock-"));
+  const other = spawn("sleep", ["30"]);
+  try {
+    const otherStart = processStart(other.pid!);
+    const slowPs = (pid: number): number | null => {
+      if (pid !== process.pid) return processStart(pid);
+      const up = uptime();
+      while (uptime() === up) { /* ps, slow: the uptime ticks meanwhile */ }
+      writeFileSync(join(dir, ".lock"), `${other.pid}\n18999\n${uptime()}\n\n${otherStart ?? ""}\n`);
+      return processStart(pid);
+    };
+    assert.throws(() => lockHome(dir, 18999, uptime(), false, slowPs), /already running/);
+    assert.equal(Number.parseInt(readFileSync(join(dir, ".lock"), "utf8"), 10), other.pid, "the other Pako's lock is left as it was");
+  } finally {
+    other.kill();
+  }
+});

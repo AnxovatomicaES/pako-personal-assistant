@@ -539,7 +539,8 @@ test("the door, on a computer: an answer to a WhatsApp message goes back to What
 test("local Pako: the setup is in its panel, the door's stand-in verify token opens nothing, and the tunnel's requests never reach the panel", async () => {
   const dir = join(mkdtempSync(join(tmpdir(), "pako-wa-app-")), "home");
   const home = loadHome({ PAKO_HOME: dir });
-  const env = { ...localEnv({}, home, 0), PAKO_HOME: home.dir };
+  // WhatsApp is a lab (src/labs.ts): on here, as an owner who turned it on in Settings › Labs.
+  const env = { ...localEnv({}, home, 0), PAKO_HOME: home.dir, PAKO_LABS: "whatsapp" };
   const kv = memKv();
   const settings = createSettings(home.dir, env);
   const local: LocalContext = {

@@ -84,9 +84,32 @@ export const COMPANION_SECTION = `With Labs on, more than a chief of staff: a fr
 - As a health companion (the red flags above always come first): listen, give general, well-established well-being information, and say when something deserves a visit to their doctor. Medication only as they state it: a reminder with their exact words and dose (<remind every="day">), never your own. For an appointment, help them prepare: the questions to ask, what to bring, and a summary of what they told you (they get the one from their diary with DOCTOR SUMMARY). Health matters stay between you and them: never put them in a message, a call or anything for another person.
 - As a teacher: when they want to learn something (a language, a skill), check what they already know, then give short lessons, one idea at a time with an example, at their level, and a question or two to check it. Quiz cards from a lesson make the spaced repetition (they ask for one with QUIZ ME, and Pako offers one at a good moment); never repeat a question the context says they already have.`;
 
-/** The system prompt for the owner's conversation: the chief of staff, and the companion's roles only with Labs on. */
-export const systemPromptFor = (companion: boolean): string =>
-  SYSTEM_PROMPT_SLOT.replace("__COMPANION__\n", companion ? `${COMPANION_SECTION}\n` : "");
+/**
+ * The labs whose abilities the prompt leaves out (src/labs.ts): table booking and phone calls. Said only by a server that lists the labs on
+ * (`labsOn` in the context); an older server's context has no list, and nothing is left out.
+ */
+export interface LabsOff {
+  book?: boolean;
+  call?: boolean;
+}
+
+/** Which of booking and calls the server says are off: only when it sends its list of labs that are on. */
+export function labsOffOf(ctx: { labsOn?: unknown }): LabsOff {
+  if (!Array.isArray(ctx.labsOn)) return {};
+  const on = new Set(ctx.labsOn.filter((x): x is string => typeof x === "string"));
+  return { book: !on.has("booking"), call: !on.has("calls") };
+}
+
+/** The tag lines of a lab that is off, taken out whole: the assistant is not told how to do what this Pako does not do. */
+const withoutLabs = (prompt: string, off: LabsOff): string =>
+  prompt
+    .split("\n")
+    .filter((l) => !(off.book && l.startsWith("- <book ")) && !(off.call && l.startsWith("- <call ")))
+    .join("\n");
+
+/** The system prompt for the owner's conversation: the chief of staff, the companion's roles only with Labs on, no lab that is off. */
+export const systemPromptFor = (companion: boolean, off: LabsOff = {}): string =>
+  withoutLabs(SYSTEM_PROMPT_SLOT.replace("__COMPANION__\n", companion ? `${COMPANION_SECTION}\n` : ""), off);
 
 export const SYSTEM_PROMPT = systemPromptFor(false);
 
@@ -313,4 +336,4 @@ export function toolsPrompt(base: string): string {
 
 export const TOOLS_SYSTEM_PROMPT = toolsPrompt(SYSTEM_PROMPT);
 /** The tools' system prompt with the companion's roles (Labs on). */
-export const toolsSystemPromptFor = (companion: boolean): string => toolsPrompt(systemPromptFor(companion));
+export const toolsSystemPromptFor = (companion: boolean, off: LabsOff = {}): string => toolsPrompt(systemPromptFor(companion, off));

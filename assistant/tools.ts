@@ -14,6 +14,7 @@
 import { z } from "zod";
 import { inline, wrap } from "../src/quarantine.ts";
 import type { FactTag, KnowTag, ParsedReply, PersonTag } from "./bridge.ts";
+import { labsOffOf } from "./prompt.ts";
 
 /** The MCP server's name in the generated config: every tool is `mcp__pako__<name>` to Claude Code. */
 export const MCP_SERVER_NAME = "pako";
@@ -57,7 +58,7 @@ export const TOOLS = {
     schema: z.object({ words: pick(4, 80) }),
   },
   propose_call: {
-    kind: "act", max: 1,
+    kind: "act", max: 1, needs: "call",
     description: "Call one of the friends in the context's list with a message, only when they asked for a call. When it is their own request the server places it after a few seconds in which they can undo it; otherwise it shows a Call button and nothing is rung unless they press it. The call opens saying it is their AI assistant calling for them, so the message is only the news, short, in the third person (\"that Alex is running late\"), never a greeting, never anything else you know about them. You do not have the number. After it, say in a few words what you proposed.",
     schema: z.object({
       to: plain(40).describe("a friend's name from the context's list"),
@@ -331,6 +332,8 @@ export interface ToolData {
   on: {
     email: boolean; routines: boolean; companion: boolean; life: boolean; know: boolean; slack: boolean; book: boolean; followups?: boolean; calendarWrites?: boolean;
     checkins?: boolean;
+    /** Phone calls (a lab, src/labs.ts): false only when the server lists its labs and calls is not among them. */
+    call?: boolean;
   };
 }
 
@@ -353,7 +356,9 @@ export function toolDataOf(turn: string, ctx: Record<string, unknown>): ToolData
       life: n(ctx.lifeOn),
       know: n(ctx.knowOn),
       slack: Array.isArray(ctx.slack),
-      book: Array.isArray(ctx.bookings),
+      // Labs (src/labs.ts): booking and calls only when a server that lists its labs has them on.
+      book: Array.isArray(ctx.bookings) && labsOffOf(ctx).book !== true,
+      call: labsOffOf(ctx).call !== true,
       followups: Array.isArray(ctx.followups) && ctx.followups.length > 0,
       calendarWrites: ctx.calendarWrites === 1,
       checkins: n(ctx.checkinOn),
@@ -369,6 +374,7 @@ const NOT_ON: Record<keyof ToolData["on"], string> = {
   know: "This Pako does not keep dated facts; use remember for a lasting note.",
   slack: "Slack is not connected. Tell the owner.",
   book: "Table booking is not connected. Tell the owner.",
+  call: "Phone calls are off on this Pako (Labs): they are turned on in Settings › Labs. Tell the owner.",
   followups: "There is no open follow-up to close: the context lists none. If they meant a task, use complete_task.",
   calendarWrites: "",
   checkins: "Check-ins are not available on this Pako yet (its server needs an update). Offer a reminder instead.",
