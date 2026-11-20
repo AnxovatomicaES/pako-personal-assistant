@@ -16,9 +16,7 @@ import { texts, type Lang } from "./i18n.ts";
 import { plainWords } from "./intents.ts";
 import type { Kv } from "./kv.ts";
 import { fold, today } from "./lists.ts";
-import { createLog } from "./log.ts";
-
-const log = createLog("learning");
+import { readJsonRecord } from "./json-record.ts";
 
 export const LEARNING_KEY = "learning";
 const TTL_SECONDS = 400 * 24 * 3600;
@@ -201,14 +199,9 @@ export function createLearning(kv: Kv | null): LearningStore {
   let local = empty();
   const readStrict = async (): Promise<LearningState> => {
     if (!kv) return structuredClone(local);
-    const raw = await kv.get(LEARNING_KEY);
+    const raw = await readJsonRecord(kv, LEARNING_KEY);
     if (!raw) return empty();
-    try {
-      return learningOf(JSON.parse(raw));
-    } catch {
-      log.error("the stored record is not valid JSON: starting again");
-      return empty();
-    }
+    return learningOf(raw);
   };
   const write = async (s: LearningState): Promise<void> => {
     if (kv) await kv.set(LEARNING_KEY, JSON.stringify(s), TTL_SECONDS);

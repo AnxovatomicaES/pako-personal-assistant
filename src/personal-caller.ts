@@ -101,6 +101,7 @@ export function parseContacts(raw: string | undefined, errors: string[], source 
   try {
     parsed = JSON.parse(raw);
   } catch {
+    /* said in the errors */
     errors.push(`${source} must be valid JSON, for example {"Ana":"+447700900123"}`);
     return contacts;
   }
@@ -753,6 +754,7 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
         try {
           out.call = JSON.parse(call.text);
         } catch {
+          /* not JSON: the text as it came */
           out.call = call.text;
         }
       }
@@ -763,7 +765,8 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
       let r;
       try {
         r = await voiceStack?.result(call_id);
-      } catch {
+      } catch (err) {
+        logVoiceLab.warn(`the call reports could not be read: ${(err as Error).message}`);
         const note = "The store that keeps call reports did not answer. Ask again in a moment.";
         return { ok: true, text: JSON.stringify({ call_id, call_status: "lookup_failed", note }, null, 2) };
       }
@@ -1231,6 +1234,7 @@ export function mountPersonalCaller(app: Express, o: MountOptions): PersonalCall
     try {
       j = JSON.parse(raw) as Record<string, unknown>;
     } catch {
+      /* not JSON: refused */
       return "Bad request";
     }
     const ts = typeof j.ts === "number" ? j.ts : 0;

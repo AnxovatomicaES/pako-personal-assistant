@@ -9,6 +9,7 @@ import { texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import { today } from "./lists.ts";
 import { isBirthdayToday, type Person } from "./people.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 export const FRIEND_KEY = "friend";
 const TTL_SECONDS = 400 * 24 * 3600;
@@ -51,11 +52,12 @@ export function createFriend(kv: Kv | null): FriendStore {
   let local: FriendState = { checkin: false, offered: [] };
   const readStrict = async (): Promise<FriendState> => {
     if (!kv) return structuredClone(local);
-    const raw = await kv.get(FRIEND_KEY);
+    const raw = await readJsonRecord(kv, FRIEND_KEY);
     if (!raw) return { checkin: false, offered: [] };
     try {
-      return friendOf(JSON.parse(raw));
+      return friendOf(raw);
     } catch {
+      /* not JSON: a fresh state */
       return { checkin: false, offered: [] };
     }
   };

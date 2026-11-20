@@ -1,4 +1,4 @@
-// Mail bugs found in a hunt over the IMAP reader, the catch-up, the sender check, Resend and the mailbox sign-in, each proven here first:
+// The mail reader: the IMAP reader, the catch-up, the sender check, Resend and the mailbox sign-in, each bug proven here first:
 // a first look cut short (the rest of it told as news, the catch-up lost), a forged "own" mail closing what it names, a server's day for
 // SINCE, the Sent folder lost for good to one failed LIST, an opaque AgentMail inbox as Resend's reply_to, a full catch-up queue, a shared
 // registry suffix taken for one sender's domain, a switched sign-in method left half in place, and a login check left open.

@@ -170,8 +170,8 @@ export function startOrb(canvas, opts = {}) {
   let renderer;
   try {
     renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: "low-power", preserveDrawingBuffer: !!opts.pose });
-  } catch {
-    return null; // no WebGL: the CSS fallback shows instead
+  } catch { // no WebGL: the CSS fallback shows instead
+    return null;
   }
   const machine = opts.machine ?? pageFigure();
   const still = !!opts.pose || matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -408,6 +408,7 @@ export function startOrb(canvas, opts = {}) {
     try {
       return !!document.querySelector("dialog:modal");
     } catch {
+      /* an old browser without :modal: the attribute instead */
       return !!document.querySelector("dialog[open][aria-modal=true]");
     }
   };

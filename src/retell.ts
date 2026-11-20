@@ -65,6 +65,7 @@ export async function call(fetchImpl: typeof fetch, apiKey: string, method: stri
   try {
     json = text ? JSON.parse(text) : undefined;
   } catch {
+    /* not JSON: the text says why below */
     json = undefined;
   }
   if (!res.ok) {

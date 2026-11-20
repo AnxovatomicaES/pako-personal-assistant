@@ -94,6 +94,7 @@ async function verify(page: Page): Promise<Evidence | null> {
   try {
     ({ url, text } = await page.snapshot(4000));
   } catch {
+    /* the page is gone: no confirmation read */
     return null;
   }
   const done = /(reservation|booking) (is )?confirmed|your (reservation|booking) is confirmed|réservation (est )?confirmée|reserva (está )?confirmada|prenotazione confermata/i.test(text);

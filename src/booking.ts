@@ -24,6 +24,7 @@ import type { HandoffEnd } from "./maitre/handoff.ts";
 import type { LedgerEntry } from "./maitre/ledger.ts";
 import type { BookOutcome, Maitre } from "./maitre/planner.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("booking");
 
@@ -332,13 +333,13 @@ export function createBooking(d: BookingDeps) {
     !!b && typeof b === "object" && typeof (b as SavedBooking).slot === "number" && typeof (b as SavedBooking).name === "string" && typeof (b as SavedBooking).party === "number";
   /** The saved list. A store that cannot be read THROWS (and is not cached as empty): the next write must never overwrite what was not read. */
   const load = async (): Promise<SavedBooking[]> => {
-    const raw = d.kv ? await d.kv.get(KEY) : null;
+    const raw = d.kv ? await readJsonRecord(d.kv, KEY) : null;
     if (!raw) return [];
     try {
-      const list = JSON.parse(raw) as unknown;
+      const list = raw as unknown;
       return Array.isArray(list) ? list.filter(isSaved) : [];
-    } catch {
-      return []; // garbage in the store: nothing to protect
+    } catch { // garbage in the store: nothing to protect
+      return [];
     }
   };
   let memory: SavedBooking[] | null = null;
@@ -374,7 +375,8 @@ export function createBooking(d: BookingDeps) {
     let base: SavedBooking[];
     try {
       base = await strict();
-    } catch {
+    } catch (err) {
+      log.error(`could not change a booking's status (the store cannot be read, nothing was overwritten): ${(err as Error).message}`);
       return;
     }
     const list = base.map((b) => (b.id === id ? { ...b, status } : b));
@@ -388,12 +390,13 @@ export function createBooking(d: BookingDeps) {
   /** The emails of the last day. A store that cannot be read throws: no email goes out without knowing the day's count. */
   const sentList = async (): Promise<Sent[]> => {
     if (!sent) {
-      const raw = d.kv ? await d.kv.get(SENT_KEY) : null;
+      const raw = d.kv ? await readJsonRecord(d.kv, SENT_KEY) : null;
       let list: Sent[] = [];
       try {
-        const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+        const parsed = raw ? (raw as unknown) : [];
         if (Array.isArray(parsed)) list = parsed.filter((e): e is Sent => !!e && typeof (e as Sent).at === "number" && typeof (e as Sent).placeId === "string");
       } catch {
+        /* not JSON: no sends remembered */
         list = [];
       }
       sent = list;

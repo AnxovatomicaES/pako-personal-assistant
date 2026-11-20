@@ -1738,6 +1738,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     private var appBuild: Int? { Int(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "") }
 
+    /// The public half of the release key (Info.plist PakoFeedPublicKey, from desktop/mac/feed-key.pub at build time): a feed whose
+    /// signature does not verify against it offers nothing. Empty (a build made before the key existed): no feed is ever offered.
+    private var feedPublicKey: String? {
+        let k = (Bundle.main.object(forInfoDictionaryKey: "PakoFeedPublicKey") as? String ?? "").trimmingCharacters(in: .whitespaces)
+        return k.isEmpty ? nil : k
+    }
+
     private func updateFeed() -> URL? {
         if let o = AppDelegate.feedOverride { return o }
         let feed = (Bundle.main.object(forInfoDictionaryKey: "PakoUpdateFeed") as? String ?? "").trimmingCharacters(in: .whitespaces)
@@ -1747,12 +1754,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     /// The release feed (Info.plist PakoUpdateFeed; empty: never checked): https only, at most once a day (unless the person turned that
     /// off in Settings), a plain request with no cookie, no cache and a User-Agent of just "Pako" (nothing that tells one person from
-    /// another). A newer version shows one quiet menu item; it opens the Update sheet (a feed with a dmg and its SHA-256) or, for a feed
-    /// with no checksum, the release page in the browser. Nothing is downloaded or installed until the person presses Update.
+    /// another). Only a feed signed by the release key this app carries counts (feedSignatureValid). A newer version shows one quiet menu
+    /// item; it opens the Update sheet (a feed with a dmg and its SHA-256) or, for a feed with no checksum, the release page in the browser.
+    /// Nothing is downloaded or installed until the person presses Update.
     private func scheduleUpdateCheck() {
         guard let url = updateFeed() else { return }
         // What a check found before stays offered until this version is the newer one.
-        if let d = runner.defaults.data(forKey: "updateFound"), let u = parseUpdateFeed(d, loopback: AppDelegate.feedOverride != nil),
+        if let d = runner.defaults.data(forKey: "updateFound"),
+           let u = parseUpdateFeed(d, loopback: AppDelegate.feedOverride != nil, publicKey: feedPublicKey), u.signed,
            isNewerRelease(version: u.version, build: u.build, than: appVersion, currentBuild: appBuild) {
             update = u
             updateUpdateItems()
@@ -1783,10 +1792,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let current = appVersion
         let currentBuild = appBuild
         let loopback = AppDelegate.feedOverride != nil
+        let key = feedPublicKey
         session.dataTask(with: req) { data, resp, _ in
             session.finishTasksAndInvalidate()
-            guard let h = resp as? HTTPURLResponse, h.statusCode == 200, isUpdateURL(h.url, loopback: loopback), let data = data,
-                  let u = parseUpdateFeed(data, loopback: loopback) else {
+            let parsed = (resp as? HTTPURLResponse).flatMap { h -> UpdateInfo? in
+                guard h.statusCode == 200, isUpdateURL(h.url, loopback: loopback), let data = data else { return nil }
+                return parseUpdateFeed(data, loopback: loopback, publicKey: key)
+            }
+            // A feed not signed by the release key this app carries is not offered at all (not even its page): its SHA-256 and its
+            // addresses are only worth what the feed is. Said once in app.log; the check counts as failed.
+            if let p = parsed, !p.signed {
+                DispatchQueue.main.async {
+                    self.runner.log("update: the feed offers Pako \(p.version), but its signature does not verify against this app's release key: ignored")
+                }
+            }
+            guard let u = parsed, u.signed, let data = data else {
                 DispatchQueue.main.async {
                     if self.runner.defaults.double(forKey: "updateCheckedAt") == now { self.runner.defaults.set(previous, forKey: "updateCheckedAt") }
                     done?(nil, false)

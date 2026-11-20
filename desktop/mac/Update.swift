@@ -1,4 +1,5 @@
-// Installing an update, once the person pressed Update (App.swift asks; nothing here runs by itself): the dmg the feed names is downloaded to
+// Installing an update, once the person pressed Update (App.swift asks; nothing here runs by itself): only from a feed whose Ed25519
+// signature verifies against the public key this app carries (Core.swift, feedSignatureValid); the dmg it names is downloaded to
 // a temporary folder, its SHA-256 checked against the feed's, mounted read-only, and the Pako.app on it checked (the same app, the version and
 // build the feed promised, newer than this one, a macOS this Mac has, a program and a Node.js inside that run on this Mac's processor, a valid
 // signature on every architecture, and, when this app is signed with a Developer ID, the same team). Only then is it copied next to the
@@ -28,6 +29,8 @@ enum UpdateFailure: Error, Equatable {
     case download(String)
     case tooLarge
     case checksum
+    /// The feed's Ed25519 signature does not verify against the public key this app carries.
+    case feedSignature
     case mount
     case noApp
     /// The app on the disk is not the one the feed promised: which part differs (identifier, version, build).
@@ -51,6 +54,7 @@ enum UpdateFailure: Error, Equatable {
         case .download: return "download"
         case .tooLarge: return "too-large"
         case .checksum: return "checksum"
+        case .feedSignature: return "feed-signature"
         case .mount: return "mount"
         case .noApp: return "no-app"
         case let .notTheSameApp(what): return "not-the-same-app:\(what)"
@@ -210,7 +214,9 @@ final class Updater: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
 
     /// Runs on the calling thread (never the main one) to its end: the installed app (at the running app's place), or why nothing changed.
     func install() -> Result<URL, UpdateFailure> {
-        guard let want = info.sha256, info.installable else { return .failure(.download("no checksum")) }
+        guard let want = info.sha256 else { return .failure(.download("no checksum")) }
+        // The SHA-256 is only worth what the feed is: the feed must be signed by the key this app carries (feedSignatureValid).
+        guard info.signed, info.installable else { return .failure(.feedSignature) }
         let app = current.url.standardizedFileURL
         let dir = app.deletingLastPathComponent()
         if needsMoveToApplications(app.path) { return .failure(.mustMove) }

@@ -16,6 +16,7 @@
 import type { Kv } from "./kv.ts";
 import type { SlackEvent } from "./slack.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("slack");
 
@@ -75,8 +76,8 @@ export function createSlackPoll(d: SlackPollDeps) {
     if (state) return state;
     let s: PollState | null = null;
     try {
-      const raw = d.kv ? await d.kv.get(STATE_KEY) : null;
-      const p = raw ? (JSON.parse(raw) as Partial<PollState>) : null;
+      const raw = d.kv ? await readJsonRecord(d.kv, STATE_KEY) : null;
+      const p = raw ? (raw as Partial<PollState>) : null;
       if (p && typeof p.start === "string") {
         s = {
           start: p.start,
@@ -86,6 +87,7 @@ export function createSlackPoll(d: SlackPollDeps) {
         };
       }
     } catch {
+      /* not JSON, or the store did not answer: logged, and started from now */
       log.error("the poll's stored state could not be read: starting from now");
     }
     const start = slackTs(now());

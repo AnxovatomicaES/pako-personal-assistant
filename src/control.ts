@@ -12,6 +12,7 @@
 import { locale, texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const logControl = createLog("control");
 
@@ -158,13 +159,13 @@ export function createControl(kv: Kv | null, now: () => number = Date.now): Cont
   /** Throws when the store cannot be read: a fresh list in its place would overwrite the log kept there. */
   const loadLog = async (): Promise<LogLine[]> => {
     if (lines) return lines;
-    const raw = kv ? await kv.get(LOG_KEY) : null;
+    const raw = kv ? await readJsonRecord(kv, LOG_KEY) : null;
     if (lines) return lines;
     let p: unknown = [];
     try {
-      p = raw ? JSON.parse(raw) : [];
+      p = raw ? raw : [];
     } catch {
-      logControl.error("the stored log is not valid JSON: starting again");
+      logControl.error("the stored log could not be used: starting again");
     }
     lines = (Array.isArray(p) ? p : []).filter((x): x is LogLine => !!x && typeof x.at === "number" && typeof x.text === "string" && typeof x.kind === "string");
     return lines;
@@ -197,6 +198,7 @@ export function createControl(kv: Kv | null, now: () => number = Date.now): Cont
       try {
         w = whyRaw ? (JSON.parse(whyRaw) as { at?: unknown; why?: unknown } | null) : null;
       } catch {
+        /* not JSON: the pause stands, with no reason to show */
         w = null;
       }
       // A STOP (or RESUME) typed while this read was in flight is newer than what the store said: it stays.

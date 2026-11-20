@@ -4,7 +4,9 @@
 
 import { fileURLToPath } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
-import { createBridge, loadBridgeConfig, offersFlag, offersMcpTools, offersNoBare, stopRunningClaude, type BridgeConfig } from "./bridge.ts";
+import {
+  cliCompat, createBridge, loadBridgeConfig, offersFlag, offersMcpTools, offersNoBare, readClaudeVersion, stopRunningClaude, type BridgeConfig,
+} from "./bridge.ts";
 import { createUpdater, loadUpdateConfig, restartSelf } from "./update.ts";
 
 // A wrong setting is said in a sentence, not a stack trace: on a computer (local mode) this lands in the terminal where the person typed
@@ -31,6 +33,12 @@ if (config.warmMs && !offersFlag(config.claudeBin, "--input-format")) {
 config.mcpTools = (process.env.ASSISTANT_TYPED_TOOLS ?? "").trim().toLowerCase() !== "off" && offersMcpTools(config.claudeBin);
 console.log(config.mcpTools ? "Pako's tools are on: Claude acts through typed tool calls (the tags still work)" : "Pako's tools are off: Claude acts through tags");
 const bridge = createBridge({ config });
+// Which Claude Code this is, against the range Pako was tested with (assistant/bridge/cli-version.ts): outside it, everything keeps working,
+// and a warning is logged once here and shown on the panel's Salud card.
+const cli = cliCompat(readClaudeVersion(config.claudeBin));
+if (cli.note) console.warn(`Warning: ${cli.note}`);
+else console.log(`Claude Code ${cli.version}: within the versions Pako has been tested with`);
+bridge.setCli(cli);
 let stopping = false;
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.on(signal, () => {

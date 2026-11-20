@@ -178,10 +178,12 @@ export function createPaperStore(o: { dir?: string; now?: () => number } = {}): 
           const at = Number((JSON.parse(readFileSync(join(dir, f), "utf8")) as { at?: unknown }).at);
           metas.push({ id: m[1]!, at: Number.isFinite(at) ? at : statSync(join(dir, f)).mtimeMs });
         } catch {
+          /* unreadable: taken as the oldest */
           metas.push({ id: m[1]!, at: 0 });
         }
       }
     } catch {
+      /* no folder yet: nothing to prune */
       return;
     }
     metas = metas.sort((a, b) => b.at - a.at);
@@ -211,6 +213,7 @@ export function createPaperStore(o: { dir?: string; now?: () => number } = {}): 
         if (!mime) return null;
         return { bytes: readFileSync(join(dir, `${id}.${EXT[mime]}`)), mime, name: paperName(meta.name), at: Number(meta.at) || 0 };
       } catch {
+        /* missing or unreadable: none */
         return null;
       }
     },

@@ -1,6 +1,7 @@
 // Pako on Windows, tested from any system: the claude command found and started the Windows way, the browser, the file writes, the
 // sign-in task (src/autostart-windows.ts) and install.ps1. The system, the files and the programs run are all stand-ins here.
 
+import { readFileSync as readRepoFile } from "node:fs";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
@@ -264,4 +265,26 @@ test("install.ps1: ASCII only, all inside a function, the promised steps, and no
   const pairs = [...s.matchAll(new RegExp(`\\b(?:Say|T) ${str}[ \\t]*${str}?`, "g"))];
   assert.ok(pairs.length > 15);
   for (const m of pairs) assert.ok(m[2], `missing English: ${m[0]}`);
+});
+
+
+/** A file of the repository, as text. */
+const repoText = (p: string): string => readRepoFile(new URL(`../${p}`, import.meta.url), "utf8");
+
+// A bare `npm` in PowerShell runs npm.ps1, which Windows's default policy refuses: what these files tell a person to type says npm.cmd
+// there (as #180 did for src/autostart-windows.ts and install.ps1), and npm on a Mac or Linux.
+test("no message tells a Windows user to type a bare npm: npm.cmd there, npm elsewhere", async () => {
+  const bareNpm = /(^|[\s`'"(;])npm (run|start|install)\b/;
+  for (const f of ["bin/panel.cjs", "bin/preflight.cjs", "src/autostart.ts", "src/guard-http.ts"]) {
+    const said = repoText(f).split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l) && /["`]/.test(l) && bareNpm.test(l));
+    assert.deepEqual(said, [], f);
+  }
+  const { npmCommand } = (await import("../src/i18n.ts")) as { npmCommand?: (p?: string) => string };
+  assert.equal(npmCommand?.("win32"), "npm.cmd");
+  assert.equal(npmCommand?.("darwin"), "npm");
+  assert.equal(npmCommand?.("linux"), "npm");
+  const { createRequire } = await import("node:module");
+  const pre = createRequire(import.meta.url)("../bin/preflight.cjs") as { message: (f: object, platform?: string) => string };
+  assert.match(pre.message({ problem: "install", missing: ["x"], all: true }, "win32"), /npm\.cmd install, then npm\.cmd start/);
+  assert.match(pre.message({ problem: "install", missing: ["x"], all: true }, "darwin"), /run npm install, then npm start/);
 });

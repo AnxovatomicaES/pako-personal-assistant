@@ -1,5 +1,6 @@
 // Meeting prep by itself (src/meeting-prep.ts): about 40 minutes before a meeting with someone else on it, once, with what is open with those
 // people and what Pako knows of them; never all-day, declined, alone or (a standup with nothing open) repeating; six a day at most.
+import { readFileSync as readRepoFile } from "node:fs";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { BRIEF_V2_KEY, createBriefV2 } from "../src/brief-v2.ts";
@@ -86,4 +87,28 @@ test("the owner's own address written with capitals by the calendar (Outlook doe
   const f = rig([ev("d", "With Ana", T0 + 35 * MIN, { attendees: [{ email: "Me@ACME.example" }, { email: "ana.ruiz@client.example", name: "Ana Ruiz" }] })]);
   assert.deepEqual(await f.prep.tick(), ["With Ana"]);
   assert.match(f.asked[0]!.facts[0]!.text, /Who is invited: Ana Ruiz\./);
+});
+
+
+/** A file of the repository, as text. */
+const repoText = (p: string): string => readRepoFile(new URL(`../${p}`, import.meta.url), "utf8");
+
+// A meeting held twice in a day under one title (a 9:00 and a 16:00 "Sync") gets a prep for each: a prep is one event at one start.
+test("meeting prep: the same title twice in a day is two meetings, each with its own prep; the same one asked twice is one", async () => {
+  const { createBriefV2 } = await import("../src/brief-v2.ts");
+  const T0 = Date.parse("2026-11-16T09:00:00Z");
+  const m = new Map<string, string>();
+  const queued: unknown[] = [];
+  const v2 = createBriefV2({
+    config: { waitMs: 15 * 60_000 }, kv: { get: async (k) => m.get(k) ?? null, set: async (k, v) => void m.set(k, v) }, timeZone: "Europe/London",
+    now: () => T0, sources: {}, enqueue: async (x) => (queued.push(x), true), plain: async () => undefined, notify: async () => undefined,
+  });
+  const facts = [{ label: "Calendar · Sync", text: "The meeting: Sync" }];
+  const morning = (await v2.prepMeeting({ event: "E1", title: "Sync", at: T0 + 40 * 60_000, facts }))!;
+  const again = (await v2.prepMeeting({ event: "E1", title: "Sync", at: T0 + 40 * 60_000, facts }))!;
+  assert.equal(again.id, morning.id, "the same meeting asked twice: one prep");
+  const afternoon = (await v2.prepMeeting({ event: "E2", title: "Sync", at: T0 + 7 * 3600_000, facts }))!;
+  assert.notEqual(afternoon.id, morning.id, "the afternoon's Sync is its own meeting");
+  assert.equal(queued.length, 2);
+  assert.match(repoText("src/meeting-prep.ts"), /d\.prep\(\{ event: e\.id, /);
 });

@@ -6,6 +6,7 @@ export const isZone = (tz: string): boolean => {
     new Intl.DateTimeFormat("en-US", { timeZone: tz });
     return true;
   } catch {
+    /* not a zone this runtime knows */
     return false;
   }
 };

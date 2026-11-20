@@ -233,6 +233,7 @@ export function createExchanges(o: { fetch?: typeof fetch; urls?: Partial<Servic
       });
       j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
     } catch {
+      /* the network failed: the user is told Slack did not answer */
       return { ok: false, error: say("noAnswer", { service: "Slack" }) };
     }
     if (j.ok !== true) return { ok: false, error: say("exchange", { service: "Slack", why: typeof j.error === "string" ? j.error.slice(0, 80) : "no reason given" }) };
@@ -281,6 +282,7 @@ export function createExchanges(o: { fetch?: typeof fetch; urls?: Partial<Servic
       status = r.status;
       j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
     } catch {
+      /* the network failed: the user is told Zoom did not answer */
       return { ok: false, error: say("noAnswer", { service: "Zoom" }) };
     }
     const access = typeof j.access_token === "string" ? j.access_token : "";
@@ -451,6 +453,7 @@ export function mountConnectSetup(app: Express, d: ConnectSetupDeps | null): voi
       try {
         back = await slackLoopback(d.slackPort ?? SLACK_LOOPBACK_PORT, slackCallback);
       } catch {
+        /* the port is taken: said to the user */
         return void res.status(409).json({ ok: false, error: say("portBusy", { port: String(d.slackPort ?? SLACK_LOOPBACK_PORT) }) });
       }
     }

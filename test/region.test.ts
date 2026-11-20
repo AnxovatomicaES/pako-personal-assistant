@@ -1,6 +1,7 @@
 // Pako for an owner anywhere (src/region.ts): the time zone, the country, the locale, the help numbers and phone numbers follow the owner,
-// and nothing defaults to one country. Pako's texts are English everywhere; dates are written the way the owner's country writes English. The tests run with TZ=Europe/Madrid (npm test); each one that needs another place says so.
+// and nothing defaults to one country. Pako's texts are English everywhere; dates are written the way the owner's country writes English. The suite runs under several zones (docs/testing.md): a test that needs the computer's own zone sets it (withSystemZone).
 
+import { readFileSync as readRepoFile } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -9,6 +10,7 @@ import {
 import { locale, ownerClock } from "../src/i18n.ts";
 import { crisisLine, emergencyNumber, helpLine, loadCountry, notDeviceText, redFlagReply } from "../src/health.ts";
 import { phoneOf } from "../src/contacts.ts";
+import { withSystemZone } from "./helpers/zone.ts";
 import { ownerDigits } from "../src/whatsapp-computer.ts";
 import { loadPersonalConfig } from "../src/personal-caller.ts";
 
@@ -27,12 +29,13 @@ test("time zone: the setting, else this computer's own, else UTC with a note to 
   const bad = ownerTimeZone("Mars/Olympus", "America/Chicago");
   assert.equal(bad.timeZone, "America/Chicago", "a wrong setting falls back to the computer's zone, not to Madrid");
   assert.match(bad.problem ?? "", /not a valid IANA time zone/);
-  assert.equal(ownerTimeZone(undefined).timeZone, "Europe/Madrid", "the tests' own zone (TZ=Europe/Madrid)");
+  assert.equal(withSystemZone("Europe/Madrid", () => ownerTimeZone(undefined).timeZone), "Europe/Madrid", "this computer's zone, set here");
+  assert.equal(withSystemZone("Asia/Tokyo", () => ownerTimeZone(undefined).timeZone), "Asia/Tokyo");
 });
 
 test("the phone line's config: no PERSONAL_TIMEZONE means this computer's zone, an explicit one wins", () => {
   const base = { PERSONAL_CALLER_TOKEN: "x".repeat(24), PERSONAL_OWNER_NUMBER: "+34600111222", PERSONAL_OWNER_NAME: "Linus" };
-  assert.equal(loadPersonalConfig(base)!.timeZone, "Europe/Madrid");
+  assert.equal(withSystemZone("Europe/Madrid", () => loadPersonalConfig(base)!.timeZone), "Europe/Madrid");
   const ny = loadPersonalConfig({ ...base, PERSONAL_TIMEZONE: "America/New_York" })!;
   assert.equal(ny.timeZone, "America/New_York");
   assert.equal(ny.quiet?.timeZone, "America/New_York", "the quiet hours in the same zone");
@@ -51,7 +54,7 @@ test("country: PAKO_COUNTRY, else the time zone's, else the system locale's regi
   assert.equal(zoneCountry("America/Panama"), null);
   assert.equal(localeRegion({ LC_ALL: "es_MX.UTF-8", LANG: "en_US.UTF-8" }), "MX", "LC_ALL first, as the C library reads it");
   // loadCountry (the server's reading) goes through the same order, with the owner's own zone.
-  assert.deepEqual(loadCountry({}), { country: "ES" }, "Madrid's zone (the tests'): Spain");
+  assert.deepEqual(withSystemZone("Europe/Madrid", () => loadCountry({})), { country: "ES" }, "a computer in Madrid's zone: Spain");
   assert.deepEqual(loadCountry({ PERSONAL_TIMEZONE: "America/New_York" }), { country: "US" });
 });
 
@@ -142,4 +145,28 @@ test("a UTC server with no zone set takes the zone of the owner's phone country 
   assert.equal(ownerTimeZone(undefined, "Europe/Paris", "+34600111222").timeZone, "Europe/Paris", "the computer's zone wins over the phone");
   assert.equal(zoneOfNumber("+351912345678"), "Europe/Lisbon", "the longer code is matched before +35…");
   assert.equal(zoneOfNumber("600111222"), null, "no country code: no guess");
+});
+
+
+/** A file of the repository, as text. */
+const repoText = (p: string): string => readRepoFile(new URL(`../${p}`, import.meta.url), "utf8");
+
+// "+44 (0)7700 900123": the (0) after a country code is the trunk 0 a caller from abroad leaves out; kept, the number is wrong.
+test('a "(0)" after the country code is dropped, in contacts, the owner\'s WhatsApp number and a typed number', async () => {
+  const region = (await import("../src/region.ts")) as Record<string, unknown>;
+  const drop = region.withoutTrunkZero as (raw: string) => string;
+  assert.equal(typeof drop, "function");
+  assert.equal(drop("+44 (0)7700 900123"), "+44 7700 900123");
+  assert.equal(drop("0049 (0)30 1234567"), "0049 30 1234567");
+  assert.equal(drop("+49(0)301234567"), "+49301234567");
+  // A national number keeps its 0, and a bracket that is not "(0)" is left alone.
+  assert.equal(drop("(0)7700 900123"), "(0)7700 900123");
+  assert.equal(drop("+1 (415) 555-0100"), "+1 (415) 555-0100");
+  const { phoneOf } = await import("../src/contacts.ts");
+  assert.equal(phoneOf("+44 (0)7700 900123"), "+447700900123");
+  assert.equal(phoneOf("+49 (0)30 1234567"), "+49301234567");
+  const { ownerDigits } = await import("../src/whatsapp-computer.ts");
+  assert.equal(ownerDigits("+44 (0)7700 900123"), "447700900123");
+  assert.equal(ownerDigits("0049 (0)30 1234567"), "49301234567");
+  assert.match(repoText("src/door/messages.ts"), /withoutTrunkZero\(raw\)/, "a number typed in the chat drops it too");
 });

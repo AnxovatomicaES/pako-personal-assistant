@@ -20,6 +20,7 @@ import type { JobKind, Jobs } from "./jobs.ts";
 import type { Kv } from "./kv.ts";
 import { localToEpoch } from "./whatsapp.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("brief");
 
@@ -235,21 +236,21 @@ export function createBrief(d: BriefDeps) {
    */
   const loadDay = async (fresh = false): Promise<string> => {
     if (lastDay !== null && !fresh) return lastDay;
-    const raw = d.kv ? await d.kv.get(STATE_KEY) : null;
+    const raw = d.kv ? await readJsonRecord(d.kv, STATE_KEY) : null;
     let day = "";
     try {
-      const p = raw ? (JSON.parse(raw) as { day?: unknown; skipped?: unknown }) : null;
+      const p = raw ? (raw as { day?: unknown; skipped?: unknown }) : null;
       if (typeof p?.day === "string") day = p.day;
       // Older stores have no skipped day: none.
       if (typeof p?.skipped === "string" && /^\d{4}-\d{2}-\d{2}$/.test(p.skipped) && skipped === null) skipped = p.skipped;
     } catch {
-      log.error("the stored day is not valid JSON: starting again");
+      log.error("the stored day could not be used: starting again");
     }
     if (d.kv) {
       // Before this module the calendar kept the day as briefDay: a server upgraded after this morning's brief (or an old server still running
       // beside the new one while it deploys, which writes only there) must not lead to another. The later of the two days counts.
       try {
-        const old = JSON.parse((await d.kv.get(LEGACY_KEY)) ?? "{}") as { briefDay?: unknown };
+        const old = ((await readJsonRecord(d.kv, LEGACY_KEY)) ?? {}) as { briefDay?: unknown };
         if (typeof old.briefDay === "string" && old.briefDay > day) day = old.briefDay;
       } catch {
         /* nothing usable there */

@@ -74,6 +74,8 @@
 	<!-- https only, JSON {"version", "url", "notes"}; checked at most once a day, nothing is sent but a plain request (App.swift). -->
 	<key>PakoUpdateFeed</key>
 	<string></string>
+	<key>PakoFeedPublicKey</key>
+	<string></string>
 	<!-- Help > Pako Help: https only (build.sh sets it, PAKO_HELP_URL). -->
 	<key>PakoHelpURL</key>
 	<string></string>

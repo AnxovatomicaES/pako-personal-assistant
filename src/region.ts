@@ -23,6 +23,7 @@ export function validZone(tz: string): boolean {
     new Intl.DateTimeFormat("en-GB", { timeZone: tz });
     return true;
   } catch {
+    /* not a zone this runtime knows */
     return false;
   }
 }
@@ -32,6 +33,7 @@ export function systemTimeZone(): string {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone ?? "";
   } catch {
+    /* no zone from Intl: none */
     return "";
   }
 }
@@ -113,6 +115,16 @@ const ZONE_COUNTRY: Record<string, string> = {
   "America/Lima": "PE", "America/Caracas": "VE", "America/Montevideo": "UY", "America/Guayaquil": "EC", "America/Sao_Paulo": "BR",
   "Pacific/Auckland": "NZ", "Asia/Tokyo": "JP", "Asia/Hong_Kong": "HK", "Asia/Singapore": "SG", "Asia/Shanghai": "CN",
   "Africa/Johannesburg": "ZA",
+  "Asia/Kolkata": "IN", "Asia/Ho_Chi_Minh": "VN", "Asia/Kathmandu": "NP", "Asia/Yangon": "MM", "Asia/Dhaka": "BD", "Europe/Kyiv": "UA",
+  "Asia/Ulaanbaatar": "MN", "Asia/Thimphu": "BT", "Europe/Istanbul": "TR", "Asia/Jerusalem": "IL",
+  // The legacy (backward) names of the same zones: this Node, and many computers, still report some of them (an Indian computer says
+  // Asia/Calcutta, not Asia/Kolkata), and Intl takes them as they are.
+  "Asia/Calcutta": "IN", "Asia/Saigon": "VN", "Asia/Katmandu": "NP", "Asia/Rangoon": "MM", "Asia/Dacca": "BD", "Europe/Kiev": "UA",
+  "Asia/Ulan_Bator": "MN", "Asia/Thimbu": "BT", "Asia/Istanbul": "TR", "Turkey": "TR", "Asia/Tel_Aviv": "IL", "Israel": "IL",
+  "America/Catamarca": "AR", "America/Jujuy": "AR", "America/Rosario": "AR", "America/Argentina/ComodRivadavia": "AR",
+  "Asia/Chongqing": "CN", "Asia/Chungking": "CN", "Asia/Harbin": "CN", "PRC": "CN", "Japan": "JP", "Singapore": "SG", "Hongkong": "HK",
+  "NZ": "NZ", "Eire": "IE", "Portugal": "PT", "Poland": "PL", "Brazil/East": "BR", "America/Godthab": "GL", "America/Nuuk": "GL",
+  "Europe/Uzhgorod": "UA", "Europe/Zaporozhye": "UA", "Canada/Newfoundland": "CA", "US/Michigan": "US", "US/Aleutian": "US",
 };
 const ZONE_PREFIX: [string, string][] = [
   ["America/Argentina/", "AR"], ["America/Indiana/", "US"], ["America/Kentucky/", "US"], ["America/North_Dakota/", "US"], ["Australia/", "AU"],
@@ -136,6 +148,7 @@ export function localeRegion(env: Env, intlLocale?: string): string | null {
   try {
     return region(Intl.DateTimeFormat().resolvedOptions().locale);
   } catch {
+    /* no locale from Intl: none */
     return null;
   }
 }
@@ -180,6 +193,7 @@ export function localeFor(_lang: string = "en", country: string = region): strin
   try {
     return new Intl.DateTimeFormat(tag).resolvedOptions().locale === tag ? tag : FALLBACK_LOCALE;
   } catch {
+    /* a locale this runtime does not know: the fallback */
     return FALLBACK_LOCALE;
   }
 }
@@ -190,6 +204,7 @@ export function uses12h(locale: string): boolean {
     const c = new Intl.DateTimeFormat(locale, { hour: "numeric" }).resolvedOptions().hourCycle;
     return c === "h12" || c === "h11";
   } catch {
+    /* a locale this runtime does not know: a 24-hour clock */
     return false;
   }
 }

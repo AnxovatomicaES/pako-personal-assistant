@@ -21,6 +21,7 @@ import { instructsPako, stripPayloads } from "./brief-support.ts";
 import { neutralise } from "./quarantine.ts";
 import type { Inbound } from "./whatsapp.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("review");
 
@@ -184,6 +185,7 @@ export function parseReview(raw: unknown, at: number, ownerTz: string): ReviewFo
   try {
     j = JSON.parse(raw.slice(start, end + 1));
   } catch {
+    /* not JSON: no review */
     return null;
   }
   if (!isObject(j)) return null;
@@ -408,14 +410,9 @@ export function createMeetingReview(d: ReviewDeps) {
 
   const readStrict = async (): Promise<MeetingReview[]> => {
     if (!d.kv) return structuredClone(memory);
-    const raw = await d.kv.get(REVIEWS_KEY);
+    const raw = await readJsonRecord(d.kv, REVIEWS_KEY);
     if (!raw) return [];
-    try {
-      return reviewsOf(JSON.parse(raw));
-    } catch {
-      log.error("the stored reviews are not valid JSON: starting again");
-      return [];
-    }
+    return reviewsOf(raw);
   };
   /** One change at a time, from the whole record as read (a store that cannot be read makes the change fail, never empties it). */
   const mutate = <R>(fn: (list: MeetingReview[]) => R | Promise<R>): Promise<R> => {
@@ -608,6 +605,7 @@ export function createMeetingReview(d: ReviewDeps) {
       reviews = (await read()).filter((r) => now() - r.at < WEEK_MS);
       if (d.loops) open = (await d.loops.open()).filter((x) => x.sources.some((s) => s.kind === "meeting" && now() - s.at < WEEK_MS));
     } catch {
+      /* the store did not answer: the owner is told it could not be read */
       return t("unread");
     }
     type Group = { at: number; topic: string; lines: string[] };
@@ -659,6 +657,7 @@ export function createMeetingReview(d: ReviewDeps) {
         return line(reviews.find((r) => r.id === src.ref)?.topic ?? src.label, x.title, x.who);
       });
     } catch {
+      /* best effort: the context goes without the meetings' open items */
       return [];
     }
   };

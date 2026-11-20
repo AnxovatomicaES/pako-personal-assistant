@@ -17,6 +17,7 @@ import type { Control } from "./control.ts";
 import { texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("discovery");
 
@@ -118,11 +119,12 @@ export interface DiscoveryStore {
 export function createDiscoveryStore(kv: Kv, now: () => number = Date.now): DiscoveryStore {
   return {
     read: async () => {
-      const raw = await kv.get(DISCOVERY_KEY);
+      const raw = await readJsonRecord(kv, DISCOVERY_KEY);
       if (!raw) return null;
       try {
-        return discoveryOf(JSON.parse(raw), now());
+        return discoveryOf(raw, now());
       } catch {
+        /* not JSON: nothing discovered yet */
         return null;
       }
     },

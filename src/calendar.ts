@@ -16,6 +16,7 @@ import type { Kv } from "./kv.ts";
 import { localToEpoch } from "./whatsapp.ts";
 import type { HealthReport } from "./watchdog.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const logCalendar = createLog("calendar");
 
@@ -588,13 +589,13 @@ export function createCalendarCore(d: CalendarCoreDeps) {
   /** Throws when the store cannot be read (the next tick tries again): an empty state saved over the real one would repeat reminders. */
   const loadState = async () => {
     if (state) return state;
-    const raw = d.kv ? await d.kv.get(STATE_KEY) : null;
+    const raw = d.kv ? await readJsonRecord(d.kv, STATE_KEY) : null;
     if (state) return state;
     let p: Partial<{ reminded: string[]; briefDay: string }> = {};
     try {
-      p = raw ? (JSON.parse(raw) as typeof p) : {};
+      p = raw ? (raw as typeof p) : {};
     } catch {
-      logCalendar.error("the stored state is not valid JSON: starting again");
+      logCalendar.error("the stored state could not be used: starting again");
     }
     state = { reminded: Array.isArray(p.reminded) ? p.reminded.filter((x) => typeof x === "string") : [], ...(typeof p.briefDay === "string" ? { briefDay: p.briefDay } : {}) };
     return state;

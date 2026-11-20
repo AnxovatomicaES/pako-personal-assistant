@@ -22,6 +22,7 @@ import type { HealthReport } from "./watchdog.ts";
 import { createSlackPoll } from "./slack-poll.ts";
 import { createSlackSocket, type SlackSocketDeps } from "./slack-socket.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const logSlack = createLog("slack");
 
@@ -274,6 +275,7 @@ export function mountSlack(app: Express, d: SlackDeps) {
       people.set(id, name);
       return name;
     } catch {
+      /* Slack did not answer: the id stands in */
       return id;
     }
   };
@@ -285,6 +287,7 @@ export function mountSlack(app: Express, d: SlackDeps) {
       channels.set(id, name);
       return name || T(l)("aChannel");
     } catch {
+      /* Slack did not answer: a channel */
       return T(l)("aChannel");
     }
   };
@@ -298,8 +301,8 @@ export function mountSlack(app: Express, d: SlackDeps) {
   const storeNow = async (alerts: SlackAlert[]): Promise<void> => {
     if (!d.kv) return;
     try {
-      const raw = await d.kv.get(ALERTS_KEY);
-      const old = raw ? (JSON.parse(raw) as SlackAlert[]) : [];
+      const raw = await readJsonRecord(d.kv, ALERTS_KEY);
+      const old = raw ? (raw as SlackAlert[]) : [];
       await d.kv.set(ALERTS_KEY, JSON.stringify([...(Array.isArray(old) ? old : []), ...alerts].slice(-ALERTS_KEEP)), 14 * 24 * 3600);
     } catch (err) {
       logSlack.error(`could not keep the alerts: ${(err as Error).message}`);
@@ -309,10 +312,11 @@ export function mountSlack(app: Express, d: SlackDeps) {
   const allAlerts = async (): Promise<SlackAlert[]> => {
     if (!d.kv) return memoryAlerts;
     try {
-      const raw = await d.kv.get(ALERTS_KEY);
-      const p = raw ? (JSON.parse(raw) as unknown) : [];
+      const raw = await readJsonRecord(d.kv, ALERTS_KEY);
+      const p = raw ? (raw as unknown) : [];
       return (Array.isArray(p) ? p : []).filter((a): a is SlackAlert => !!a && typeof a.at === "number" && typeof a.text === "string");
     } catch {
+      /* not JSON, or the store did not answer: the memory copy */
       return memoryAlerts;
     }
   };
@@ -332,8 +336,8 @@ export function mountSlack(app: Express, d: SlackDeps) {
     if (!batch.length || !config.forward) return;
     if (inQuiet(config.quiet, now(), d.timeZone)) {
       try {
-        const raw = d.kv ? await d.kv.get(QUIET_KEY) : null;
-        const held = raw ? (JSON.parse(raw) as SlackAlert[]) : quietHeld;
+        const raw = d.kv ? await readJsonRecord(d.kv, QUIET_KEY) : null;
+        const held = raw ? (raw as SlackAlert[]) : quietHeld;
         quietHeld = [...(Array.isArray(held) ? held : []), ...batch].slice(-ALERTS_KEEP);
         if (d.kv) await d.kv.set(QUIET_KEY, JSON.stringify(quietHeld), 2 * 24 * 3600);
       } catch (err) {
@@ -350,8 +354,8 @@ export function mountSlack(app: Express, d: SlackDeps) {
     if (!config.forward || inQuiet(config.quiet, now(), d.timeZone)) return 0;
     let held = quietHeld;
     try {
-      const raw = d.kv ? await d.kv.get(QUIET_KEY) : null;
-      if (raw) held = JSON.parse(raw) as SlackAlert[];
+      const raw = d.kv ? await readJsonRecord(d.kv, QUIET_KEY) : null;
+      if (raw) held = raw as SlackAlert[];
     } catch {
       /* the memory copy */
     }
@@ -401,6 +405,7 @@ export function mountSlack(app: Express, d: SlackDeps) {
       partners.set(channel, name);
       return name;
     } catch {
+      /* Slack did not answer: someone */
       return T(lang())("someone");
     }
   };
@@ -477,6 +482,7 @@ export function mountSlack(app: Express, d: SlackDeps) {
       try {
         payload = JSON.parse(body.toString("utf8")) as typeof payload;
       } catch {
+        /* not JSON: refused */
         res.status(400).type("text").send("Not JSON");
         return;
       }
@@ -585,6 +591,7 @@ export function mountSlack(app: Express, d: SlackDeps) {
         await api("auth.test", {});
         return !refused;
       } catch {
+        /* Slack did not answer: not working */
         return false;
       }
     },
@@ -602,6 +609,7 @@ export function mountSlack(app: Express, d: SlackDeps) {
         const name = id ? await nameOf(id) : "";
         return { user: (name && name !== id ? name : typeof j.user === "string" ? j.user : "").slice(0, 100), team: (typeof j.team === "string" ? j.team : "").slice(0, 100) };
       } catch {
+        /* Slack did not answer: unknown */
         return null;
       }
     },

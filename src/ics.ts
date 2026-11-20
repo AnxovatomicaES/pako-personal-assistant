@@ -152,6 +152,7 @@ const ianaZone = (tz: string): boolean => {
       new Intl.DateTimeFormat("en-US", { timeZone: tz });
       ok = true;
     } catch {
+      /* a zone this runtime does not know */
       ok = false;
     }
     knownZones.set(tz, ok);
@@ -691,6 +692,7 @@ export function icsProvider(url: string): IcsProvider | null {
   try {
     host = new URL(url.trim().replace(/^webcals?:\/\//i, "https://")).hostname.toLowerCase();
   } catch {
+    /* not a URL: no provider */
     return null;
   }
   if (host === "calendar.google.com" || host.endsWith(".google.com")) return "google";
@@ -706,6 +708,7 @@ export function wrongKind(url: string): boolean {
   try {
     u = new URL(url.trim().replace(/^webcals?:\/\//i, "https://"));
   } catch {
+    /* not a URL */
     return false;
   }
   const path = u.pathname.toLowerCase();
@@ -769,6 +772,7 @@ export function maskIcsUrl(url: string): string {
     const shown = path.length > 12 ? `${path.slice(0, 4)}…${path.slice(-4)}` : "/…";
     return `${u.protocol}//${u.host}${shown}`;
   } catch {
+    /* not a URL: shown as an ellipsis */
     return "…";
   }
 }

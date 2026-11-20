@@ -29,8 +29,8 @@ export function mountWindow(door: Door): Pick<Door, "touchOwner" | "windowOpen" 
         try {
           const v = Number(await d.kv!.get(LAST_OWNER_KEY));
           if (v > door.lastOwnerAt) door.lastOwnerAt = v;
-        } catch {
-          ownerAtLoading = null; // try again next time
+        } catch { // try again next time
+          ownerAtLoading = null;
         }
       })();
       await ownerAtLoading;

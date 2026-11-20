@@ -354,3 +354,19 @@ export function readReply(r: Pick<ClaudeResult, "text" | "toolCalls">): ParsedRe
   const parsed = parseReply(r.text);
   return r.toolCalls?.length ? applyToolCalls(parsed, r.toolCalls) : parsed;
 }
+
+/**
+ * The text tags an answer acted through (by name), from the parsed tags alone, never the tool calls: an empty list when the answer used none.
+ * The tags are the fallback path now (docs/how-it-works.md): turn.ts counts every turn that still uses them.
+ */
+export function tagActions(raw: string): string[] {
+  const p = parseReply(raw);
+  const has: [string, boolean][] = [
+    ["remember", p.remember.length > 0], ["forget", p.forget.length > 0], ["call", !!p.call], ["message", !!p.message], ["send", !!p.send],
+    ["email", !!p.email], ["remind", p.remind.length > 0], ["unremind", p.unremind.length > 0], ["slack", !!p.slack], ["book", !!p.book],
+    ["list", !!p.lists], ["task", !!p.tasks], ["done", !!p.done], ["closed", !!p.closed], ["promise", !!p.promises], ["person", !!p.people],
+    ["routine", !!p.routines], ["watch", !!p.watches], ["fact", !!p.facts], ["know", !!p.know], ["health", !!p.health], ["goal", !!p.goals],
+    ["card", !!p.cards], ["dump", !!p.dump], ["checkin", !!p.checkins],
+  ];
+  return has.filter(([, yes]) => yes).map(([name]) => name);
+}

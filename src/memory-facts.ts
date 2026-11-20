@@ -21,6 +21,7 @@ import type { Kv } from "./kv.ts";
 import { fold } from "./lists.ts";
 import type { Person } from "./people.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("facts");
 
@@ -289,14 +290,9 @@ export function createFacts(kv: Kv | null, o: { seed?: () => Promise<FactSeed>; 
   let local: Fact[] = [];
   const readRaw = async (): Promise<Fact[]> => {
     if (!kv) return structuredClone(local);
-    const raw = await kv.get(KEY);
+    const raw = await readJsonRecord(kv, KEY);
     if (!raw) return [];
-    try {
-      return clean(JSON.parse(raw));
-    } catch {
-      log.error("the stored record is not valid JSON: starting again");
-      return [];
-    }
+    return clean(raw);
   };
   const write = async (facts: Fact[]): Promise<void> => {
     if (kv) await kv.set(KEY, JSON.stringify({ v: 1, facts }), TTL_SECONDS);
@@ -409,6 +405,7 @@ export function judgement(raw: string): { contradicts: Set<string>; compatible: 
   try {
     v = JSON.parse(s);
   } catch {
+    /* not JSON: nothing kept */
     return null;
   }
   if (!isObject(v)) return null;

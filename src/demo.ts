@@ -34,6 +34,7 @@ import { createPeopleGraph, mailSightings, eventSightings, slackSightings, type 
 import { birthdaysBrief, createPeople, type Person } from "./people.ts";
 import type { SlackAlert } from "./slack.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("demo");
 
@@ -357,8 +358,8 @@ export function demoCalendar(kv: Kv): CalendarSource {
   return {
     label: "Demo calendar",
     events: async () => {
-      const raw = await kv.get(DEMO_CALENDAR_KEY);
-      const list = raw ? (JSON.parse(raw) as CalEvent[]) : [];
+      const raw = await readJsonRecord(kv, DEMO_CALENDAR_KEY);
+      const list = raw ? (raw as CalEvent[]) : [];
       return { events: Array.isArray(list) ? list : [], partial: false };
     },
   };
@@ -367,8 +368,8 @@ export function demoCalendar(kv: Kv): CalendarSource {
 /** The demo's Slack, read only: the alerts the seed kept, as the Slack reader gives them (src/slack.ts). */
 export function demoSlack(kv: Kv, now: () => number = Date.now) {
   const all = async (): Promise<SlackAlert[]> => {
-    const raw = await kv.get(SLACK_ALERTS_KEY);
-    const list = raw ? (JSON.parse(raw) as SlackAlert[]) : [];
+    const raw = await readJsonRecord(kv, SLACK_ALERTS_KEY);
+    const list = raw ? (raw as SlackAlert[]) : [];
     return Array.isArray(list) ? list : [];
   };
   const clock = (t: number) => new Date(t).toISOString().slice(11, 16);
@@ -710,6 +711,7 @@ export function demoStartedAt(home: string): number | null {
     const v = JSON.parse(readFileSync(join(demoDir(home), DEMO_MARK), "utf8")) as { startedAt?: unknown };
     return typeof v.startedAt === "number" ? v.startedAt : null;
   } catch {
+    /* no demo mark: not a demo */
     return null;
   }
 }
@@ -717,10 +719,11 @@ export function demoStartedAt(home: string): number | null {
 /** Today's times the seed placed (for the chat's recorded answers); the morning's when the store has none. */
 export async function demoTimes(kv: Kv): Promise<DemoTimes> {
   try {
-    const v = JSON.parse((await kv.get(DEMO_SEEDED_KEY)) ?? "{}") as { times?: Partial<DemoTimes> };
+    const v = ((await readJsonRecord(kv, DEMO_SEEDED_KEY)) ?? {}) as { times?: Partial<DemoTimes> };
     const t = v.times ?? {};
     return { ...MORNING_TIMES, ...Object.fromEntries(Object.entries(t).filter(([, x]) => typeof x === "string" && /^\d{2}:\d{2}$/.test(x))) };
   } catch {
+    /* not JSON, or no store: the morning times */
     return MORNING_TIMES;
   }
 }

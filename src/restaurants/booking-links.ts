@@ -321,6 +321,7 @@ export function restaurantEmail(html: string, website: string): string | undefin
     const parts = new URL(website).hostname.toLowerCase().split(".");
     domain = parts.slice(parts.length > 2 && /^(co|com|org|net)$/.test(parts.at(-2)!) && parts.at(-1)!.length === 2 ? -3 : -2).join(".");
   } catch {
+    /* not a URL: no domain */
     return undefined;
   }
   const found = new Set<string>();
@@ -329,6 +330,7 @@ export function restaurantEmail(html: string, website: string): string | undefin
     try {
       addr = decodeURIComponent(m[1]!).toLowerCase();
     } catch {
+      /* a malformed escape: skipped */
       continue;
     }
     // After decoding the whole address is checked again: %0A, %2C, %40 or an extra @ must not smuggle a line, a second address or another host in.
@@ -369,6 +371,7 @@ export function reservationsPageLink(html: string, base: string): string | undef
   try {
     origin = new URL(base);
   } catch {
+    /* not a URL: none */
     return undefined;
   }
   const host = (h: string) => h.replace(/^www\./, "");
@@ -402,6 +405,7 @@ export function bookingShortLinks(html: string): string[] {
     try {
       u = new URL(m[1]!);
     } catch {
+      /* not a URL: skipped */
       continue;
     }
     if (!SHORTENERS.test(u.hostname)) continue;

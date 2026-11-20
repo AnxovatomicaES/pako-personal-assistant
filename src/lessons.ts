@@ -27,6 +27,7 @@ import { detectLanguage } from "./language.ts";
 import { fold } from "./lists.ts";
 import { inline } from "./quarantine.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("lessons");
 
@@ -252,14 +253,9 @@ export function createLessons(d: LessonsDeps) {
 
   const readNow = async (): Promise<State> => {
     if (!d.kv) return structuredClone(memory);
-    const raw = await d.kv.get(LESSONS_KEY);
+    const raw = await readJsonRecord(d.kv, LESSONS_KEY);
     if (!raw) return { lessons: [], drafts: [] };
-    try {
-      return lessonsStateOf(JSON.parse(raw));
-    } catch {
-      log.error("the stored lessons are not valid JSON: starting again");
-      return { lessons: [], drafts: [] };
-    }
+    return lessonsStateOf(raw);
   };
   /** One change at a time, never written from a copy that could not be read. Over the cap: the least reinforced, then the oldest, go. */
   const mutate = <R>(fn: (s: State) => R): Promise<R> => {

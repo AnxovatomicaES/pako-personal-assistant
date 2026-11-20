@@ -125,6 +125,7 @@ export function sqliteKv(dir: string, now: () => number = Date.now): FileKv {
       legacy = {};
       for (const [k, e] of Object.entries(raw ?? {})) if (typeof e?.v === "string" && typeof e.exp === "number") legacy[k] = { v: e.v, exp: e.exp };
     } catch {
+      /* not JSON: logged, set aside, and an empty store */
       lost = "damaged";
       log.error(`${p("legacy")} is not valid JSON: kept as ${p("legacyBad")}, starting with an empty store`);
       move(p("legacy"), p("legacyBad"));

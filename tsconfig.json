@@ -13,5 +13,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["src", "test", "assistant", "eval"]
+  "include": ["src", "test", "assistant", "eval", "desktop"]
 }

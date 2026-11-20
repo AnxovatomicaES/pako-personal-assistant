@@ -9,6 +9,7 @@ import { createBudget, loadBudgetConfig, type Budget } from "../budget.ts";
 import type { VoiceConfig } from "../voice.ts";
 import { REPLY_WAITS_MS, type BridgeConfig } from "./config.ts";
 import { runClaude, type RunConfig } from "./claude.ts";
+import { setFallbackLog } from "./fallbacks.ts";
 import { mcpConfigFor, toolDataPath } from "./mcp.ts";
 import { createWarmClaude, type WarmClaude } from "./warm.ts";
 import type { ParsedReply } from "./reply.ts";
@@ -52,6 +53,8 @@ export function mountCore(b: Base) {
   const f = d.fetch ?? fetch;
   const runOnce = d.run ?? runClaude;
   const log = d.log ?? ((l: string) => console.log(`${new Date().toISOString()} ${l}`));
+  // The fallbacks from Claude Code's structured signals to weaker ones (fallbacks.ts) go to this bridge's log.
+  setFallbackLog(log);
   const budget = d.budget ?? createBudget({ config: config.budget ?? loadBudgetConfig({}).config, stateDir: config.stateDir, log });
   // Only with the real runner: a test that gives its own `run` gets every turn through it.
   const warm = d.warm !== undefined ? d.warm : !d.run && (config.warmMs ?? 0) > 0 ? createWarmClaude({ idleMs: config.warmMs!, log }) : null;

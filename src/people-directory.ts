@@ -37,6 +37,7 @@ import type { Fact as MemoryFact } from "./memory-facts.ts";
 import { findIn, identityValue, splitAddress, type GraphPerson } from "./people-graph.ts";
 import type { Person } from "./people.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("people");
 
@@ -579,12 +580,13 @@ export function createHiddenPeople(kv: Kv | null): HiddenPeople {
   let local: string[] = [];
   const read = async (): Promise<string[]> => {
     if (!kv) return [...local];
-    const raw = await kv.get(HIDDEN_KEY);
+    const raw = await readJsonRecord(kv, HIDDEN_KEY);
     if (!raw) return [];
     try {
-      const p = JSON.parse(raw) as { keys?: unknown };
+      const p = raw as { keys?: unknown };
       return (Array.isArray(p.keys) ? p.keys : []).filter((k): k is string => typeof k === "string" && KEY_RE.test(k)).slice(-HIDDEN_MAX);
     } catch {
+      /* not JSON: nothing hidden */
       return [];
     }
   };
@@ -733,7 +735,8 @@ export function mountPeopleDirectory(app: Express, d: PeopleDirectoryDeps): void
       const t = await d.prepTask(id);
       if (!t) return void res.status(404).json({ error: "gone" });
       res.json({ task: taskOut(t) });
-    } catch {
+    } catch (err) {
+      log.warn(`a prep task could not be read: ${(err as Error).message}`);
       res.status(503).json({ error: "store" });
     }
   });

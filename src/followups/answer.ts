@@ -38,6 +38,7 @@ export function parseAnswer(raw: unknown): { loops: unknown[]; closes: string[] 
     const closes = (Array.isArray(j.closes) ? j.closes : []).filter((x): x is string => typeof x === "string" && HEX10.test(x)).slice(0, 5);
     return { loops: j.loops, closes };
   } catch {
+    /* not JSON: no answer */
     return null;
   }
 }

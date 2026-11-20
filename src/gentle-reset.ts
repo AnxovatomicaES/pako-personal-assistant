@@ -22,6 +22,7 @@ import type { Kv } from "./kv.ts";
 import { today } from "./lists.ts";
 import { inline } from "./quarantine.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("gentle");
 
@@ -66,6 +67,7 @@ export const RESET_WORDS = {
   letGo: "Let go: {list}. A note stays in your Parked list.",
   nothingLeft: "Nothing left to park there.",
   gone: "That reset is from an earlier week.",
+  unread: "I couldn't read this week's reset just now, so nothing changed. Could you try once more in a moment?",
   closed: "“{title}” isn't open any more.",
   briefFocus: "🌱 This week's focus: {title}",
   logSent: "Weekly reset sent ({n} slipping)",
@@ -93,6 +95,8 @@ export interface LetGo {
   who: string;
   parkedAt: number;
   at: number;
+  /** Let go by the reset ("bring back or let go?", a week later or Let them go), or by the store after 45 days parked (src/followups/store.ts). */
+  why?: "reset" | "expired";
 }
 interface State {
   resets: Reset[];
@@ -132,6 +136,9 @@ const stateOf = (v: unknown): State => {
   };
 };
 
+/** Parked at or before `t` and not brought back since (its parking is the one a reset asked about at `t`). */
+const parkedBefore = (l: Loop, t: number): boolean => (l.parkedAt ?? l.createdAt) <= t;
+
 /** This week's reset moment at or before `t` (the configured weekday and time, in the owner's zone, DST as it is), and its day. */
 export function resetMoment(t: number, tz: string, day: number, at: number): { day: string; at: number } | null {
   for (let k = 0; k < 8; k++) {
@@ -170,20 +177,21 @@ export interface WeeklyResetDeps {
   /** Whether the chat has room for more than three buttons (the panel's chat, Telegram). */
   roomy: () => Promise<boolean>;
   card: (body: string, buttons: { id: string; title: string }[]) => Promise<boolean>;
+  /** Parked items the store let go after 45 days (src/followups/owner.ts expiredParked): in the history too, whether the reset ran or not. */
+  expired?: () => Promise<{ title: string; who: string; parkedAt: number; at: number }[]>;
   log?: (text: string) => void;
 }
 
 export function createWeeklyReset(d: WeeklyResetDeps) {
   const now = d.now ?? Date.now;
   let memory = empty();
-  const load = async (): Promise<State> => {
-    if (!d.kv) return structuredClone(memory);
-    try {
-      return stateOf(JSON.parse((await d.kv.get(RESET_KEY)) ?? "{}"));
-    } catch {
-      return empty();
-    }
-  };
+  // A store that does not answer throws (src/json-record.ts): an empty state in its place would send this week's reset again and be saved
+  // over the week's focus and the Parked list's history. What changes it then changes nothing; what only reads it gets nothing.
+  const load = async (): Promise<State> => (d.kv ? stateOf((await readJsonRecord(d.kv, RESET_KEY)) ?? {}) : structuredClone(memory));
+  const peek = (): Promise<State> => load().catch((err: Error) => {
+    log.warn(`the weekly reset could not be read: ${err.message}`);
+    return empty();
+  });
   const save = async (s: State): Promise<void> => {
     const t = now();
     s.letGo = s.letGo.filter((x) => t - x.at < HISTORY_KEEP_MS).slice(-50);
@@ -227,7 +235,8 @@ export function createWeeklyReset(d: WeeklyResetDeps) {
     for (const a of due) {
       const l = parked.find((x) => x.id === a.loop);
       s.asked = s.asked.filter((x) => x !== a);
-      if (!l || !(await d.letGo(l.id).catch(() => false))) continue;
+      // Brought back and parked again since it was asked about: a new parking, with its own month.
+      if (!l || !parkedBefore(l, a.at) || !(await d.letGo(l.id).catch(() => false))) continue;
       s.letGo.push({ title: l.title, who: l.who, parkedAt: l.parkedAt ?? l.createdAt, at: t });
       d.log?.(RT()("logLetGo", { title: l.title }));
     }
@@ -294,7 +303,13 @@ export function createWeeklyReset(d: WeeklyResetDeps) {
   const pressed = (what: string, id: string): Promise<{ say: string; card?: { body: string; buttons: { id: string; title: string }[] } }> =>
     serial(async () => {
       const t = now();
-      const s = await load();
+      let s: State;
+      try {
+        s = await load();
+      } catch (err) {
+        log.warn(`the weekly reset could not be read, nothing changed: ${(err as Error).message}`);
+        return { say: RT()("unread") };
+      }
       const r = s.resets.find((x) => x.id === id);
       if (!r || t - r.at > 8 * DAY) return { say: RT()("gone") };
       const open = new Set((await d.loops()).map((l) => l.id));
@@ -339,7 +354,7 @@ export function createWeeklyReset(d: WeeklyResetDeps) {
       const done: string[] = [];
       for (const x of r.old) {
         const l = parked.find((y) => y.id === x.loop);
-        if (!l || !(await d.letGo(l.id).catch(() => false))) continue;
+        if (!l || !parkedBefore(l, r.at) || !(await d.letGo(l.id).catch(() => false))) continue;
         s.letGo.push({ title: l.title, who: l.who, parkedAt: l.parkedAt ?? l.createdAt, at: t });
         s.asked = s.asked.filter((a) => a.loop !== l.id);
         done.push(`“${l.title}”`);
@@ -350,14 +365,14 @@ export function createWeeklyReset(d: WeeklyResetDeps) {
 
   /** "park 2" typed after a reset (WhatsApp's three buttons): the latest reset of the last week. Null when there is none. */
   const typedPark = async (n: number): Promise<string | null> => {
-    const r = (await load()).resets.filter((x) => now() - x.at < 7 * DAY).at(-1);
+    const r = (await peek()).resets.filter((x) => now() - x.at < 7 * DAY).at(-1);
     if (!r || !r.items[n - 1]) return null;
     return (await pressed(`p${n}`, r.id)).say;
   };
 
   /** The week's focus while it lasts and its follow-up is still open: the brief puts it first. */
   const focus = async (): Promise<{ loop: string; title: string; who: string } | null> => {
-    const s = await load();
+    const s = await peek();
     const f = s.focus;
     if (!f || now() - f.at >= FOCUS_MS) return null;
     const open = await d.loops().catch(() => [] as Loop[]);
@@ -372,8 +387,12 @@ export function createWeeklyReset(d: WeeklyResetDeps) {
       const f = await focus();
       return f ? RT()("briefFocus", { title: f.title }) : null;
     },
-    /** The Parked list's history: what was let go, newest first. */
-    history: async (): Promise<LetGo[]> => [...(await load()).letGo].reverse(),
+    /** The Parked list's history: what was let go, by the reset or by the store after 45 days, newest first. */
+    history: async (): Promise<LetGo[]> => {
+      const mine = (await peek()).letGo.map((x): LetGo => ({ ...x, why: "reset" }));
+      const expired = d.expired ? (await d.expired().catch(() => [])).map((x): LetGo => ({ ...x, why: "expired" })) : [];
+      return [...mine, ...expired].sort((a, b) => b.at - a.at);
+    },
   };
 }
 export type WeeklyReset = ReturnType<typeof createWeeklyReset>;

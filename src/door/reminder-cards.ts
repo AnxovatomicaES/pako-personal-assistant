@@ -6,6 +6,7 @@ import { localStamp, repeatAfter, localOrLater } from "./time.ts";
 import { REMINDERS_MAX, TEMPLATE_TEXT_MAX, FIRED_KEEP_MS, FIRED_KEEP, SNOOZE_MS } from "./shared.ts";
 import type { Reminder, Fired, Door } from "./door.ts";
 import { createLog } from "../log.ts";
+import { readJsonRecord } from "../json-record.ts";
 
 const log = createLog("whatsapp");
 
@@ -39,19 +40,14 @@ export function mountReminderCards(door: Door): Pick<Door, "sendReminderTemplate
   const firedHere: Fired[] = [];
   const loadFired = async (): Promise<Fired[] | null> => {
     if (fired) return fired;
-    let raw: string | null;
+    let p: unknown;
     try {
-      raw = d.kv ? await d.kv.get(FIRED_KEY) : null;
-    } catch {
+      p = (d.kv ? await readJsonRecord(d.kv, FIRED_KEY) : undefined) ?? [];
+    } catch (err) {
+      log.warn(`the fired reminders could not be read: ${(err as Error).message}`);
       return null;
     }
     if (fired) return fired;
-    let p: unknown = [];
-    try {
-      p = raw ? JSON.parse(raw) : [];
-    } catch {
-      log.error("the fired reminders are not valid JSON: starting again");
-    }
     const list = (Array.isArray(p) ? p : []).filter((x): x is Fired =>
       !!x && typeof x.id === "string" && typeof x.rid === "string" && typeof x.text === "string" && typeof x.at === "number" && typeof x.firedAt === "number");
     fired = [...list, ...firedHere.splice(0).filter((x) => !list.some((y) => y.id === x.id))];

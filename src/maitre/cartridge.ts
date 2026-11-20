@@ -175,7 +175,7 @@ export const COMMON_BLOCKS: BlockSign[] = [
 export async function gateOn(page: Page, signs: GateSign[]): Promise<GateSign | null> {
   for (const s of signs) {
     try {
-      if (await page.evaluate<boolean>(`(() => { try { return !!(${s.expression}); } catch { return false; } })()`)) return s;
+      if (await page.evaluate<boolean>(`(() => { try { return !!(${s.expression}); } catch { return false; } })()`)) return s; // the inner catch is page script in a string
     } catch {
       /* the page is moving: not a gate */
     }
@@ -187,7 +187,7 @@ export async function gateOn(page: Page, signs: GateSign[]): Promise<GateSign | 
 export async function blockOn(page: Page, signs: BlockSign[]): Promise<BlockSign | null> {
   for (const s of signs) {
     try {
-      if (await page.evaluate<boolean>(`(() => { try { return !!(${s.expression}); } catch { return false; } })()`)) return s;
+      if (await page.evaluate<boolean>(`(() => { try { return !!(${s.expression}); } catch { return false; } })()`)) return s; // the inner catch is page script in a string
     } catch {
       /* ignore */
     }

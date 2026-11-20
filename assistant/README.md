@@ -145,16 +145,32 @@ Its LaunchAgent was `com.aibuyer.assistant`: running `bash assistant/install.sh`
 By hand instead: `cp assistant/env.example assistant/.env`, fill it in, and
 `node --disable-warning=ExperimentalWarning --env-file=assistant/.env assistant/run.ts` (or adapt `local.pako.assistant.plist.example`).
 
-### It updates itself (no more `git pull` here)
+### Updates: off by default, signed releases only when on
 
-The bridge keeps this checkout up to date by itself (`assistant/update.ts`), so the "run `git pull` here and restart" lines below are done
-for you. Every 30 minutes (the first look 5 minutes after it starts), between two messages and never while one is being answered, it:
+This computer holds your Claude sign-in and the bridge token, so it never runs whatever happens to be on GitHub. By default it **does not
+update itself**: every 30 minutes (the first look 5 minutes after it starts), between two messages, it asks `origin` where its default
+branch is, and when that is ahead of what runs here it logs `update available: <commit> ...` once and stops there. You update by hand:
+`git pull` and restart the assistant.
 
-1. asks `origin` which branch is its default and where that branch is now (`git ls-remote --symref origin HEAD`, then `git fetch`);
+To let it update itself, set `BRIDGE_AUTO_UPDATE=1` **and** pin the key that signs releases in `BRIDGE_UPDATE_SIGNER`. It then only ever
+moves to a **release tag** (`vX.Y.Z`) whose signature verifies against that key; with no key pinned it refuses (`not updating: no signer
+pinned ...` in its log), and a tag that is unsigned, lightweight, or signed by any other key is refused too (`refusing v0.4.0: ...`).
+`BRIDGE_UPDATE_SIGNER` is either:
+
+- an **SSH allowed-signers file** (the path), checked with `git verify-tag` and `gpg.minTrustLevel=fully`, so a valid signature by a key
+  that is not in the file never passes. One line per key: `release ssh-ed25519 AAAA...` (the public key that signs the tags,
+  `git tag -s vX.Y.Z` with `gpg.format=ssh`);
+- or a **GPG fingerprint** (40 hex characters; spaces are fine). Import that public key into this computer's keyring first; the
+  `VALIDSIG` line of `git verify-tag --raw` must name it, so another key in the keyring does not count.
+
+When it is on, each look:
+
+1. asks `origin` which branch is its default (`git ls-remote --symref origin HEAD`), then fetches it and its tags;
 2. stops there, and only says why, when this checkout is **not on that branch**, has **local changes** to tracked files (`git status
-   --porcelain --untracked-files=no`; your untracked `assistant/.env` does not count), or the move is **not a fast-forward** (commits here
-   that origin does not have);
-3. runs `git pull --ff-only`, then `npm ci` **only when `package-lock.json` changed**;
+   --porcelain --untracked-files=no`; your untracked `assistant/.env` does not count), or the newest release tag is **not a fast-forward**
+   (commits here that origin does not have);
+3. verifies the newest `vX.Y.Z` tag against the pinned key, then `git merge --ff-only` to that tag's commit, then `npm ci` **only when
+   `package-lock.json` changed**;
 4. checks itself: every bridge file parses (with Node's own TypeScript parser: `node --check` passes any `.ts` file),
    `assistant/bridge.ts` and `assistant/update.ts` load with everything they import, and the new `assistant/run.ts` starts with
    `--self-check`, the way the running bridge was started (the same node flags, `--env-file` among them, and the same settings): it loads
@@ -165,18 +181,19 @@ for you. Every 30 minutes (the first look 5 minutes after it starts), between tw
 If `npm ci` or the self-check fails it goes back to the commit it ran (`git reset --keep`, and `npm ci` again when the lock had changed),
 keeps running as before, and does not try that commit again (a newer one, yes; the refusal is kept in `update.json`, so a restart remembers
 it). A new version is also on probation until its first good round with the server (or two minutes up): if it stops before that and is
-started again (the LaunchAgent), it goes back to the commit it came from at that start, refuses the new one, and starts again on the old. Its log says each step (`updating abc1234 → def5678 (main)`,
-`updated to <sha>`, `not updating: local changes`).
+started again (the LaunchAgent), it goes back to the commit it came from at that start, refuses the new one, and starts again on the old.
+Its log says each step (`updating abc1234 → def5678 (v0.4.0, signature verified)`, `updated to <sha>`, `not updating: local changes`).
 
 At each start it tells the server its version on `POST /assistant/health` (`{version: {sha, committedAt, updatedAt, autoupdate}}`): the
 panel's **System** card shows it ("updated itself on ..."), and the server's watchdog tells you once when this computer stays **more than a day
-behind** the server, with the reason it did not update itself, if it said one. `BRIDGE_AUTOUPDATE=off` in `assistant/.env` turns it off (then
-update by hand: `git pull` and restart the assistant). It is always off for the bridge that Pako starts beside itself on a computer (local mode),
-which is updated with Pako itself.
+behind** the server, with the reason it did not update itself. `BRIDGE_AUTOUPDATE=off` (the older setting) stops even the look. Updating is
+always off for the bridge that Pako starts beside itself on a computer (local mode), which is updated with Pako itself.
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| `BRIDGE_AUTOUPDATE` | `on` | `off`: this computer never updates itself. |
+| `BRIDGE_AUTO_UPDATE` | off | `1`: this computer updates itself, to release tags signed by `BRIDGE_UPDATE_SIGNER` only. Off: it only logs "update available". |
+| `BRIDGE_UPDATE_SIGNER` | none | The key releases must be signed with: an SSH allowed-signers file (path) or a GPG fingerprint. None: auto-update refuses. |
+| `BRIDGE_AUTOUPDATE` | | `off`: not even the "update available" look. |
 
 **With an API key instead of a Claude plan:** add `ANTHROPIC_API_KEY=your-key` to `assistant/.env`. The bridge passes it to the `claude`
 command and to nothing else; Claude Code must still be installed, but need not be signed in. Every message is then billed to that API account.

@@ -2,6 +2,7 @@
 // test/mac-app.test.ts) can check them against bin/panel.cjs on the same files. Each one is a line-by-line copy of its JavaScript twin:
 // if one changes, the other must too, or the app would look for Pako in another folder than `npm run panel` does.
 
+import CryptoKit
 import Darwin
 import Foundation
 
@@ -415,8 +416,42 @@ struct UpdateInfo: Equatable {
     let minimumMacOS: String?
     let notes: String
     let page: URL?
-    /// The app can download, check and install it itself: a dmg with its SHA-256. Otherwise only its page is opened.
-    var installable: Bool { sha256 != nil }
+    /// The feed's Ed25519 signature verifies against the public key this app carries (feedSignatureValid). The app offers nothing else.
+    var signed: Bool = false
+    /// The app can download, check and install it itself: a signed feed naming a dmg with its SHA-256. Otherwise only its page is opened.
+    var installable: Bool { sha256 != nil && signed }
+}
+
+/// The fields a feed's signature covers, one per line in a fixed order (desktop/mac/feed-sign.ts, feedMessage, makes the same bytes): an
+/// absent field is empty; one that is not a string (build: not a whole number) or holds a line break cannot be signed, and nil is answered.
+func feedSignedMessage(_ obj: [String: Any]) -> Data? {
+    var text = "pako-feed-v1\n"
+    for k in ["version", "build", "url", "sha256", "minimumMacOS", "notes", "page"] {
+        var s = ""
+        if let v = obj[k] {
+            if k == "build" {
+                guard let n = v as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), n.doubleValue == n.doubleValue.rounded(),
+                      n.doubleValue >= 1, n.doubleValue <= 1_000_000_000 else { return nil }
+                s = String(n.intValue)
+            } else {
+                guard let str = v as? String else { return nil }
+                s = str
+            }
+        }
+        if s.contains("\n") || s.contains("\r") { return nil }
+        text += "\(k)=\(s)\n"
+    }
+    return Data(text.utf8)
+}
+
+/// Whether the feed's "signature" (base64, 64 bytes) is a valid Ed25519 signature of feedSignedMessage by `publicKey` (base64 of the raw 32
+/// bytes, Info.plist PakoFeedPublicKey, from desktop/mac/feed-key.pub). No key, no signature, or anything malformed: false. The SHA-256 in
+/// the feed comes from the same place as the dmg; this signature is what ties both to the owner's key.
+func feedSignatureValid(_ obj: [String: Any], publicKey: String?) -> Bool {
+    guard let k = publicKey?.trimmingCharacters(in: .whitespacesAndNewlines), let raw = Data(base64Encoded: k), raw.count == 32,
+          let key = try? Curve25519.Signing.PublicKey(rawRepresentation: raw), let s = obj["signature"] as? String,
+          let sig = Data(base64Encoded: s), sig.count == 64, let msg = feedSignedMessage(obj) else { return false }
+    return key.isValidSignature(sig, for: msg)
 }
 
 /// Where the app may fetch the feed or the dmg from: https anywhere, or (`loopback`: a check-only feed on this Mac, PAKO_APP_UPDATE_FEED in a
@@ -430,8 +465,9 @@ func isUpdateURL(_ u: URL?, loopback: Bool = false) -> Bool {
 /// The release feed (Info.plist PakoUpdateFeed, made by desktop/mac/feed.sh): JSON {"version", "build", "url" (the dmg), "sha256",
 /// "minimumMacOS", "notes", "page"}; only "version" and "url" are required (the first format had only those and "notes"). A field that is
 /// there but wrong (a checksum that is not 64 hex digits, a build that is not a whole number, a minimum that is not a version) refuses the
-/// whole feed: a feed half understood offers nothing. Notes are cut to a line's worth. nil for anything else.
-func parseUpdateFeed(_ data: Data, loopback: Bool = false) -> UpdateInfo? {
+/// whole feed: a feed half understood offers nothing. Notes are cut to a line's worth. nil for anything else. `signed`: its "signature"
+/// verifies against `publicKey` (the app offers only such a feed: App.swift).
+func parseUpdateFeed(_ data: Data, loopback: Bool = false, publicKey: String? = nil) -> UpdateInfo? {
     guard data.count <= 64_000, let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
           let v = obj["version"] as? String, isNewerVersion(v, than: "0"), let u = obj["url"] as? String,
           let url = URL(string: u), isUpdateURL(url, loopback: loopback) else { return nil }
@@ -455,7 +491,7 @@ func parseUpdateFeed(_ data: Data, loopback: Bool = false) -> UpdateInfo? {
     let page = (obj["page"] as? String).flatMap { URL(string: $0) }.flatMap { isUpdateURL($0) ? $0 : nil }
     let notes = (obj["notes"] as? String ?? "").replacingOccurrences(of: "\n", with: " ").replacingOccurrences(of: "\r", with: " ")
     return UpdateInfo(version: v.trimmingCharacters(in: .whitespaces), build: build, url: url, sha256: sha, minimumMacOS: minimum,
-                      notes: String(notes.prefix(300)), page: page)
+                      notes: String(notes.prefix(300)), page: page, signed: feedSignatureValid(obj, publicKey: publicKey))
 }
 
 /// Whether a release is newer than the running app: a newer version, or the same version with a higher build number (two builds of one

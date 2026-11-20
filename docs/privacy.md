@@ -157,6 +157,7 @@ also capped, as said.
 | `learning` | Your learning goals, the quiz cards from your lessons and when each is due | 400 days |
 | `friend` | Whether the weekly check-in is on, when it last went, and which birthdays were already mentioned the day before | 400 days |
 | `job-claim:<slot>` | A mark while one scheduled run is being done (its slot hashed, and which Pako took it), so two Pakos on one store never do it twice at once | 10 minutes |
+| `corrupt:<key>:<time>` | A record above that was damaged (not valid JSON), kept aside as it was instead of written over; the owner is told. Never exported | 180 days |
 | `demo-seeded` | When the demo week was set up. Only in the demo's own folder, `~/.pako/demo`, deleted by Leave demo | 90 days |
 | `demo-calendar` | The demo week's invented calendar. Only in `~/.pako/demo`, deleted by Leave demo | 90 days |
 | `gentle-settings` | Gentle mode: whether it is on, its nudges a day, how long before a meeting it says to wrap up or leave, the check-ins' minutes and the weekly reset's day and time | 5 years |

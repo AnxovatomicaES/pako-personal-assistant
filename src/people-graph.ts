@@ -19,6 +19,7 @@ import type { Kv } from "./kv.ts";
 import { fold } from "./lists.ts";
 import type { Person } from "./people.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("people-graph");
 
@@ -364,14 +365,9 @@ export function createPeopleGraph(kv: Kv | null, o: { people?: () => Promise<Per
   let snapshot: GraphPerson[] = [];
   const readRaw = async (): Promise<Stored> => {
     if (!kv) return structuredClone(local);
-    const raw = await kv.get(KEY);
+    const raw = await readJsonRecord(kv, KEY);
     if (!raw) return empty();
-    try {
-      return clean(JSON.parse(raw));
-    } catch {
-      log.error("the stored record is not valid JSON: starting again");
-      return empty();
-    }
+    return clean(raw);
   };
   const write = async (s: Stored): Promise<void> => {
     if (kv) await kv.set(KEY, JSON.stringify({ v: 1, ...s }), TTL_SECONDS);

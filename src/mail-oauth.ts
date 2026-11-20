@@ -93,6 +93,7 @@ export function idClaims(idToken: unknown): Record<string, unknown> {
   try {
     return JSON.parse(Buffer.from(idToken.split(".")[1] ?? "", "base64url").toString("utf8")) as Record<string, unknown>;
   } catch {
+    /* not a JWT: no claims */
     return {};
   }
 }
@@ -288,6 +289,7 @@ export function mountMailOAuth(app: Express, d: MailOAuthDeps | null): void {
       const r = await f(def.token, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: body.toString(), signal: AbortSignal.timeout(15_000) });
       j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
     } catch {
+      /* the network failed: said to the user as no answer */
       return fail(say("exchange", { name, why: "no answer" }));
     }
     if (typeof j.access_token !== "string") return fail(say("exchange", { name, why: typeof j.error === "string" ? j.error.slice(0, 80) : "no token" }));
@@ -336,6 +338,7 @@ export function mountMailOAuth(app: Express, d: MailOAuthDeps | null): void {
         return fail(say("calendar", { user, why: typeof j.error?.message === "string" ? j.error.message.slice(0, 80) : `HTTP ${r.status}` }));
       }
     } catch {
+      /* the network failed: said to the user as no answer */
       return fail(say("calendar", { user, why: "no answer" }));
     }
     if (!d.saver) return fail(say("notKept", { why: "this Pako cannot save connections" }));

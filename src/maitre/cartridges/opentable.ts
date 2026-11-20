@@ -72,6 +72,7 @@ async function verify(page: Page): Promise<Evidence | null> {
   try {
     ({ url, text } = await page.snapshot(4000));
   } catch {
+    /* the page is gone: no confirmation read */
     return null;
   }
   const done = /\/booking\/(view|confirmation)/i.test(url) || /you'?re all set|reservation (is )?confirmed|booking confirmed|reserva confirmada/i.test(text);
@@ -180,6 +181,7 @@ export const openTable: Cartridge = {
       await page.waitForText(/cancel(l)?ed/i, stepMs);
       return true;
     } catch {
+      /* no cancellation shown in time: not cancelled */
       return false;
     }
   },

@@ -60,8 +60,9 @@ const WORDS = {
   resetDay: "Day",
   resetAt: "Time",
   wd0: "Sunday", wd1: "Monday", wd2: "Tuesday", wd3: "Wednesday", wd4: "Thursday", wd5: "Friday", wd6: "Saturday",
-  historyTitle: "Let go after a month parked",
+  historyTitle: "Let go from Parked",
   historyLine: "{title}{who}, let go on {day}",
+  historyLineExpired: "{title}{who}, let go after 45 days on {day}",
   parkedTitle: "Parked",
   parkedLead: "Set aside: no nudges, never shown in red or as due. Bring one back whenever you like, or ask “what did I park?” in the chat. "
     + "After a month, the weekly reset asks once whether to bring it back or let it go.",
@@ -107,6 +108,7 @@ async function saveGentle(change, path = "/panel/api/gentle") {
     st.gentle = await r.json();
     st.gentleNote = t("saved");
   } catch {
+    /* offline or refused: said in the note */
     st.gentleNote = t("failed");
   }
   paint();
@@ -121,6 +123,7 @@ async function saveAutonomy(choices) {
     st.autonomy = await r.json();
     st.auNote = t("saved");
   } catch {
+    /* offline or refused: said in the note */
     st.auNote = t("failed");
   }
   paint();
@@ -133,6 +136,7 @@ async function setTopic(topic, on) {
     });
     st.lifeNote = r.ok ? "" : t("topicFailed");
   } catch {
+    /* offline: said in the note */
     st.lifeNote = t("topicFailed");
   }
   await loadLife();
@@ -145,6 +149,7 @@ async function forgetLesson(id) {
     });
     st.lessonsNote = r.ok ? t("forgotten") : t("forgetFailed");
   } catch {
+    /* offline: said in the note */
     st.lessonsNote = t("forgetFailed");
   }
   await loadLessons();
@@ -296,7 +301,7 @@ function gentlePart() {
     ...(history.length
       ? [h("h4", { id: "h-acts-letgo" }, t("historyTitle")),
         h("ul", { class: "parked" }, ...history.slice(0, 20).map((x) => h("li", { class: "muted" },
-          t("historyLine", { title: str(x.title), who: str(x.who) ? ` (${str(x.who)})` : "", day: day(num(x.at)) }))))]
+          t(x.why === "expired" ? "historyLineExpired" : "historyLine", { title: str(x.title), who: str(x.who) ? ` (${str(x.who)})` : "", day: day(num(x.at)) }))))]
       : []),
   ];
 }

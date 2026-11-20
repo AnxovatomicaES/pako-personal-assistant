@@ -10,6 +10,7 @@ import express, { type Express } from "express";
 import { guard, limit, type RouteAuth } from "./connect-routes.ts";
 import type { Kv } from "./kv.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("calendar");
 
@@ -68,12 +69,10 @@ export function createCalendarWrites(d: {
   let chain: Promise<unknown> = Promise.resolve();
   const load = async (): Promise<CalendarWrite[]> => {
     if (!d.kv) return structuredClone(memory);
-    try {
-      const v = JSON.parse((await d.kv.get(CALENDAR_WRITES_KEY)) ?? "[]") as unknown;
-      return Array.isArray(v) ? (v.filter((x) => isObject(x) && typeof x.id === "string" && typeof x.op === "string") as CalendarWrite[]) : [];
-    } catch {
-      return [];
-    }
+    // A store that does not answer (or a damaged record that could not be kept aside: src/json-record.ts) throws: an empty list in its
+    // place would be saved over every queued write and every Undo's record.
+    const v = ((await readJsonRecord(d.kv, CALENDAR_WRITES_KEY)) ?? []) as unknown;
+    return Array.isArray(v) ? (v.filter((x) => isObject(x) && typeof x.id === "string" && typeof x.op === "string") as CalendarWrite[]) : [];
   };
   const save = async (list: CalendarWrite[]): Promise<void> => {
     memory = list;

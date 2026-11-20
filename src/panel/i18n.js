@@ -20,6 +20,7 @@ export function localeFor(region) {
   try {
     return Intl.DateTimeFormat.supportedLocalesOf([tag]).length ? tag : fallback;
   } catch {
+    /* an old browser: the fallback */
     return fallback;
   }
 }
@@ -36,6 +37,7 @@ export function clockOf(hm, locale) {
     const c = new Intl.DateTimeFormat(locale, { hour: "numeric" }).resolvedOptions().hourCycle;
     twelve = c === "h12" || c === "h11";
   } catch {
+    /* an old browser: a 24-hour clock */
     twelve = false;
   }
   if (!twelve) return hm;
@@ -85,6 +87,7 @@ export const WORDS = {
   "ago.yesterday": "yesterday",
   "ago.days": "{n} days ago",
   "until.late": "overdue",
+  "until.past": "time passed",
   "until.now": "now",
   "until.in": "in {span}",
   "until.tomorrow": "tomorrow",

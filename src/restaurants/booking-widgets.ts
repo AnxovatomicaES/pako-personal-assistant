@@ -31,6 +31,7 @@ export function widgetEngineOf(url: string | undefined): string | undefined {
   try {
     host = new URL(url ?? "").hostname.toLowerCase();
   } catch {
+    /* not a URL: no engine */
     return undefined;
   }
   if (/(^|\.)covermanager\.com$/.test(host)) return "CoverManager";

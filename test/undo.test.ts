@@ -22,6 +22,7 @@ import { createUndoJournal, receiptText, undoneText, nothingReverted, type Chang
 import { loadMemory } from "../src/voice-memory.ts";
 import { loadVoiceTools } from "../src/voice-tools.ts";
 import { loadWhatsappConfig, mountWhatsapp } from "../src/whatsapp.ts";
+import { setOwnerRegion } from "../src/region.ts";
 
 const OWNER = "+34600111222";
 const OWNER_WA = "34600111222";
@@ -730,7 +731,10 @@ test("Undo on a reminder moved since says it is not pending any more and names t
   }
 });
 
-test("receipt and answer texts stay short: long notes are cut, a long list ends in how many more; the button fits WhatsApp's 20 characters", () => {
+test("receipt and answer texts stay short: long notes are cut, a long list ends in how many more; the button fits WhatsApp's 20 characters", (t) => {
+  // Dates written the default way: an app built earlier in this file set the owner's country from the zone the suite runs under.
+  setOwnerRegion("");
+  t.after(() => setOwnerRegion(""));
   const long = "una nota muy larga ".repeat(20).trim();
   const at = Date.parse("2026-09-04T22:05:00Z");
   const changes: Change[] = [

@@ -18,6 +18,7 @@ import {
 import { loadMemory } from "../src/voice-memory.ts";
 import { loadVoiceTools } from "../src/voice-tools.ts";
 import { loadWhatsappConfig, mountWhatsapp, type Inbound } from "../src/whatsapp.ts";
+import { withSystemZone } from "./helpers/zone.ts";
 
 const MIN = 60_000;
 const DAY = 24 * 3600_000;
@@ -312,7 +313,8 @@ test("no doses, and an offer that cannot be done drops the suggestion", async ()
 });
 
 test("settings: defaults, a wrong value reported, the emergency number by country", () => {
-  const d = loadProactiveConfig({});
+  // A computer in Madrid's zone (said here): Spain's 112.
+  const d = withSystemZone("Europe/Madrid", () => loadProactiveConfig({}));
   assert.equal(d.config!.everyMs, 30 * MIN);
   assert.deepEqual(d.config!.active, { start: 9 * 60, end: 21 * 60 });
   assert.equal(d.config!.emergency, "112");

@@ -105,7 +105,7 @@ export function launcherScript(o: { node: string; repo: string; logs: string }):
     "foreach ($name in 'pako.log', 'pako.err.log') {",
     "  $file = Join-Path $logs $name",
     "  if (Test-Path -LiteralPath $file) {",
-    "    try { Move-Item -LiteralPath $file -Destination ($file + '.old') -Force } catch { exit 0 }",
+    "    try { Move-Item -LiteralPath $file -Destination ($file + '.old') -Force } catch { exit 0 }", // PowerShell in a string: a log that cannot be moved is held by a running Pako
     "  }",
     "}",
     "$env:PAKO_NO_OPEN = '1'",
@@ -188,6 +188,7 @@ function defaults(env: Env): WindowsDeps {
       try {
         return readFileSync(p, "utf8");
       } catch {
+        /* not there yet: nothing to read */
         return null;
       }
     },

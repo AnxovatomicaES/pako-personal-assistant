@@ -4,6 +4,7 @@ import { localStamp } from "./time.ts";
 import { TEMPLATE_TEXT_MAX, HELD_NOTICES_MAX, PING_EVERY_MS } from "./shared.ts";
 import type { HeldNotice, Door } from "./door.ts";
 import { createLog } from "../log.ts";
+import { readJsonRecord } from "../json-record.ts";
 
 const log = createLog("whatsapp");
 
@@ -17,13 +18,13 @@ export function mountNotices(door: Door): Pick<Door, "hold" | "notifyOwner" | "f
   /** Throws when the store cannot be read: an empty list in its place would overwrite the notices kept there. */
   const loadHeldNotices = async (): Promise<HeldNotice[]> => {
     if (heldNotices) return heldNotices;
-    const raw = d.kv ? await d.kv.get(HELD_NOTICES_KEY) : null;
+    const raw = d.kv ? await readJsonRecord(d.kv, HELD_NOTICES_KEY) : null;
     if (heldNotices) return heldNotices;
     let p: unknown = [];
     try {
-      p = raw ? JSON.parse(raw) : [];
+      p = raw ? raw : [];
     } catch {
-      log.error("the held notices are not valid JSON: starting again");
+      log.error("the held notices could not be used: starting again");
     }
     heldNotices = (Array.isArray(p) ? p : []).flatMap((x): HeldNotice[] => {
       if (typeof x === "string") return [{ text: x }];

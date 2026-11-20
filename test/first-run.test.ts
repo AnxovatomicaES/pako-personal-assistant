@@ -325,7 +325,7 @@ test("the terminal's and the bridge's routes answer this computer only, whatever
   }
   const r = await localRig();
   try {
-    // The Host a program on this computer sends: any other name is refused before these routes (test/hardening.test.ts).
+    // The Host a program on this computer sends: any other name is refused before these routes (test/local-guard.test.ts).
     const host = `127.0.0.1:${r.port}`;
     const link = `POST /panel/api/link HTTP/1.1\r\nHost: ${host}\r\nAuthorization: Bearer ${r.home.bridgeToken}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n`;
     assert.match(await requestFrom(r.server, "192.168.1.20", link), /^HTTP\/1\.1 403 /, "the right token from another machine");

@@ -2,7 +2,9 @@
 // (test/fixtures/mac-update/main.swift) against small real apps: universal (Intel and Apple silicon), signed ad hoc, put in real dmgs by
 // desktop/mac/dmg.sh, described by desktop/mac/feed.sh and served by a local http server. Each case checks what is in place afterwards: the
 // new app swapped in and the old one in the (test's own) Trash, or, on any failure, the running app exactly as it was and nothing left over.
-// The whole app doing it (two builds, a local feed, the relaunch) is in test/mac-app.test.ts. Elsewhere (no swiftc, not a Mac): skipped.
+// Every feed is signed with a release key made here (desktop/mac/feed-sign.ts), whose public half the program carries, as the app does; a
+// feed that is not signed by it is refused before anything is downloaded. The whole app doing it (two builds, a local feed, the relaunch)
+// is in test/mac-app.test.ts. Elsewhere (no swiftc, not a Mac): skipped.
 
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
@@ -13,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, test } from "node:test";
+import { generateFeedKey, signFeed } from "../desktop/mac/feed-sign.ts";
 
 const repo = fileURLToPath(new URL("../", import.meta.url)).replace(/\/$/, "");
 const hasSwift = process.platform === "darwin" && spawnSync("swiftc", ["--version"], { stdio: "ignore" }).status === 0;
@@ -26,6 +29,7 @@ const served = join(work, "served");
 const ID = "io.github.anxovatomicaes.pako";
 /** The processor this Mac is not (swiftc builds for the one it is, even when this node runs under Rosetta). */
 const otherArch = hasSwift && spawnSync("sysctl", ["-n", "hw.optional.arm64"], { encoding: "utf8" }).stdout.trim() === "1" ? "x86_64" : "arm64";
+const KEY = generateFeedKey();
 let server: Server;
 let base = "";
 const hits: string[] = [];
@@ -94,12 +98,16 @@ function installed(name: string): string {
 
 /** Runs the install as the app does (current 0.2.0 build 100 unless said otherwise); the feed is written to a file for the program. */
 /** Asynchronous: the http server serving the download runs in this very process, and must keep answering while the program runs. */
-async function install(app: string, feed: Record<string, unknown>, o: { team?: string; macos?: string; version?: string; build?: string; env?: Record<string, string> } = {}): Promise<Out> {
+/** The feed is signed with the test's release key first, unless `signedBy` says another (null: left as it is). */
+type InstallOptions = { team?: string; macos?: string; version?: string; build?: string; env?: Record<string, string>; signedBy?: string | null; appKey?: string };
+async function install(app: string, feed: Record<string, unknown>, o: InstallOptions = {}): Promise<Out> {
   const f = join(work, `feed-${Math.random().toString(36).slice(2)}.json`);
-  writeFileSync(f, JSON.stringify(feed));
+  const signer = o.signedBy === undefined ? KEY.privateKey : o.signedBy;
+  writeFileSync(f, JSON.stringify(signer === null ? feed : signFeed(feed, signer)));
   const args = ["install", f, app, o.version ?? "0.2.0", o.build ?? "100", o.team ?? "-", home, ...(o.macos ? [o.macos] : [])];
   const r = await new Promise<{ code: number | null; out: string; err: string }>((done) => {
-    const p = spawn(tool, args, { env: { ...process.env, TMPDIR: tmp, ...o.env }, stdio: ["ignore", "pipe", "pipe"] });
+    const env = { ...process.env, TMPDIR: tmp, PAKO_TEST_FEED_KEY: o.appKey ?? KEY.publicKey, ...o.env };
+    const p = spawn(tool, args, { env, stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     let err = "";
     p.stdout.on("data", (d) => (out += d));
@@ -230,6 +238,24 @@ test("mac update: nothing is downloaded for a release that is not newer, needs a
   await refused(moved, feed, "must-move");
   // A feed with no checksum (the first format) is only a page to open: the app never installs it.
   await refused(app, { ...feed, sha256: undefined }, "download");
+});
+
+test("mac update: a feed not signed by the release key the app carries is refused before anything is downloaded", { skip }, async () => {
+  const app = installed("unsigned");
+  const { feed } = release("unsigned", "0.2.1", 101);
+  const was = hits.length;
+  const other = generateFeedKey();
+  // Not signed; signed by another key; signed, then a field changed (the dmg's address, its checksum); an app that carries no key.
+  await refused(app, feed, "feed-signature", { signedBy: null });
+  await refused(app, feed, "feed-signature", { signedBy: other.privateKey });
+  for (const change of [{ url: `${base}/elsewhere/Pako-0.2.1.dmg` }, { sha256: "1".repeat(64) }]) {
+    await refused(app, { ...signFeed(feed, KEY.privateKey), ...change }, "feed-signature", { signedBy: null });
+  }
+  await refused(app, feed, "feed-signature", { appKey: "" });
+  await refused(app, feed, "feed-signature", { appKey: other.publicKey });
+  assert.equal(hits.length, was, "no request was made");
+  // The same feed, signed by the key the app carries: installed.
+  assert.equal((await install(app, feed)).ok, app);
 });
 
 test("mac update: a download that is not exactly the announced one is refused and the running app stays as it was", { skip }, async () => {

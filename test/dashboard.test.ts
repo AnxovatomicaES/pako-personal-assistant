@@ -1,3 +1,4 @@
+import { readFileSync as readRepoFile } from "node:fs";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -152,4 +153,18 @@ test("panel: the page and its libraries are served from this server only", async
   } finally {
     r.close();
   }
+});
+
+
+/** A file of the repository, as text. */
+const repoText = (p: string): string => readRepoFile(new URL(`../${p}`, import.meta.url), "utf8");
+
+// The chat's glow (.chat::before) reaches 20% past each side of the box; with overflow: hidden the box is still a scroll container, so a
+// focus or scrollIntoView after "Skip" on the welcome scrolled it sideways (66px on a 330px box). overflow: clip cuts it and never scrolls.
+test("the chat box cannot be scrolled sideways by its wider glow: overflow: clip, on the box and its header", () => {
+  const css = repoText("src/panel/app.css");
+  assert.match(css, /^\.chat::before \{[^}]*left: -20%; right: -20%/m, "the layer wider than the box");
+  // After the rules that say overflow: hidden (kept for a browser without clip), so it wins.
+  const clip = css.indexOf(".chat, .chat-head { overflow: clip; }");
+  assert.ok(clip > css.indexOf(".chat { position: fixed;") && clip > css.indexOf(".chat-head { position: relative;"), "clip after hidden");
 });

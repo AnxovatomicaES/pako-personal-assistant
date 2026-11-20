@@ -20,9 +20,7 @@ import type { Kv } from "./kv.ts";
 import { plainWords } from "./intents.ts";
 import { today } from "./lists.ts";
 import { ownerCountry, ownerTimeZone } from "./region.ts";
-import { createLog } from "./log.ts";
-
-const log = createLog("health");
+import { readJsonRecord } from "./json-record.ts";
 
 type Env = Record<string, string | undefined>;
 
@@ -330,14 +328,9 @@ export function createHealth(kv: Kv | null): HealthStore {
   let local = empty();
   const readStrict = async (): Promise<HealthState> => {
     if (!kv) return structuredClone(local);
-    const raw = await kv.get(HEALTH_KEY);
+    const raw = await readJsonRecord(kv, HEALTH_KEY);
     if (!raw) return empty();
-    try {
-      return healthOf(JSON.parse(raw));
-    } catch {
-      log.error("the stored diary is not valid JSON: starting again");
-      return empty();
-    }
+    return healthOf(raw);
   };
   const write = async (s: HealthState): Promise<void> => {
     if (kv) await kv.set(HEALTH_KEY, JSON.stringify(s), TTL_SECONDS);

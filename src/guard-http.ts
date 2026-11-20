@@ -43,6 +43,7 @@ const originOf = (url: string): string => {
   try {
     return new URL(url).origin;
   } catch {
+    /* not a URL: no origin */
     return "";
   }
 };

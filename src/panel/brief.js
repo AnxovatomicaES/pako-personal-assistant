@@ -55,6 +55,7 @@ async function ask() {
     const body = r.ok ? await r.json() : null;
     text.textContent = typeof body?.text === "string" && body.text ? body.text : t("failed");
   } catch {
+    /* offline: said in the text */
     text.textContent = t("failed");
   } finally {
     asking = false;

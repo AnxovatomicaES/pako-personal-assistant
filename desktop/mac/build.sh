@@ -38,6 +38,17 @@ case "$FEED" in
   '' | https://*) ;;
   *) say "PAKO_UPDATE_FEED must be an https:// address."; exit 1 ;;
 esac
+# The public half of the release key (desktop/mac/feed-key.pub, or PAKO_FEED_PUBLIC_KEY): the app installs an update only from a feed signed
+# by it (desktop/mac/feed-sign.ts, docs/desktop-mac.md "Make a release"). None yet: the app is built without one and offers no update.
+FEEDKEY=${PAKO_FEED_PUBLIC_KEY:-$(cat "$HERE/feed-key.pub" 2>/dev/null || true)}
+FEEDKEY=$(printf '%s' "$FEEDKEY" | tr -d ' \n\r')
+case "$FEEDKEY" in
+  '') ;;
+  *)
+    if [ "${#FEEDKEY}" != 44 ] || [ "$(printf '%s' "$FEEDKEY" | base64 --decode 2>/dev/null | wc -c | tr -d ' ')" != 32 ]; then
+      say "the feed public key (desktop/mac/feed-key.pub or PAKO_FEED_PUBLIC_KEY) is not 32 bytes of base64."; exit 1
+    fi ;;
+esac
 HELP=${PAKO_HELP_URL:-https://github.com/AnxovatomicaES/pako-personal-assistant/blob/main/docs/desktop-mac.md}
 case "$HELP" in
   https://*) ;;
@@ -80,6 +91,7 @@ cp "$HERE/Info.plist" "$PLIST"
 plutil -replace CFBundleShortVersionString -string "$VERSION" "$PLIST"
 plutil -replace CFBundleVersion -string "$BUILD" "$PLIST"
 plutil -replace PakoUpdateFeed -string "$FEED" "$PLIST"
+plutil -replace PakoFeedPublicKey -string "$FEEDKEY" "$PLIST"
 plutil -replace PakoHelpURL -string "$HELP" "$PLIST"
 if [ "${PAKO_DEV_BUILD:-}" = 1 ]; then
   # A developer build only: the Pako folder it was built from is where it looks first. Never in a release, which would hand every downloader

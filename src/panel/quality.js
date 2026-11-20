@@ -193,6 +193,7 @@ async function start() {
     const body = r.ok ? await r.json() : null;
     note = body && typeof body.text === "string" ? body.text : t("startFailed");
   } catch {
+    /* offline: said in the note */
     note = t("startFailed");
   }
   await load();

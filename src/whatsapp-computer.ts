@@ -213,6 +213,7 @@ export function createComputerWhatsapp(o: ComputerWhatsappDeps) {
       const v = Number(await o.kv?.get(LAST_OWNER_KEY));
       if (v > lastOwnerAt) lastOwnerAt = v;
     } catch {
+      /* the store did not answer: read again next time */
       lastOwnerLoaded = false;
     }
   };
@@ -245,6 +246,7 @@ export function createComputerWhatsapp(o: ComputerWhatsappDeps) {
       const json = (await r.json().catch(() => ({}))) as Record<string, unknown>;
       return { status: r.status, json: json && typeof json === "object" ? json : {} };
     } catch {
+      /* no answer: the caller says so */
       return null;
     }
   };

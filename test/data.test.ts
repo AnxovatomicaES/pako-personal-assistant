@@ -460,3 +460,25 @@ test("a store that cannot be emptied (not the file store) is not half deleted: r
     server.closeAllConnections();
   }
 });
+
+
+// The export's last line of defence: every secret value this computer holds is searched for and replaced. The owner's WhatsApp set up in
+// the panel (secrets.json whatsappComputer: Meta's app secret, access token, webhook token) is one of them.
+test("export: the WhatsApp settings saved from the panel are among the secrets the export never carries", async () => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { exportData } = await import("../src/data.ts");
+  const dir = mkdtempSync(join(tmpdir(), "pako-export-wa-"));
+  try {
+    const wa = { appSecret: "a".repeat(32), accessToken: `EAAG${"t".repeat(60)}`, verifyToken: "v".repeat(32), appId: "1234567890", ownerNumber: "447700900123" };
+    writeFileSync(join(dir, "secrets.json"), JSON.stringify({ whatsappComputer: wa }), { mode: 0o600 });
+    const said = `Here: ${wa.accessToken} and ${wa.appSecret} and ${wa.verifyToken}`;
+    const store = { get: async (k: string) => (k === "assistant-log" ? JSON.stringify([{ at: 1, kind: "note", text: said }]) : null), set: async () => undefined };
+    const text = JSON.stringify(await exportData({ store, dir, env: {}, lang: "en" }));
+    for (const k of ["appSecret", "accessToken", "verifyToken"] as const) assert.ok(!text.includes(wa[k]), `the export carries WhatsApp's ${k}`);
+    assert.match(text, /Here: \[secret: not exported\]/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

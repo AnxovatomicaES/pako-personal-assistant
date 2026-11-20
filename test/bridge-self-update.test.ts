@@ -1,5 +1,6 @@
 // The assistant's computer keeps itself up to date (assistant/update.ts), with real git repositories made here (a bare origin and a clone):
-// it fast-forwards its own branch only, runs npm ci only when the lock changed, checks itself with the real node, goes back when the new
+// opt-in only, and then only to a release tag signed by the pinned key (a real SSH key made here signs them); it fast-forwards its own
+// branch only, runs npm ci only when the lock changed, checks itself with the real node, goes back when the new
 // version does not load, and never touches a checkout with local changes, on another branch, or ahead of origin. And the bridge says its
 // version to the server.
 
@@ -20,7 +21,15 @@ import { createUpdater, loadUpdateConfig, restartSelf, runCommand, RESTART_CODE,
 for (const k of Object.keys(process.env)) if (k.startsWith("GIT_")) delete process.env[k];
 
 const ROOT = new URL("../", import.meta.url).pathname;
-const ON: UpdateConfig = { on: true, why: "", everyMs: 30 * 60_000, firstMs: 5 * 60_000 };
+/** One signing key for every test (ssh-keygen), the allowed-signers file that pins it, and a second key nobody pinned. */
+const KEYS = (() => {
+  const dir = mkdtempSync(join(tmpdir(), "pako-update-keys-"));
+  for (const name of ["release", "intruder"]) execFileSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-C", name, "-f", join(dir, name)]);
+  const allowed = join(dir, "allowed_signers");
+  writeFileSync(allowed, `release ${readFileSync(join(dir, "release.pub"), "utf8").trim()}\n`);
+  return { release: join(dir, "release"), intruder: join(dir, "intruder"), allowed };
+})();
+const ON: UpdateConfig = { on: true, signer: KEYS.allowed, why: "", everyMs: 30 * 60_000, firstMs: 5 * 60_000 };
 /** The settings the live bridge would have (the self-check starts the new assistant/run.ts with them): nothing real. */
 const BRIDGE_ENV = { PATH: process.env.PATH, ASSISTANT_SERVER_URL: "https://pako.example.com", ASSISTANT_BRIDGE_TOKEN: "t".repeat(32) };
 const entryOf = (dir: string) => ({ execArgv: [], env: { ...BRIDGE_ENV, ASSISTANT_STATE_DIR: join(dir, "bridge-state") } });
@@ -50,11 +59,16 @@ function world() {
   // node_modules: the real one (the self-check imports what the bridge imports).
   execFileSync("ln", ["-s", join(ROOT, "node_modules"), join(work, "node_modules")]);
   writeFileSync(join(work, ".git", "info", "exclude"), "node_modules\n");
-  const upstream = (file: string, text: string, msg = "change"): string => {
+  let release = 0;
+  /** A new commit on origin's main, released as the next vX.Y.Z tag: signed by the pinned key, by another key, or not signed at all. */
+  const upstream = (file: string, text: string, msg = "change", sign: "release" | "intruder" | "none" = "release"): string => {
     writeFileSync(join(seed, file), text);
     git(seed, "add", "-A");
     git(seed, "commit", "--quiet", "-m", msg);
-    git(seed, "push", "--quiet", "origin", "main");
+    const tag = `v0.${++release}.0`;
+    if (sign === "none") git(seed, "tag", tag);
+    else git(seed, "-c", "gpg.format=ssh", "-c", `user.signingkey=${KEYS[sign]}`, "tag", "-s", tag, "-m", tag);
+    git(seed, "push", "--quiet", "origin", "main", tag);
     return git(seed, "rev-parse", "HEAD");
   };
   return { dir, origin, seed, work, upstream, head: () => git(work, "rev-parse", "HEAD") };
@@ -246,12 +260,19 @@ test("never with local changes, never on another branch, never when this checkou
   }
 });
 
-test("off with BRIDGE_AUTOUPDATE=off, and always beside its own server (local mode); otherwise on, first look 5 minutes after the start, then every 30", () => {
-  assert.equal(loadUpdateConfig({ BRIDGE_AUTOUPDATE: "off" }, "https://pako.example.com").on, false);
-  assert.equal(loadUpdateConfig({ PAKO_PARENT_PID: "123" }, "https://pako.example.com").on, false);
-  assert.equal(loadUpdateConfig({}, "http://127.0.0.1:8787").on, false);
-  const on = loadUpdateConfig({}, "https://pako.example.com");
-  assert.equal(on.on, true);
+test("off by default (it only logs that an update is available), on with BRIDGE_AUTO_UPDATE=1; never beside its own server; looks every 30 minutes", () => {
+  const hosted = "https://pako.example.com";
+  const def = loadUpdateConfig({}, hosted);
+  assert.equal(def.on, false, "off unless the owner turns it on");
+  assert.equal(def.notify, true, "but it still says when there is something new");
+  assert.equal(loadUpdateConfig({ BRIDGE_AUTO_UPDATE: "0" }, hosted).on, false);
+  assert.deepEqual(loadUpdateConfig({ BRIDGE_AUTO_UPDATE: "1", BRIDGE_UPDATE_SIGNER: " /k/allowed " }, hosted).signer, "/k/allowed");
+  assert.equal(loadUpdateConfig({ BRIDGE_AUTO_UPDATE: "1" }, hosted).on, true);
+  assert.equal(loadUpdateConfig({ BRIDGE_AUTO_UPDATE: "1", BRIDGE_AUTOUPDATE: "off" }, hosted).on, false);
+  assert.equal(loadUpdateConfig({ BRIDGE_AUTO_UPDATE: "1", PAKO_PARENT_PID: "123" }, hosted).on, false);
+  assert.equal(loadUpdateConfig({ BRIDGE_AUTO_UPDATE: "1" }, "http://127.0.0.1:8787").on, false);
+  assert.equal(loadUpdateConfig({ BRIDGE_AUTO_UPDATE: "1" }, "http://127.0.0.1:8787").notify, undefined, "local mode does not even look");
+  const on = loadUpdateConfig({ BRIDGE_AUTO_UPDATE: "1", BRIDGE_UPDATE_SIGNER: KEYS.allowed }, hosted);
   let t = 1_000_000;
   const u = createUpdater({ repo: ROOT, stateDir: tmpdir(), config: on, now: () => t, run: async () => ({ code: 1, out: "", err: "" }), log: () => undefined });
   assert.equal(u.due(), false);
@@ -265,6 +286,83 @@ test("off with BRIDGE_AUTOUPDATE=off, and always beside its own server (local mo
   const off = createUpdater({ repo: ROOT, stateDir: tmpdir(), config: loadUpdateConfig({ BRIDGE_AUTOUPDATE: "off" }, "https://x.example"), log: () => undefined });
   assert.equal(off.due(), false);
   assert.equal(off.status(), "off (BRIDGE_AUTOUPDATE=off)");
+});
+
+test("off (the default): a newer commit on origin is only logged as \"update available\", once, and nothing moves", async () => {
+  const w = world();
+  const before = w.head();
+  const target = w.upstream("assistant/NOTE.md", "a note\n");
+  const lines: string[] = [];
+  const r = runner();
+  const u = createUpdater({ repo: w.work, stateDir: join(w.dir, "s"), config: loadUpdateConfig({}, "https://pako.example.com"), run: r.run, log: (l) => lines.push(l) });
+  assert.deepEqual(await u.check(), { kind: "available", sha: target });
+  assert.deepEqual(await u.check(), { kind: "available", sha: target });
+  assert.equal(w.head(), before, "nothing moved");
+  assert.equal(lines.length, 1, "said once");
+  assert.match(lines[0]!, new RegExp(`update available: ${target}`));
+  assert.deepEqual(r.npm, []);
+  assert.match(u.status(), /^off/);
+});
+
+test("on with no signer pinned: it refuses, with a clear log line, and nothing moves", async () => {
+  const w = world();
+  const before = w.head();
+  w.upstream("assistant/NOTE.md", "a note\n");
+  const lines: string[] = [];
+  const config = loadUpdateConfig({ BRIDGE_AUTO_UPDATE: "1" }, "https://pako.example.com");
+  const u = createUpdater({ repo: w.work, stateDir: join(w.dir, "s"), config, run: runner().run, log: (l) => lines.push(l), entry: entryOf(w.dir) });
+  const outcome = await u.check();
+  assert.equal(outcome.kind, "skipped");
+  assert.match((outcome as { why: string }).why, /no signer pinned \(set BRIDGE_UPDATE_SIGNER\)/);
+  assert.match(lines.join("\n"), /not updating: no signer pinned/);
+  assert.equal(w.head(), before);
+});
+
+test("a release tag signed by another key, or not signed at all, is refused; the pinned key's next one is taken", async () => {
+  for (const sign of ["intruder", "none"] as const) {
+    const w = world();
+    const before = w.head();
+    w.upstream("assistant/NOTE.md", "evil\n", "takeover", sign);
+    const u = createUpdater({ repo: w.work, stateDir: join(w.dir, "s"), config: ON, run: runner().run, log: () => undefined, entry: entryOf(w.dir) });
+    const outcome = await u.check();
+    assert.equal(outcome.kind, "skipped", sign);
+    assert.match((outcome as { why: string }).why, /^refusing v0\.1\.0: v0\.1\.0 is not signed by a key in BRIDGE_UPDATE_SIGNER/, sign);
+    assert.equal(w.head(), before, `${sign}: nothing moved`);
+    const good = w.upstream("assistant/NOTE.md", "fine\n", "release", "release");
+    assert.deepEqual(await u.check(), { kind: "updated", from: before, to: good }, sign);
+  }
+});
+
+test("a fake git: a failed verify-tag, or a GPG signature by another key, is refused before anything moves; the pinned fingerprint passes", async () => {
+  const FPR = "A".repeat(40);
+  const cases: [string, Partial<UpdateConfig>, { code: number; err: string }, string][] = [
+    ["ssh: bad signature", {}, { code: 1, err: "error: could not verify the signature" }, "skipped"],
+    ["gpg: another key", { signer: FPR }, { code: 0, err: `[GNUPG:] GOODSIG X\n[GNUPG:] VALIDSIG ${"B".repeat(40)} 2026 1 0 4 0 22 8 00 ${"B".repeat(40)}` }, "skipped"],
+    ["gpg: bad signature", { signer: FPR }, { code: 1, err: "[GNUPG:] BADSIG X" }, "skipped"],
+    ["gpg: the pinned key", { signer: FPR.match(/.{4}/g)!.join(" ") }, { code: 0, err: `[GNUPG:] VALIDSIG ${"C".repeat(40)} 2026 1 0 4 0 22 8 00 ${FPR}` }, "updated"],
+    ["neither", { signer: "/nowhere/allowed_signers" }, { code: 0, err: "" }, "skipped"],
+  ];
+  for (const [name, config, answer, kind] of cases) {
+    const w = world();
+    const before = w.head();
+    w.upstream("assistant/NOTE.md", "x\n");
+    const verifies: string[][] = [];
+    const real = runner().run;
+    const run: Run = (cmd, args, o) => {
+      if (cmd === "git" && args.includes("verify-tag")) {
+        verifies.push(args);
+        return Promise.resolve({ code: answer.code, out: "", err: answer.err });
+      }
+      return real(cmd, args, o);
+    };
+    const u = createUpdater({ repo: w.work, stateDir: join(w.dir, "s"), config: { ...ON, ...config }, run, log: () => undefined, entry: entryOf(w.dir) });
+    const outcome = await u.check();
+    assert.equal(outcome.kind, kind, `${name}: ${JSON.stringify(outcome)}`);
+    if (kind === "skipped") assert.equal(w.head(), before, `${name}: nothing moved`);
+    if (name !== "neither") assert.equal(verifies.length, 1, name);
+    if (name.startsWith("ssh")) assert.ok(verifies[0]!.includes("gpg.minTrustLevel=fully"), "an unknown key's good signature never passes");
+    if (name.startsWith("gpg")) assert.ok(verifies[0]!.includes("--raw"), name);
+  }
 });
 
 test("it starts itself again in place where Node can, otherwise it exits with 75 for the LaunchAgent to start it again", () => {

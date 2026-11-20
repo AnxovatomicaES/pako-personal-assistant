@@ -3,6 +3,7 @@
 import type { Kv } from "../kv.ts";
 import type { InboundReview } from "../meeting-review.ts";
 import { createLog } from "../log.ts";
+import { readJsonRecord } from "../json-record.ts";
 
 const log = createLog("whatsapp");
 
@@ -130,17 +131,17 @@ export function createInbox(kv: Kv | null) {
   const load = async (): Promise<InboxState> => {
     if (state) return state;
     let s: InboxState = { msgs: [], seen: [] };
-    const raw = kv ? await kv.get(KEY) : null;
+    const raw = kv ? await readJsonRecord(kv, KEY) : null;
     if (state) return state; // another call loaded (and maybe changed) it meanwhile: keep that one
     if (raw) {
       try {
-        const p = JSON.parse(raw) as Partial<InboxState>;
+        const p = raw as Partial<InboxState>;
         s = {
           msgs: (Array.isArray(p.msgs) ? p.msgs : []).filter((m): m is Inbound => !!m && typeof m.id === "string" && typeof m.text === "string"),
           seen: (Array.isArray(p.seen) ? p.seen : []).filter((x): x is string => typeof x === "string"),
         };
       } catch {
-        log.error("the stored inbox is not valid JSON: starting a new one");
+        log.error("the stored inbox could not be used: starting a new one");
       }
     }
     state = s;

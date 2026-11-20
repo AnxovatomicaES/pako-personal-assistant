@@ -127,12 +127,19 @@ a `User-Agent` of just `Pako`, no cookie and no cache, so nothing in it tells on
 menu bar's menu and the Pako menu. *Check for Updates…* (Pako menu) and Settings' *Check Now* ask at once; Settings can turn the daily
 check off. With no feed (the default) the app never checks. The About item (Pako menu) shows the version and the build number.
 
+**Only a signed feed counts.** The feed is signed with the owner's release key (Ed25519, `desktop/mac/feed-sign.ts`), and the app carries
+the public half of that key (`PakoFeedPublicKey` in its Info.plist, from `desktop/mac/feed-key.pub`). A feed whose signature does not verify
+against it (unsigned, signed by another key, or changed after it was signed) offers nothing at all: the app logs `update: the feed offers
+Pako x.y.z, but its signature does not verify against this app's release key: ignored` and the check counts as failed. This matters because
+the SHA-256 below comes from the same feed as the download: on its own it only proves the download matches the feed, not who made either. An
+app built with no key (none committed yet) never offers an update.
+
 **Installing it is your choice, never silent.** The item opens a sheet: what is new, the version you have, and **Update** / *Later* (and
 *What's New*, the release's page). Only when you press **Update** does the app (`desktop/mac/Update.swift`):
 
 1. **download** the dmg the feed names (https only; a redirect is followed only to another https address, as GitHub sends a release's
    asset on to its storage; at most 1.5 GB) into a temporary folder of its own, with a progress bar and *Cancel*;
-2. **check its SHA-256** against the feed's: one byte off and nothing is installed;
+2. **check its SHA-256** against the (signed) feed's: one byte off and nothing is installed;
 3. **mount it read-only** (`hdiutil attach -readonly -nobrowse`), take `Pako.app` from it (a real folder, not a link) and **check that app**:
    the same identifier, exactly the version and build the feed promised, newer than yours, a macOS your Mac has (`LSMinimumSystemVersion`,
    and the feed's `minimumMacOS`, checked before downloading anything), and a **valid signature on every architecture** (as
@@ -400,6 +407,30 @@ log. The scripts take no Apple ID, password or key: only the identity's name and
 `PAKO_NOTARY_PROFILE` it stops after signing and says the dmg is not notarized; without `PAKO_SIGN_IDENTITY` everything is ad hoc (fine on
 the Mac that built it). Each step is also a script of its own: `desktop/mac/sign.sh`, `notarize.sh <app|dmg>`, `dmg.sh <app> [folder]`.
 
+**Once: the feed signing key.** The app installs an update only from a `feed.json` signed with your release key, so a public release
+needs one. On the Mac that makes releases:
+
+```sh
+node desktop/mac/feed-sign.ts keygen
+git add desktop/mac/feed-key.pub && git commit -m "The feed's public key"
+```
+
+`keygen` makes an Ed25519 key pair: the **private key goes into your login keychain** (item `pako-feed-signing`, never written to a file,
+never committed), the **public key into `desktop/mac/feed-key.pub`**, which `build.sh` bakes into every app (`PakoFeedPublicKey`). Back the
+private key up somewhere safe (`security find-generic-password -s pako-feed-signing -w` prints it): lose it and apps already out there can
+take no more updates from you; let it leak and anyone who can also change your feed can push an app to them. On another machine (CI), put it
+in `PAKO_FEED_SIGNING_KEY` instead (the same one line; `PAKO_FEED_KEYCHAIN=off` keeps the keychain out of it).
+
+`npm run mac-release` checks the key **first, before building anything**: no key, or a key that is not the one in `feed-key.pub`, stops it
+with a message that says how to make one. `PAKO_LOCAL_RELEASE=1` builds without a key for this Mac only; its `feed.json` stays unsigned and
+no app installs it, so never publish it. `node desktop/mac/feed-sign.ts verify dist/release/feed.json` checks a feed as the app will.
+
+**The first signed release (one time).** Apps already out there (0.3.x) were built before the key: they still read the new feed (they
+ignore its `signature`) and install the update with the SHA-256 check alone, as before. Every app from the first signed release on checks
+the signature. So that release's notes should say it once, for example: "From this version on, Pako only installs updates whose
+announcement is signed with Pako's release key. This update itself was checked the old way (its checksum); if you want to be sure, download
+it from the release page instead of updating in the app."
+
 **The update feed.** `npm run mac-release` ends with `desktop/mac/feed.sh`, which writes `dist/release/feed.json` for the dmg it just made.
 It mounts the dmg read-only and reads the version, build and minimum macOS from the `Pako.app` on it, so the feed describes exactly that
 file:
@@ -420,7 +451,10 @@ By default `url` and `page` point at GitHub Releases of `AnxovatomicaES/pako-per
 repository, `PAKO_RELEASE_URL` / `PAKO_RELEASE_PAGE` other https addresses, `PAKO_RELEASE_NOTES` the one line the update sheet shows
 (`sh desktop/mac/feed.sh <dmg> [feed.json]` runs it alone). Every field but `version` and `url` may be left out, but one that is there and
 wrong (a checksum that is not 64 hex digits, a build that is not a whole number) makes the app ignore the whole feed. A feed with no
-`sha256` (the first format: `version`, `url` of a page, `notes`) is still read, but only opens its page in the browser.
+`sha256` (the first format: `version`, `url` of a page, `notes`) is still read, but only opens its page in the browser. Then release.sh
+signs it (`node desktop/mac/feed-sign.ts sign`): it adds `"signature"`, an Ed25519 signature of the fields one per line in a fixed order
+(`pako-feed-v1`, then `version=`, `build=`, `url=`, `sha256=`, `minimumMacOS=`, `notes=`, `page=`), so the JSON's spacing does not matter
+but any change to a field does. `feed.sh` run alone writes an unsigned feed.
 
 The address of the feed is baked into the build with `PAKO_UPDATE_FEED`. With GitHub Releases, use the address that always points at the
 latest release's asset, so the feed never needs a home of its own:

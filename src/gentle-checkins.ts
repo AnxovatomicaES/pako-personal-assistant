@@ -23,6 +23,7 @@ import type { Kv } from "./kv.ts";
 import { today } from "./lists.ts";
 import { inline } from "./quarantine.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("gentle");
 
@@ -70,6 +71,7 @@ export const CHECKIN_WORDS = {
   full: "You have {n} check-ins waiting already. One can go once it's answered.",
   noLoop: "I don't see that one open any more, so there's nothing to check on.",
   gone: "That check-in is no longer waiting.",
+  unread: "I couldn't read your check-ins just now, so nothing changed. Could you try once more in a moment?",
   answered: "Already answered.",
   briefLine: "🌱 Check-ins kept for here: {list}",
   briefItem: "“{thing}” ({time})",
@@ -204,19 +206,24 @@ export interface CheckInsDeps {
   /** A follow-up's title by its id while it is open (the nudge's button), and its Park (src/followups/owner.ts press "7"). */
   loop?: (id: string) => Promise<{ title: string } | null>;
   parkLoop?: (id: string) => Promise<string>;
+  /** The owner engaged with a follow-up (its "Check on me" pressed): an answer, so its unanswered nudges start again (src/followups/owner.ts). */
+  engaged?: (id: string) => Promise<unknown>;
   log?: (text: string) => void;
 }
 
 export function createCheckIns(d: CheckInsDeps) {
   const now = d.now ?? Date.now;
   let memory = empty();
-  const load = async (): Promise<State> => {
-    if (!d.kv) return structuredClone(memory);
-    try {
-      return stateOf(JSON.parse((await d.kv.get(CHECKINS_KEY)) ?? "{}"));
-    } catch {
-      return empty();
-    }
+  // A store that does not answer throws (src/json-record.ts): an empty list in its place would be saved over every check-in waiting. What
+  // changes the list then changes nothing (and says so); what only reads it (the brief's line, the day's count) gets nothing.
+  const load = async (): Promise<State> => (d.kv ? stateOf((await readJsonRecord(d.kv, CHECKINS_KEY)) ?? {}) : structuredClone(memory));
+  const peek = (): Promise<State> => load().catch((err: Error) => {
+    log.warn(`the check-ins could not be read: ${err.message}`);
+    return empty();
+  });
+  const unread = (err: unknown): string => {
+    log.warn(`the check-ins could not be read, nothing changed: ${(err as Error).message}`);
+    return CT()("unread");
   };
   const save = async (s: State): Promise<void> => {
     const t = now();
@@ -244,7 +251,12 @@ export function createCheckIns(d: CheckInsDeps) {
     const t = now();
     if (o.when < t + 30_000) return { ok: false, say: CT()("past") };
     if (o.when - t > AHEAD_MAX_MS) return { ok: false, say: CT()("far") };
-    const s = await load();
+    let s: State;
+    try {
+      s = await load();
+    } catch (err) {
+      return { ok: false, say: unread(err) };
+    }
     const waiting = s.list.filter((c) => c.state === "waiting" || c.state === "asked");
     if (waiting.length >= CHECKINS_MAX) return { ok: false, say: CT()("full", { n: waiting.length }) };
     const thing = thingOf(o.thing);
@@ -270,7 +282,10 @@ export function createCheckIns(d: CheckInsDeps) {
     const l = d.loop ? await d.loop(loopId).catch(() => null) : null;
     if (!l) return CT()("noLoop");
     const g = await d.settings();
-    return (await add({ when: now() + g.checkinMin * MIN, thing: l.title, loop: loopId })).say;
+    const r = await add({ when: now() + g.checkinMin * MIN, thing: l.title, loop: loopId });
+    // The press is the owner's answer to the nudge, as Done, Snooze or Park are: no fold into the brief for nudges they did answer.
+    if (r.ok && d.engaged) await d.engaged(loopId).catch((err: Error) => log.warn(`a check-in's answer could not be kept on its follow-up: ${err.message}`));
+    return r.say;
   };
 
   /** The button for a follow-up's card ("Check on me in 30 min", or the short one where a title has 20 characters). */
@@ -308,8 +323,20 @@ export function createCheckIns(d: CheckInsDeps) {
   const sweep = (): Promise<string[]> => serial(async () => {
     const t = now();
     const s = await load();
-    const due = s.list.filter((c) => c.state === "waiting" && c.at <= t).sort((a, b) => a.at - b.at);
-    if (!due.length) return [];
+    const waiting = s.list.filter((c) => c.state === "waiting" && c.at <= t).sort((a, b) => a.at - b.at);
+    if (!waiting.length) return [];
+    // A follow-up's check-in whose follow-up was parked or closed since: nothing to ask about, nor to carry to the brief. It ends quietly.
+    // (A follow-up that cannot be read just now is taken as still open.)
+    const due: CheckIn[] = [];
+    for (const c of waiting) {
+      const l = c.loop && d.loop ? await d.loop(c.loop).catch(() => undefined) : undefined;
+      if (l === null) Object.assign(c, { state: "done", endedAt: t });
+      else due.push(c);
+    }
+    if (!due.length) {
+      await save(s);
+      return [];
+    }
     const day = today(t, d.timeZone);
     if (s.day !== day) Object.assign(s, { day, n: 0 });
     // Too old: the brief, quietly. Of several late ones (a sleep), only the newest goes.
@@ -359,7 +386,12 @@ export function createCheckIns(d: CheckInsDeps) {
   /** Yes (1), Not yet (2), Park (3): what to tell the owner. */
   const pressed = (button: "1" | "2" | "3", id: string): Promise<string> => serial(async () => {
     const t = now();
-    const s = await load();
+    let s: State;
+    try {
+      s = await load();
+    } catch (err) {
+      return unread(err);
+    }
     const c = s.list.find((x) => x.id === id);
     if (!c) return CT()("gone");
     if (c.state !== "asked" && c.state !== "waiting") return CT()("answered");
@@ -369,6 +401,9 @@ export function createCheckIns(d: CheckInsDeps) {
     if (button === "1") {
       Object.assign(c, { state: "done", endedAt: t });
       say = CT()("yes");
+    } else if (button === "2" && c.state === "waiting" && c.tries > 0) {
+      // This card's Not yet was pressed already (the same card on another chat, or twice): it counts once, and says the same look again.
+      return CT()("notYet", { time: clock(c.at) });
     } else if (button === "2") {
       if (c.tries >= CHECKIN_TRIES) {
         toBrief(c, t);
@@ -393,7 +428,7 @@ export function createCheckIns(d: CheckInsDeps) {
   /** The brief's line: check-ins kept for it in the last day (too old, over the cap, or stopped after three "Not yet"); null when none. */
   const briefLine = async (): Promise<string | null> => {
     const t = now();
-    const list = (await load()).list.filter((c) => c.state === "brief" && t - (c.endedAt ?? 0) < DAY);
+    const list = (await peek()).list.filter((c) => c.state === "brief" && t - (c.endedAt ?? 0) < DAY);
     if (!list.length) return null;
     return CT()("briefLine", {
       list: list.slice(-5).map((c) => CT()("briefItem", { thing: c.thing || CT()("briefNone"), time: ownerClock(c.due, d.timeZone) })).join(", "),
@@ -402,10 +437,10 @@ export function createCheckIns(d: CheckInsDeps) {
 
   /** First asks today: counted in the shared cap by the follow-ups and proactive Pako. */
   const spentToday = async (): Promise<number> => {
-    const s = await load();
+    const s = await peek();
     return s.day === today(now(), d.timeZone) ? s.n : 0;
   };
 
-  return { add, fromChat, forLoop, loopButton, sweep, pressed, briefLine, spentToday, list: async () => (await load()).list };
+  return { add, fromChat, forLoop, loopButton, sweep, pressed, briefLine, spentToday, list: async () => (await peek()).list };
 }
 export type CheckIns = ReturnType<typeof createCheckIns>;

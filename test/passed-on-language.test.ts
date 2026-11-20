@@ -1,4 +1,4 @@
-// What the review of Phase 1 found in the pieces that have no test file of their own: the language of a message passed on to a friend
+// The pieces that have no test file of their own: the language of a message passed on to a friend
 // (src/language.ts passedOnLanguage, used by the call card in src/voice-tools.ts and the first line of a WhatsApp in src/whatsapp.ts), and a
 // yes typed or said in English (src/voice-tools.ts isYes). The door's side of both is in test/i18n-door.test.ts.
 

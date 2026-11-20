@@ -164,6 +164,7 @@ function dropValues(store: SecretStore, base: string, keys: string[], parts: Map
     store.remove(accounts);
     return true;
   } catch {
+    /* the keychain refused: not removed, the caller says so */
     return false;
   }
 }
@@ -213,6 +214,7 @@ function readRaw(path: string): Raw {
     const v = JSON.parse(text) as unknown;
     return v && typeof v === "object" && !Array.isArray(v) ? { ok: true, text, value: v as Record<string, unknown> } : { ok: false };
   } catch {
+    /* not JSON: not ours */
     return { ok: false };
   }
 }
@@ -288,6 +290,7 @@ export function readSecrets(dir: string): Record<string, unknown> | null {
     try {
       out[k] = JSON.parse(enc) as unknown;
     } catch {
+      /* said in the problems */
       problems.set(resolve(dir), `${k} in the store is not what Pako wrote`);
       return null;
     }
@@ -388,6 +391,7 @@ function autoAllowed(env: Env): boolean {
   try {
     return resolve(home) === resolve(userInfo().homedir);
   } catch {
+    /* no user entry: the HOME given is trusted */
     return true;
   }
 }

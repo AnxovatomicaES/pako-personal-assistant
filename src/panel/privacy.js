@@ -87,6 +87,7 @@ async function exportAll() {
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
     st.note = t("exported", { file: name });
   } catch {
+    /* said in the error line */
     st.error = t("exportFailed");
   } finally {
     st.busy = "";
@@ -104,6 +105,7 @@ async function waitForRestart() {
     try {
       up = (await fetch("/health", { cache: "no-store" })).ok;
     } catch {
+      /* still restarting: asked again */
       up = false;
     }
     if (!up) down = true;
@@ -138,6 +140,7 @@ async function deleteAll() {
     st.restarting = !!out.restarting;
     if (out.restarting) void waitForRestart();
   } catch {
+    /* offline or refused: said in the error line */
     st.error = t("deleteFailed");
   } finally {
     st.busy = "";

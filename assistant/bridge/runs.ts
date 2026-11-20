@@ -2,6 +2,7 @@
 
 import { LIGHT, usageLine, WRITING, type RunKind, type Usage } from "../budget.ts";
 import { ClaudeError, modelUnavailable, type ClaudeResult, type RunConfig } from "./claude.ts";
+import type { CliCompat } from "./cli-version.ts";
 import type { ClaudeHealth } from "./core.ts";
 import type { AfterCore } from "./parts.ts";
 
@@ -41,17 +42,21 @@ export function mountRuns(b: AfterCore) {
     return reporting;
   };
   // The version this computer runs and whether it updates itself (assistant/update.ts), said once at the start and again when it changes:
-  // the server's watchdog (src/watchdog.ts) shows it, and warns the owner when this computer stays more than a day behind.
+  // the server's watchdog (src/watchdog.ts) shows it, and warns the owner when this computer stays more than a day behind. With it, which
+  // Claude Code this is against the tested range (cli-version.ts): the Salud card says when it is outside. An older server reads only what
+  // it knows of the body (the version), and one that takes no `cli` alone answers 400: not asked again until either changes.
   let version: { sha: string; committedAt: number; updatedAt?: number; autoupdate: string } | null = null;
+  let cli: CliCompat | null = null;
   let versionSent = "";
-  const versionKey = (v: NonNullable<typeof version>): string => `${v.sha}|${v.updatedAt ?? 0}|${v.autoupdate}`;
+  const versionKey = (): string => (version ? `${version.sha}|${version.updatedAt ?? 0}|${version.autoupdate}` : "") + (cli ? `|${cli.version}|${cli.status}` : "");
   const reportVersion = async (): Promise<void> => {
-    if (!version || versionSent === versionKey(version)) return;
-    const v = version;
+    const key = versionKey();
+    if ((!version && !cli) || versionSent === key) return;
+    const body = { ...(version ? { version } : {}), ...(cli ? { cli } : {}) };
     try {
-      const r = await api("/assistant/health", { method: "POST", body: { version: v }, timeoutMs: 5000 });
+      const r = await api("/assistant/health", { method: "POST", body, timeoutMs: 5000 });
       // An older server, or one that takes no reports from here: not asked again until the version changes.
-      if (r.ok || r.status === 404 || r.status === 403 || r.status === 400) versionSent = versionKey(v);
+      if (r.ok || r.status === 404 || r.status === 403 || r.status === 400) versionSent = key;
       else log(`version report refused: ${r.status} (sent again on the next round)`);
     } catch (err) {
       log(`version report failed: ${(err as Error).message} (sent again on the next round)`);
@@ -99,7 +104,7 @@ export function mountRuns(b: AfterCore) {
           result = await once({ ...c, model: strong });
           model = strong;
         } catch (err) {
-          if (!(err instanceof ClaudeError) || !modelUnavailable(err.message, strong)) throw err;
+          if (!(err instanceof ClaudeError) || !modelUnavailable(err.message, strong, err)) throw err;
           if (budget.modelOff(strong)) {
             log(`${kind}: ${strong} is not available to this account (${err.message.slice(0, 120)}): ${c.model || "the default model"} runs instead until tomorrow`);
           }
@@ -158,12 +163,16 @@ export function mountRuns(b: AfterCore) {
   /** Whether how Claude is doing changed since the server last took it: tick reports it then. */
   const healthDue = (): boolean => health !== reported;
   /** Whether the version this computer runs is still to be told: tick reports it then. */
-  const versionDue = (): boolean => !!version && versionSent !== versionKey(version);
+  const versionDue = (): boolean => (!!version || !!cli) && versionSent !== versionKey();
   /** What this computer runs (assistant/update.ts), told to the server on the next round. */
   const setVersion = (v: { sha: string; committedAt: number; updatedAt?: number; autoupdate: string }): void => {
     version = v;
   };
-  return { reportHealth, reportVersion, reportUsage, run, background, rehearsal, loginWait, healthDue, versionDue, setVersion };
+  /** Which Claude Code this is against the tested range (cli-version.ts), told to the server with the version. */
+  const setCli = (c: CliCompat): void => {
+    cli = c;
+  };
+  return { reportHealth, reportVersion, reportUsage, run, background, rehearsal, loginWait, healthDue, versionDue, setVersion, setCli };
 }
 
 export type Runs = ReturnType<typeof mountRuns>;

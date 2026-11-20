@@ -36,6 +36,7 @@ import { inline } from "./quarantine.ts";
 import { isEvery, repeatText, whenText, type Every } from "./undo.ts";
 import { firstRepeat, localStamp, localToEpoch, repeatAfter } from "./whatsapp.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("routines");
 
@@ -335,14 +336,9 @@ export function createRoutines(d: RoutinesDeps) {
 
   const readStrict = async (): Promise<Book> => {
     if (!d.kv) return structuredClone(local);
-    const raw = await d.kv.get(ROUTINES_KEY);
+    const raw = await readJsonRecord(d.kv, ROUTINES_KEY);
     if (!raw) return { routines: [], watches: [], seen: {} };
-    try {
-      return clean(JSON.parse(raw));
-    } catch {
-      log.error("the stored routines are not valid JSON: starting again");
-      return { routines: [], watches: [], seen: {} };
-    }
+    return clean(raw);
   };
   const write = async (b: Book): Promise<void> => {
     if (d.kv) await d.kv.set(ROUTINES_KEY, JSON.stringify(b), TTL_SECONDS);
@@ -386,7 +382,8 @@ export function createRoutines(d: RoutinesDeps) {
     try {
       return (await d.control.state()).paused !== null;
     } catch {
-      return true; // a pause nobody can read is a pause (src/control.ts fails closed too)
+      /* a pause nobody can read is a pause (src/control.ts fails closed too) */
+      return true;
     }
   };
 
@@ -519,6 +516,7 @@ export function createRoutines(d: RoutinesDeps) {
     try {
       b = await readStrict();
     } catch {
+      /* the store did not answer: the owner is told it could not be read */
       return t("unread");
     }
     if (!b.routines.length) return t("routinesNone");
@@ -533,6 +531,7 @@ export function createRoutines(d: RoutinesDeps) {
     try {
       b = await readStrict();
     } catch {
+      /* the store did not answer: the owner is told it could not be read */
       return t("unread");
     }
     if (!b.watches.length) return t("watchesNone");
@@ -552,6 +551,7 @@ export function createRoutines(d: RoutinesDeps) {
         watches: b.watches.map((w) => t("ctxWatch", { n: w.n, what: watchWhat(w, l), text: w.text, once: w.once ? t("once") : "", paused: w.paused ? t("paused") : "" })),
       };
     } catch {
+      /* best effort: the context goes without the routines when they cannot be read */
       return null;
     }
   };

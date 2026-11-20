@@ -284,6 +284,7 @@ async function load() {
     }
     state = r.status === 200 ? r.body : null;
   } catch {
+    /* offline: no brief to show */
     state = null;
   }
   if (state?.lang && state.lang !== document.documentElement.lang) document.documentElement.lang = state.lang;

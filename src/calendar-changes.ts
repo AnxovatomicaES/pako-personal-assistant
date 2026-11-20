@@ -8,6 +8,7 @@
 import type { CalEvent } from "./calendar.ts";
 import type { Kv } from "./kv.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("calendar");
 
@@ -125,10 +126,11 @@ export function createCalendarChanges(d: {
   let chain: Promise<unknown> = Promise.resolve();
   const load = async (): Promise<State> => {
     if (!d.kv) return structuredClone(memory);
-    const raw = await d.kv.get(CALENDAR_CHANGES_KEY);
+    const raw = await readJsonRecord(d.kv, CALENDAR_CHANGES_KEY);
     try {
-      return raw ? stateOf(JSON.parse(raw)) : { events: null, log: [] };
+      return raw ? stateOf(raw) : { events: null, log: [] };
     } catch {
+      /* not JSON: nothing known yet */
       return { events: null, log: [] };
     }
   };

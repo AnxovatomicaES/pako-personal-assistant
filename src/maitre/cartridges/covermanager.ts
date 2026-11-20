@@ -55,6 +55,7 @@ export function freeTimes(json: string): string[] | null {
   try {
     d = JSON.parse(json);
   } catch {
+    /* not JSON: unreadable */
     return null;
   }
   if (!d || typeof d !== "object") return null;
@@ -107,6 +108,7 @@ async function verify(page: Page): Promise<Evidence | null> {
   try {
     ({ url, text } = await page.snapshot(4000));
   } catch {
+    /* the page is gone: no confirmation read */
     return null;
   }
   const u = new URL(url);
@@ -242,6 +244,7 @@ export const coverManager: Cartridge = {
       await page.waitForText(/cancel(l)?ed|cancelada|anulada/i, stepMs);
       return true;
     } catch {
+      /* no cancellation shown in time: not cancelled */
       return false;
     }
   },

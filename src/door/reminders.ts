@@ -5,6 +5,7 @@ import { isEvery, type Every, type SavedReminder } from "../undo.ts";
 import { localToEpoch, firstRepeat, localStamp, repeatAfter } from "./time.ts";
 import { WINDOW_MS, REMINDERS_MAX } from "./shared.ts";
 import type { Reminder, Door } from "./door.ts";
+import { readJsonRecord } from "../json-record.ts";
 
 const REMINDERS_KEY = "assistant-reminders";
 
@@ -22,10 +23,10 @@ export function mountReminders(door: Door): Part {
   const loadReminders = async (): Promise<Reminder[]> => {
     if (reminders) return reminders;
     let list: Reminder[] = [];
-    const raw = d.kv ? await d.kv.get(REMINDERS_KEY) : null;
+    const raw = d.kv ? await readJsonRecord(d.kv, REMINDERS_KEY) : null;
     if (reminders) return reminders; // loaded by another call meanwhile
     try {
-      const parsed: unknown = raw ? JSON.parse(raw) : [];
+      const parsed: unknown = raw ? raw : [];
       if (Array.isArray(parsed)) {
         list = parsed.filter((r): r is Reminder => !!r && typeof r.id === "string" && typeof r.at === "number" && typeof r.text === "string");
         // A repeat that lost its first time cannot say its next one: it fires once, as a plain reminder.
@@ -36,6 +37,7 @@ export function mountReminders(door: Door): Part {
         }
       }
     } catch {
+      /* not JSON: no reminders */
       list = [];
     }
     reminders = list;

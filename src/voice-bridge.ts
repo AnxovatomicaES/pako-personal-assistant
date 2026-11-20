@@ -331,6 +331,7 @@ export function parseResult(raw: string): VoiceResult | null {
   try {
     j = JSON.parse(raw);
   } catch {
+    /* not JSON: no result */
     return null;
   }
   if (!j || typeof j !== "object") return null;

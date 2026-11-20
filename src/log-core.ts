@@ -175,6 +175,7 @@ function textValue(v: unknown): string {
   try {
     return JSON.stringify(v);
   } catch {
+    /* a cycle or a BigInt: inspected instead */
     return inspect(v, { depth: 2, breakLength: Infinity });
   }
 }
@@ -188,6 +189,7 @@ export function formatEntry(e: LogEntry, format: "text" | "json"): string {
     try {
       return JSON.stringify(out);
     } catch {
+      /* a field that will not serialize: the line without its fields */
       return JSON.stringify({ ts: e.ts, level: e.level, component: e.component, msg: e.msg });
     }
   }

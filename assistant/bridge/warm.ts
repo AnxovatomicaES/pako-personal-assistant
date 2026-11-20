@@ -4,9 +4,8 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { SYSTEM_PROMPT } from "../prompt.ts";
 import { childEnv, claudeCommand } from "./cli.ts";
-import {
-  buildClaudeArgs, ClaudeError, classify, readTheWeb, runClaude, runningClaude, type ClaudeJson, type ClaudeResult, type RunConfig,
-} from "./claude.ts";
+import { buildClaudeArgs, ClaudeError, readTheWeb, runClaude, runningClaude, type ClaudeJson, type ClaudeResult, type RunConfig } from "./claude.ts";
+import { classifyFailure, errorSignals } from "./claude-errors.ts";
 import { mcpDownIn, seenFields, watchTurn } from "./mcp.ts";
 
 /**
@@ -16,8 +15,9 @@ import { mcpDownIn, seenFields, watchTurn } from "./mcp.ts";
  * of which under 0.9 s was the API; the same turn on a process already up took 2.3 to 2.8 s. That start is paid once per conversation, and
  * prepare() pays it in advance, between messages.
  *
- * What does not change: a turn is still one answer read whole, its tags read by parseReply; num_turns is the turn's own (checked: 1 for each
- * plain turn of a process), so readTheWeb marks a turn that searched the web as before. If the web counters were the process's total, a later
+ * What does not change: a turn is still one answer read whole, its tags read by parseReply. Each turn's lines are read for tool use
+ * (watchTurn: a WebSearch or WebFetch tool_use marks the turn) and for structured error signals (errorSignals); num_turns is only
+ * readTheWeb's fallback, and is the turn's own (checked: 1 for each plain turn of a process). If the web counters were the process's total, a later
  * turn would be marked too: the safe side, and the conversation is marked anyway once it read the web (state.outside). The process is for one
  * session only: another session id (a new conversation, a rotation, a conversation dropped for outside text) ends it and starts another. A
  * timeout, an error, a limit or an ended process end it too; the next message starts a new one. Idle for `idleMs`, it ends by itself.
@@ -37,6 +37,10 @@ export function createWarmClaude(o: { idleMs: number; log?: (line: string) => vo
     idle: ReturnType<typeof setTimeout> | null;
     /** The turn under way's tool use (a process with Pako's tools); and whether its MCP server failed to load, as its init line said. */
     watch: ReturnType<typeof watchTurn> | null;
+    /** The turn under way's error signals (a stream-json event that says why it failed). */
+    signals: ReturnType<typeof errorSignals> | null;
+    /** spawn's error code when the process could not start. */
+    spawnCode?: string;
     mcpDown: boolean;
   }
   let p: Proc | null = null;
@@ -64,7 +68,7 @@ export function createWarmClaude(o: { idleMs: number; log?: (line: string) => vo
       stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32", windowsHide: true, env: { ...childEnv(process.env), NO_COLOR: "1" },
       ...(c.stateDir ? { cwd: c.stateDir } : {}),
     });
-    const x: Proc = { child, key: keyOf(c), session, busy: false, dead: false, err: "", cost: 0, turn: null, idle: null, watch: null, mcpDown: false };
+    const x: Proc = { child, key: keyOf(c), session, busy: false, dead: false, err: "", cost: 0, turn: null, idle: null, watch: null, signals: null, mcpDown: false };
     if (child.pid) runningClaude.add(child.pid);
     child.stdout!.setEncoding("utf8");
     child.stderr!.setEncoding("utf8");
@@ -78,6 +82,7 @@ export function createWarmClaude(o: { idleMs: number; log?: (line: string) => vo
         const down = mcpDownIn(l);
         if (down !== null) x.mcpDown = down;
         x.watch?.line(l);
+        x.signals?.line(l);
         if (/"type"\s*:\s*"result"/.test(l)) x.turn?.(l);
       }
     });
@@ -94,7 +99,10 @@ export function createWarmClaude(o: { idleMs: number; log?: (line: string) => vo
       if (p === x) p = null;
       if (was || x.turn) x.turn?.(null, why);
     };
-    child.on("error", (e) => gone(`could not start ${c.claudeBin}: ${e.message}`));
+    child.on("error", (e) => {
+      x.spawnCode = (e as NodeJS.ErrnoException).code;
+      gone(`could not start ${c.claudeBin}: ${e.message}`);
+    });
     child.on("close", (code) => gone(`${x.err} exit code ${code}`));
     return x;
   };
@@ -114,7 +122,8 @@ export function createWarmClaude(o: { idleMs: number; log?: (line: string) => vo
       p = x;
       x.busy = true;
       x.err = "";
-      x.watch = c.mcp ? watchTurn() : null;
+      x.watch = watchTurn();
+      x.signals = errorSignals();
       if (x.idle) clearTimeout(x.idle);
       return new Promise<ClaudeResult>((resolve, reject) => {
         let settled = false;
@@ -136,7 +145,7 @@ export function createWarmClaude(o: { idleMs: number; log?: (line: string) => vo
           if (line === null) {
             end(x);
             const msg = (why ?? "").replace(/\s+/g, " ").trim().slice(0, 300) || "the claude process ended";
-            return reject(new ClaudeError(msg, classify(msg)));
+            return reject(classifyFailure({ message: msg, ...(x.spawnCode ? { spawnCode: x.spawnCode } : {}), signals: x.signals?.done() ?? {} }));
           }
           let doc: ClaudeJson | null = null;
           try {
@@ -148,7 +157,7 @@ export function createWarmClaude(o: { idleMs: number; log?: (line: string) => vo
           if (!doc || doc.is_error === true || !text.trim()) {
             end(x);
             const msg = `${text} ${x.err}`.replace(/\s+/g, " ").trim().slice(0, 300) || "an empty answer";
-            return reject(new ClaudeError(msg, classify(msg)));
+            return reject(classifyFailure({ message: msg, doc, signals: x.signals?.done() ?? {} }));
           }
           if (typeof doc.session_id === "string" && doc.session_id) x.session = doc.session_id;
           const total = typeof doc.total_cost_usd === "number" ? doc.total_cost_usd : 0;
@@ -157,8 +166,10 @@ export function createWarmClaude(o: { idleMs: number; log?: (line: string) => vo
           rest(x);
           const seen = x.watch?.done() ?? null;
           x.watch = null;
-          if (seen && x.mcpDown) seen.mcpDown = true;
-          resolve({ text, sessionId: x.session, costUsd, ...(readTheWeb(doc, seen ?? undefined) ? { readOutside: true } : {}), ...seenFields(seen) });
+          // Only a run that asked for Pako's server can find it missing (without one, the init line lists no servers at all).
+          if (seen) seen.mcpDown = !!c.mcp && (seen.mcpDown || x.mcpDown);
+          const tools = c.tools.length > 0 || !!c.mcp;
+          resolve({ text, sessionId: x.session, costUsd, ...(readTheWeb(doc, seen ?? undefined, tools) ? { readOutside: true } : {}), ...seenFields(seen) });
         };
         x.child.stdin!.write(`${JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "text", text: prompt }] } })}\n`);
       });

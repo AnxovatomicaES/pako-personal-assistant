@@ -271,6 +271,7 @@ async function loadBriefTop() {
     const r = await fetch("/panel/api/brief/today", { credentials: "same-origin", cache: "no-store" });
     briefView = r.ok ? await r.json() : null;
   } catch {
+    /* offline: no brief at the top */
     briefView = null;
   }
   renderBriefTop();
@@ -292,6 +293,12 @@ function renderBriefTop() {
   $("#brief-top-open").textContent = DASH.briefOpen;
 }
 
+/** A loop's time as a chip; one whose time passed is "overdue" in red, or in gentle mode "time passed", plain (no shame). */
+function dueChip(at, now) {
+  if (at < now && data.gentle === true) return h("span", { class: "count-chip" }, t("until.past"));
+  return h("span", { class: `count-chip ${at < now ? "late" : ""}` }, until(at, now).text);
+}
+
 /** The open loops: what the owner owes first (overdue on top), then what others owe them. Hidden while there are none. */
 function renderLoops() {
   const card = $("#loops");
@@ -303,7 +310,7 @@ function renderLoops() {
   $("#loops-list").replaceChildren(...sorted.slice(0, 20).map((l) => h("li", { class: "item" },
     h("span", { class: "ic" }, icon(owes(l) ? "circle-dot" : "hourglass")),
     h("div", { class: "body" },
-      h("div", { class: "row" }, h("span", { class: "who" }, l.title), l.dueAt ? h("span", { class: `count-chip ${l.dueAt < now ? "late" : ""}` }, until(l.dueAt, now).text) : ""),
+      h("div", { class: "row" }, h("span", { class: "who" }, l.title), l.dueAt ? dueChip(l.dueAt, now) : ""),
       l.who ? h("div", { class: "what" }, l.who) : ""))));
   hideWhenEmpty(card, sorted.length > 0);
 }
@@ -720,6 +727,7 @@ function wire() {
       toast(pausing ? t("toast.paused") : t("toast.running"));
       if (animate()) gsap().fromTo(".orb-wrap", { scale: 0.9 }, { scale: 1, duration: 0.9, ease: "elastic.out(1, 0.4)" });
     } catch {
+      /* offline or refused: said in a toast */
       toast(t("toast.cantChange"));
     }
   });
@@ -1546,6 +1554,7 @@ async function waitForRestart() {
     try {
       up = (await fetch("/health", { cache: "no-store" })).ok;
     } catch {
+      /* still restarting: asked again */
       up = false;
     }
     if (!up) down = true;

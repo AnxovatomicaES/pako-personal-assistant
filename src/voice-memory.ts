@@ -16,6 +16,7 @@
 import { locale, texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("voice-memory");
 
@@ -122,14 +123,9 @@ export function loadMemory(kv: Kv | null): MemoryStore {
   // Strict: a store that does not answer is an error here, never an empty record.
   const readStrict = async (): Promise<Stored> => {
     if (!kv) return structuredClone(local);
-    const raw = await kv.get(KEY);
+    const raw = await readJsonRecord(kv, KEY);
     if (!raw) return empty();
-    try {
-      return clean(JSON.parse(raw));
-    } catch {
-      log.error("the stored record is not valid JSON: starting a new one");
-      return empty();
-    }
+    return clean(raw);
   };
   const write = async (m: Stored): Promise<void> => {
     if (kv) await kv.set(KEY, JSON.stringify(m), TTL_SECONDS);

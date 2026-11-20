@@ -23,6 +23,7 @@ import type { InboundReview } from "./meeting-review.ts";
 import type { Inbound } from "./whatsapp.ts";
 import type { HealthReport } from "./watchdog.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("zoom");
 
@@ -288,11 +289,11 @@ export function createZoom(d: ZoomDeps) {
   const load = async (): Promise<ZoomState> => {
     if (state) return state;
     let s: ZoomState = { seen: [], primed: false, done: [] };
-    const raw = d.kv ? await d.kv.get(STATE_KEY) : null; // a failed read throws: an empty state must not be saved over the real one
+    const raw = d.kv ? await readJsonRecord(d.kv, STATE_KEY) : null; // a failed read throws: an empty state must not be saved over the real one
     if (state) return state;
     try {
       if (raw) {
-        const p = JSON.parse(raw) as Partial<ZoomState>;
+        const p = raw as Partial<ZoomState>;
         s = {
           seen: (Array.isArray(p.seen) ? p.seen : []).filter((x): x is string => typeof x === "string"),
           primed: p.primed === true,
@@ -303,7 +304,7 @@ export function createZoom(d: ZoomDeps) {
         };
       }
     } catch {
-      log.error("the stored state is not valid JSON: starting again");
+      log.error("the stored state could not be used: starting again");
     }
     state = s;
     return s;
@@ -537,6 +538,7 @@ export function createZoom(d: ZoomDeps) {
         const name = [u.first_name, u.last_name].filter((x) => typeof x === "string" && x).join(" ") || (typeof u.display_name === "string" ? u.display_name : "");
         return { name: name.slice(0, 100), email: typeof u.email === "string" ? u.email.slice(0, 200) : "" };
       } catch {
+        /* best effort: a user Zoom will not describe is left out */
         return null;
       }
     },

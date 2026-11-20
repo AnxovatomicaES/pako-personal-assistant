@@ -185,6 +185,7 @@ export function mountTeamsConnect(app: Express, d: TeamsConnectDeps | null): voi
       });
       j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
     } catch {
+      /* the network failed: said to the user as no answer */
       return fail(say("exchange", { why: "no answer" }));
     }
     if (typeof j.access_token !== "string") {
@@ -202,6 +203,7 @@ export function mountTeamsConnect(app: Express, d: TeamsConnectDeps | null): voi
         const r = await f(`${graph}${path}`, { headers: { authorization: `Bearer ${access}` }, signal: AbortSignal.timeout(15_000) });
         return { status: r.status, body: (await r.json().catch(() => ({}))) as Record<string, unknown> };
       } catch {
+        /* no answer: status 0, said below */
         return { status: 0, body: {} };
       }
     };

@@ -26,6 +26,7 @@ import { createHash } from "node:crypto";
 import type { Kv } from "./kv.ts";
 import type { HealthReport } from "./watchdog.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("teams");
 
@@ -398,6 +399,7 @@ export function createTeams(d: TeamsDeps) {
       try {
         r = await f(url, { headers: { authorization: `Bearer ${token}`, accept: "application/json", ...headers }, signal: AbortSignal.timeout(20_000) });
       } catch {
+        /* said in the health line, and thrown */
         d.health?.(false, `Teams ${what}: no answer`);
         throw new Error(`${what}: no answer`);
       }
@@ -440,10 +442,11 @@ export function createTeams(d: TeamsDeps) {
     if (state) return state;
     let s: State | null = null;
     try {
-      const raw = d.kv ? await d.kv.get(TEAMS_KEY) : null;
-      const p = raw ? (JSON.parse(raw) as Partial<State>) : null;
+      const raw = d.kv ? await readJsonRecord(d.kv, TEAMS_KEY) : null;
+      const p = raw ? (raw as Partial<State>) : null;
       if (p && typeof p.start === "string") s = { ...fresh(), ...p } as State;
     } catch {
+      /* not JSON, or the store did not answer: logged, and started from now */
       log.error("the stored place could not be read: starting from now");
     }
     firstEver = !s;
@@ -525,6 +528,7 @@ export function createTeams(d: TeamsDeps) {
         const j = await get(`/me/chats/${encodeURIComponent(c.id!)}/members`, "a chat's members");
         members.set(c.id!, (Array.isArray(j.value) ? (j.value as GraphChat["members"]) : [])!.slice(0, 10));
       } catch {
+        /* the members could not be read: none for this chat */
         members.set(c.id!, []);
       }
     }

@@ -20,6 +20,7 @@ import type { Inbound } from "./whatsapp.ts";
 import { localToEpoch } from "./whatsapp.ts";
 import { vttToText } from "./zoom.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
 
 const log = createLog("zoom");
 
@@ -99,11 +100,12 @@ export function createZoomLocal(d: ZoomLocalDeps) {
   const home = d.home ?? homedir();
   const hash = (s: string): string => createHash("sha256").update(s).digest("hex").slice(0, 24);
   const seenRead = async (): Promise<string[]> => {
-    const raw = await d.kv.get(ZOOM_LOCAL_KEY);
+    const raw = await readJsonRecord(d.kv, ZOOM_LOCAL_KEY);
     try {
-      const p = raw ? (JSON.parse(raw) as { seen?: unknown }) : {};
+      const p = raw ? (raw as { seen?: unknown }) : {};
       return Array.isArray(p.seen) ? p.seen.filter((x): x is string => typeof x === "string") : [];
     } catch {
+      /* not JSON: none seen */
       return [];
     }
   };
@@ -120,6 +122,7 @@ export function createZoomLocal(d: ZoomLocalDeps) {
       const root = realpathSync(home);
       return real.startsWith(root + sep) && statSync(real).isDirectory() ? real : null;
     } catch {
+      /* not there, or outside home: none */
       return null;
     }
   };
