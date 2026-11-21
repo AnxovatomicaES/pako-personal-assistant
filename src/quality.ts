@@ -22,8 +22,8 @@ export const FEEDBACK_KEY = "feedback";
 const TTL_SECONDS = 90 * 24 * 3600;
 const KEEP_MS = 90 * 24 * 3600_000;
 const WEEK_MS = 7 * 24 * 3600_000;
-/** A nudge nobody answered (no press, no 👍/👎) for this long counts as ignored. */
-const IGNORED_AFTER_MS = 12 * 3600_000;
+/** A nudge nobody answered (no press, no 👍/👎) for this long counts as ignored (the beta's audit questions too, src/beta-audit.ts). */
+export const IGNORED_AFTER_MS = 12 * 3600_000;
 /** A typed "yes"/"no" answers the last card or brief for this long at most. */
 const ASK_MS = 6 * 3600_000;
 const VERDICTS_MAX = 600;
@@ -56,6 +56,8 @@ interface NudgeSeen {
 export interface Miss {
   at: number;
   what: string;
+  /** The follow-up "you missed …" put on the open list: the beta's audit leaves it out of what Pako caught (src/beta-audit.ts). */
+  loop?: string;
 }
 interface State {
   verdicts: Verdict[];
@@ -115,7 +117,9 @@ export function qualityStateOf(raw: unknown): State {
         }]
       : []);
   const misses = (v: unknown): Miss[] => (Array.isArray(v) ? v : []).flatMap((m): Miss[] =>
-    isObject(m) && typeof m.at === "number" && typeof m.what === "string" ? [{ at: m.at, what: m.what.slice(0, WHAT_MAX) }] : []).slice(-MISSES_MAX);
+    isObject(m) && typeof m.at === "number" && typeof m.what === "string"
+      ? [{ at: m.at, what: m.what.slice(0, WHAT_MAX), ...(typeof m.loop === "string" && HEX10.test(m.loop) ? { loop: m.loop } : {}) }]
+      : []).slice(-MISSES_MAX);
   return { verdicts: verdicts.slice(-VERDICTS_MAX), nudges: nudges.slice(-NUDGES_MAX), misses: misses(o.misses), reopens: misses(o.reopens) };
 }
 
@@ -297,8 +301,9 @@ export function createQuality(d: QualityDeps) {
     itemsOf: async (doc: string): Promise<Record<string, "up" | "down">> =>
       Object.fromEntries((await read()).verdicts.filter((v) => v.ref.startsWith(`${doc}.`)).map((v) => [v.ref.slice(doc.length + 1), v.verdict])),
     stats: async (): Promise<QualityStats> => statsOf(await read(), now()),
-    /** "you missed …": a promise Pako never caught, kept for the evals (npm run evals:from-feedback) and the beta report. */
-    missed: (what: string): Promise<void> => mutate((s) => void (s.misses ??= []).push({ at: now(), what: what.slice(0, WHAT_MAX) })),
+    /** "you missed …": a promise Pako never caught, kept for the evals (npm run evals:from-feedback) and the beta report; `loop`: the one it made. */
+    missed: (what: string, loop?: string): Promise<void> =>
+      mutate((s) => void (s.misses ??= []).push({ at: now(), what: what.slice(0, WHAT_MAX), ...(loop && HEX10.test(loop) ? { loop } : {}) })),
     /** "reopen …" found one: a close of Pako's the owner undid. */
     reopened: (what: string): Promise<void> => mutate((s) => void (s.reopens ??= []).push({ at: now(), what: what.slice(0, WHAT_MAX) })),
     /** What to tell the owner after "you missed …": with the loop now open, or without one. */

@@ -48,6 +48,10 @@ test("chunkText: short text stays whole, long text is cut at a paragraph or spac
   assert.ok(parts.length > 1 && parts.every((p) => p.length <= 500));
   assert.equal(parts.join(" "), long, "nothing lost");
   assert.equal(chunkText("x".repeat(250), 100).join(""), "x".repeat(250), "an unbroken run is cut at the limit");
+  const emoji = `x${"😀".repeat(2500)}`;
+  const cut = chunkText(emoji);
+  assert.ok(cut.every((p) => p.length <= 4000 && !/[\uD800-\uDBFF]$/.test(p) && !/^[\uDC00-\uDFFF]/.test(p)), "never half an emoji");
+  assert.equal(cut.join(""), emoji, "nothing lost");
 });
 
 function fakeKv(fail = false) {
@@ -2114,4 +2118,51 @@ test("P4: cleaning a call's words reaches a fixed point, so cleaning again when 
   }
   assert.equal(cleanCallMessage("Hola, hola Ana, soy Marta. Llego tarde.", "Marta"), "Llego tarde.");
   assert.equal(cleanCallMessage("hola que tal", "Marta"), "hola que tal", "a greeting without its punctuation is the message");
+});
+
+test("a forwarded message is someone else's words: its RESUME, yes or UNDO is not the owner's command; it goes to the assistant as outside text", async () => {
+  const control = createControl(null);
+  const r = await rig({ control });
+  const fwd = { context: { forwarded: true } };
+  try {
+    await r.hook(r.payload([r.text("STOP")]));
+    assert.notEqual(await control.paused(), null);
+    await r.hook(r.payload([r.text("RESUME", OWNER_WA, fwd)]));
+    assert.notEqual(await control.paused(), null, "a forwarded RESUME does not end the owner's STOP");
+    assert.ok((await r.wa.inbox.peek()).some((m) => m.text === "RESUME" && m.forwarded === true), "it reaches the assistant, marked");
+    await r.hook(r.payload([r.text("RESUME")]));
+    assert.equal(await control.paused(), null);
+
+    await r.post("/assistant/reply", { send: { to: "Ana", text: "hola" } });
+    await r.hook(r.payload([r.text("yes", OWNER_WA, fwd)]));
+    assert.deepEqual(r.sent.filter((s) => s.body.to === ANA_WA), [], "a forwarded yes sends nothing to a friend");
+  } finally {
+    r.close();
+  }
+});
+
+test("STOP takes effect before the notices kept for later are given: a slow send of them never delays the pause", async () => {
+  const control = createControl(null);
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((r) => (release = r));
+  const r = await rig({
+    control,
+    beforeSend: async (body) => {
+      if (body.type === "text" && /Slack · Luis/.test(String(body.text?.body))) await gate;
+    },
+  });
+  try {
+    assert.equal(await r.wa.notifyOwner("💬 Slack · Luis (privado): ¿estás?"), "held");
+    const stopping = r.hook(r.payload([r.text("STOP")]));
+    const end = Date.now() + 2000;
+    while ((await control.paused()) === null && Date.now() < end) await new Promise((x) => setTimeout(x, 20));
+    const pausedFirst = (await control.paused()) !== null;
+    release();
+    await stopping;
+    assert.ok(pausedFirst, "paused while the kept notices were still being sent");
+    assert.ok(r.texts().some((t) => /Slack · Luis/.test(t)), "the kept notices are still given");
+  } finally {
+    release();
+    r.close();
+  }
 });

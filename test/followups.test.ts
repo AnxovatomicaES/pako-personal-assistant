@@ -232,6 +232,39 @@ test("no silent close: a loop a check closed is listed as closed for you, with w
   assert.equal((await r.engine.reopenByWords("montar reunion")).ok, false, "an open one is not reopened again");
 });
 
+test("a loop the owner reopened is not closed again by the same check: the evidence they said was wrong is still there", async () => {
+  const r = rig();
+  await askAndExtract(r);
+  r.zoomMeetings.push({ topic: "Samir / Michael / Stan", at: Date.parse("2026-11-16T10:15:00Z"), createdAt: T0 + MIN });
+  r.clock.now = T0 + 10 * MIN;
+  await r.engine.tick();
+  assert.deepEqual(await r.engine.open(), [], "closed by the check");
+  assert.equal((await r.engine.reopenByWords("montar reunion")).ok, true);
+  // Looked at again an hour before its time: the same Zoom meeting is still there, and the owner said it is not the one.
+  for (const at of [T0 + 45 * MIN, T0 + 90 * MIN, T0 + 100 * MIN]) {
+    r.clock.now = at;
+    await r.engine.tick();
+  }
+  const open = await r.engine.open();
+  assert.equal(open.length, 1, "still open: the owner reopened it");
+  assert.deepEqual(await r.engine.closedForYou(T0), [], "not closed for them again");
+  // Opened again from the phone (reopenClosed) or from Reminders (reopen): the same, and a later Done of theirs is never "closed for you".
+  for (const how of ["phone", "reminders"] as const) {
+    const q = rig();
+    await askAndExtract(q);
+    q.zoomMeetings.push({ topic: "Samir / Michael / Stan", at: Date.parse("2026-11-16T10:15:00Z"), createdAt: T0 + MIN });
+    q.clock.now = T0 + 10 * MIN;
+    await q.engine.tick();
+    const [gone] = (await q.engine.read()).loops;
+    if (how === "phone") await q.engine.reopenClosed([{ id: gone!.id, title: gone!.title, status: "open", nextCheckAt: 0 }]);
+    else await q.engine.reopen([gone!.id]);
+    assert.equal((await q.engine.read()).loops[0]!.autoClosed, undefined, `${how}: no longer closed by Pako`);
+    await q.engine.chaseTick();
+    await q.engine.press("1", gone!.id);
+    assert.deepEqual(await q.engine.closedForYou(T0), [], `${how}: the owner's own Done is theirs`);
+  }
+});
+
 test("a loop the owner closed (Done) is theirs: never listed as closed for you, never reopened by words", async () => {
   const r = rig();
   await askAndExtract(r);
@@ -418,6 +451,26 @@ test("an older bridge: the job is never answered -> no loops, no nudges, and the
   assert.equal(r.cards.length + r.notices.length, 0);
   await r.engine.observeSlack(rohan(r.clock.now, "hola", String(r.clock.now / 1000)));
   assert.equal((await r.engine.read()).jobs.length, 0);
+});
+
+test("a job that is never answered (the inbox let it go) holds its conversation only a while: its loops are still nudged, its new messages read", async () => {
+  const r = rig();
+  const due = JSON.stringify({ loops: [{ ...JSON.parse(EXTRACTED).loops[0], due: "2026-11-16 17:00", tz: "Europe/Madrid" }] });
+  await askAndExtract(r, due);
+  // "thanks!" from Rohan: a job of its own, which the inbox drops (more than ten waiting while the computer slept).
+  await r.engine.observeSlack(rohan(T0 + 4 * MIN, "thanks!"));
+  r.clock.now = T0 + 8 * MIN;
+  await r.engine.tick();
+  assert.equal(r.queued.length, 2, "the second job went to the inbox, and is never answered");
+  for (let at = T0 + 10 * MIN; at <= T0 + 7 * 60 * MIN; at += 5 * MIN) {
+    r.clock.now = at;
+    await r.engine.tick();
+  }
+  assert.ok(r.cards.length >= 1, "the loop is nudged before its time");
+  await r.engine.observeSlack(rohan(r.clock.now, "also, can you send me the Q4 deck?"));
+  r.clock.now += 4 * MIN;
+  await r.engine.tick();
+  assert.equal(r.queued.length, 3, "a new message in that conversation is read the same day, not two days later");
 });
 
 test("restart mid-wait: the batch and the loop are in the store; a new process picks them up on time", async () => {
@@ -651,4 +704,52 @@ test("the day's budget is shared with proactive Pako's suggestions: what it said
     assert.equal(said.length, cards, `${others} suggestions said today`);
     assert.equal(await engine.spentToday(), cards);
   }
+});
+
+test("restart mid-flush: a due batch is still in the store until its job is queued; after a restart it is queued once, never lost or doubled", async () => {
+  // The inbox as the real one keeps it: an id seen once is refused again (src/door/inbox.ts).
+  const seen = new Set<string>();
+  const inbox: Inbound[] = [];
+  const add = async (m: Inbound) => (seen.has(m.id) ? false : (seen.add(m.id), inbox.push(m), true));
+  const hang = () => new Promise<never>(() => undefined);
+  const engineOn = (kv: Kv, now: number, o: { history?: () => Promise<SlackLine[]>; enqueue?: (m: Inbound) => Promise<boolean> }) =>
+    createFollowups({
+      config: { delayMs: 10 * MIN, maxPerDay: 6, batchMs: 3 * MIN, quiet: null }, kv, timeZone: "Europe/Madrid", now: () => now,
+      enqueue: o.enqueue ?? add, card: async () => true, notify: async () => undefined, slackHistory: o.history ?? (async () => []),
+    });
+  // Killed while Slack's history is read: the batch was taken out of the store and never queued.
+  const one = memKv();
+  const a = engineOn(one.kv, T0, { history: hang });
+  await a.observeSlack(rohan(T0));
+  void engineOn(one.kv, T0 + 3 * MIN, { history: hang }).tick();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal((await engineOn(one.kv, T0 + 4 * MIN, {}).tick()).jobs, 1, "the conversation is queued after the restart");
+  assert.equal(inbox.length, 1);
+  assert.equal((await a.read()).batches.length, 0);
+  // Killed after the inbox kept the job, before the store heard: the next process does not queue it a second time.
+  const two = memKv();
+  const b = engineOn(two.kv, T0, {});
+  await b.observeSlack(rohan(T0, "can you send the deck?"));
+  void engineOn(two.kv, T0 + 3 * MIN, { enqueue: async (m) => (await add(m), hang()) }).tick();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(inbox.length, 2);
+  await engineOn(two.kv, T0 + 4 * MIN, {}).tick();
+  await engineOn(two.kv, T0 + 8 * MIN, {}).tick();
+  assert.equal(inbox.length, 2, "queued once");
+  const st = await b.read();
+  assert.equal(st.batches.length, 0, "the batch left the store once the job was known queued");
+  assert.equal(st.jobs.length, 1, "one job kept for its answer");
+  // A message that came while the job was on its way is kept for the next one.
+  const three = memKv();
+  const c = engineOn(three.kv, T0, {});
+  await c.observeSlack(rohan(T0, "first"));
+  let release: (v: SlackLine[]) => void = () => undefined;
+  const run = engineOn(three.kv, T0 + 3 * MIN, { history: () => new Promise((r) => (release = r)) }).tick();
+  await new Promise((r) => setTimeout(r, 20));
+  await c.observeSlack(rohan(T0 + 3 * MIN, "second", String((T0 + 3 * MIN) / 1000)));
+  release([]);
+  await run;
+  const left = (await c.read()).batches;
+  assert.equal(left.length, 1);
+  assert.deepEqual(left[0]!.msgs.map((m) => m.text), ["second"]);
 });

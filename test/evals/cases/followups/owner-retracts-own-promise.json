@@ -1,0 +1,44 @@
+{
+  "suite": "followups",
+  "behaviour": "the owner promised to draft the offsite agenda, then writes «scratch that, Priya offered to draft it»: the loop is closed",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0MIA",
+          "label": "Mia Holm (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:00",
+              "who": "Alex",
+              "text": "I'll draft the agenda for the offsite by Wednesday 12:00",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"owner_promise\", \"title\": \"Draft the offsite agenda for Mia\", \"detail\": \"Mia, see the conversation.\", \"who\": \"Mia\", \"due\": \"2026-11-18 12:00\", \"tz\": \"Europe/Madrid\", \"check\": \"slackFile\"}], \"closes\": []}"
+      },
+      {
+        "slack": {
+          "channel": "D0MIA",
+          "label": "Mia Holm (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 15:00",
+              "who": "Alex",
+              "text": "Actually scratch that, Priya offered to draft the agenda",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [], \"closes\": [\"{{loop1}}\"]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "closed": 1,
+    "open": []
+  }
+}

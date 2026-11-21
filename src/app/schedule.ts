@@ -3,9 +3,13 @@
 
 import { mountBriefPage } from "../brief-v2.ts";
 import { mountBriefPanel } from "../brief.ts";
+import { createBetaAudit } from "../beta-audit.ts";
 import { createCheckIns } from "../gentle-checkins.ts";
 import { createWeeklyReset } from "../gentle-reset.ts";
 import { createLog } from "../log.ts";
+import { pausedText } from "../control.ts";
+import { ownerRegion } from "../region.ts";
+import { createTimeToDo, loadWorkHours } from "../time-to-do.ts";
 import type { AfterBrief } from "./context.ts";
 
 const logBrief = createLog("brief");
@@ -13,7 +17,7 @@ const logBrief = createLog("brief");
 export function wireSchedule(ctx: AfterBrief) {
   const {
     app, env, local, uiLang, kv, control, jobs, timeZone, calOn, calRef, briefCfg, briefNow, smartRef, followupsCfg, followupsRef, gentleSettings,
-    gentleRef, followupsDoor, lifeRef, door, panel, briefReader,
+    gentleRef, followupsDoor, lifeRef, door, panel, briefReader, betaRef, quality, timeRef,
   } = ctx;
   // On the jobs' clock: due reminders, then routines and watches (one look each, as before), and the brief's daily slot.
   jobs.define({ kind: "reminders", sweep: () => door.runReminders() });
@@ -23,7 +27,8 @@ export function wireSchedule(ctx: AfterBrief) {
   const meetings = calOn ? () => (calRef.reader ? calRef.reader.load() : Promise.reject(new Error("the calendar is not ready"))) : undefined;
   gentleRef.checkins = createCheckIns({
     kv, timeZone, settings: () => gentleSettings.read(), standardMax: followupsCfg.config?.maxPerDay ?? 6,
-    others: async () => ((await followupsRef.engine?.spentToday?.()) ?? 0) + ((await lifeRef.engine?.spentToday()) ?? 0),
+    others: async () => ((await followupsRef.engine?.spentToday?.()) ?? 0) + ((await lifeRef.engine?.spentToday()) ?? 0)
+      + ((await timeRef.t?.spentToday()) ?? 0),
     quiet: followupsCfg.config?.quiet ?? null,
     ...(meetings ? { events: meetings } : {}),
     jobs,
@@ -59,6 +64,44 @@ export function wireSchedule(ctx: AfterBrief) {
     });
     const reset = gentleRef.reset;
     jobs.define({ kind: "gentle-reset", sweep: () => reset.sweep() });
+    // The beta's measuring audit (src/beta-audit.ts): opt-in; a week's sampled questions, one at a time, never in the quiet hours.
+    betaRef.audit = createBetaAudit({
+      kv, timeZone, quiet: followupsCfg.config.quiet ?? null,
+      loops: async () => (followupsRef.engine ? (await followupsRef.engine.read()).loops : Promise.reject(new Error("the follow-ups are not ready"))),
+      told: async () => (quality ? ((await quality.read()).misses ?? []).flatMap((m) => (m.loop ? [m.loop] : [])) : []),
+      card: (body, buttons) => door.sendButtons(body, buttons),
+      log: (text) => control.log("followup", text),
+    });
+    const audit = betaRef.audit;
+    jobs.define({ kind: "beta-audit", sweep: () => audit.sweep() });
+    // Time to do it (src/time-to-do.ts): a follow-up the owner owes with too little free time before it, a focus block proposed. Pako
+    // writes the block only on the card's Block (the owner's yes), through the Mac app's queue; a calendar it cannot write is said so.
+    const work = loadWorkHours(env, ownerRegion());
+    if (work.problems.length) logBrief.error(`${work.problems.join("; ")}`);
+    timeRef.t = createTimeToDo({
+      kv, timeZone, hours: work.hours, quiet: followupsCfg.config.quiet ?? null, standardMax: followupsCfg.config.maxPerDay,
+      // Built just after this (src/app/followups.ts): none yet in the first seconds, rather than an error on every start.
+      loops: async () => (followupsRef.engine ? followupsRef.engine.open() : []),
+      ...(meetings ? { events: meetings } : {}),
+      gentle: async () => {
+        const g = await gentleSettings.view();
+        return g ? { maxPerDay: g.maxPerDay } : null;
+      },
+      usually: (title) => (gentleRef.anchors ? gentleRef.anchors.usually(title) : Promise.resolve(null)),
+      others: async () => ((await followupsRef.engine?.spentToday?.()) ?? 0) + ((await lifeRef.engine?.spentToday()) ?? 0)
+        + ((await gentleRef.checkins?.spentToday()) ?? 0),
+      writes: () => door.calendarWrites(),
+      paused: async () => {
+        const p = await control.state();
+        return p.paused !== null ? pausedText(p.why, uiLang()) : null;
+      },
+      stops: () => door.stops(),
+      card: (body, buttons) => door.sendCard(body, buttons),
+      engaged: async (id) => (followupsRef.engine ? followupsRef.engine.engaged(id) : false),
+      log: (text) => control.log("followup", text),
+    });
+    const timeToDo = timeRef.t;
+    jobs.define({ kind: "time-to-do", sweep: () => timeToDo.sweep() });
   }
   briefReader.start(jobs);
   jobs.start();

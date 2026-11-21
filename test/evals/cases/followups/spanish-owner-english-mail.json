@@ -1,0 +1,35 @@
+{
+  "suite": "followups",
+  "behaviour": "a Spanish-speaking owner gets an English email asking for the November invoice: the loop is titled in Spanish",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "ownerLanguage": "es",
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-16 09:00",
+          "ref": "m-grace",
+          "from": "Grace Lowell <grace@tidewater.example>",
+          "to": "Alex <alex@acme.example>",
+          "subject": "November invoice",
+          "category": "needs_you",
+          "messageId": "<gl1@tidewater.example>",
+          "body": "Hi Alex,\n\nCould you send us the November invoice by Wednesday 10:00?\n\nThanks,\nGrace"
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"request_to_owner\", \"title\": \"Enviar a Grace la factura de noviembre\", \"detail\": \"Grace, see the conversation.\", \"who\": \"Grace\", \"due\": \"2026-11-18 10:00\", \"tz\": \"Europe/Madrid\", \"check\": \"none\", \"reason\": \"email\"}], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Grace",
+        "titleHas": [
+          "factura"
+        ],
+        "dueLocal": "2026-11-18 10:00"
+      }
+    ]
+  }
+}

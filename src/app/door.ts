@@ -7,13 +7,12 @@ import { findLocalEvent } from "../calendar-local.ts";
 import { pressSignIn } from "../claude-connect.ts";
 import { demoCalendarWrites, demoSender } from "../demo.ts";
 import { corruptNotice, onCorruptRecord } from "../json-record.ts";
+import { labCode } from "../lab-code.ts";
 import { pakoHome } from "../local.ts";
 import { createLog } from "../log.ts";
 import type { Verdict } from "../mail-categories.ts";
 import { createPaperStore } from "../papers.ts";
 import { createPersonContext } from "../person-context.ts";
-import { createRelayClient } from "../relay-client.ts";
-import { createRelay, loadRelayConfig, mountRelay, telegramSender } from "../relay.ts";
 import { mountBridgeHealth } from "../watchdog.ts";
 import { mountWhatsapp } from "../whatsapp.ts";
 import type { AfterChat } from "./context.ts";
@@ -28,8 +27,8 @@ export function wireDoor(ctx: AfterChat) {
     app, env, local, uiLang, country, labs, waComputer, demo, dogRef, dog, kv, control, jobs, personal, wa, friends, plain, timeZone, givenName,
     ownerName, mail, outgoing, imap, box, mailAddress, slack, slackRef, fakeSlack, zoom, zoomRef, reviewCfg, reviewsDoor, macCal, relayClientCfg,
     relayRef, calDoorRef, calWrites, cal, calOn, calRef, backfillRef, briefCfg, briefNow, smartCfg, smartRef, followupsCfg, followupsRef, personRef,
-    gentleRef, followupsDoor, mailFollowups, proactiveCfg, lifeDoor, lessons, quality, rehearsalRef, judged, panelRef, booking, tgRef, usable,
-    fromEnv, learn, autonomyConfig, contactEmails, autonomySettings, claudeConnect, claudeKeeper,
+    gentleRef, followupsDoor, mailFollowups, proactiveCfg, lifeDoor, lessons, quality, rehearsalRef, judged, panelRef, booking, tgRef, usable, betaRef,
+    fromEnv, learn, autonomyConfig, contactEmails, autonomySettings, claudeConnect, claudeKeeper, timeRef,
   } = ctx;
   const door = mountWhatsapp(app, {
     ...(claudeConnect ? { claudeSignIn: () => pressSignIn(claudeConnect, uiLang(), { refused: claudeKeeper?.refused() ?? false }) } : {}),
@@ -90,6 +89,11 @@ export function wireDoor(ctx: AfterChat) {
       resetTyped: (n: number) => (gentleRef.reset ? gentleRef.reset.typedPark(n) : Promise.resolve(null)),
     },
     lessons,
+    // The beta's audit questions (src/beta-audit.ts): Yes, No, Skip, then the next question.
+    beta: {
+      pressed: (a: "y" | "n" | "s", id: string) => (betaRef.audit ? betaRef.audit.pressed(a, id) : Promise.resolve(null)),
+      next: () => (betaRef.audit ? betaRef.audit.next() : Promise.resolve(false)),
+    },
     // Pako Relay, the laptop's side (src/relay-client.ts): built just below, once the door can list the reminders.
     ...(relayClientCfg.config
       ? { relay: { sync: () => (relayRef.c ? relayRef.c.sync() : Promise.resolve(false)), firedByRelay: (r: { id: string; at: number; text: string }) => relayRef.c?.firedByRelay(r) ?? false } }
@@ -116,6 +120,16 @@ export function wireDoor(ctx: AfterChat) {
             },
             enqueue: (w: Parameters<typeof calWrites.enqueue>[0]) => calWrites.enqueue(w),
             get: (id: string) => calWrites.get(id),
+            cancelQueued: () => calWrites.cancelQueued(),
+          },
+        }
+      : {}),
+    // Time to do it (src/time-to-do.ts): its card's buttons and "find time for <words>", once it is built with the jobs' clock.
+    ...(followupsCfg.config
+      ? {
+          timeToDo: {
+            pressed: (b: "b" | "a" | "n", id: string) => (timeRef.t ? timeRef.t.pressed(b, id) : Promise.resolve("")),
+            findTime: (words: string) => (timeRef.t ? timeRef.t.findTime(words) : Promise.resolve("")),
           },
         }
       : {}),
@@ -172,7 +186,7 @@ export function wireDoor(ctx: AfterChat) {
     // What the watches look at (src/routines.ts): only what this server already has, read when they look (a part set up later counts).
     watchSources: () => ({
       ...(box ? { mail: () => box.items(60) } : {}),
-      ...(calRef.reader ? { calendar: () => calRef.reader!.load() } : {}),
+      ...(calRef.reader ? { calendar: () => calRef.reader!.readAll() } : {}),
       ...(slackRef.reader ? { slack: () => slackRef.reader!.alerts() } : fakeSlack ? { slack: fakeSlack.alerts } : {}),
     }),
     get ownerName() {
@@ -209,17 +223,18 @@ export function wireDoor(ctx: AfterChat) {
     self: () => [givenName(), mail.config?.inbox, imap.config?.user].filter((x): x is string => !!x),
   });
   if (relayClientCfg.config) {
-    relayRef.c = createRelayClient({ config: relayClientCfg.config, reminders: () => door.relayReminders() });
+    relayRef.c = labCode("relay").createRelayClient({ config: relayClientCfg.config, reminders: () => door.relayReminders() });
     relayRef.c.start();
     logRelay.info(`ON: reminders synced to ${new URL(relayClientCfg.config.url).host} every 2 min`);
   }
   // Relay mode (src/relay.ts): this server is the always-awake relay a laptop syncs to; it fires their reminders on Telegram.
-  // LABS: relay. Off: this host is not a relay (no routes, no timer).
-  const relayCfg = labs.on("relay") ? loadRelayConfig(env) : { config: null, problems: [] as string[] };
+  // LABS: relay. Off: this host is not a relay (no routes, no timer), and its code is not loaded (src/lab-code.ts).
+  const relayCode = labs.on("relay") ? labCode("relay") : null;
+  const relayCfg = relayCode ? relayCode.loadRelayConfig(env) : { config: null, problems: [] as string[] };
   if (relayCfg.problems.length) logRelay.error(relayCfg.problems.join("; "));
-  if (relayCfg.config) {
-    const relay = createRelay({ kv, send: telegramSender(relayCfg.config) });
-    mountRelay(app, { relay, token: relayCfg.config.token });
+  if (relayCode && relayCfg.config) {
+    const relay = relayCode.createRelay({ kv, send: relayCode.telegramSender(relayCfg.config) });
+    relayCode.mountRelay(app, { relay, token: relayCfg.config.token });
     setInterval(() => void relay.tick().catch((err: Error) => logRelay.error(err.message)), 30_000).unref?.();
     logRelay.info("ON: relay mode, reminders fired on Telegram (POST /relay/sync, /relay/tick)");
   }

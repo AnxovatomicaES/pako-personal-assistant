@@ -12,7 +12,9 @@
 import { join } from "node:path";
 import { texts, type Lang } from "./i18n.ts";
 import { ICS_SETTING } from "./ics.ts";
+import { loadAppleMailConfig } from "./apple-mail.ts";
 import { loadImapConfig } from "./imap.ts";
+import { loadImessageConfig } from "./imessage.ts";
 import { loadMailConfig } from "./mail.ts";
 import { loadResendConfig } from "./resend.ts";
 import { readSecrets as readAllSecrets, writeSecrets } from "./secrets.ts";
@@ -26,7 +28,9 @@ const log = createLog("connections");
 
 type Env = Record<string, string | undefined>;
 
-export type ConnectionId = "claude" | "calendar" | "google" | "mail" | "imap" | "resend" | "slack" | "zoom" | "teams" | "tables" | "telegram" | "whatsapp";
+export type ConnectionId =
+  | "claude" | "calendar" | "google" | "mail" | "imap" | "applemail" | "resend" | "slack" | "zoom" | "teams" | "imessage" | "tables" | "telegram"
+  | "whatsapp";
 
 interface FieldDef {
   key: string;
@@ -126,6 +130,18 @@ const TEAMS: FieldDef[] = [
   { key: "TEAMS_POLL_MINUTES", optional: true },
 ];
 
+// Mail on this Mac (src/apple-mail.ts): one switch, turned on in its card; read only, from what Apple Mail already downloaded. No password.
+const APPLE_MAIL: FieldDef[] = [
+  { key: "APPLE_MAIL" },
+  { key: "APPLE_MAIL_POLL_MINUTES", optional: true },
+];
+
+// Messages on this Mac (src/imessage.ts): one switch, turned on in its card; read only, from the history macOS keeps for Messages.
+const IMESSAGE: FieldDef[] = [
+  { key: "IMESSAGE" },
+  { key: "IMESSAGE_POLL_MINUTES", optional: true },
+];
+
 // Google Calendar, connected with one button (src/mail-oauth.ts, src/google-calendar.ts): the sign-in, and whose calendar it is.
 const GOOGLE: FieldDef[] = [
   { key: "GOOGLE_REFRESH_TOKEN", password: true },
@@ -143,10 +159,12 @@ export const CATALOGUE: readonly ConnectionDef[] = [
   { id: "google", icon: "calendar", fields: GOOGLE, check: (env) => blame(loadGoogleCalendarConfig(env).problems, GOOGLE) },
   { id: "mail", icon: "mail", fields: MAIL, check: (env) => blame(loadMailConfig(env).problems, MAIL) },
   { id: "imap", icon: "inbox", fields: IMAP, check: (env) => blame(loadImapConfig(env).problems, IMAP) },
+  { id: "applemail", icon: "mail", fields: APPLE_MAIL, check: (env) => blame(loadAppleMailConfig(env).problems, APPLE_MAIL) },
   { id: "resend", icon: "send", fields: RESEND, check: (env) => blame(loadResendConfig(env).problems, RESEND) },
   { id: "slack", icon: "hash", fields: SLACK, check: (env) => blame(loadSlackConfig(env).problems, SLACK) },
   { id: "zoom", icon: "video", fields: ZOOM, check: (env) => blame(loadZoomConfig(env).problems, ZOOM) },
   { id: "teams", icon: "users", fields: TEAMS, check: (env) => blame(loadTeamsConfig(env).problems, TEAMS) },
+  { id: "imessage", icon: "message-square", fields: IMESSAGE, check: (env) => blame(loadImessageConfig(env).problems, IMESSAGE) },
   { id: "tables", icon: "utensils", fields: [{ key: "GOOGLE_PLACES_API_KEY" }], check: shaped("GOOGLE_PLACES_API_KEY", /^AIza[0-9A-Za-z_-]{35}$/) },
   { id: "telegram", icon: "send", fields: [], card: "telegram" },
   // WhatsApp has its own card (src/whatsapp-computer.ts, src/panel/whatsapp.js): five guided steps.
@@ -194,6 +212,20 @@ export const WORDS = texts(
     "TEAMS_TENANT.hint": "Your company's Microsoft 365 directory ID",
     "TEAMS_POLL_MINUTES": "Look every (minutes)",
     "TEAMS_POLL_MINUTES.hint": "From 2 to 60; 5 when empty",
+    "applemail.name": "Mail on this Mac",
+    "applemail.how": "On a Mac: turn it on in the Mail on this Mac card. Pako reads the mail Apple Mail already downloaded, read only and with "
+      + "no password, and needs Full Disk Access for that (System Settings › Privacy & Security › Full Disk Access).",
+    "APPLE_MAIL": "Read Mail on this Mac",
+    "APPLE_MAIL.hint": "on or off",
+    "APPLE_MAIL_POLL_MINUTES": "Look every (minutes)",
+    "APPLE_MAIL_POLL_MINUTES.hint": "From 1 to 60; 3 when empty",
+    "imessage.name": "Messages (iMessage and SMS)",
+    "imessage.how": "On a Mac: turn it on in the Messages card. Pako reads your Messages history on this Mac, read only, for promises made "
+      + "both ways, and needs Full Disk Access for that (System Settings › Privacy & Security › Full Disk Access).",
+    "IMESSAGE": "Read Messages",
+    "IMESSAGE.hint": "on or off",
+    "IMESSAGE_POLL_MINUTES": "Look every (minutes)",
+    "IMESSAGE_POLL_MINUTES.hint": "From 1 to 60; 2 when empty",
     "zoom.name": "Zoom",
     "zoom.how": "Press Connect in the Zoom card: Pako gives you a ready-made app file for marketplace.zoom.us, you paste its Client ID and press Allow. No secret to copy.",
     "tables.name": "Table booking (Google Places)",

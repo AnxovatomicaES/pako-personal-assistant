@@ -1,6 +1,6 @@
 // The owner's side: the nudge's buttons, PENDING, and the open loops in the assistant's context.
 
-import type { Engine } from "./parts.ts";
+import type { Base, Engine, Owner } from "./parts.ts";
 import { LATER_TODAY_MS, NONE_BEFORE_MS, PAST_HIDE_MS, REOPEN_MS, RULES_MAX, SNOOZE_MS } from "./limits.ts";
 import { loopsOf } from "./record.ts";
 import { T } from "./texts.ts";
@@ -20,15 +20,16 @@ const names = (keys: string[], l: Loop): boolean => {
   return keys.every((k) => words.some((w) => w.startsWith(k)));
 };
 
-export function mountOwner(fu: Engine): Pick<
-  Engine,
-  "press" | "open" | "command" | "context" | "closeByWords" | "calendarChanged" | "reopenClosed" | "forDraft" | "draftFacts" | "snoozeCard" | "parked"
-  | "parkedText" | "unpark" | "setStep" | "letGo" | "engaged" | "expiredParked" | "closedForYou" | "reopenByWords"
-> {
-  const { d, now, lang, mutate, read, dueText, sourceText } = fu;
+export function mountOwner(
+  { d, config, now, lang }: Base,
+  { mutate, read, dueText, sourceText, quietNow, nextAfter }: Pick<
+    Engine,
+    "mutate" | "read" | "dueText" | "sourceText" | "quietNow" | "nextAfter"
+  >,
+): Owner {
   /** Gentle mode's "tomorrow": 09:00 in the owner's zone (or when the quiet hours end, if later), the day after today, whatever DST does. */
   const morningOf = (day: string): number | null => {
-    const q = fu.config.quiet;
+    const q = config.quiet;
     const nine = 9 * 60;
     const at = q && q.start > q.end && q.end > nine ? q.end : nine;
     return zonedTime(`${day} ${String(Math.floor(at / 60)).padStart(2, "0")}:${String(at % 60).padStart(2, "0")}`, d.timeZone);
@@ -44,9 +45,9 @@ export function mountOwner(fu: Engine): Pick<
    */
   const laterToday = (t: number): number => {
     const at = t + LATER_TODAY_MS;
-    if (!fu.quietNow(at)) return at;
+    if (!quietNow(at)) return at;
     let end = at;
-    for (let i = 0; i < 24 * 4 && fu.quietNow(end); i++) end += 15 * 60_000;
+    for (let i = 0; i < 24 * 4 && quietNow(end); i++) end += 15 * 60_000;
     const morning = morningOf(today(end, d.timeZone));
     return morning !== null && morning > t ? Math.max(morning, end) : tomorrowAt(t);
   };
@@ -176,8 +177,12 @@ export function mountOwner(fu: Engine): Pick<
       for (const c of loops) {
         const l = s.loops.find((x) => x.id === c.id);
         if (!l || l.status !== "done") continue;
-        Object.assign(l, { status: c.status, nextCheckAt: c.nextCheckAt });
+        // Kept as an open loop from now (the store keeps one 14 days from when it was made), as "reopen" and unpark do.
+        Object.assign(l, { status: c.status, nextCheckAt: c.nextCheckAt, createdAt: Math.max(l.createdAt, now()) });
         delete l.closedAt;
+        // One Pako had closed (the phone's Reopen): no longer "closed for you", and its check never closes it again.
+        if (l.autoClosed) l.reopened = true;
+        delete l.autoClosed;
         back.push(c);
       }
       return null;
@@ -236,11 +241,19 @@ export function mountOwner(fu: Engine): Pick<
             else if ("calendarEvent" in l.check) l.check.calendarEvent.around = c.start;
             delete l.escalated;
             if ("none" in l.check) l.nextCheckAt = Math.max(now(), c.start - NONE_BEFORE_MS);
+            else {
+              // One a server can check: looked at again for the new time, never later than that (moved earlier, the old look came after it).
+              const next = nextAfter(l, now());
+              if (next && (!l.nextCheckAt || l.nextCheckAt > next)) l.nextCheckAt = next;
+            }
             Object.assign(l, { lastCheck: t("calMovedCheck"), checkedAt: now() });
             said.push(t("logCalMoved", { title: l.title }));
           } else if (l.kind === "agreed_meeting") {
             // The meeting itself, called off: nothing is owed any more.
-            Object.assign(l, { status: "done", closedAt: now(), nextCheckAt: 0, lastCheck: t("calCancelledCheck"), checkedAt: now() });
+            // Closed by Pako: listed as closed for the owner, and "reopen" undoes it (a calendar can be wrong).
+            Object.assign(l, {
+              status: "done", closedAt: now(), nextCheckAt: 0, lastCheck: t("calCancelledCheck"), checkedAt: now(), autoClosed: { at: now(), why: t("whyCancelled") },
+            });
             said.push(t("logCalCancelled", { title: l.title }));
           } else {
             // Something due at a meeting that is gone may still be owed: kept, and the reminder says why.
@@ -289,7 +302,7 @@ export function mountOwner(fu: Engine): Pick<
       const t = now();
       Object.assign(l, { status: "open", nextCheckAt: 0, createdAt: Math.max(l.createdAt, t) });
       // As a new one's first look is set (src/followups/matching.ts): two hours before its time when no server can see it, else nextAfter.
-      if (l.dueAt && l.dueAt > t) l.nextCheckAt = "none" in l.check ? (l.dueAt - NONE_BEFORE_MS > t ? l.dueAt - NONE_BEFORE_MS : 0) : fu.nextAfter(l, t);
+      if (l.dueAt && l.dueAt > t) l.nextCheckAt = "none" in l.check ? (l.dueAt - NONE_BEFORE_MS > t ? l.dueAt - NONE_BEFORE_MS : 0) : nextAfter(l, t);
       delete l.parkedAt;
       delete l.unanswered;
       delete l.folded;
@@ -343,10 +356,11 @@ export function mountOwner(fu: Engine): Pick<
       if (hits.length !== 1) return { hits: hits.map((l) => l.title) };
       const l = hits[0]!;
       Object.assign(l, { status: "open", nextCheckAt: 0, createdAt: Math.max(l.createdAt, t) });
-      if (l.dueAt && l.dueAt > t) l.nextCheckAt = "none" in l.check ? (l.dueAt - NONE_BEFORE_MS > t ? l.dueAt - NONE_BEFORE_MS : 0) : fu.nextAfter(l, t);
+      if (l.dueAt && l.dueAt > t) l.nextCheckAt = "none" in l.check ? (l.dueAt - NONE_BEFORE_MS > t ? l.dueAt - NONE_BEFORE_MS : 0) : nextAfter(l, t);
       l.lastCheck = `You reopened it: I had closed it because ${l.autoClosed!.why}.`;
       delete l.closedAt;
       delete l.autoClosed;
+      l.reopened = true;
       return { title: l.title };
     });
     const say = T(lang());

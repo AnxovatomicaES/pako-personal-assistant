@@ -13,8 +13,11 @@
 
 import { noteFallback } from "./fallbacks.ts";
 
-/** Why a run of claude failed: signed out, a limit, the command not on this computer ("missing"), or anything else. */
-export type ClaudeTrouble = "login" | "limit" | "missing" | "other";
+/**
+ * Why a run of claude failed: signed out, a limit, the command not on this computer ("missing"), a model this Claude Code is too old to run
+ * ("model-needs-newer-cli": the run goes again on another model, runs.ts), or anything else.
+ */
+export type ClaudeTrouble = "login" | "limit" | "missing" | "model-needs-newer-cli" | "other";
 
 /** The structured part of a failure, when Claude Code gave one. */
 export interface ClaudeFailure {
@@ -24,6 +27,12 @@ export interface ClaudeFailure {
   apiType?: string;
   /** What decided the kind: a structured field, or the English words (the fallback). */
   via?: "spawn" | "status" | "type" | "stream" | "text" | "none";
+  /** When the plan's limit resets (ms), from a rejected rate_limit_event's `resetsAt` (stream-json only). */
+  resetsAt?: number;
+  /** A model this Claude Code is too old for: the version the refusal names as needed ("2.1.280"), when it names one. */
+  needsCli?: string;
+  /** That refusal's own words for which Claude Code refused ("Claude Code 2.1.258 does not support this model"), when they name it. */
+  cliVersion?: string;
 }
 
 export class ClaudeError extends Error {
@@ -31,12 +40,18 @@ export class ClaudeError extends Error {
   status?: number;
   apiType?: string;
   via?: ClaudeFailure["via"];
+  resetsAt?: number;
+  needsCli?: string;
+  cliVersion?: string;
   constructor(message: string, kind: ClaudeTrouble, f: ClaudeFailure = {}) {
     super(message);
     this.kind = kind;
     if (f.status !== undefined) this.status = f.status;
     if (f.apiType !== undefined) this.apiType = f.apiType;
     if (f.via !== undefined) this.via = f.via;
+    if (f.resetsAt !== undefined) this.resetsAt = f.resetsAt;
+    if (f.needsCli !== undefined) this.needsCli = f.needsCli;
+    if (f.cliVersion !== undefined) this.cliVersion = f.cliVersion;
   }
 }
 
@@ -53,7 +68,7 @@ export interface ResultFields {
  * The English fallback: the words Claude Code (or the API through it) used. Each pattern says where it was seen; "before 2.1.325" means it
  * was kept from an earlier bridge whose exact version was not written down. Ordered: missing, then login, then limit.
  */
-const TEXT_PATTERNS: { kind: Exclude<ClaudeTrouble, "other">; re: RegExp; seen: string }[] = [
+const TEXT_PATTERNS: { kind: Exclude<ClaudeTrouble, "other" | "model-needs-newer-cli">; re: RegExp; seen: string }[] = [
   // Our own message for spawn's ENOENT (runClaude, warm.ts): kept for a warm process whose spawn error reaches the turn as text.
   { kind: "missing", re: /could not start .{0,300}\bENOENT\b/, seen: "Pako's own words for spawn ENOENT" },
   // "Not logged in · Please run /login": 2.1.327 (captured, test/fixtures/claude-cli/2.1.327/not-logged-in.json); api_error_status is null there.
@@ -101,6 +116,8 @@ export interface StreamSignals {
   streamError?: string;
   /** A rate_limit_event said "rejected": this account is at its limit now. */
   rateLimited?: boolean;
+  /** That event's `resetsAt` (epoch seconds there, ms here): when the limit renews. 2.1.327 (captured, web-search.stream.json, "allowed"). */
+  resetsAt?: number;
 }
 
 /** Reads the stream's lines for StreamSignals. Lines it does not know are passed over. */
@@ -109,14 +126,18 @@ export function errorSignals() {
   return {
     line(l: string): void {
       if (!/"(?:rate_limit_event|error)"/.test(l)) return;
-      let doc: { type?: unknown; error?: unknown; rate_limit_info?: { status?: unknown } };
+      let doc: { type?: unknown; error?: unknown; rate_limit_info?: { status?: unknown; resetsAt?: unknown } };
       try {
         doc = JSON.parse(l) as typeof doc;
       } catch {
         return; // not a whole JSON line: nothing structured to read
       }
       if (doc.type === "assistant" && typeof doc.error === "string") s.streamError = doc.error;
-      if (doc.type === "rate_limit_event" && doc.rate_limit_info?.status === "rejected") s.rateLimited = true;
+      if (doc.type === "rate_limit_event" && doc.rate_limit_info?.status === "rejected") {
+        s.rateLimited = true;
+        const at = doc.rate_limit_info.resetsAt;
+        if (typeof at === "number" && Number.isFinite(at) && at > 1e9) s.resetsAt = at < 1e12 ? at * 1000 : at;
+      }
     },
     done: (): StreamSignals => s,
   };
@@ -133,13 +154,35 @@ export interface RunFailure {
   signals?: StreamSignals;
 }
 
+/**
+ * A model this Claude Code is too old to run: "API Error: 400 Claude Code 2.1.258 does not support this model; version 2.1.280 or newer is
+ * required. Run 'claude update', or update the Claude desktop app, then try again." (2.1.258, seen on the owner's Mac; is_error true,
+ * subtype "success", terminal_reason "api_error", api_error_status 400, no api_error_type). The stderr's "[claude-code:unrecognized_model]"
+ * does not decide it: 2.1.327 prints the same tag for a model that does not exist (a 404, test/fixtures/claude-cli/2.1.327/).
+ * Null when the words are not these; else the version needed and the version that refused, each when the words name it.
+ */
+const NEEDS_NEWER_CLI = /does not support this model\b|\bversion \d+\.\d+\.\d+ or newer is required\b/i;
+export function modelNeedsNewerCli(message: string): { needsCli?: string; cliVersion?: string } | null {
+  if (!NEEDS_NEWER_CLI.test(message) || !/\bmodel\b/i.test(message)) return null;
+  const needs = /\bversion (\d+\.\d+\.\d+) or newer is required/i.exec(message)?.[1];
+  const cli = /\bClaude Code (\d+\.\d+\.\d+) does not support\b/i.exec(message)?.[1];
+  return { ...(needs ? { needsCli: needs } : {}), ...(cli ? { cliVersion: cli } : {}) };
+}
+
 /** Classifies a failed run: the structured signals first, the English words last (counted as a fallback when they decide). */
 export function classifyFailure(f: RunFailure): ClaudeError {
   const status = typeof f.doc?.api_error_status === "number" ? f.doc.api_error_status : undefined;
   const apiType = typeof f.doc?.api_error_type === "string" ? f.doc.api_error_type : undefined;
-  const base = { ...(status !== undefined ? { status } : {}), ...(apiType !== undefined ? { apiType } : {}) };
+  const resetsAt = f.signals?.resetsAt;
+  const base = { ...(status !== undefined ? { status } : {}), ...(apiType !== undefined ? { apiType } : {}), ...(resetsAt ? { resetsAt } : {}) };
   const make = (kind: ClaudeTrouble, via: NonNullable<ClaudeFailure["via"]>): ClaudeError => new ClaudeError(f.message, kind, { ...base, via });
   if (f.spawnCode === "ENOENT") return make("missing", "spawn");
+  // A model this Claude Code is too old for: an API error with a 400 (or no status), told apart from other 400s by its words only.
+  const tooOld = status === undefined || status === 400 ? modelNeedsNewerCli(f.message) : null;
+  if (tooOld) {
+    noteFallback("error-text", `a model this Claude Code is too old for, from the words (status ${status ?? "none"})`);
+    return new ClaudeError(f.message, "model-needs-newer-cli", { ...base, ...tooOld, via: "text" });
+  }
   const byStatus = status !== undefined ? kindOfStatus(status) : null;
   if (byStatus) return make(byStatus, "status");
   const byType = apiType ? kindOfApiType(apiType) : null;
@@ -153,6 +196,17 @@ export function classifyFailure(f: RunFailure): ClaudeError {
     return make(byText, "text");
   }
   return make("other", "none");
+}
+
+/**
+ * Whether a limit is only Claude being overloaded (HTTP 529, "overloaded_error", or the word), not this plan's usage limit: it usually passes
+ * in minutes and names no reset, so the owner is told differently (runs.ts).
+ */
+export function overloaded(e: ClaudeError): boolean {
+  if (e.kind !== "limit") return false;
+  if (e.status === 529 || e.apiType === "overloaded_error") return true;
+  if (e.status !== undefined || e.apiType !== undefined || e.resetsAt !== undefined) return false;
+  return /overloaded/i.test(e.message);
 }
 
 /**

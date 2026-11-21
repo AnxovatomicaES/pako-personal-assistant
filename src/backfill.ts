@@ -143,15 +143,11 @@ export function createBackfill(d: BackfillDeps) {
     chain = run.then(() => undefined, () => undefined);
     return run;
   };
+  /** A store that does not answer fails the change (nothing is written): taken as empty, the write after it would lose the whole queue. */
   const read = async (): Promise<State> => {
     if (!d.kv) return memory;
-    try {
-      const raw = await readJsonRecord(d.kv, BACKFILL_KEY);
-      return raw ? { ...fresh(), ...(raw as Partial<State>) } : fresh();
-    } catch {
-      /* not JSON, or the store did not answer: started from nothing */
-      return fresh();
-    }
+    const raw = await readJsonRecord(d.kv, BACKFILL_KEY);
+    return raw ? { ...fresh(), ...(raw as Partial<State>) } : fresh();
   };
   const write = async (s: State): Promise<void> => {
     memory = s;

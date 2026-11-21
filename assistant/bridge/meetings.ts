@@ -10,7 +10,7 @@ import { T } from "./texts.ts";
 import type { AfterLanguage } from "./parts.ts";
 
 export function mountMeetings(b: AfterLanguage) {
-  const { config, log, api, say, background, retryAt, attempts, ownerLanguage } = b;
+  const { config, log, api, say, background, retryAt, hold, attempts, ownerLanguage, unsent, deliver } = b;
   /** A meeting's transcript: summarized in a run of its own like an email (no tools, no conversation, tags dropped), kept by the server, told. */
   const handleMeeting = async (id: string, m: Meeting): Promise<boolean> => {
     const fence = `REUNION-${randomBytes(4).toString("hex")}`;
@@ -25,7 +25,7 @@ export function mountMeetings(b: AfterLanguage) {
       const r = await background("meeting", JSON.stringify([m, code]), prompt, { ...config, tools: [], systemPrompt: MEETING_PROMPT.replaceAll("REUNION", fence) });
       if ("skipped" in r) {
         if (r.skipped === "paused") {
-          retryAt.set(id, r.until);
+          hold(id, r.until);
           return false;
         }
         summary = t("meetingFailed");
@@ -37,7 +37,8 @@ export function mountMeetings(b: AfterLanguage) {
       const kind = err instanceof ClaudeError ? err.kind : "other";
       log(`claude failed on a meeting (${kind}): ${(err as Error).message.slice(0, 200)}`);
       if (kind === "limit" || kind === "login") {
-        retryAt.set(id, Date.now() + 5 * 60_000);
+        if (kind === "limit") hold(id);
+        else retryAt.set(id, Date.now() + 5 * 60_000);
         return false;
       }
       summary = t("meetingFailed");
@@ -61,6 +62,8 @@ export function mountMeetings(b: AfterLanguage) {
    * tells the owner their to-dos itself. Nothing is said to the owner here.
    */
   const handleReview = async (id: string, r: Review): Promise<boolean> => {
+    const kept = unsent.get(id);
+    if (kept !== undefined) return deliver(id, "/assistant/meeting-review", kept, "review");
     const fence = `REVISION-${randomBytes(4).toString("hex")}`;
     const { code, ui } = await ownerLanguage();
     const t = T(ui);
@@ -75,7 +78,7 @@ export function mountMeetings(b: AfterLanguage) {
       const got = await background("review", JSON.stringify([r, code]), prompt, { ...config, tools: [], systemPrompt: REVIEW_PROMPT.replaceAll("REVISION", fence) });
       if ("skipped" in got) {
         if (got.skipped === "paused") {
-          retryAt.set(id, got.until);
+          hold(id, got.until);
           return false;
         }
       } else {
@@ -86,20 +89,12 @@ export function mountMeetings(b: AfterLanguage) {
       const kind = err instanceof ClaudeError ? err.kind : "other";
       log(`claude failed on a review (${kind}): ${(err as Error).message.slice(0, 200)}`);
       if (kind === "limit" || kind === "login") {
-        retryAt.set(id, Date.now() + 5 * 60_000);
+        if (kind === "limit") hold(id);
+        else retryAt.set(id, Date.now() + 5 * 60_000);
         return false;
       }
     }
-    try {
-      const res = await api("/assistant/meeting-review", { method: "POST", body: { id, text } });
-      if (!res.ok) log(`review refused: ${res.status}`);
-      return res.ok || res.status === 400;
-    } catch (err) {
-      log(`review failed: ${(err as Error).message}`);
-      const n = (attempts.get(id) ?? 0) + 1;
-      attempts.set(id, n);
-      return n >= 3;
-    }
+    return deliver(id, "/assistant/meeting-review", text, "review");
   };
   return { handleMeeting, handleReview };
 }

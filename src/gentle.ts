@@ -166,6 +166,9 @@ export function createGentleSettings(kv: Kv | null, config: GentleConfig) {
 }
 export type GentleSettings = ReturnType<typeof createGentleSettings>;
 
+/** Nudges left unanswered in a row after which gentle mode stops asking (src/followups/nudges.ts); the beta's audit keeps the same courtesy. */
+export const UNANSWERED_STOP = 2;
+
 // ---------- the words ----------
 
 /** Words that shame, never in a gentle text: the scan in test/gentle.test.ts reads every text here, and parseStep refuses a step with one. */
@@ -388,8 +391,10 @@ export function anchorsDue(
     const usual = o.history ? learnedMinutes(e.title, o.history) : null;
     const usually = usual ? GT()("usuallyShort", { min: usual }) : "";
     const leadSent = o.sent.find((s) => s.key === key && s.kind === "lead");
+    // A lead of six minutes or less is itself the last look before the start: it goes until a minute before, and no "in 5" follows it.
+    const short = lead <= 6 * MIN;
     // Its lead time has come (and it is not about to start: the "in 5" says that one).
-    if (!leadSent && t >= e.start - lead && e.start - t > 6 * MIN) {
+    if (!leadSent && t >= e.start - lead && e.start - t > (short ? MIN : 6 * MIN)) {
       const which = (online ? ["wrap", "wrap2", "wrap3"] : ["leave", "leave2", "leave3"]) as ("wrap" | "leave")[];
       const pick = which[parseInt(key.replace(/[^0-9a-f]/g, "").slice(0, 4) || "0", 16) % which.length]!;
       out.push({ key, kind: "lead", at: t, event: e, text: GT()(pick, { title, time, place, lead: Math.round((e.start - t) / MIN), usually }) });
@@ -398,7 +403,7 @@ export function anchorsDue(
     // Five minutes before: only when nothing shows the owner saw it (no message or press since the first anchor, or in the last 15 min).
     const since = leadSent?.at ?? e.start - 15 * MIN;
     const fiveSent = o.sent.some((s) => s.key === key && s.kind === "five");
-    if (!fiveSent && !o.seen.includes(key) && e.start - t <= 5.5 * MIN && e.start - t > MIN && o.lastOwner < since) {
+    if (!fiveSent && !(short && leadSent) && !o.seen.includes(key) && e.start - t <= 5.5 * MIN && e.start - t > MIN && o.lastOwner < since) {
       out.push({ key, kind: "five", at: t, event: e, text: online ? GT()("five", { title, time }) : GT()("fivePlace", { title, place }) });
     }
   }

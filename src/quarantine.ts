@@ -169,6 +169,7 @@ const T = texts(
     card: "⚠️ This answer was written while reading other people's text ({why}), so I haven't done what it asked without checking with you:\n"
       + "{list}\n\nShall I do it?",
     yes: "Do it",
+    more: "…and {n} more",
     expired: "That's no longer pending (time ran out, Pako restarted or you sent STOP). If you want it, ask me again.",
     dropped: "OK, I won't.",
     paused: "I'm paused: I won't do any of that. Once you send RESUME, ask me again if you want it.",
@@ -250,9 +251,12 @@ export function heldLines(a: HeldActs, l: Lang): string[] {
 
 /** The card that asks the owner: why it was held and each thing, one a line (the card's body is cut at 1000 characters by WhatsApp). */
 export const heldCard = (a: HeldActs, why: OutsideSource[], l: Lang): string => {
-  const lines = heldLines(a, l).slice(0, 12).map((x) => `• ${x}`);
-  let list = lines.join("\n");
-  while (list.length > 700 && lines.length > 1) list = (lines.pop(), `${lines.join("\n")}\n• …`);
+  const all = heldLines(a, l).map((x) => `• ${x}`);
+  const lines = all.slice(0, 12);
+  while (lines.join("\n").length > 700 && lines.length > 1) lines.pop();
+  // Do it does all of them: what the card has no room for is counted, never left out without a word.
+  const more = all.length - lines.length;
+  const list = more ? `${lines.join("\n")}\n• ${T(l)("more", { n: more })}` : lines.join("\n");
   return T(l)("card", { why: whyText(why, l), list });
 };
 

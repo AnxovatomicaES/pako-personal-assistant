@@ -267,11 +267,16 @@ test("loops: Needs you is a request to the owner and Waiting on others a promise
   // The same mail again does not make a second loop.
   assert.equal(await engine.fromMail({ ref: "m-need", label: "email · Ana", at: T0 - HOUR, loops: [loopFromVerdict(need, "Ana Ruiz")!] }), 0);
   // Nadia writes again in that thread: what she owed is closed; what the owner owes Ana is not touched.
-  assert.equal(await engine.answered({ who: ["Nadia", "nadia@vendor.example"], ref: "m-later", thread: "00000000000000aa" }), 1);
+  const known = async () => ["Nadia <nadia@vendor.example>", "Ana Ruiz <ana@client.example>"];
+  assert.equal(
+    await engine.answered({ who: ["Nadia", "billing@lookalike.example"], from: "billing@lookalike.example", ref: "m-fake", thread: "00000000000000aa", known }),
+    0, "her name from an address not hers closes nothing",
+  );
+  assert.equal(await engine.answered({ who: ["Nadia", "nadia@vendor.example"], from: "nadia@vendor.example", ref: "m-later", thread: "00000000000000aa", known }), 1);
   const after = (await engine.read()).loops;
   assert.equal(after.find((l) => l.id === owed.id)!.status, "done");
   assert.equal(after.find((l) => l.id === owe.id)!.status, "open");
-  assert.equal(await engine.answered({ who: ["Ana"], ref: "m-later2", thread: "00000000000000aa" }), 0, "an answer from Ana never closes what the owner owes her");
+  assert.equal(await engine.answered({ who: ["Ana"], from: "ana@client.example", ref: "m-later2", thread: "00000000000000aa", known }), 0, "an answer from Ana never closes what the owner owes her");
 });
 
 // ---------- the panel: tabs, the reader, the links ----------
@@ -442,6 +447,9 @@ test("preview: a reply of the owner's in Sent (In-Reply-To or References) remove
 
 test("preview: opening a 'to read' mail in the reader removes it; the empty and the not-connected states", async () => {
   const none = await mailView({ box: null, timeZone: "Europe/Madrid", loops: () => null }, T0);
+  // Gentle mode (src/gentle.ts) rides with the view: the page then never shows a passed time as "overdue" or in red.
+  assert.equal((await mailView({ box: createMailbox(memKv(), { lang: () => "en" }), timeZone: "Europe/Madrid", loops: () => null, gentle: async () => true }, T0)).gentle, true);
+  assert.equal((await mailView({ box: createMailbox(memKv(), { lang: () => "en" }), timeZone: "Europe/Madrid", loops: () => null }, T0)).gentle, false);
   assert.equal(none.connected, false, "mail not connected: the block is hidden");
   const box = createMailbox(memKv(), { lang: () => "en" });
   const empty = await mailView({ box, timeZone: "Europe/Madrid", loops: () => null }, T0);

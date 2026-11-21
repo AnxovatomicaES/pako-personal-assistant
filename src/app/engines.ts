@@ -7,6 +7,7 @@ import { type Followups, type FollowupsDoor, followupsProxy, loadFollowupsConfig
 import type { CheckIns } from "../gentle-checkins.ts";
 import type { WeeklyReset } from "../gentle-reset.ts";
 import { createGentleSettings, type FirstSteps, loadGentleConfig, type TimeAnchors } from "../gentle.ts";
+import type { BetaAudit } from "../beta-audit.ts";
 import { createLessons } from "../lessons.ts";
 import { createLog } from "../log.ts";
 import { createMailFollowups } from "../mail-followups.ts";
@@ -14,6 +15,8 @@ import type { PersonContext } from "../person-context.ts";
 import { type LifeDoor, loadProactiveConfig, type Proactive } from "../proactive.ts";
 import { createQuality, type Quality } from "../quality.ts";
 import type { Rehearsal } from "../rehearsal.ts";
+import { loadWorkHours, type TimeToDo } from "../time-to-do.ts";
+import { ownerRegion } from "../region.ts";
 import type { AfterSources } from "./context.ts";
 
 const logBrief = createLog("brief");
@@ -34,6 +37,8 @@ export function wireEngines(ctx: AfterSources) {
   const smartRef: { brief: BriefV2 | null } = { brief: null };
   // Follow-ups (src/followups.ts): on unless FOLLOWUPS=off. Built once the door is (it sends cards through it); the door reaches it here.
   const followupsCfg = loadFollowupsConfig(env);
+  // The owner's working day (WORK_HOURS, WORK_DAYS) times the chases too, as it times "time to do it" (src/time-to-do.ts).
+  if (followupsCfg.config) followupsCfg.config.work = loadWorkHours(env, ownerRegion()).hours;
   if (followupsCfg.problems.length) logFollowups.error(`${followupsCfg.problems.join("; ")}`);
   const followupsRef: { engine: Followups | null } = { engine: null };
   // What the owner's memory says about a person (src/person-context.ts), built once the door is: its facts and people graph are the door's.
@@ -96,8 +101,12 @@ export function wireEngines(ctx: AfterSources) {
     return doc && doc.id === ref ? `brief ${doc.day}` : null;
   };
   const panelRef: { link: (() => string | null) | null } = { link: null };
+  // The beta's measuring audit (src/beta-audit.ts): opt-in in the panel; built with the jobs' clock (src/app/schedule.ts), with follow-ups on.
+  const betaRef: { audit: BetaAudit | null } = { audit: null };
+  // Time to do it (src/time-to-do.ts): the follow-ups at risk for want of free time, with a focus block; built with the jobs' clock.
+  const timeRef: { t: TimeToDo | null } = { t: null };
   return {
     briefCfg, briefRef, briefNow, smartCfg, smartRef, followupsCfg, followupsRef, personRef, gentleSettings, gentleRef, followupsDoor, mailFollowups,
-    proactiveCfg, lifeRef, lifeDoor, lessons, quality, rehearsalRef, judged, panelRef,
+    proactiveCfg, lifeRef, lifeDoor, lessons, quality, rehearsalRef, judged, panelRef, betaRef, timeRef,
   };
 }

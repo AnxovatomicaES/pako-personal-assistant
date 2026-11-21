@@ -16,12 +16,31 @@ import { join } from "node:path";
 import { test } from "node:test";
 import express from "express";
 import { mountConnectSetup, pkcePair, redirectUri, slackCreateUrl, slackManifest, zoomManifest, type ConnectSetupDeps } from "../src/connect-setup.ts";
-import { builtInClients, type BuiltInDefaults } from "../src/connect-clients.ts";
+import { builtInClients, SLACK_CLIENT_ID, SLACK_RELAY_REDIRECT, type BuiltInDefaults } from "../src/connect-clients.ts";
 import { mountConnectionsPanel } from "../src/connections-panel.ts";
 import { readStored, writeStored } from "../src/connections.ts";
 import { SLACK_USER_SCOPES } from "../src/slack.ts";
 import { ZOOM_USER_SCOPES } from "../src/zoom.ts";
 import { auth, PANEL } from "./helpers/connect-rig.ts";
+import { runInNewContext } from "node:vm";
+
+/** The forwarding function of the site's Slack page (site/connect/slack/callback.html), run as the page runs it. */
+const SLACK_PAGE = readFileSync(join(import.meta.dirname, "../site/connect/slack/callback.html"), "utf8");
+const relayTarget: (search: string) => string | null = (() => {
+  const js = /<script>([\s\S]*?)<\/script>/.exec(SLACK_PAGE)![1]!;
+  const ctx: Record<string, unknown> = { URLSearchParams };
+  runInNewContext(js, ctx);
+  return ctx.pakoTarget as (search: string) => string | null;
+})();
+
+/** A port nothing listens on yet, for the project's Slack loopback in a test. */
+async function freePort(): Promise<number> {
+  const s = createServer().listen(0, "127.0.0.1");
+  await new Promise((r) => s.once("listening", r));
+  const port = (s.address() as AddressInfo).port;
+  await new Promise((r) => s.close(r));
+  return port;
+}
 
 const SLACK_CLIENT = "1234567890.9876543210";
 const ZOOM_CLIENT = "AbCdEfGhIjKlMn_0123";
@@ -48,9 +67,15 @@ const listen = async (s: Server, host = "127.0.0.1"): Promise<number> => {
 async function fakeVendors(o: { refuse?: boolean; slackToken?: Record<string, unknown>; zoomScope?: string; slowMs?: number } = {}) {
   const seen = { slackExchange: null as URLSearchParams | null, zoomExchange: null as URLSearchParams | null, zoomAuthHeader: "", slackAuthorize: null as URLSearchParams | null };
   const codes = new Map<string, { challenge: string; redirect: string; client: string }>();
+  const relay = { port: 0 };
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://fake");
     const json = (v: unknown, status = 200) => res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(v));
+    if (url.pathname === "/relay") {
+      const to = relayTarget(url.search);
+      if (!to) return void res.writeHead(400).end();
+      return void res.writeHead(302, { location: to.replace(":53682/", `:${relay.port}/`) }).end();
+    }
     if (url.pathname === "/slack/authorize" || url.pathname === "/zoom/authorize") {
       const q = url.searchParams;
       if (url.pathname === "/slack/authorize") seen.slackAuthorize = q;
@@ -107,6 +132,9 @@ async function fakeVendors(o: { refuse?: boolean; slackToken?: Record<string, un
   return {
     seen,
     urls: { slackAuthorize: `${b}/slack/authorize`, slackApi: `${b}/slack/api`, zoomAuthorize: `${b}/zoom/authorize`, zoomToken: `${b}/zoom/token`, zoomApi: `${b}/zoom/v2` },
+    /** The site's Slack page (site/connect/slack/callback.html), served here; `relay.port` is the loopback port it passes the code to. */
+    relayUrl: `${b}/relay`,
+    relay,
     close: () => new Promise<void>((r) => server.close(() => r())),
   };
 }
@@ -399,7 +427,9 @@ const BUILT_IN: BuiltInDefaults = { ...NONE, slack: "1111111111.2222222222", zoo
 
 test("the built-in clients: empty by default, a well-formed one counts, an environment value wins", () => {
   assert.deepEqual(builtInClients({}, NONE), { slack: null, zoom: null, microsoft: null, google: null, gmail: false });
-  assert.deepEqual(builtInClients({}), { slack: null, zoom: null, microsoft: null, google: null, gmail: false }, "none registered yet in the code");
+  assert.deepEqual(builtInClients({}), { slack: SLACK_CLIENT_ID, zoom: null, microsoft: null, google: null, gmail: false }, "the project's Slack app");
+  assert.match(SLACK_CLIENT_ID, /^\d{5,20}\.\d{5,20}$/);
+  assert.match(SLACK_RELAY_REDIRECT, /^https:\/\//, "Slack installs an app in other workspaces only with https redirects");
   const c = builtInClients({ PAKO_SLACK_CLIENT_ID: "3333333333.4444444444" }, BUILT_IN);
   assert.equal(c.slack, "3333333333.4444444444", "the environment wins over the built-in one");
   assert.equal(c.zoom, "BuiltInZoom_0123");
@@ -409,9 +439,10 @@ test("the built-in clients: empty by default, a well-formed one counts, an envir
   assert.equal(g.gmail, false, "Gmail's restricted scope is off until Google allows it");
 });
 
-test("Slack with the project's app: one Connect, Allow, done; the way back on the fixed loopback port; no Client ID typed", async () => {
+test("Slack with the project's app: one Connect, Allow, done; back through the https page to the fixed loopback port; no Client ID typed", async () => {
   const v = await fakeVendors();
-  const p = await pako(v.urls, { readers: { defaults: BUILT_IN, env: {}, slackPort: 0 } });
+  v.relay.port = await freePort();
+  const p = await pako(v.urls, { readers: { defaults: BUILT_IN, env: {}, slackPort: v.relay.port, slackRelay: v.relayUrl } });
   try {
     assert.deepEqual((await p.get("/panel/api/connect/clients")).body, { slack: true, zoom: true, microsoft: false, google: false, gmail: false });
     assert.equal((await p.get("/panel/api/slack/setup")).body.builtIn, true);
@@ -419,10 +450,7 @@ test("Slack with the project's app: one Connect, Allow, done; the way back on th
     assert.equal(started.body.ok, true);
     const a = new URL(started.body.authorizeUrl);
     assert.equal(a.searchParams.get("client_id"), BUILT_IN.slack);
-    const back = new URL(a.searchParams.get("redirect_uri")!);
-    assert.equal(back.hostname, "localhost");
-    assert.equal(back.pathname, "/connect/slack/callback");
-    assert.notEqual(Number(back.port), p.port, "the project's app returns to its own fixed port, not to wherever this Pako runs");
+    assert.equal(a.searchParams.get("redirect_uri"), v.relayUrl, "the project's app returns to its https page, which Slack requires");
     const page = await browse(started.body.authorizeUrl);
     assert.match(page.text, /Connected as Ana Ruiz in Acme/);
     assert.deepEqual(readStored(p.dir), { SLACK_USER_TOKEN: XOXP, SLACK_CLIENT_ID: BUILT_IN.slack });
@@ -507,10 +535,11 @@ test("while the code is being exchanged the card is still waiting, not the old a
 
 test("the Slack loopback listener closes once the browser came back, instead of holding its port for a quarter of an hour", async () => {
   const v = await fakeVendors();
-  const p = await pako(v.urls, { readers: { defaults: BUILT_IN, env: {}, slackPort: 0 } });
+  v.relay.port = await freePort();
+  const p = await pako(v.urls, { readers: { defaults: BUILT_IN, env: {}, slackPort: v.relay.port, slackRelay: v.relayUrl } });
   try {
     const started = await p.post("/panel/api/slack/connect", {});
-    const back = new URL(new URL(started.body.authorizeUrl).searchParams.get("redirect_uri")!);
+    const back = new URL(`http://localhost:${v.relay.port}/connect/slack/callback`);
     const page = await browse(started.body.authorizeUrl);
     assert.match(page.text, /Connected as/);
     await new Promise((r) => setTimeout(r, 100));
@@ -519,10 +548,27 @@ test("the Slack loopback listener closes once the browser came back, instead of 
     // And the next Connect opens it again.
     const again = await p.post("/panel/api/slack/connect", {});
     assert.equal(again.body.ok, true);
-    const back2 = new URL(new URL(again.body.authorizeUrl).searchParams.get("redirect_uri")!);
-    assert.equal((await fetch(`http://127.0.0.1:${back2.port}/elsewhere`)).status, 404, "listening again");
+    assert.equal((await fetch(`http://127.0.0.1:${v.relay.port}/elsewhere`)).status, 404, "listening again");
   } finally {
     await p.close();
     await v.close();
   }
+});
+
+test("the site's Slack page passes only a real sign-in on, and only to Pako on this computer", () => {
+  const to = (search: string) => {
+    const t = relayTarget(search);
+    if (!t) return null;
+    const u = new URL(t);
+    return { at: `${u.origin}${u.pathname}`, q: Object.fromEntries(u.searchParams) };
+  };
+  const at = "http://localhost:53682/connect/slack/callback";
+  assert.deepEqual(to("?code=abc.123-x&state=St4te_~"), { at, q: { code: "abc.123-x", state: "St4te_~" } });
+  assert.deepEqual(to("?error=access_denied&state=s1"), { at, q: { state: "s1", error: "access_denied" } });
+  assert.deepEqual(to("?code=abc&state=s1&next=https://evil.example"), { at, q: { code: "abc", state: "s1" } }, "anything else is dropped");
+  for (const bad of ["", "?code=abc", "?state=s1", "?code=%3Cscript%3E&state=s1", `?code=${"a".repeat(600)}&state=s1`]) {
+    assert.equal(relayTarget(bad), null, bad);
+  }
+  assert.match(SLACK_PAGE, /content="no-referrer"/, "the code is not sent on as a referrer");
+  assert.doesNotMatch(SLACK_PAGE, /fetch\(|XMLHttpRequest|localStorage|sessionStorage|<script src/, "the page keeps and sends nothing");
 });

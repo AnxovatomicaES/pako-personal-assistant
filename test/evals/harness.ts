@@ -26,7 +26,9 @@ import { createLessons, draftMessage, LESSONS_HEAD, type Lesson } from "../../sr
 import { createFacts, type FactInput } from "../../src/memory-facts.ts";
 import type { GraphPerson } from "../../src/people-graph.ts";
 import { createPersonContext, type PersonContext } from "../../src/person-context.ts";
-import { createFollowups, parseAnswer, zonedTime, type FollowupsConfig, type Loop, type SlackLine, type ZoomSeen } from "../../src/followups.ts";
+import {
+  createFollowups, parseAnswer, zonedTime, type EventSeen, type FollowupsConfig, type Loop, type SlackLine, type ZoomSeen,
+} from "../../src/followups.ts";
 import { redFlag, redFlagLanguage, redFlagReply } from "../../src/health.ts";
 import { detectLanguage } from "../../src/language.ts";
 import type { Lang } from "../../src/i18n.ts";
@@ -155,7 +157,8 @@ export function memoryOf(c: EvalCase, tz: string, now: number): PersonContext | 
 
 // ---------- followups and nudges: the real engine, a fake clock, the recorded (or live) answer ----------
 
-interface SlackIn { at: string; who: string; text: string; mine?: boolean }
+/** `file`: the message carries a file (Slack's file_share); a link written as Slack writes one (<https://...>) counts too, as src/slack.ts reads it. */
+interface SlackIn { at: string; who: string; text: string; mine?: boolean; file?: boolean }
 /**
  * An email as the mailbox keeps it (src/mail.ts takeMail) and the server hands it to the follow-ups (src/mail-followups.ts): its words in
  * `body` (or `html`), its thread by its Message-ID, In-Reply-To and References, and the triage's `category` (default needs_you). `mine`: the
@@ -213,6 +216,8 @@ export async function runFollowups(c: EvalCase, answer: Answer): Promise<Followu
   const time = { now: at(asStr(c.input.start) || first, tz) };
   const history: Record<string, SlackLine[]> = {};
   const zoomList = asArr(c.input.zoom).map((z) => asObj(z));
+  // The owner's calendar as the case says (input.calendarEvents: {title, start, created?, recurring?, visible?}); none: no calendar read.
+  const calList = Array.isArray(c.input.calendarEvents) ? c.input.calendarEvents.map((e) => asObj(e)) : null;
   const queued: { id: string; text: string }[] = [];
   const cards: FollowupsRun["cards"] = [];
   // What the owner corrects is learnt as the server learns it (src/lessons.ts): a "Not mine" press, read by the next job.
@@ -225,6 +230,8 @@ export async function runFollowups(c: EvalCase, answer: Answer): Promise<Followu
     config, kv: null, timeZone: tz, now: () => time.now, lang: () => "en",
     // The owner's name, as production gives it: a channel message to someone else is then told from one to the owner.
     ownerName: () => asStr(c.input.ownerName) || "Alex",
+    // The language the owner writes in (input.ownerLanguage, a code such as "es"), as production hears it from the owner; none: Pako's own.
+    ...(asStr(c.input.ownerLanguage) ? { ownerLanguage: async () => asStr(c.input.ownerLanguage) } : {}),
     enqueue: async (m) => (m.followup ? queued.push({ id: m.id, text: m.followup.text }) : 0, true),
     card: async (body, buttons) => {
       cards.push({ at: time.now, body, loop: (buttons[0]?.id ?? "").slice(3) });
@@ -235,6 +242,11 @@ export async function runFollowups(c: EvalCase, answer: Answer): Promise<Followu
     zoom: async (): Promise<ZoomSeen[]> => zoomList
       .filter((z) => !z.visible || time.now >= at(z.visible, tz))
       .map((z) => ({ topic: asStr(z.topic), at: at(z.at, tz), ...(z.created ? { createdAt: at(z.created, tz) } : {}) }) as ZoomSeen),
+    ...(calList ? {
+      calendar: async (): Promise<EventSeen[]> => calList
+        .filter((e) => !e.visible || time.now >= at(e.visible, tz))
+        .map((e) => ({ title: asStr(e.title), start: at(e.start, tz), ...(e.created ? { created: at(e.created, tz) } : {}), ...(e.recurring ? { recurring: true } : {}) })),
+    } : {}),
     slackHistory: async (ch, q) => (history[ch] ?? []).filter((m) => m.at <= time.now && (!q.oldest || Number(m.ts) > Number(q.oldest))),
   });
   // The mailbox as the server keeps it: each email's record and words, read by the same code that picks the mail the follow-ups read.
@@ -269,7 +281,8 @@ export async function runFollowups(c: EvalCase, answer: Answer): Promise<Followu
       const s = turn.slack;
       for (const m of s.msgs) {
         const t = at(m.at, tz);
-        const line: SlackLine = { ts: String(t / 1000), at: t, mine: m.mine === true, who: m.who, text: m.text } as SlackLine;
+        const file = m.file === true || /<https?:\/\//.test(m.text);
+        const line: SlackLine = { ts: String(t / 1000), at: t, mine: m.mine === true, who: m.who, text: m.text, ...(file ? { file } : {}) } as SlackLine;
         (history[s.channel] ??= []).push(line);
         time.now = Math.max(time.now, t);
         // The owner's own messages reach the engine too, as src/slack.ts sends them (marked mine), so their promises are read.

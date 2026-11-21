@@ -125,6 +125,19 @@ test("demoEnv takes every connection's setting out, and keeps Pako's own", () =>
   assert.equal(env.PROACTIVE, "off");
 });
 
+test("demoEnv leaves out this Mac's own mail and Messages too: the demo never reads the person's real ones", () => {
+  const env: Record<string, string | undefined> = { PORT: "8787", APPLE_MAIL: "on", APPLE_MAIL_POLL_MINUTES: "5", IMESSAGE: "on", IMESSAGE_POLL_MINUTES: "5" };
+  demoEnv(env);
+  for (const k of ["APPLE_MAIL", "APPLE_MAIL_POLL_MINUTES", "IMESSAGE", "IMESSAGE_POLL_MINUTES"]) assert.equal(env[k], undefined, k);
+});
+
+test("demoEnv also turns off Mail and Messages on this Mac: the owner's real mail and chats never enter the invented week", () => {
+  const env: Record<string, string | undefined> = { APPLE_MAIL: "on", APPLE_MAIL_POLL_MINUTES: "3", IMESSAGE: "on", IMESSAGE_POLL_MINUTES: "2" };
+  assert.deepEqual(demoEnv(env), ["APPLE_MAIL", "APPLE_MAIL_POLL_MINUTES", "IMESSAGE", "IMESSAGE_POLL_MINUTES"]);
+  assert.equal(env.APPLE_MAIL, undefined);
+  assert.equal(env.IMESSAGE, undefined);
+});
+
 test("the routes the demo refuses: connecting, importing, the export", () => {
   assert.equal(demoBlocks("GET", "/panel/api/export"), true);
   assert.equal(demoBlocks("POST", "/panel/api/connections"), true);
@@ -248,6 +261,26 @@ test("the panel in the demo: banner, recorded answers, Done on a card, the expor
     assert.deepEqual(outside, [], "no request left this computer");
   } finally {
     globalThis.fetch = realFetch;
+    r.close();
+  }
+});
+
+test("delete everything in the demo is refused: it would empty the demo's folder only and say the person's data was gone", async () => {
+  const r = await demoRig();
+  try {
+    writeFileSync(join(r.real.dir, "config.json"), JSON.stringify({ name: "Ana", welcomed: true }));
+    assert.equal(demoBlocks("POST", "/panel/api/delete-all"), true);
+    // As Express routes it: any case of letters, a slash at the end.
+    assert.equal(demoBlocks("POST", "/PANEL/api/Delete-All/"), true);
+    assert.equal(demoBlocks("GET", "/panel/api/EXPORT"), true);
+    assert.equal(demoBlocks("POST", "/panel/api/Connections"), true);
+    const res = await r.post("/panel/api/delete-all", { confirm: "DELETE EVERYTHING" });
+    assert.equal(res.status, 409);
+    assert.match(((await res.json()) as { error: string }).error, /Leave the demo first/);
+    assert.deepEqual(JSON.parse(readFileSync(join(r.real.dir, "config.json"), "utf8")), { name: "Ana", welcomed: true });
+    assert.ok((await r.kv.get("followups")) !== null, "the demo's store is not emptied either");
+    assert.deepEqual(r.restarts, []);
+  } finally {
     r.close();
   }
 });

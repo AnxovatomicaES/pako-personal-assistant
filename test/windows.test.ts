@@ -207,6 +207,24 @@ test("autostart: enable writes the launcher (UTF-8 BOM) and the task (UTF-16 BOM
   assert.deepEqual(f.removed, [xml]);
 });
 
+test("autostart: the hidden Pako is marked as started by the task, and keeps the installer's PAKO_HOME, PORT and the other carried settings", async () => {
+  // Without PAKO_SERVICE the hidden Pako printed a live sign-in link into pako.log; without PAKO_HOME it used ~/.pako while its logs (and
+  // install.ps1's wait for its lock) were in the folder PAKO_HOME named.
+  const written = new Map<string, Buffer>();
+  const a = createWindowsAutostart({
+    platform: "win32", pakoDir: "D:\\pako data", repo: `${HOME}\\pako`, node: "C:\\node.exe", account: "PC\\ana", lang: "en",
+    run: async () => ({ code: 0, out: "SUCCESS" }), writeFile: (p, d) => void written.set(p, d), mkdir: () => {}, remove: () => {},
+  }, { PAKO_HOME: "D:\\pako data", PORT: "9000", CLAUDE_BIN: "C:\\tools\\claude.exe", PAKO_HOST: " ", UNRELATED: "x" });
+  await a.enable();
+  const ps1 = written.get("D:\\pako data\\autostart\\start-pako.ps1")!.toString("utf8");
+  assert.match(ps1, /\$env:PAKO_SERVICE = '1'/, "no sign-in link printed into the log file");
+  assert.match(ps1, /\$env:PAKO_HOME = 'D:\\pako data'/);
+  assert.match(ps1, /\$env:PORT = '9000'/);
+  assert.match(ps1, /\$env:CLAUDE_BIN = 'C:\\tools\\claude\.exe'/);
+  assert.doesNotMatch(ps1, /PAKO_HOST|UNRELATED/, "an empty value is not carried, nor a setting Pako does not carry");
+  assert.ok(ps1.indexOf("PAKO_SERVICE") < ps1.indexOf("Start-Process"), "set before Node starts");
+});
+
 test("autostart: a refusal says Windows's own words; status and disable follow the task; nothing happens off Windows", async () => {
   const no = fake({}, { "/Create": { code: 1, out: "ERROR: Access is denied.\r\n" } });
   const s = await no.a.enable();

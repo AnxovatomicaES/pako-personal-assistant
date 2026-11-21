@@ -5,10 +5,11 @@ import { randomBytes } from "node:crypto";
 import {
   BATCH_MSGS_MAX, BATCHES_MAX, DETAIL_MAX, JOBS_MAX, LOOPS_MAX, MAIL_BATCH_MAX, MAIL_BATCHES_MAX, MAIL_READ_MAX, RULES_MAX, TITLE_MAX, WHO_MAX,
 } from "./limits.ts";
+import { chaseOf } from "./chase.ts";
 import { isZone } from "./time.ts";
 import { MAIL_BODY_MAX, MAIL_THREAD } from "../mail-body.ts";
 import {
-  LOOP_KINDS, type Batch, type BatchMsg, type Check, type FollowupsState, type Job, type LearnedRule, type Loop, type LoopKind, type LoopSource,
+  LOOP_KINDS, type Batch, type BatchClaim, type BatchMsg, type Check, type FollowupsState, type Job, type LearnedRule, type Loop, type LoopKind, type LoopSource,
   type MailBatch, type MailSeen, type ParkedExpired, type Where,
 } from "./types.ts";
 
@@ -79,6 +80,7 @@ export function loopOf(v: unknown): Loop | null {
     ...(dueAt ? { dueAt } : {}),
     ...(tz ? { tz } : {}),
     check,
+    ...(num(v.effort) && num(v.effort)! >= 5 && num(v.effort)! <= 480 ? { effort: Math.round(num(v.effort)!) } : {}),
     status,
     nextCheckAt: num(v.nextCheckAt) ?? 0,
     nudges: num(v.nudges) ?? 0,
@@ -89,6 +91,7 @@ export function loopOf(v: unknown): Loop | null {
     ...(num(v.closedAt) ? { closedAt: num(v.closedAt)! } : {}),
     ...(isObject(v.autoClosed) && num(v.autoClosed.at) && typeof v.autoClosed.why === "string"
       ? { autoClosed: { at: num(v.autoClosed.at)!, why: v.autoClosed.why.slice(0, 160) } } : {}),
+    ...(v.reopened === true ? { reopened: true as const } : {}),
     sources: (Array.isArray(v.sources) ? v.sources : []).map(sourceOf).filter((x): x is LoopSource => x !== null).slice(0, 5),
     // Gentle mode's own fields (src/gentle.ts): small counters and one checked line.
     ...(num(v.parkedAt) ? { parkedAt: num(v.parkedAt)! } : {}),
@@ -98,6 +101,8 @@ export function loopOf(v: unknown): Loop | null {
     ...(v.folded === true ? { folded: true } : {}),
     ...(v.afterAsked === true ? { afterAsked: true } : {}),
     ...(typeof v.step === "string" && v.step.trim() ? { step: v.step.slice(0, 160) } : {}),
+    // Its chases (src/followups/chase.ts): when, the drafts and where they go.
+    ...(chaseOf(v.chase) ? { chase: chaseOf(v.chase)! } : {}),
   };
 }
 
@@ -122,8 +127,14 @@ const batchOf = (v: unknown): Batch | null => {
     isObject(m) && typeof m.ts === "string" && TS.test(m.ts) && typeof m.at === "number" && typeof m.text === "string"
       ? [{ ts: m.ts, at: m.at, who: str(m.who, WHO_MAX), text: m.text.slice(0, 600), ...(m.mine === true ? { mine: true } : {}) }]
       : []);
-  return msgs.length ? { channel: v.channel, ...threadOf(v.thread), where, firstAt: v.firstAt, msgs: msgs.slice(-BATCH_MSGS_MAX) } : null;
+  return msgs.length ? { channel: v.channel, ...threadOf(v.thread), where, firstAt: v.firstAt, msgs: msgs.slice(-BATCH_MSGS_MAX), ...claimOf(v.claim) } : null;
 };
+
+/** A batch's job on its way (BatchClaim), checked. */
+const claimOf = (v: unknown): { claim?: BatchClaim } =>
+  isObject(v) && typeof v.id === "string" && HEX10.test(v.id) && Array.isArray(v.keys)
+    ? { claim: { id: v.id, keys: v.keys.filter((k): k is string => typeof k === "string").slice(0, 50).map((k) => k.slice(0, 200)) } }
+    : {};
 
 /** One email waiting in a batch, checked; its words cut to what the reading takes. */
 const mailSeenOf = (v: unknown): MailSeen | null =>
@@ -139,7 +150,7 @@ const mailBatchOf = (v: unknown): MailBatch | null => {
   if (!isObject(v) || typeof v.thread !== "string" || !MAIL_THREAD.test(v.thread) || typeof v.firstAt !== "number") return null;
   const where = whereOf(v.where);
   const mails = (Array.isArray(v.mails) ? v.mails : []).map(mailSeenOf).filter((x): x is MailSeen => x !== null && x.thread === v.thread);
-  return where && mails.length ? { thread: v.thread, where, firstAt: v.firstAt, mails: mails.slice(-MAIL_BATCH_MAX) } : null;
+  return where && mails.length ? { thread: v.thread, where, firstAt: v.firstAt, mails: mails.slice(-MAIL_BATCH_MAX), ...claimOf(v.claim) } : null;
 };
 
 /** Notes of parked loops let go after 45 days, kept at most (and 90 days: src/followups/store.ts). */

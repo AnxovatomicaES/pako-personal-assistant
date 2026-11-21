@@ -253,9 +253,10 @@ test("mac update: a feed not signed by the release key the app carries is refuse
   }
   await refused(app, feed, "feed-signature", { appKey: "" });
   await refused(app, feed, "feed-signature", { appKey: other.publicKey });
+  await refused(app, feed, "feed-signature", { appKey: `${other.publicKey},${generateFeedKey().publicKey}` });
   assert.equal(hits.length, was, "no request was made");
-  // The same feed, signed by the key the app carries: installed.
-  assert.equal((await install(app, feed)).ok, app);
+  // The same feed, signed by one of the keys the app carries (here the second: a recovery key, for a lost release key): installed.
+  assert.equal((await install(app, feed, { appKey: `${other.publicKey},${KEY.publicKey}` })).ok, app);
 });
 
 test("mac update: a download that is not exactly the announced one is refused and the running app stays as it was", { skip }, async () => {

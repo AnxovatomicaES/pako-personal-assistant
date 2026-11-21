@@ -13,7 +13,7 @@ import type { CalEvent, CalendarSource } from "./calendar.ts";
 import { attendeesOf, joinLink } from "./calendar.ts";
 import type { Control } from "./control.ts";
 import { texts, type Lang } from "./i18n.ts";
-import { guardedGet, isPrivateHost, type Resolver } from "./restaurants/website.ts";
+import { guardedGet, isPrivateHost, type Resolver } from "./public-fetch.ts";
 import { localToEpoch } from "./whatsapp.ts";
 import { createLog } from "./log.ts";
 
@@ -215,6 +215,15 @@ function resolver(t: Time, ownerZone: string): (x: Time) => number {
   return (x) => wallToEpoch(x, ownerZone);
 }
 
+/** A time with no zone at all (floating): not a day, not UTC, no TZID. */
+function zoneless(t: Time): boolean {
+  if (t.isDate) return false;
+  const zone = t.zone;
+  if (zone?.tzid === "UTC" || zone === ICAL.Timezone.utcTimezone) return false;
+  const named = (zone && zone.tzid !== "floating" ? zone.tzid : (t as unknown as { timezone?: string }).timezone) ?? "";
+  return !named.trim().replace(/^"|"$/g, "");
+}
+
 // ---------- reading a feed ----------
 
 export interface IcsWindow {
@@ -275,6 +284,7 @@ export function icsEvents(root: Component, w: IcsWindow, calendar = "", warn: (t
   const masters = new Map<string, Component>();
   const overrides = new Map<string, Map<string, Component>>();
   const loose: Component[] = [];
+  const changes: { uid: string; rid: Time; v: Component }[] = [];
   for (const v of vevents) {
     const uid = String(v.getFirstPropertyValue("uid") ?? "").trim();
     if (!uid) {
@@ -288,9 +298,17 @@ export function icsEvents(root: Component, w: IcsWindow, calendar = "", warn: (t
       if (!before || Number(v.getFirstPropertyValue("sequence") ?? 0) >= Number(before.getFirstPropertyValue("sequence") ?? 0)) masters.set(uid, v);
       continue;
     }
+    changes.push({ uid, rid, v });
+  }
+  // A RECURRENCE-ID (or EXDATE) with no zone on a series that has one is on the series' own clock, not the owner's.
+  const clockOf = (x: Time, uid: string): ((t: Time) => number) => {
+    const start = zoneless(x) ? (masters.get(uid)?.getFirstPropertyValue("dtstart") as Time | null) : null;
+    return resolver(start && !start.isDate ? start : x, w.timeZone);
+  };
+  for (const { uid, rid, v } of changes) {
     let m = overrides.get(uid);
     if (!m) overrides.set(uid, (m = new Map()));
-    m.set(occurrenceKey(rid, resolver(rid, w.timeZone)), v);
+    m.set(occurrenceKey(rid, clockOf(rid, uid)), v);
   }
 
   const out: CalEvent[] = [];
@@ -379,7 +397,7 @@ export function icsEvents(root: Component, w: IcsWindow, calendar = "", warn: (t
       for (const p of master.getAllProperties("exdate")) {
         for (const x of p.getValues() as Time[]) {
           if (!x || typeof x !== "object" || !("isDate" in x)) continue;
-          skip.add(occurrenceKey(x, resolver(x, w.timeZone)));
+          skip.add(occurrenceKey(x, zoneless(x) && !start.isDate ? at : resolver(x, w.timeZone)));
           // A day (VALUE=DATE) on a timed series: that day's occurrence, on the series' own clock.
           if (x.isDate && !start.isDate) skip.add(`day:${x.year}${pad(x.month)}${pad(x.day)}`);
         }
@@ -564,7 +582,7 @@ export interface IcsDeps {
   control?: Control;
   /** The calendar's own log line, once an hour for the same text (src/calendar.ts calendarLog). */
   log?: (text: string) => void;
-  /** The name lookup each hop's host is checked with (src/restaurants/website.ts checkUrl): every address must be public. */
+  /** The name lookup each hop's host is checked with (src/public-fetch.ts checkUrl): every address must be public. */
   resolve?: Resolver;
   /** The owner's own addresses (their mailbox, their Zoom): whether an invitation was answered is read from their attendee line. */
   me?: () => string[];

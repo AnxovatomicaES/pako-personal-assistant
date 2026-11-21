@@ -1,0 +1,53 @@
+{
+  "suite": "followups",
+  "behaviour": "the owner promised Dana the deck on Slack; Dana's «thanks!» is no deck: the loop stays open",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0DANA",
+          "label": "Dana Whitlock (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:00",
+              "who": "Alex",
+              "text": "I'll send you the onboarding deck by Thursday 17:00",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"owner_promise\", \"title\": \"Send Dana the onboarding deck\", \"detail\": \"Dana, see the conversation.\", \"who\": \"Dana\", \"due\": \"2026-11-19 17:00\", \"tz\": \"Europe/Madrid\", \"check\": \"slackFile\"}], \"closes\": []}"
+      },
+      {
+        "slack": {
+          "channel": "D0DANA",
+          "label": "Dana Whitlock (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:04",
+              "who": "Dana Whitlock",
+              "text": "thanks!!"
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "closed": 0,
+    "open": [
+      {
+        "kind": "owner_promise",
+        "who": "Dana",
+        "titleHas": [
+          "deck"
+        ],
+        "dueLocal": "2026-11-19 17:00",
+        "check": "slackFile"
+      }
+    ]
+  }
+}

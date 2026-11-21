@@ -60,15 +60,12 @@ const wordsOf = (s: string): string[] => fold(s.split("@")[0]!).split(/[^\p{L}\p
 export function createMeetingPrep(d: MeetingPrepDeps) {
   const now = d.now ?? Date.now;
   let memory: State = { done: [] };
+  // A store that does not answer throws (src/json-record.ts): an empty list in its place would ask again for every meeting prepared, and be
+  // saved over them. The look then asks nothing until the store answers.
   const load = async (): Promise<State> => {
     if (!d.kv) return structuredClone(memory);
-    try {
-      const v = ((await readJsonRecord(d.kv, MEETING_PREP_KEY)) ?? {}) as Partial<State>;
-      return { done: Array.isArray(v.done) ? v.done.filter((x) => typeof x?.key === "string" && typeof x?.at === "number").slice(-200) : [] };
-    } catch (err) {
-      log.warn(`the prepared meetings could not be read, starting empty: ${err instanceof SyntaxError ? "not JSON" : (err as Error).message}`);
-      return { done: [] };
-    }
+    const v = ((await readJsonRecord(d.kv, MEETING_PREP_KEY)) ?? {}) as Partial<State>;
+    return { done: Array.isArray(v.done) ? v.done.filter((x) => typeof x?.key === "string" && typeof x?.at === "number").slice(-200) : [] };
   };
   const save = async (s: State): Promise<void> => {
     memory = s;
@@ -119,7 +116,13 @@ export function createMeetingPrep(d: MeetingPrepDeps) {
     const mine = new Set((d.self?.() ?? []).map((x) => x.trim().toLowerCase()).filter(Boolean));
     const due = events.filter((e) => !e.allDay && !e.invited && e.response !== "declined" && e.start - PREP_LEAD_MS <= t && e.start - LATEST_MS > t);
     if (!due.length) return [];
-    const s = await load();
+    let s: State;
+    try {
+      s = await load();
+    } catch (err) {
+      log.warn(`the prepared meetings could not be read, none asked now: ${(err as Error).message}`);
+      return [];
+    }
     s.done = s.done.filter((x) => t - x.at < 7 * 24 * 3600_000);
     const today = s.done.filter((x) => x.asked && t - x.at < 24 * 3600_000).length;
     const asked: string[] = [];

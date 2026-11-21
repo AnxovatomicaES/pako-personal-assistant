@@ -110,6 +110,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
         return f
     }()
+    /// Apple Reminders (Reminders.swift): off until the person turns it on in the panel; a check-only run never asks for it.
+    private lazy var remindersFeed: RemindersFeed = {
+        let f = RemindersFeed(defaults: runner.defaults, live: !AppDelegate.headless && AppDelegate.report == nil && AppDelegate.fakeSources == nil)
+        f.post = { [weak self] body, done in
+            guard let self = self, self.signedIn else { return done(nil) }
+            self.panelSend(self.webView, "POST", "/panel/api/reminders/local", body) { ok, answer in done(ok ? (answer ?? [:]) : nil) }
+        }
+        return f
+    }()
     private var sigterm: DispatchSourceSignal?
 
     private let texts = Texts()
@@ -769,6 +778,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
                 self.resumeThings()
                 self.calendarFeed.start()
                 self.calendarFeed.push()
+                self.remindersFeed.start()
+                self.remindersFeed.sync()
                 self.reportDiscovery()
                 self.walkConnections()
             }
@@ -888,7 +899,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     // MARK: discovery (Discovery.swift): the panel's typed messages
 
     /// The panel's ask, already checked (parsePakoMessage). Answers go back to the page that asked: window.pakoDiscovered(result),
-    /// window.pakoCalendarSynced({events}) and window.pakoImported({people}) (null on failure), each only when the page defines it.
+    /// window.pakoCalendarSynced({events}), window.pakoImported({people}) (null on failure) and window.pakoReminders({ok, on, access}), each
+    /// only when the page defines it.
     private func handle(_ msg: PakoMessage, from wv: WKWebView?) {
         switch msg {
         case let .discover(what, openMail): discover(what, openMail: openMail, from: wv)
@@ -909,6 +921,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             openPanelSettings(path)
             answer(wv, "pakoOpened", true)
         case let .use(what, ids): use(what, ids: ids, from: wv)
+        case let .reminders(on):
+            remindersFeed.setOn(on) { r in self.answer(wv, "pakoReminders", r) }
         case .panelWord: break
         }
     }
@@ -948,7 +962,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     /// A request to the panel's own route, made by the panel itself (its cookie, the x-pako header every change needs) in the app's own
     /// script world: the page's scripts can neither see nor change it. Only the routes of the contract.
     private func panelSend(_ wv: WKWebView, _ method: String, _ path: String, _ body: [String: Any]?, done: @escaping (Bool, [String: Any]?) -> Void) {
-        let routes = ["/panel/api/discovery", "/panel/api/calendar/local", "/panel/api/calendar/writes", "/panel/api/people/import"]
+        let routes = ["/panel/api/discovery", "/panel/api/calendar/local", "/panel/api/calendar/writes", "/panel/api/people/import",
+                      "/panel/api/reminders/local"]
         guard routes.contains(path), let url = wv.url, isPanelURL(url, port: port) else { return done(false, nil) }
         let js = "try { const r = await fetch(path, {method: method, credentials: 'same-origin', cache: 'no-store',"
             + " headers: {'content-type': 'application/json', 'x-pako': '1'}, body: body === null ? undefined : JSON.stringify(body)});"

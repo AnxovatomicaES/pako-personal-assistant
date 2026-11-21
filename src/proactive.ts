@@ -426,6 +426,8 @@ export interface CompanionOffer {
   key: string;
   text: string;
   claim(): Promise<boolean>;
+  /** Gives the claim back when the card could not go (a birthday is then not spent on a card nobody got). */
+  release?(): Promise<void>;
 }
 /** The companion's roles under the owner's topics: "no me hables de salud" silences the habit nudges too. */
 const ROLE_TOPIC: Record<CompanionOffer["topic"], Topic> = { friend: "amigos", health: "bienestar", learning: "aprendizaje" };
@@ -655,6 +657,7 @@ export function createProactive(d: ProactiveDeps) {
       const sent = await d.card(say, [{ id: `p3:${sid}`, title: tl("less", { topic: topicName(topic, l) }) }], feedback).catch(() => false);
       if (!sent) {
         await giveBack();
+        await o.release?.().catch((err: Error) => logProactive.warn(`an offer could not be given back: ${err.message}`));
         return false;
       }
       d.quality?.nudged({ id: sid, title: kept }, true);

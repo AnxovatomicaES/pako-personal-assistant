@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { checkKeys, feedMessage, generateFeedKey, HOW_TO_MAKE_ONE, publicKeyOf, signFeed, verifyFeed } from "../desktop/mac/feed-sign.ts";
+import { checkKeys, feedMessage, generateFeedKey, HOW_TO_MAKE_ONE, publicKeyList, publicKeyOf, signFeed, verifyFeed } from "../desktop/mac/feed-sign.ts";
 
 const repo = fileURLToPath(new URL("../", import.meta.url));
 const FEED = {
@@ -57,6 +57,17 @@ test("feed signature: signed by the key verifies; any changed field, another key
   assert.equal(verifyFeed(FEED, key.publicKey), false, "no signature");
   for (const sig of ["", "AAAA", "A".repeat(86) + "==", 42]) assert.equal(verifyFeed({ ...signed, signature: sig }, key.publicKey), false, String(sig));
   for (const pub of ["", "abc", "A".repeat(44)]) assert.equal(verifyFeed(signed, pub), false, pub);
+});
+
+test("feed signature: recovery keys: the app trusts every key in feed-key.pub, so a lost release key strands no one", () => {
+  const release = generateFeedKey(), recovery = generateFeedKey(), stranger = generateFeedKey();
+  const both = `${release.publicKey}\n${recovery.publicKey}\n`;
+  assert.deepEqual(publicKeyList(both), [release.publicKey, recovery.publicKey]);
+  assert.deepEqual(publicKeyList(`${release.publicKey},${recovery.publicKey}`), [release.publicKey, recovery.publicKey], "as build.sh gives it");
+  for (const k of [release, recovery]) assert.equal(verifyFeed(signFeed(FEED, k.privateKey), both), true);
+  assert.equal(verifyFeed(signFeed(FEED, stranger.privateKey), both), false, "a key not in the file");
+  assert.equal(checkKeys({ ...NOKEY, PAKO_FEED_SIGNING_KEY: recovery.privateKey, PAKO_FEED_PUBLIC_KEY: both }), "", "signing with the recovery key");
+  assert.match(checkKeys({ ...NOKEY, PAKO_FEED_SIGNING_KEY: stranger.privateKey, PAKO_FEED_PUBLIC_KEY: both }), /not the one the app carries/);
 });
 
 test("feed signature: the command checks the key against the app's public key, signs feed.json in place, and verifies it", () => {

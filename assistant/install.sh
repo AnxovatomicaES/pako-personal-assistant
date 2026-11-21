@@ -43,7 +43,8 @@ fi
 [ "$(uname)" = "Darwin" ] || [ -n "$DRY" ] || die "This installer is for macOS. Elsewhere run: node --env-file=assistant/.env assistant/run.ts"
 
 command -v node >/dev/null 2>&1 || die "Node.js is not installed (22.18 or newer): https://nodejs.org"
-node -e 'const [a, b] = process.versions.node.split(".").map(Number); process.exit(a > 22 || (a === 22 && b >= 18) ? 0 : 1)' \
+# 22.18, or 23.6 on the short-lived 23 line: the first that run Pako's TypeScript as it is (bin/preflight.cjs says the same).
+node -e 'const [a, b] = process.versions.node.split(".").map(Number); process.exit(a > 23 || (a === 23 && b >= 6) || (a === 22 && b >= 18) ? 0 : 1)' \
   || die "Node $(node -v) is too old: 22.18 or newer is needed."
 command -v claude >/dev/null 2>&1 || die "Claude Code is not installed or not on the PATH ('claude'). Install it, run 'claude' once to log in, then run this again."
 NODE_BIN="$(command -v node)"

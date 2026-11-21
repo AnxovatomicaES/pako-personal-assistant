@@ -102,15 +102,24 @@ export function parseZohoTime(s: string, timeZone: string): { at: number; allDay
   const m = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z|[+-]\d{4})?)?$/.exec(s.trim());
   if (!m) return null;
   const [, y, mo, d, h, mi, sec, zone] = m;
+  // A local time that does not exist (the hour the clocks skip) is read with the offset before it, as an ICS feed's: an hour later. A day
+  // starts at its midnight, or at the first hour that exists (a zone whose clocks change at midnight).
+  const local = (hour: number, minute: string): number | null => {
+    for (let k = 0; k < 3 && hour + k < 24; k++) {
+      const at = localToEpoch(`${y}-${mo}-${d} ${String(hour + k).padStart(2, "0")}:${minute}`, timeZone);
+      if (at !== null) return at;
+    }
+    return null;
+  };
   if (h === undefined) {
-    const at = localToEpoch(`${y}-${mo}-${d} 00:00`, timeZone);
+    const at = local(0, "00");
     return at === null ? null : { at, allDay: true };
   }
   if (zone) {
     const offset = zone === "Z" ? 0 : (zone[0] === "-" ? -1 : 1) * (Number(zone.slice(1, 3)) * 60 + Number(zone.slice(3, 5)));
     return { at: Date.UTC(+y!, +mo! - 1, +d!, +h, +mi!, +sec!) - offset * 60_000, allDay: false };
   }
-  const at = localToEpoch(`${y}-${mo}-${d} ${h}:${mi}`, timeZone);
+  const at = local(+h, mi!);
   return at === null ? null : { at, allDay: false };
 }
 
@@ -651,6 +660,8 @@ export function createCalendarCore(d: CalendarCoreDeps) {
     context,
     tick,
     load,
+    /** All the events, saying whether a calendar could not be read (src/calendar-changes.ts skips such a reading). */
+    readAll: () => read(),
     /** What is connected, for the panel: "Zoho (eu)", "ICS: calendar.google.com", or both. */
     label: d.sources.map((s) => s.label).join(" + "),
     start: () => {

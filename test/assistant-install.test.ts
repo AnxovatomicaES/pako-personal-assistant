@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
@@ -72,6 +72,21 @@ test("install: refuses a bad token, a missing Claude Code and an unknown option,
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /Claude Code is not installed/);
   assert.ok(!existsSync(noClaude.envFile));
+});
+
+test("install: Node.js 23.0 to 23.5 is refused like 22.17 (no type stripping by default), and 23.6 and 24 are fine", () => {
+  // It took any 23 as new enough, while bin/preflight.cjs and install.sh say 23.6: the assistant then failed at each start in its log.
+  for (const [version, ok] of [["23.1.0", false], ["22.17.0", false], ["23.6.0", true], ["24.0.0", true]] as const) {
+    const s = sandbox();
+    const fake = join(s.bin, "fake-version.cjs");
+    writeFileSync(fake, `Object.defineProperty(process, "versions", { value: { ...process.versions, node: ${JSON.stringify(version)} } });\n`);
+    rmSync(join(s.bin, "node"));
+    writeFileSync(join(s.bin, "node"), `#!/bin/sh\nexec ${JSON.stringify(process.execPath)} --require ${JSON.stringify(fake)} "$@"\n`);
+    chmodSync(join(s.bin, "node"), 0o755);
+    const r = s.run([], { ASSISTANT_BRIDGE_TOKEN: TOKEN });
+    assert.equal(r.status === 0, ok, `${version}: ${r.stderr}${r.stdout}`);
+    if (!ok) assert.match(r.stderr, /too old: 22\.18 or newer/);
+  }
 });
 
 test("install: with no token given it asks for one (not echoed) and uses the one already in the file; --uninstall removes the LaunchAgent and keeps the config", () => {

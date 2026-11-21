@@ -14,11 +14,12 @@ export const CLAUDE_CODE_TESTED = { min: "2.1.325", maxTested: "2.1.327" } as co
 /**
  * How this Claude Code stands; `note` is the sentence for the log and the panel, absent when all is well. "ok": it passed the self-test
  * (or, untested, is in the captured range); "probed": it passed the self-test, outside the captured range; "failed": it did not, and `note`
- * says what and how to go back to `lastGood`; "newer" / "older": the self-test could not run, and it is outside the range; "unknown": no version.
+ * says what and how to go back to `lastGood`; "newer" / "older": the self-test could not run, and it is outside the range; "unknown": no version;
+ * "behind": it refused a model Pako asks for as too new for it (runs.ts, cli-models.ts), and `note` says to update it.
  */
 export interface CliCompat {
   version: string;
-  status: "ok" | "probed" | "failed" | "newer" | "older" | "unknown";
+  status: "ok" | "probed" | "failed" | "newer" | "older" | "unknown" | "behind";
   note?: string;
   /** The version to go back to, when it failed. */
   lastGood?: string;

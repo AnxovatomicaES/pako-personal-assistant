@@ -1,0 +1,49 @@
+{
+  "suite": "followups",
+  "behaviour": "Bruno asks for the Q3 invoice in one thread; the owner then writes to Bruno in another thread to thank him for lunch: the invoice loop stays open",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-16 09:00",
+          "ref": "m-bruno",
+          "from": "Bruno Keller <bruno@northgate.example>",
+          "to": "Alex <alex@acme.example>",
+          "subject": "Q3 invoice copy",
+          "category": "needs_you",
+          "messageId": "<bk1@northgate.example>",
+          "body": "Hi Alex,\n\nCould you send me a copy of the Q3 invoice by Thursday 12:00? Our auditors need it.\n\nThanks,\nBruno"
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"request_to_owner\", \"title\": \"Send Bruno a copy of the Q3 invoice\", \"detail\": \"Bruno, see the conversation.\", \"who\": \"Bruno\", \"due\": \"2026-11-19 12:00\", \"tz\": \"Europe/Madrid\", \"check\": \"none\", \"reason\": \"email\"}], \"closes\": []}"
+      },
+      {
+        "mail": {
+          "at": "2026-11-16 11:40",
+          "ref": "s-bruno2",
+          "mine": true,
+          "from": "Alex <alex@acme.example>",
+          "to": "Bruno Keller <bruno@northgate.example>",
+          "subject": "Lunch",
+          "messageId": "<s2@acme.example>",
+          "body": "Hi Bruno,\n\nThanks again for lunch yesterday, it was great to catch up.\n\nAlex"
+        },
+        "recorded": "{\"loops\": [], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "closed": 0,
+    "open": [
+      {
+        "kind": "request_to_owner",
+        "who": "Bruno",
+        "titleHas": [
+          "invoice"
+        ],
+        "dueLocal": "2026-11-19 12:00"
+      }
+    ]
+  }
+}

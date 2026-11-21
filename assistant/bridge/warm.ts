@@ -10,6 +10,18 @@ import { missingEssential, readResult } from "./cli-shape.ts";
 import { mcpDownIn, seenFields, watchTurn } from "./mcp.ts";
 
 /**
+ * Whether a stream-json line that names a result is the result event (its own `type`, not a nested one). A line cut short still ends the
+ * turn, as before: it fails at once instead of waiting for the timeout.
+ */
+const isResultLine = (l: string): boolean => {
+  try {
+    return (JSON.parse(l) as { type?: unknown }).type === "result";
+  } catch {
+    return true;
+  }
+};
+
+/**
  * The owner's conversation in one `claude -p` process that stays up between their messages: the same flags as runClaude (the same tools,
  * system prompt, empty server list and settings), with stream-json in and out, so each message is one JSON line on its standard input and
  * each answer one "result" line. Measured with Claude Code 2.1.325 on a one-word answer: a new process (resumed or not) took 3.6 to 5.2 s,
@@ -84,7 +96,8 @@ export function createWarmClaude(o: { idleMs: number; log?: (line: string) => vo
         if (down !== null) x.mcpDown = down;
         x.watch?.line(l);
         x.signals?.line(l);
-        if (/"type"\s*:\s*"result"/.test(l)) x.turn?.(l);
+        // Only the result event itself: a tool call's input may hold "type":"result" too (a web page can ask for it), as runClaude reads it.
+        if (/"type"\s*:\s*"result"/.test(l) && isResultLine(l)) x.turn?.(l);
       }
     });
     child.stderr!.on("data", (b: string) => {

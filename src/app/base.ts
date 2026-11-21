@@ -4,17 +4,25 @@
 import express from "express";
 import { loadCountry } from "../health.ts";
 import { english } from "../i18n.ts";
-import { grandfatherNote, parseLabsSetting, readLabChoices, resolveLabs } from "../labs.ts";
+import { grandfatherNote, type Labs, parseLabsSetting, readLabChoices, resolveLabs } from "../labs.ts";
 import { pakoHome } from "../local.ts";
 import { createLog } from "../log.ts";
 import { ownerTimeZone, setOwnerRegion } from "../region.ts";
-import { languageIgnoredNote } from "./config.ts";
+import { type Env, languageIgnoredNote, type LocalContext } from "./config.ts";
 import type { AppCtx } from "./context.ts";
 
 const logHealth = createLog("health");
 const logLabs = createLog("labs");
 const logLanguage = createLog("language");
 const logTime = createLog("time");
+
+/** Which labs are on for this start: src/server.ts loads their code with it (src/lab-code.ts) before createApp, and wireBase keeps it. */
+export function labsFor(env: Env, local?: LocalContext): Labs {
+  return resolveLabs({
+    env,
+    ...(local ? { choices: readLabChoices(pakoHome(env)), setUp: { whatsapp: !!local.settings?.whatsapp?.() } } : {}),
+  });
+}
 
 export function wireBase(ctx: AppCtx) {
   const { config, env, local } = ctx;
@@ -38,10 +46,7 @@ export function wireBase(ctx: AppCtx) {
   // below is marked "LABS:"; nothing else in createApp depends on it.
   const labsUnknown = parseLabsSetting(env.PAKO_LABS).unknown;
   if (labsUnknown.length) logLabs.warn(`PAKO_LABS: no lab called ${labsUnknown.join(", ")}`);
-  const labs = resolveLabs({
-    env,
-    ...(local ? { choices: readLabChoices(pakoHome(env)), setUp: { whatsapp: !!local.settings?.whatsapp?.() } } : {}),
-  });
+  const labs = labsFor(env, local);
   const labsNote = grandfatherNote(labs);
   if (labsNote) logLabs.info(labsNote);
   app.locals.labs = labs;

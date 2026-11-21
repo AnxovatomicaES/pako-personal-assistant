@@ -169,6 +169,7 @@ export const T = texts(
     helpSlack: "• SLACK: what people wrote to you on Slack in the last 24 hours",
     helpFollowups: "• OPEN: what you were asked or promised that I don't see done yet",
     helpDraft: "• DRAFT (or DRAFT and a few words): the message to close a follow-up, for you to send",
+    helpChase: "• CHASE and a few words: a gentle and a firm reminder for someone who owes you something, to send or copy",
     helpReviews: "• MEETING TODOS: what is still open from your meetings of the week",
     helpRehearsal: "• REHEARSAL: what I would have told you from the last 48 hours, without sending anything",
     helpHealth: "• HEALTH: whether everything works (Slack, calendar, mail, Claude…) and how useful my reminders are",

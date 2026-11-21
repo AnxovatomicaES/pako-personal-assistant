@@ -10,7 +10,7 @@ import { T } from "./texts.ts";
 import type { AfterLanguage } from "./parts.ts";
 
 export function mountMail(b: AfterLanguage) {
-  const { config, log, api, say, background, retryAt, attempts, ownerLanguage, language } = b;
+  const { config, log, api, say, background, retryAt, hold, attempts, ownerLanguage, language } = b;
   /**
    * An email that arrived in the assistant's own inbox. Its words come from a stranger, so Claude reads it in a run of its own: no web search, no
    * conversation, a prompt that only asks for a summary, and every tag in the answer is dropped. Nothing an email says can act.
@@ -52,7 +52,7 @@ export function mountMail(b: AfterLanguage) {
         // Claude's limit: the email waits for the reset, like any email that finds the limit. Over the day's budget: kept with its first lines
         // (the panel and tomorrow's brief show it), and told only when its sender is one the owner always wants to hear about.
         if (r.skipped === "paused") {
-          retryAt.set(id, r.until);
+          hold(id, r.until);
           return false;
         }
         notify = false;
@@ -66,7 +66,8 @@ export function mountMail(b: AfterLanguage) {
       const kind = err instanceof ClaudeError ? err.kind : "other";
       log(`claude failed on an email (${kind}): ${(err as Error).message.slice(0, 200)}`);
       if (kind === "limit" || kind === "login") {
-        retryAt.set(id, Date.now() + 5 * 60_000); // later, without blocking the owner's own messages (tick goes on past it)
+        if (kind === "limit") hold(id);
+        else retryAt.set(id, Date.now() + 5 * 60_000); // later, without blocking the owner's own messages (tick goes on past it)
         return false;
       }
       summary = e.text.replace(/\s+/g, " ").trim().slice(0, 300);

@@ -21,7 +21,7 @@ export function mountHelp(door: Door): Pick<Door, "helpText"> {
       ...(d.booking ? [tx("helpBookings")] : []),
       ...(d.slack ? [tx("helpSlack")] : []),
       ...(d.followups ? [tx("helpFollowups")] : []),
-      ...(d.followups && d.draftFor ? [tx("helpDraft")] : []),
+      ...(d.followups && d.draftFor ? [tx("helpDraft"), tx("helpChase")] : []),
       ...(d.reviews ? [tx("helpReviews")] : []),
       ...(d.rehearsal ? [tx("helpRehearsal")] : []),
       ...(d.status ? [tx("helpHealth")] : []),

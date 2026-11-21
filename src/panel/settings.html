@@ -20,6 +20,7 @@
   <script type="module" src="/panel/assets/health.js"></script>
   <script type="module" src="/panel/assets/demo.js"></script>
   <script type="module" src="/panel/assets/labs.js"></script>
+  <script type="module" src="/panel/assets/mobile.js"></script>
 </head>
 <body>
   <a class="skip" href="#cards-title" data-t="skip">Skip to the connections</a>
@@ -95,11 +96,12 @@
    <div class="tab-panel" id="tab-labs" role="tabpanel" aria-labelledby="tab-btn-labs" hidden>
     <div class="mount" data-mount="labs"></div>
    </div>
-   <!-- General: starting with this computer (src/panel/autostart.js), updates, and how Pako is doing (src/panel/health.js, one component). -->
+   <!-- General: starting with this computer (src/panel/autostart.js), the phone on the same Wi-Fi (src/panel/mobile.js), updates, and how Pako is doing (src/panel/health.js, one component). -->
    <div class="tab-panel" id="tab-general" role="tabpanel" aria-labelledby="tab-btn-general" hidden>
     <p class="section-note" data-t="general.lead"></p>
     <div class="mount" data-mount="demo"></div>
     <div class="mount" data-mount="autostart"></div>
+    <div class="mount" data-mount="phone"></div>
     <p class="section-note" data-t="general.updates"></p>
     <p class="section-note" data-t="general.name"></p>
     <div class="mount" data-mount="health"></div>

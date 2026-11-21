@@ -27,7 +27,8 @@ Pako is a personal assistant on your own computer that thinks with your own Clau
 
 ## What makes it smart
 
-- **It notices.** Promises made to you in Slack, mail and meetings, and the ones you make, in your own messages and in chat.
+- **It notices.** Promises made to you in Slack, mail, meetings and iMessage on the Mac, and the ones you make, in your own messages and in chat.
+- **Mail on a Mac with no password.** One switch reads what Apple Mail already downloaded (iCloud, Gmail, Outlook, Exchange), read only.
 - **It checks before it reminds.** Your calendar, Zoom and Sent mail: if you already replied or met, it closes the loop quietly.
 - **It gets ahead.** Meeting prep before each meeting, what changed overnight, and a morning brief where every line cites its source.
 - **It drafts.** A reply ready for every follow-up, in your tone, and better with every correction you make.
@@ -43,6 +44,9 @@ Opt-in, in Settings → How Pako acts.
 - **Check-ins** ("check on me at 10:30") and a **weekly reset**: "3 things are slipping: pick one, I'll park the rest."
 
 It's a productivity feature, not a medical device or a treatment. Details: [docs/features.md](docs/features.md#gentle-mode).
+
+**On your phone:** your brief and follow-ups with one-tap Done, Snooze and Park, on your home Wi-Fi (Settings → General → Use on my phone); away from home, Telegram. [How](docs/features.md#on-your-phone).
+With Pako for Mac, your follow-ups can also live in Apple Reminders, on your iPhone and Watch anywhere: tick one there and it's done in Pako. [How](docs/features.md#on-your-iphone-through-reminders).
 
 Everything in detail: [docs/features.md](docs/features.md). Chat commands: [docs/commands.md](docs/commands.md).
 

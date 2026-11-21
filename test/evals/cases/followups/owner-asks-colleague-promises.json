@@ -1,0 +1,41 @@
+{
+  "suite": "followups",
+  "behaviour": "the owner asks Leo for the logs by 15:00 and Leo says «sure, will do»: Leo's promise to the owner, not a task of the owner's",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0LEO",
+          "label": "Leo Strand (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 11:00",
+              "who": "Alex",
+              "text": "Can you send me the server logs by 15:00 today?",
+              "mine": true
+            },
+            {
+              "at": "2026-11-16 11:02",
+              "who": "Leo Strand",
+              "text": "sure, will do"
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"other_promise\", \"title\": \"Leo sends the server logs\", \"detail\": \"Leo, see the conversation.\", \"who\": \"Leo\", \"due\": \"2026-11-16 15:00\", \"tz\": \"Europe/Madrid\", \"check\": \"none\", \"reason\": \"document\"}], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "other_promise",
+        "who": "Leo",
+        "titleHas": [
+          "logs"
+        ],
+        "dueLocal": "2026-11-16 15:00"
+      }
+    ]
+  }
+}

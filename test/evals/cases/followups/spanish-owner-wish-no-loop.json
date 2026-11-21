@@ -1,0 +1,33 @@
+{
+  "suite": "followups",
+  "behaviour": "a Spanish-speaking owner writes «estaría bien revisar el presupuesto algún día»: a wish, no loop",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "ownerLanguage": "es",
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0JAKE",
+          "label": "Jake Morrow (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 17:00",
+              "who": "Jake Morrow",
+              "text": "Long week, huh?"
+            },
+            {
+              "at": "2026-11-16 17:03",
+              "who": "Alex",
+              "text": "Sí... estaría bien revisar el presupuesto algún día",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": []
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "suite": "followups",
+  "behaviour": "Haruto asks on Monday for the slides by 9:00 JST Wednesday: due Wednesday 01:00 Madrid, kept as Tokyo time",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0HARU",
+          "label": "Haruto Mori (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:00",
+              "who": "Haruto Mori",
+              "text": "Could you send me the slides by 9:00 JST Wednesday?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"request_to_owner\", \"title\": \"Send Haruto the slides\", \"detail\": \"Haruto, see the conversation.\", \"who\": \"Haruto\", \"due\": \"2026-11-18 09:00\", \"tz\": \"Asia/Tokyo\", \"check\": \"slackFile\"}], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Haruto",
+        "titleHas": [
+          "slides"
+        ],
+        "dueLocal": "2026-11-18 01:00",
+        "tz": "Asia/Tokyo"
+      }
+    ]
+  }
+}

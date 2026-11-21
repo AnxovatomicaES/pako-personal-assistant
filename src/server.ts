@@ -10,6 +10,8 @@ import { existsSync, mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createApp, loadAppConfig, STAND_IN_NAME, type LocalContext } from "./app.ts";
+import { labsFor } from "./app/base.ts";
+import { loadLabCode } from "./lab-code.ts";
 import { appServices } from "./app/services.ts";
 import { lastingExitCode, runAutostartCli } from "./autostart.ts";
 import { appliedAtStart, applyStoredSettings } from "./connections.ts";
@@ -169,6 +171,8 @@ async function main(): Promise<void> {
     console.error("\n  Pako cannot start: a setting in ~/.pako/.env or ./.env is wrong (see the line above). Fix it, or remove that line, and start again.\n");
     process.exit(lastingExitCode(process.env));
   }
+  // The code of the labs that are on (src/lab-code.ts): a lab that is off is never loaded.
+  await loadLabCode(labsFor(process.env, local));
   const app = createApp(config, process.env, local);
   // Local mode answers this computer only: nothing on the network can reach the panel or the chat.
   const host = localMode ? (process.env.PAKO_HOST ?? "").trim() || "127.0.0.1" : undefined;

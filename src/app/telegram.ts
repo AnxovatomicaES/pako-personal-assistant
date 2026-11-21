@@ -1,12 +1,27 @@
 // Wires Telegram's lifecycle (webhook or long polling, started by server.ts) and its panel card, and the WhatsApp of this computer's
 // panel routes.
 
+import type { Express } from "express";
 import { createLog } from "../log.ts";
 import { mountTelegramPanel } from "../telegram-panel.ts";
-import { mountWhatsappSetupAbsent } from "../whatsapp-computer.ts";
 import type { AfterPanel } from "./context.ts";
 
 const logTelegram = createLog("telegram");
+
+/**
+ * The panel's WhatsApp setup routes when this computer's WhatsApp (LABS: whatsapp, src/whatsapp-computer.ts) is not there: a server, or the
+ * lab off. Here in core, so the lab's code is not loaded for it.
+ */
+function mountWhatsappSetupAbsent(app: Express): void {
+  app.all("/panel/api/whatsapp/setup", (_req, res) => {
+    res.status(404).set({
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+      "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+    }).json({ error: "local mode only" });
+  });
+}
 
 export function wireTelegram(ctx: AfterPanel) {
   const { app, env, local, uiLang, waComputer, control, makeTelegram, tgRef, fromEnv, door, panel } = ctx;

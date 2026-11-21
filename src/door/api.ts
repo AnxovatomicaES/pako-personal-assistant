@@ -7,6 +7,9 @@ import { changesBrief } from "../memory-facts.ts";
 import type { OwnerChannel } from "./deps.ts";
 import { TEMPLATE_TEXT_MAX } from "./shared.ts";
 import type { Door } from "./door.ts";
+import type { Loop } from "../followups/types.ts";
+import { draftLoop } from "./views.ts";
+import { stopEverything } from "./stop-resume.ts";
 
 export function doorApi(door: Door) {
   const {
@@ -18,6 +21,13 @@ export function doorApi(door: Door) {
   const roomy = async (): Promise<boolean> => !!d.local || ((via.getStore() ?? (await startedRoute())) === "telegram" && !!d.telegram);
   return {
     inbox,
+    /** This Mac's calendar writes (src/calendar-writes.ts), as the door was given them (absent: read-only), and the STOPs sent so far. */
+    calendarWrites: () => d.calendarWrites,
+    stops: () => door.stops,
+    /** The panel's STOP switch: everything a typed STOP does (src/door/stop-resume.ts), with the log's own line. Whether the pause was kept. */
+    stop: (at: number, line?: string): Promise<boolean> => stopEverything(door, at, line),
+    /** A draft reply for one follow-up, as DRAFT in the chat asks for it (src/door/views.ts): the phone's "Draft a reply" (src/mobile.ts). */
+    draftLoop: (l: Loop) => draftLoop(door, l),
     /** The friend, health companion and teacher (src/companion.ts): its `offers` are for the proactive check. */
     companion,
     /**

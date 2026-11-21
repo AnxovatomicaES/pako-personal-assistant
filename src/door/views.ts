@@ -4,6 +4,7 @@
 import { logText } from "../control.ts";
 import { createPersonContext } from "../person-context.ts";
 import { matchView, VIEW_COMMAND, type View } from "../intents.ts";
+import type { Loop } from "../followups/types.ts";
 import type { Door } from "./door.ts";
 import type { Handler } from "./incoming.ts";
 import { createLog } from "../log.ts";
@@ -127,7 +128,7 @@ export const onHealth: Handler = async (door, { command }) => {
  * its own from the loop and what Pako knows of that person, and told in the chat. Nothing is sent: the owner copies it and presses send.
  */
 export const onDraft: Handler = async (door, { command }) => {
-  const { d, sendText, tx, facts, lang } = door;
+  const { d, sendText, tx } = door;
   const m = /^draft(?: (?:for |to |a reply to |reply to )?(.{2,80}))?$/.exec(command);
   if (!m || !d.followups?.forDraft || !d.followups.draftFacts || !d.draftFor) return null;
   const found = await d.followups.forDraft(m[1] ?? "").catch(() => ({ none: true as const }));
@@ -140,6 +141,18 @@ export const onDraft: Handler = async (door, { command }) => {
     return "draft: which";
   }
   const l = found.loop;
+  const task = await draftLoop(door, l);
+  await sendText(task && task.status !== "failed" ? tx("draftWorking", { title: l.title }) : tx("draftFailed"));
+  return "draft asked";
+};
+
+/**
+ * The draft for one loop: written in a run of its own from the loop, what Pako knows of that person and the day's facts (src/brief-v2.ts
+ * draftFor). Used by DRAFT in the chat and by the phone's "Draft a reply" (src/mobile.ts). Null when it could not be asked for.
+ */
+export async function draftLoop(door: Door, l: Loop): Promise<{ id?: string; status: string } | null> {
+  const { d, facts, lang } = door;
+  if (!d.followups?.draftFacts || !d.draftFor) return null;
   // What the owner's memory says about that person (src/person-context.ts): who they are to the owner (the draft's tone), what was last
   // agreed, what else is open between them. Data for the draft, never sent anywhere; this loop itself is D1, so it is not repeated.
   const ctx = d.personContext
@@ -152,13 +165,11 @@ export const onDraft: Handler = async (door, { command }) => {
   const mailRef = l.sources.find((s) => s.kind === "mail" && s.ref)?.ref;
   // Whom and where it goes: what the owner then sends there is compared with the draft, and what they changed is learnt (src/lessons.ts).
   const to = { ...(l.who ? { who: l.who } : {}), where: l.where.label, ...(l.where.channel ? { channel: l.where.channel } : {}) };
-  const task = await d.draftFor({
+  return d.draftFor({
     title: l.title, facts: [...d.followups.draftFacts(l), ...about], ...(mailRef ? { mailRef } : {}), about: to, ...(block?.own.length ? { allow: block.own } : {}),
   })
     .catch(() => null);
-  await sendText(task && task.status !== "failed" ? tx("draftWorking", { title: l.title }) : tx("draftFailed"));
-  return "draft asked";
-};
+}
 
 export const onFollowups: Handler = async (door, { command }) => {
   const { d, sendText } = door;
@@ -214,8 +225,9 @@ export const onMissed: Handler = async (door, { command, text }) => {
   // The owner's own words, as typed (the command is folded): the loop's title.
   const raw = text.trim().replace(/^\s*(?:pako[\s,:]+)?(?:you\s+missed|you\s+forgot|you\s+didn['’]?t\s+catch|you\s+did\s+not\s+catch)\s*:?\s*/i, "").slice(0, 160);
   const what = raw.length >= 3 ? raw : m[1]!;
-  await d.quality.missed(what);
   const loop = d.followups?.fromChat ? await d.followups.fromChat({ title: what }).catch(() => null) : null;
+  // With the follow-up it made: the beta's audit counts it as told, never as one Pako caught.
+  await d.quality.missed(what, loop?.id);
   await sendText(d.quality.missedText ? d.quality.missedText(loop ? loop.title : null) : "Noted.");
   return "missed";
 };

@@ -1,0 +1,42 @@
+{
+  "suite": "followups",
+  "behaviour": "Bruno asks by email for the Q3 invoice; the owner's reply in that same thread, invoice attached, closes the loop",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-16 09:00",
+          "ref": "m-bruno",
+          "from": "Bruno Keller <bruno@northgate.example>",
+          "to": "Alex <alex@acme.example>",
+          "subject": "Q3 invoice copy",
+          "category": "needs_you",
+          "messageId": "<bk1@northgate.example>",
+          "body": "Hi Alex,\n\nCould you send me a copy of the Q3 invoice by Thursday 12:00? Our auditors need it.\n\nThanks,\nBruno"
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"request_to_owner\", \"title\": \"Send Bruno a copy of the Q3 invoice\", \"detail\": \"Bruno, see the conversation.\", \"who\": \"Bruno\", \"due\": \"2026-11-19 12:00\", \"tz\": \"Europe/Madrid\", \"check\": \"none\", \"reason\": \"email\"}], \"closes\": []}"
+      },
+      {
+        "mail": {
+          "at": "2026-11-16 11:40",
+          "ref": "s-bruno",
+          "mine": true,
+          "from": "Alex <alex@acme.example>",
+          "to": "Bruno Keller <bruno@northgate.example>",
+          "subject": "Re: Q3 invoice copy",
+          "messageId": "<s1@acme.example>",
+          "inReplyTo": "<bk1@northgate.example>",
+          "references": "<bk1@northgate.example>",
+          "body": "Hi Bruno,\n\nAttached is the Q3 invoice.\n\nBest,\nAlex"
+        },
+        "recorded": "{\"loops\": [], \"closes\": [\"{{loop1}}\"]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "closed": 1,
+    "open": []
+  }
+}

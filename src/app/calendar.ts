@@ -33,7 +33,7 @@ export function wireCalendar(ctx: AfterConnect) {
     // What changed on the calendar (src/calendar-changes.ts), every ten minutes: the follow-ups follow a meeting that moved or was called off,
     // and the brief says what changed since the last one.
     const reader = calRef.reader;
-    calChangesRef.c = createCalendarChanges({ kv, read: () => reader.load(), onChange: (c) => followupsDoor.calendarChanged?.(c) ?? Promise.resolve(0) });
+    calChangesRef.c = createCalendarChanges({ kv, read: () => reader.readAll(), onChange: (c) => followupsDoor.calendarChanged?.(c) ?? Promise.resolve(0) });
     const cc = calChangesRef.c;
     setTimeout(() => void cc.tick(), 60_000).unref?.();
     setInterval(() => void cc.tick(), 10 * 60_000).unref?.();

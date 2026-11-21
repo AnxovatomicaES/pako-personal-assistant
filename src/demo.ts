@@ -91,11 +91,12 @@ export function demoLeave(home: string, userHome: string = homedir()): void {
 }
 
 /**
- * The settings that connect Pako to anything outside this computer: taken out of the environment for the demo, whoever set them (the shell,
- * ~/.pako/.env, ./.env). Pako's own run settings (the port, the name, the bridge) stay.
+ * The settings that connect Pako to anything outside this computer, or to the person's own mail and Messages on it (Apple Mail, iMessage):
+ * taken out of the environment for the demo, whoever set them (the shell, ~/.pako/.env, ./.env). Pako's own run settings (the port, the
+ * name, the bridge) stay.
  */
 const CONNECTION = new RegExp(
-  "^(AGENTMAIL_|CALENDAR_ICS|GOOGLE_|IMAP_|LIVEKIT_|PAKO_GOOGLE_|PAKO_PLACE$|PERSONAL_AGENT_ID$|PERSONAL_CONTACT|PERSONAL_LIVE$"
+  "^(AGENTMAIL_|APPLE_MAIL|CALENDAR_ICS|IMESSAGE|GOOGLE_|IMAP_|LIVEKIT_|PAKO_GOOGLE_|PAKO_PLACE$|PERSONAL_AGENT_ID$|PERSONAL_CONTACT|PERSONAL_LIVE$"
   + "|PERSONAL_OWNER_NUMBER$|PUBLIC_URL$|RELAY_|RESEND_|RETELL_|SLACK_|TEAMS_|TELEGRAM_|VOICE_|WHATSAPP_|ZOHO_|ZOOM_)",
 );
 
@@ -403,6 +404,7 @@ export const DEMO_TEXTS = {
     "In the demo, without Claude connected, I can only answer a few recorded questions: “what did I promise Ana?”, “what's on today?” or "
     + "“what am I forgetting?”. Connect Claude to ask anything about this week.",
   noExport: "Demo week: there is nothing of yours to export. Leave the demo first.",
+  noDelete: "Demo week: deleting here would empty the demo only, not your own data. Leave the demo first.",
   blocked: "This is the demo week: leave the demo to connect your own accounts.",
 } as const;
 
@@ -633,9 +635,14 @@ const BLOCKED = [
   "/panel/api/discovery", "/panel/api/people/import", "/panel/api/move", "/panel/api/autostart",
 ];
 
-/** Whether a request is one the demo refuses: a connection, an import, the export (nothing of the person's is here). */
-export function demoBlocks(method: string, path: string): boolean {
-  if (path === "/panel/api/export" || path === "/panel/api/move/export") return true;
+/**
+ * Whether a request is one the demo refuses: a connection, an import, the export (nothing of the person's is here), and deleting everything
+ * (it would empty the demo's folder only, and say the person's own data was gone).
+ */
+export function demoBlocks(method: string, raw: string): boolean {
+  // As Express routes it: in any case of letters, with or without a slash at the end.
+  const path = raw.toLowerCase().replace(/\/+$/, "");
+  if (path === "/panel/api/export" || path === "/panel/api/move/export" || path === "/panel/api/delete-all") return true;
   if (method === "GET" || method === "HEAD") return false;
   return BLOCKED.some((p) => path === p || path.startsWith(p.endsWith("/") ? p : `${p}/`) || path === p.replace(/\/$/, ""));
 }
@@ -644,7 +651,9 @@ export function demoBlocks(method: string, path: string): boolean {
 export function demoGuard(): RequestHandler {
   return (req, res, next) => {
     if (!demoBlocks(req.method, req.path)) return next();
-    res.status(409).set("Cache-Control", "no-store").json({ error: req.path.endsWith("export") ? DEMO_TEXTS.noExport : DEMO_TEXTS.blocked, demo: true });
+    const path = req.path.toLowerCase().replace(/\/+$/, "");
+    const error = path.endsWith("export") ? DEMO_TEXTS.noExport : path === "/panel/api/delete-all" ? DEMO_TEXTS.noDelete : DEMO_TEXTS.blocked;
+    res.status(409).set("Cache-Control", "no-store").json({ error, demo: true });
   };
 }
 

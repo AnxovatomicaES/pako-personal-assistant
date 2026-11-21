@@ -4,7 +4,7 @@
 // last word on what code cannot judge. The cost is estimated and shown first, asked to go on, and the run stops when it spends the cap.
 // The report: .claude/evals/<date>.md (ignored by git). The weekly run (test/evals/weekly.ts) uses the same pieces at k=1.
 //
-//   npm run evals:live [-- --k 3] [--max-usd 5] [--suite followups] [--case rohan] [--model claude-sonnet-5-5] [--yes]
+//   npm run evals:live [-- --k 3] [--max-usd 5] [--suite followups] [--case rohan[,ravi]] [--model claude-sonnet-5-5] [--yes]
 //   npm run evals:live -- --suite brief --model-brief claude-sonnet-5-5   one suite's model (--model-<suite>), here the brief's
 //
 // The model of each suite is the bridge's by default: the brief and the drafts on the writing model (DEFAULT_WRITING_MODEL), the rest on DEFAULT_MODEL.
@@ -132,9 +132,11 @@ export const fenced = (text: string, name: string): { prompt: string; fence: str
 export interface LiveRow { c: EvalCase; passed: number; ran: number; fails: string[] }
 export interface LiveRun { rows: LiveRow[]; spent: number; stopped: boolean }
 
-/** The cases a run picks: those with a model step, of one suite and with a name holding --case, when given. */
-export const pickCases = (o: Pick<Options, "suite" | "only">): EvalCase[] =>
-  liveCases(loadCases()).filter((c) => (!o.suite || c.suite === o.suite) && (!o.only || (c.file ?? "").includes(o.only)));
+/** The cases a run picks: those with a model step, of one suite and with a name holding --case (several with commas), when given. */
+export const pickCases = (o: Pick<Options, "suite" | "only">): EvalCase[] => {
+  const names = (o.only ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  return liveCases(loadCases()).filter((c) => (!o.suite || c.suite === o.suite) && (!names.length || names.some((n) => (c.file ?? "").includes(n))));
+};
 
 /** Shows the runs and the cost first; asks to go on unless --yes. False: the owner said no. */
 export async function confirm(cases: EvalCase[], o: Options): Promise<boolean> {
@@ -163,7 +165,10 @@ export async function runLive(cases: EvalCase[], o: Options): Promise<LiveRun> {
     spent += r.costUsd;
     return r.text;
   };
-  const live: Answer = async (step) => {
+  /** The raw answers of the run under way: a failed run's report shows what the model said, not only which check it failed. */
+  let said: string[] = [];
+  const live: Answer = async (step) => (said.push(await ask(step)), said.at(-1)!);
+  const ask: Answer = async (step) => {
     if (step.system === "chat") return claude(step.text, SYSTEM_PROMPT);
     if (step.system === "email") {
       // As the bridge runs the mail triage: no tools, its own prompt, the email fenced.
@@ -204,6 +209,7 @@ export async function runLive(cases: EvalCase[], o: Options): Promise<LiveRun> {
       const row: LiveRow = { c, passed: 0, ran: 0, fails: [] };
       rows.push(row);
       for (let i = 0; i < o.k; i++) {
+        said = [];
         const r = await runCase(c, live, { briefMaterial: briefOf });
         const failed = r.checks.filter((x) => !x.pass).map((x) => `${x.name}${x.detail ? `: ${x.detail}` : ""}`);
         if (!failed.length && c.rubric) {
@@ -211,7 +217,7 @@ export async function runLive(cases: EvalCase[], o: Options): Promise<LiveRun> {
           if (!j.pass) failed.push(`rubric: ${j.why}`);
         }
         row.ran++;
-        if (failed.length) row.fails.push(`run ${i + 1}: ${failed.join("; ")}`);
+        if (failed.length) row.fails.push(`run ${i + 1}: ${failed.join("; ")} ‖ answers: ${said.map((x) => x.slice(0, 700)).join(" ‖ ")}`);
         else row.passed++;
         process.stdout.write(failed.length ? "F" : ".");
       }
@@ -253,7 +259,7 @@ export function reportLines(run: LiveRun, cases: EvalCase[], o: Options, title: 
     "## Failures",
     "",
     ...rows.filter((r) => r.fails.length).flatMap((r) => [`### ${r.c.file}: ${r.c.behaviour}`, "", `${r.passed} of ${r.ran} runs passed.`, "",
-      ...r.fails.map((f) => `- ${f.replace(/\s+/g, " ").slice(0, 600)}`), ""]),
+      ...r.fails.map((f) => `- ${f.replace(/\s+/g, " ").slice(0, 2000)}`), ""]),
   ];
 }
 

@@ -27,6 +27,7 @@
     "evals:weekly": "node --disable-warning=ExperimentalWarning test/evals/weekly.ts",
     "evals:from-feedback": "node --disable-warning=ExperimentalWarning test/evals/from-feedback.ts",
     "beta:report": "node --disable-warning=ExperimentalWarning test/evals/beta-report.ts",
+    "beta:combine": "node --disable-warning=ExperimentalWarning test/evals/beta-combine.ts",
     "eval:live": "node --disable-warning=ExperimentalWarning test/evals/chat-live.ts",
     "eval:promote": "node --disable-warning=ExperimentalWarning test/evals/promote.ts",
     "evals:promote": "node --disable-warning=ExperimentalWarning test/evals/promote.ts",

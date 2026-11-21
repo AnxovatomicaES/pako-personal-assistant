@@ -76,7 +76,7 @@ All optional, given in front of the command (`PAKO_DIR=~/apps/pako sh install.sh
 | `PAKO_REPO` | the `repository` in `package.json` | Where `git clone` gets it from (a fork, a mirror). |
 | `PAKO_AUTOSTART` | ask | `1` or `0` answers the autostart question beforehand. With no terminal to ask in, the answer is no. An autostart that is already on stays on (turn it off with the command below). |
 | `PAKO_DRY_RUN` | empty | `1` prints what it would do and changes nothing (no clone, no install, no autostart, no start). |
-| `PORT` | `8787` | Only used to print the panel's address; set it in `~/.pako/.env` for Pako itself. |
+| `PORT` | `8787` | The panel's port: printed in its address, and passed on to the Pako it starts (and to its autostart). A port set only in `~/.pako/.env` is used by Pako, but the address printed at the end still says 8787. |
 
 ## Install by hand
 
@@ -144,7 +144,8 @@ The panel has the same switch in its "Start with this computer" card (on a compu
 Both run the Node.js that turned it on (its full path, since a login session may not have yours on its `PATH`; for Homebrew's Node.js,
 Homebrew's stable link `$(brew --prefix)/opt/node/bin/node` rather than the versioned Cellar folder an upgrade removes) on this folder's
 `src/server.ts`, as you, never as root. They carry the `PATH` of the terminal that turned it on (so `claude` is found as it is there), and
-`PAKO_HOME`, `PORT`, `PAKO_HOST` and `CLAUDE_BIN` when that terminal had them; nothing else. Other settings belong in `~/.pako/.env`, which
+`PAKO_HOME`, `PORT`, `PAKO_HOST`, `CLAUDE_BIN` and `PAKO_SECRET_STORE` when that terminal had them; nothing else (Windows's task carries
+the same, but not the `PATH`). Other settings belong in `~/.pako/.env`, which
 Pako reads at every start. The background Pako does not open a browser: `npm run panel` gives you a sign-in link whenever you want one.
 
 From the command line, `on` also starts it now (or restarts it, after an update) and `off` also stops the background one. `on` ends with

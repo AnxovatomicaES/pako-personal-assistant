@@ -112,3 +112,32 @@ test("meeting prep: the same title twice in a day is two meetings, each with its
   assert.equal(queued.length, 2);
   assert.match(repoText("src/meeting-prep.ts"), /d\.prep\(\{ event: e\.id, /);
 });
+
+test("a store that does not answer for a moment: no second note for a meeting already prepared, and its record is not lost", async () => {
+  const { kv, m } = memKv();
+  let down = false;
+  const flaky: Kv = { get: async (k) => (down ? Promise.reject(new Error("store busy")) : kv.get(k)), set: kv.set };
+  const asked: string[] = [];
+  const clock = { now: T0 + 20 * MIN };
+  const prep = createMeetingPrep({
+    kv: flaky, now: () => clock.now, timeZone: "Europe/London", events: async () => [ev("m1", "Q4 review", T0 + 60 * MIN)],
+    self: () => ["me@acme.example"], prep: async (x) => (asked.push(x.title), { status: "pending" }), clock: () => "09:40",
+  });
+  assert.deepEqual(await prep.tick(), ["Q4 review"]);
+  down = true;
+  clock.now += 5 * MIN;
+  const quiet = console.error;
+  const warn = console.warn;
+  console.error = console.warn = () => undefined;
+  try {
+    assert.deepEqual(await prep.tick(), [], "nothing asked while the store cannot say what was");
+  } finally {
+    console.error = quiet;
+    console.warn = warn;
+  }
+  down = false;
+  clock.now += 5 * MIN;
+  assert.deepEqual(await prep.tick(), [], "still once per meeting");
+  assert.deepEqual(asked, ["Q4 review"]);
+  assert.match(m.get("meeting-prep") ?? "", /m1@/);
+});

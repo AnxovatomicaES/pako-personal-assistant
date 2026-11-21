@@ -666,6 +666,11 @@ export function validateBrief(raw: unknown, g: Gathered, o: { now: number; timeZ
       end = undefined;
     } else if (cited.some((f) => (f.kind === "event" || f.kind === "zoom") && f.at !== undefined)) {
       continue; // an event of another day
+    } else {
+      // No event and no agreed time behind it: the model's time must be one its facts hold (the brief's own "Now" is not a fact's time).
+      const facts = { ...gr, now: undefined };
+      if (time && unsupported(time, facts, owner).length) continue;
+      if (end && unsupported(end, facts, owner).length) end = undefined;
     }
     if (!time && !real) continue;
     if (dayItems.some((d) => d.time === time && d.title.toLowerCase() === title.toLowerCase())) continue;
@@ -709,6 +714,8 @@ const C = texts(
     unconfirmed: " (time unconfirmed)",
     link: "📰 The full brief: {url}",
     linkPanel: "📰 The full brief is on your panel (type PANEL).",
+    linkComputer: "📰 The full brief is in Pako's panel on your computer.",
+    linkPhone: "📰 The full brief, on your phone at home (same Wi-Fi): {url}",
     noDay: "📅 Nothing on your calendar today.",
     left: "📅 Still ahead today:",
     over: "✓ {n} already over today.",
@@ -748,7 +755,8 @@ export function dayItemOver(d: Pick<DayItem, "time" | "end" | "allDay">, hm: str
  * the greeting is said for that hour, and what is over today is counted instead of listed as still ahead.
  */
 export function chatText(
-  doc: BriefDoc, o: { name: string; timeZone: string; url: string | null; lang?: Lang; now?: number; weekFocus?: string | null },
+  doc: BriefDoc,
+  o: { name: string; timeZone: string; url: string | null; phone?: string | null; lang?: Lang; now?: number; weekFocus?: string | null },
 ): string {
   const l = o.lang ?? doc.lang;
   const say = C(l);
@@ -775,7 +783,15 @@ export function chatText(
     : !left.length ? say("nothingLeft", { n: over })
     : over ? `${say("left")}\n${lines}\n${say("over", { n: over })}`
     : `${say("day")}\n${lines}`);
-  parts.push(o.url ? say("link", { url: `${o.url.replace(/\/$/, "")}/panel/brief` }) : say("linkPanel"));
+  // A computer's own address (127.0.0.1) leads nowhere from the phone the chat is read on (Telegram): the phone's page when it is on, or
+  // where the full brief is.
+  const here = !!o.url && /^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?(?:\/|$)/i.test(o.url);
+  parts.push(
+    o.url && !here ? say("link", { url: `${o.url.replace(/\/$/, "")}/panel/brief` })
+    : here && o.phone ? say("linkPhone", { url: o.phone })
+    : here ? say("linkComputer")
+    : say("linkPanel"),
+  );
   return parts.join("\n\n");
 }
 
@@ -802,6 +818,8 @@ export interface BriefTask {
   attached?: boolean;
   /** A draft, until it is written: the text of its material (its facts and the owner's corrections), what it may say (groundDraft). */
   ground?: string;
+  /** A chase for someone else's overdue promise (src/followups/chase.ts): its loop and tone; written, it goes back there, not to the chat. */
+  chase?: { loop: string; tone: "gentle" | "firm" };
 }
 /** Whom a draft is for and where it goes: the loop's person, its place as the owner reads it, its Slack conversation. */
 export interface DraftAbout { who?: string; where?: string; channel?: string }
@@ -849,6 +867,8 @@ export interface BriefV2Deps {
   tell?: (text: string) => Promise<unknown>;
   /** A written draft that answers an email (draftFor's mailRef): offered as a reply on the email card, which the owner presses to send. */
   offerSend?: (o: { mailRef: string; title: string; text: string }) => Promise<unknown>;
+  /** A chase's draft, written and checked (src/followups/chase.ts chaseWritten): "" when it could not be written. */
+  chaseWritten?: (o: { loop: string; tone: "gentle" | "firm"; text: string }) => Promise<unknown>;
   /** What the owner corrected before (src/lessons.ts lines): read by the brief and by each draft. */
   lessons?: (q: LessonQuery) => Promise<string[]>;
   /** Gentle mode's week's focus line ("🌱 This week's focus: …", src/gentle-reset.ts): first in the chat's version; null when none. */
@@ -861,6 +881,8 @@ export interface BriefV2Deps {
   drafted?: (o: { text: string; about: DraftAbout; mailRef?: string }) => Promise<unknown>;
   /** The panel's public address, for the link in the chat; null on a server that has none yet. */
   url?: () => string | null;
+  /** The phone's page on the home network while it is on (src/app/mobile.ts): the chat's link on a computer, whose panel a phone cannot open. */
+  phone?: () => string | null;
   /** What changed since then (src/memory-facts.ts changesBrief): the morning brief's line, under the written brief; null when nothing did. */
   changes?: (since: number) => Promise<string | null>;
   /** Closes a follow-up (a to-do ticked on the page): src/followups.ts press("1"). */
@@ -1032,7 +1054,7 @@ export function createBriefV2(d: BriefV2Deps) {
         const changed = p.since !== undefined && d.changes ? await d.changes(p.since).catch(() => null) : null;
         const text = [
           chatText(await unparked(doc), {
-            name: d.name?.() ?? "", timeZone: d.timeZone, url: d.url?.() ?? null, lang: lang(), now: now(), weekFocus: await focusLine(),
+            name: d.name?.() ?? "", timeZone: d.timeZone, url: d.url?.() ?? null, phone: d.phone?.() ?? null, lang: lang(), now: now(), weekFocus: await focusLine(),
           }),
           ...(changed?.trim() ? [changed.trim()] : []),
           ...(await closedLines(p.since ?? now() - 24 * 3600_000)),
@@ -1069,7 +1091,11 @@ export function createBriefV2(d: BriefV2Deps) {
       // The material is only needed until the draft is checked.
       if (k) delete k.ground;
     });
-    if (text) await d.tell?.(C(lang())("doc", { title: task.title, text })).catch(() => undefined);
+    // A chase's draft goes back to its loop, which shows both tones on one card (src/followups/chase.ts); a draft the grounding could only
+    // mark to check is not offered to send.
+    if (task.kind === "draft" && task.chase) {
+      await d.chaseWritten?.({ ...task.chase, text: grounded?.check ? "" : text }).catch(() => undefined);
+    } else if (text) await d.tell?.(C(lang())("doc", { title: task.title, text })).catch(() => undefined);
     // A draft answering an email: the owner can send it as a reply from Pako's inbox, on the email card (they press Send, nothing goes before).
     if (text && task.kind === "draft" && task.mailRef) await d.offerSend?.({ mailRef: task.mailRef, title: task.title, text }).catch(() => undefined);
     // A draft for the chat: what the owner then sends there is compared with it, and what they changed is learnt (src/lessons.ts).
@@ -1141,7 +1167,7 @@ export function createBriefV2(d: BriefV2Deps) {
     const doc = await todayDoc().catch(() => null);
     if (!doc) return null;
     return chatText(await unparked(doc), {
-      name: d.name?.() ?? "", timeZone: d.timeZone, url: d.url?.() ?? null, lang: lang(), now: now(), weekFocus: await focusLine(),
+      name: d.name?.() ?? "", timeZone: d.timeZone, url: d.url?.() ?? null, phone: d.phone?.() ?? null, lang: lang(), now: now(), weekFocus: await focusLine(),
     });
   };
 
@@ -1287,7 +1313,11 @@ export function createBriefV2(d: BriefV2Deps) {
    * said and what Pako checked) and what Pako knows of that person (D2…), then the day's facts. The answer is told in the chat as a document.
    */
   const draftFor = async (
-    o: { title: string; facts: { label: string; text: string; at?: number }[]; mailRef?: string; about?: DraftAbout; allow?: string[] },
+    o: {
+      title: string; facts: { label: string; text: string; at?: number }[]; mailRef?: string; about?: DraftAbout; allow?: string[];
+      /** A request of its own (a chase's), instead of the follow-up's message; the rules every draft holds to are added to it. */
+      request?: string; chase?: { loop: string; tone: "gentle" | "firm" };
+    },
   ): Promise<BriefTask | null> => {
     const mine = o.facts.slice(0, 16);
     if (!mine.length) return null;
@@ -1304,7 +1334,8 @@ export function createBriefV2(d: BriefV2Deps) {
     // How the owner changed earlier drafts and what they undid, this person's first (src/lessons.ts).
     const lessons = await learned({ ...DRAFT_LESSONS, ...(o.about?.who ? { who: o.about.who } : {}), ...(o.about?.channel ? { channel: o.about.channel } : {}) });
     const text = briefMaterial({ ...day, facts }, {
-      now: t, timeZone: d.timeZone, lang: lang(), ownerLanguage: await ownerLang(), name: d.name?.() ?? "", request: M(lang())("draftLoop"), lessons,
+      now: t, timeZone: d.timeZone, lang: lang(), ownerLanguage: await ownerLang(), name: d.name?.() ?? "", lessons,
+      request: o.request ? `${o.request} ${DRAFT_ONLY_FACTS}` : M(lang())("draftLoop"),
     });
     const about: DraftAbout | null = o.about && (o.about.who || o.about.channel)
       ? { ...(o.about.who ? { who: o.about.who.slice(0, 80) } : {}), ...(o.about.where ? { where: o.about.where.slice(0, 120) } : {}),
@@ -1313,6 +1344,7 @@ export function createBriefV2(d: BriefV2Deps) {
     const task: BriefTask = {
       id: newId(), kind: "draft", title, status: "pending", text: "", at: t, ...(o.mailRef ? { mailRef: o.mailRef.slice(0, 300) } : {}), ...(about ? { about } : {}),
       ...(o.allow?.length ? { allow: o.allow.slice(0, 20).map((x) => x.slice(0, 200)) } : {}),
+      ...(o.chase ? { chase: { loop: o.chase.loop.slice(0, 20), tone: o.chase.tone === "firm" ? "firm" as const : "gentle" as const } } : {}),
       ...(mentionsAttachment(facts.map((f) => f.text).join("\n")) ? { attached: true } : {}),
       ground: groundOf(facts, lessons, [o.title]),
     };
@@ -1382,7 +1414,7 @@ export function createBriefV2(d: BriefV2Deps) {
       return { gathered, text: briefMaterial(gathered, { now: t, timeZone: d.timeZone, lang: lang(), ownerLanguage: await ownerLang(), name: d.name?.() ?? "" }) };
     },
     /** The rehearsal: the words the chat would get for a written brief. */
-    chat: (doc: BriefDoc): string => chatText(doc, { name: d.name?.() ?? "", timeZone: d.timeZone, url: d.url?.() ?? null, lang: lang(), now: doc.at }),
+    chat: (doc: BriefDoc): string => chatText(doc, { name: d.name?.() ?? "", timeZone: d.timeZone, url: d.url?.() ?? null, phone: d.phone?.() ?? null, lang: lang(), now: doc.at }),
     /** Whether `docId` is the brief kept for today (the page's own; another one: the page reloads). */
     current: async (docId: string): Promise<boolean> => !stale(await read(), docId),
     begin,

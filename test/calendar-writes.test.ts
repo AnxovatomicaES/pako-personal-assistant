@@ -46,6 +46,32 @@ test("the queue: a write is queued once by its id, fetched once, sent again if u
   assert.match(told.at(-1)!.error!, /did not pick it up/);
 });
 
+test("paused: approved writes wait (not sent, not expired), go after RESUME; a STOP cancels the ones the Mac has not taken", async () => {
+  const clock = { now: T0 };
+  const told: CalendarWrite[] = [];
+  let paused = false;
+  const q = createCalendarWrites({ kv: memKv().kv, now: () => clock.now, paused: async () => paused, onResult: async (w) => void told.push(structuredClone(w)) });
+  await q.enqueue({ id: "aaaaaaaaaa", op: "create", start: T0, end: T0 + MIN, title: "Call" });
+  paused = true;
+  assert.deepEqual(await q.exchange([]), [], "paused: nothing goes to the Mac");
+  clock.now += 45 * MIN;
+  assert.deepEqual(await q.exchange([]), [], "still paused");
+  assert.equal(told.length, 0, "waiting through the pause is not “the app did not pick it up”");
+  paused = false;
+  assert.deepEqual((await q.exchange([])).map((w) => w.id), ["aaaaaaaaaa"], "after RESUME it goes");
+  // A STOP: what the Mac has not taken is cancelled and said so; one already sent is the Mac's (its answer still counts).
+  await q.enqueue({ id: "bbbbbbbbbb", op: "create", start: T0, end: T0 + MIN, title: "Lunch" });
+  paused = true;
+  await q.cancelQueued();
+  assert.equal(told.length, 1);
+  assert.equal(told[0]!.id, "bbbbbbbbbb");
+  assert.equal(told[0]!.status, "failed");
+  assert.match(told[0]!.error!, /STOP/);
+  paused = false;
+  assert.deepEqual(await q.exchange([{ id: "aaaaaaaaaa", ok: true, eventId: "E9" }]), [], "the cancelled one never goes, even after RESUME");
+  assert.equal(told.at(-1)!.status, "done");
+});
+
 test("a store that does not answer: the write is refused, and the queued ones are not overwritten with an empty list", async () => {
   const { kv, m } = memKv();
   let down = false;

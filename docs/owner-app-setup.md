@@ -106,6 +106,12 @@ mailbox's now. The same refresh token later gives the calendar's (for the calend
 
 ## 3. Slack: the project's app from Pako's manifest
 
+**Done (2026-11-20):** the app "Pako" lives in its own workspace (Pako), with public distribution on; its Client ID is in
+`SLACK_CLIENT_ID`. Its only redirect URL is `https://pako-os.com/connect/slack/callback.html`: Slack turns on public distribution only
+when every redirect URL is https. That page (`site/connect/slack/callback.html`) passes `code` and `state` on to
+`http://localhost:53682/connect/slack/callback` at once and keeps nothing; the code alone is useless without the PKCE verifier, which
+stays on the person's computer. If you make the app again, replace the manifest's `redirect_urls` below with that https address.
+
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From a manifest**, pick the project's workspace, choose
    **JSON**, and paste:
 

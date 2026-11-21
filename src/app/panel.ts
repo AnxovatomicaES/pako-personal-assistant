@@ -2,6 +2,7 @@
 // autonomy, gentle mode, routines, papers, memory, mail and health.
 
 import { mountAutonomyPanel } from "../autonomy.ts";
+import { mountBetaAuditPanel } from "../beta-audit.ts";
 import { type CalendarFreshness, mountDashboard } from "../dashboard.ts";
 import { demoTimes, recordedAnswer } from "../demo.ts";
 import { mountGentlePanel } from "../gentle.ts";
@@ -25,7 +26,7 @@ export function wirePanel(ctx: AfterDoor) {
   const {
     app, config, env, local, uiLang, demo, dog, control, personal, wa, timeZone, givenName, ownerName, box, mailAddress, slack, slackRef, fakeSlack,
     zoom, reviewCfg, reviewRef, macCal, cal, calOn, calLabel, calRef, icsRef, invites, backfillRef, followupsCfg, followupsRef, gentleSettings,
-    gentleRef, followupsDoor, panelRef, booking, fromWindow, tgRef, publicUrl, autonomyConfig, autonomySettings, claudeDoor, claudeKeeper, door,
+    gentleRef, followupsDoor, panelRef, booking, betaRef, fromWindow, tgRef, publicUrl, autonomyConfig, autonomySettings, claudeDoor, claudeKeeper, door,
   } = ctx;
   // The owner's panel (src/dashboard.ts): PANEL on WhatsApp gives a one-time sign-in link.
   const telegramLine = () => {
@@ -94,6 +95,7 @@ export function wirePanel(ctx: AfterDoor) {
       : {}),
     timeZone,
     control,
+    stop: (at: number, line: string) => door.stop(at, line),
     memory: personal.memory,
     wa: { reminders: () => door.reminders(), events: () => door.events(), lastPoll: () => door.lastPoll() },
     ...(box ? { mail: { address: mailAddress, items: () => box.items() } } : {}),
@@ -175,6 +177,8 @@ export function wirePanel(ctx: AfterDoor) {
   // Settings: whether messages, emails and calls go at once (with a window to undo) or ask first, and the window's seconds.
   mountAutonomyPanel(app, { signedIn: panel.signedIn, settings: autonomySettings, config: autonomyConfig });
   // Gentle mode's card in How Pako acts (src/panel/acts.js): the switch, the day's cap, the lead times and the Parked list.
+  // The beta's audit opt-in (src/beta-audit.ts): its card in How Pako acts; built with the jobs' clock, so looked up when asked.
+  mountBetaAuditPanel(app, { signedIn: panel.signedIn, audit: () => betaRef.audit });
   mountGentlePanel(app, {
     signedIn: panel.signedIn,
     settings: gentleSettings,
@@ -205,6 +209,7 @@ export function wirePanel(ctx: AfterDoor) {
       const engine = followupsRef.engine;
       return engine ? { all: async () => (await engine.read()).loops, doneFor: (ref) => engine.doneFor(ref), reopen: (ids) => engine.reopen(ids) } : null;
     },
+    gentle: async () => (await gentleSettings.view()) !== null,
   });
   // The health of every part (src/watchdog.ts), for the Health card.
   mountHealthPanel(app, { signedIn: panel.signedIn, state: dog.state });

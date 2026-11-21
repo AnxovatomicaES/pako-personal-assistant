@@ -128,4 +128,27 @@ What Pako protects, what it does not, and how to report a problem: [SECURITY.md]
 | `install.sh`, `install.ps1` | The one-line installers for macOS and Linux, and for Windows. Autostart is in `src/autostart.ts` and `src/autostart-windows.ts`. |
 | `docs/` | The roadmap, installing, privacy, the phone line, why the official WhatsApp API, the panel and README graphics, and the topic pages the README links to. |
 
+### The follow-ups engine
+
+`src/followups/engine.ts` (`createFollowups`) builds the follow-ups from parts in `src/followups/`, mounted in this order. Each part is
+given the base (the deps, the config, the clock, the owner's language) and, by name, only what it uses of the parts before it; its
+return type is in `src/followups/parts.ts`, and `Engine` there is all of them together. No part calls a later one.
+
+| Part | Needs (besides the base) | Gives |
+| --- | --- | --- |
+| `store.ts` | nothing | `mutate`, `read`: the saved state, one write at a time |
+| `words.ts` | nothing | `stamp`, `dueText`, `sourceText`, `nudgeText`: times and sources as the owner reads them |
+| `jobs.ts` | `mutate`, `read`, `stamp` | Slack batches into Claude jobs: `observeSlack`, `offer`, `enqueueJob`, `jobText`, `slackJob`, `textJob`, `flushBatch` |
+| `mail-jobs.ts` | `mutate`, `enqueueJob`, `stamp` | `observeMail`, `flushMailDue`: one job per mail thread |
+| `matching.ts` | `mutate` | answers into loops: `result`, `ingest`, `keep`, `ruledOut`, `fromChat`, `dropFromChat` |
+| `checks.ts` | nothing | `runCheck`: did the owner do it (Zoom, calendar, their own posts) |
+| `nudges.ts` | `mutate`, `read`, `flushBatch`, `flushMailDue`, `runCheck`, `nudgeText`, `dueText`, `sourceText` | `tick`, `quietNow`, `nextAfter` |
+| `owner.ts` | `mutate`, `read`, `dueText`, `sourceText`, `quietNow`, `nextAfter` | the buttons, commands, context, Parked and closed lists |
+| `rehearse.ts` | `read`, `slackJob`, `textJob`, `jobText`, `keep`, `ruledOut`, `runCheck`, `dueText`, `sourceText`, `nudgeText`, `quietNow` | `draft`, `dryAnswer` |
+| `mail.ts` | `mutate`, `read`, `keep`, `press` | loops from the mail triage: `fromMail`, `answered`, `forRef`, `doneFor`, `reopen` |
+| `chase.ts` | `mutate`, `read`, `runCheck`, `draftFacts`, `forDraft`, `quietNow`, `dueText` | chasing what others owe the owner: `chaseTick`, `chaseWritten`, `chasePressed`, `chaseNow` |
+
+A new part goes after the parts it needs: write its needs as `Pick<Engine, ...>`, add its return type to `parts.ts`, and hand it its
+names in `engine.ts`. `test/followups-engine.test.ts` checks that `createFollowups` still gives the same names.
+
 The restaurant-booking engine comes from an earlier project, trimmed to what Pako uses (the full original is kept at the git tag `connector-final`).

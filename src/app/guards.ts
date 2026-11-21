@@ -6,10 +6,10 @@ import type { Request, Response } from "express";
 import { rateLimit } from "express-rate-limit";
 import { demoGuard } from "../demo.ts";
 import { localGuard } from "../guard-http.ts";
+import { labCode } from "../lab-code.ts";
 import { pakoHome } from "../local.ts";
-import { createTunnel, installCloudflared } from "../tunnel.ts";
 import type { HealthReport } from "../watchdog.ts";
-import { type ComputerWhatsapp, createComputerWhatsapp } from "../whatsapp-computer.ts";
+import type { ComputerWhatsapp } from "../whatsapp-computer.ts";
 import { ADMIN_HEADERS, adminRequest } from "./config.ts";
 import type { AfterBase } from "./context.ts";
 
@@ -20,9 +20,10 @@ export function wireGuards(ctx: AfterBase) {
   // page sends (src/guard-http.ts). Its webhook comes before the door's (which on a computer has stand-in settings only).
   /** The watchdog's WhatsApp part for the computer's webhook, set once the watchdog is made (below). */
   const waHealth: { report: HealthReport | null } = { report: null };
-  // LABS: whatsapp. Off: no setup routes, no webhook, no tunnel.
-  const waComputer: ComputerWhatsapp | null = local && labs.on("whatsapp")
-    ? createComputerWhatsapp({
+  // LABS: whatsapp. Off: no setup routes, no webhook, no tunnel, and its code is not loaded (src/lab-code.ts).
+  const wa = local && labs.on("whatsapp") ? labCode("whatsapp") : null;
+  const waComputer: ComputerWhatsapp | null = local && wa
+    ? wa.createComputerWhatsapp({
         health: (ok, detail) => waHealth.report?.(ok, detail),
         store: {
           read: () => local.settings?.whatsapp?.() ?? null,
@@ -31,7 +32,7 @@ export function wireGuards(ctx: AfterBase) {
         kv: local.kv,
         env,
         lang: uiLang,
-        tunnel: (onUrl) => createTunnel({ port: () => config.port, install: () => installCloudflared({ dir: join(pakoHome(env), "bin") }), onUrl }),
+        tunnel: (onUrl) => wa.createTunnel({ port: () => config.port, install: () => wa.installCloudflared({ dir: join(pakoHome(env), "bin") }), onUrl }),
         phoneOn: () => !!((env.LIVEKIT_URL ?? "").trim() && (env.LIVEKIT_API_KEY ?? "").trim() && (env.LIVEKIT_API_SECRET ?? "").trim()),
       })
     : null;

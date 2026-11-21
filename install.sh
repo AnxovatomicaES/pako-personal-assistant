@@ -173,10 +173,17 @@ main() {
   HOLDER=$(node -e '
   const fs = require("fs"), os = require("os");
   try {
-    const [p, , up, mark] = fs.readFileSync(process.argv[1], "utf8").split("\n");
+    const [p, , up, mark, started] = fs.readFileSync(process.argv[1], "utf8").split("\n");
     const pid = Number(p);
     if (!(pid > 0) || mark === "service" || (/^\d+$/.test(up || "") && os.uptime() < Number(up))) process.exit(0);
     try { process.kill(pid, 0); } catch (e) { if (e.code !== "EPERM") process.exit(0); }
+    // That number may be another program now (Pako was killed): the one the lock means started when its fifth line says (src/local.ts).
+    if (/^\d+$/.test(started || "")) {
+      const env = Object.assign({}, process.env, { LC_ALL: "C", TZ: "UTC" });
+      const r = require("child_process").spawnSync("ps", ["-p", String(pid), "-o", "lstart="], { encoding: "utf8", timeout: 3000, env });
+      const t = r.status === 0 ? Date.parse(String(r.stdout).trim().replace(/\s+/g, " ") + " UTC") : NaN;
+      if (Number.isFinite(t) && Math.abs(Math.floor(t / 1000) - Number(started)) > 2) process.exit(0);
+    }
     console.log(pid);
   } catch {}' "${PAKO_HOME:-$HOME/.pako}/.lock" 2>/dev/null || true)
   case "$HOLDER" in ''|*[!0-9]*) HOLDER="" ;; esac

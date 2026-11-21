@@ -1,10 +1,10 @@
 {
   "suite": "brief",
   "behaviour": "every to-do cites a fact, the 5:15 AM ET meeting is said with its Madrid time, the standup is on the day",
-  "origin": "the owner's real Monday, rewritten without personal data",
+  "origin": "the owner's real Monday, rewritten without personal data; read at 09:45, after the 09:30 message it cites",
   "input": {
     "timeZone": "Europe/Madrid",
-    "now": "2026-11-16 08:00",
+    "now": "2026-11-16 09:45",
     "read": [
       "slack",
       "zoom",
@@ -70,5 +70,5 @@
       }
     ]
   },
-  "rubric": "Does every to-do and update say only what its cited facts say (no detail that is not in them)?"
+  "rubric": "Does every to-do and update say only what its cited facts say, with no detail that is not in them? Saying what Pako could not see is fine; telling a check that found nothing («not in your Zoom») as proof that the thing does not exist or was not done is not."
 }

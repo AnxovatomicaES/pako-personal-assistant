@@ -240,3 +240,30 @@ test("DST mismatch week (US still on summer time): 5:15 AM ET is 10:15 in Madrid
   console.log(r.engine.describe(l!));
   assert.match(r.engine.describe(l!), /5:15 AM ET \(10:15 Madrid\)/);
 });
+
+test("a closed loop opened again (Reminders, the phone) is kept as an open one from then: not dropped at the next change for being old", async () => {
+  for (const how of ["reminders", "phone"] as const) {
+    const r = rig();
+    await r.engine.fromChat({ title: "Send Ana the signed contract", who: "Ana" });
+    const [l] = await r.engine.open();
+    r.clock.now = T0 + 12 * DAY;
+    await r.engine.press("1", l!.id);
+    r.clock.now = T0 + 15 * DAY;
+    if (how === "reminders") assert.equal(await r.engine.reopen([l!.id]), 1);
+    else assert.equal((await r.engine.reopenClosed([{ id: l!.id, title: l!.title, status: "open", nextCheckAt: 0 }])).length, 1);
+    await r.engine.fromChat({ title: "Call the bank about the card", who: "" });
+    assert.deepEqual((await r.engine.open()).map((x) => x.title).sort(), ["Call the bank about the card", "Send Ana the signed contract"], how);
+  }
+});
+
+test("the night before the clocks change, a loop due the next morning is said as tomorrow (a 23-hour day is still one day)", () => {
+  // Saturday 28 March 2026, 23:30 in Madrid: the clocks go forward that night.
+  const clock = { now: Date.parse("2026-03-28T22:30:00Z") };
+  const r = rig({ clock });
+  const due = Date.parse("2026-03-29T08:00:00Z"); // Sunday 10:00 in Madrid
+  const l = {
+    id: "a000000001", kind: "owner_promise" as const, title: "Send Ana the deck", detail: "", who: "Ana", where: { type: "chat" as const, label: "chat" },
+    whenSaid: clock.now, dueAt: due, check: { none: { reason: "chat" } }, status: "open" as const, nextCheckAt: 0, nudges: 0, createdAt: clock.now, sources: [],
+  };
+  assert.match(r.engine.describe(l, "en"), /tomorrow at 10:00/);
+});

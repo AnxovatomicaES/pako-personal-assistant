@@ -301,6 +301,22 @@ test("a health nudge's words go in its card only: the life store, the panel, the
   assert.ok(!(store.m.get(LIFE_KEY) ?? "").includes("health:"));
 });
 
+test("a companion offer whose card could not go is given back to its role, as the day's budget is", async () => {
+  const store = memKv();
+  const released: string[] = [];
+  let reachable = false;
+  const engine = createProactive({
+    config: { ...BASE, topics: ["amigos"] }, kv: store.kv, timeZone: "Europe/Madrid", local: true, now: () => T0,
+    enqueue: async () => true, card: async () => reachable, lastOwner: () => T0 - 2 * 3600_000, bridgeAlive: () => false,
+    offers: async () => [{ topic: "friend", key: "friend:birthday:a1:2026", text: "🎂 Tomorrow is Ana's birthday.", claim: async () => true,
+      release: async () => void released.push("friend:birthday:a1:2026") }],
+  });
+  assert.notEqual(await engine.tick(), "offered");
+  assert.deepEqual(released, ["friend:birthday:a1:2026"], "the birthday is not spent on a card nobody got");
+  reachable = true;
+  assert.equal(await engine.tick(), "offered");
+});
+
 test("no doses, and an offer that cannot be done drops the suggestion", async () => {
   const r = rig({ config: { maxPerDay: 9 } });
   assert.equal((await r.round(say({ say: "Para la migraña tómate 600 mg de ibuprofeno con la comida.", topic: "bienestar", why: "x" }))).result!.reason, "a dose");

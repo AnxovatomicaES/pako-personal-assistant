@@ -431,6 +431,21 @@ private key up somewhere safe (`security find-generic-password -s pako-feed-sign
 take no more updates from you; let it leak and anyone who can also change your feed can push an app to them. On another machine (CI), put it
 in `PAKO_FEED_SIGNING_KEY` instead (the same one line; `PAKO_FEED_KEYCHAIN=off` keeps the keychain out of it).
 
+**Then: a recovery key, kept off this Mac.** On 2026-11-20 the only copy of the release key was deleted, and every app carrying its public
+half lost automatic updates. A second key prevents that:
+
+```sh
+node desktop/mac/feed-sign.ts keygen-recovery ~/Desktop/pako-recovery-key.txt
+git add desktop/mac/feed-key.pub && git commit -m "A recovery key for the update feed"
+```
+
+Its public half is added as a second line of `feed-key.pub`, and every app built from then on accepts a feed signed by either key. Put the
+private half from that file in a password manager or on paper, then delete the file. If the release key is ever lost, sign the next release
+with `PAKO_FEED_SIGNING_KEY=<the recovery key>` and make a new recovery key. `release.sh` warns while there is none.
+
+**At most one public release a day.** Every release costs users an update, and the ones that go wrong cost a manual one. `release.sh` stops
+when the last public release is less than 20 hours old; `PAKO_HOTFIX=1` is for a fix that cannot wait.
+
 `npm run mac-release` checks the key **first, before building anything**: no key, or a key that is not the one in `feed-key.pub`, stops it
 with a message that says how to make one. `PAKO_LOCAL_RELEASE=1` builds without a key for this Mac only; its `feed.json` stays unsigned and
 no app installs it, so never publish it. `node desktop/mac/feed-sign.ts verify dist/release/feed.json` checks a feed as the app will.

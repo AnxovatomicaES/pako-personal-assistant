@@ -466,6 +466,21 @@ test("offers for the proactive check: each about the owner alone, claimed once, 
   void createLearning;
 });
 
+test("an offer that could not be sent is given back: the birthday comes at the next look, and no quiz waits for an answer to a card never seen", async () => {
+  const kv = memKv();
+  const clock = { now: Date.parse("2026-11-14T17:30:00Z") };
+  const ana: Person = { id: "a1b2c3d4e5", name: "Ana", birthday: "11-15", likes: [], notes: [], at: 0, updated: 0 };
+  const c = createCompanion({ kv, timeZone: TZ, lang: () => "en", people: async () => [ana], now: () => clock.now });
+  await c.learning.addCards([{ goal: "inglés", q: "¿«madrugar»?", a: "to get up early" }], clock.now - 2 * DAY);
+  for (const o of await c.offers()) {
+    assert.equal(await o.claim(), true);
+    await o.release();
+  }
+  assert.deepEqual((await c.offers()).map((o) => o.topic), ["friend", "learning"], "both come again");
+  assert.equal((await c.learning.read()).asking, undefined, "no question waits: its card never went");
+  assert.equal(await c.command("to get up early", plainWords("to get up early")), null, "a short message is not taken as its answer");
+});
+
 test("the prompt with Labs on: friend, health companion and teacher, honest about being an AI, the red-flag rule, no diagnosis, the new tags", () => {
   const LABS_PROMPT = systemPromptFor(true);
   assert.match(LABS_PROMPT, /With Labs on, more than a chief of staff: a friend, a health companion and a teacher/);

@@ -32,6 +32,8 @@ export interface Offer {
   text: string;
   /** Marks it sent (and, for a quiz, the question asked): false when another tick sent it first. Call it just before sending. */
   claim(): Promise<boolean>;
+  /** Gives the claim back when its card could not be sent: it was never said, so it may come at the next look. */
+  release(): Promise<void>;
 }
 
 export interface CompanionDeps {
@@ -207,21 +209,25 @@ export function createCompanion(d: CompanionDeps) {
     // A birthday first: tomorrow does not wait.
     for (const e of birthdayEves(people, t, d.timeZone, l)) {
       if (f?.offered.includes(`${e.person.id}:${e.year}`)) continue;
-      out.push({ topic: "friend", key: `friend:birthday:${e.person.id}:${e.year}`, text: e.text, claim: () => friend.claimBirthday(e.person.id, e.year) });
+      out.push({
+        topic: "friend", key: `friend:birthday:${e.person.id}:${e.year}`, text: e.text, claim: () => friend.claimBirthday(e.person.id, e.year),
+        release: () => friend.releaseBirthday(e.person.id, e.year),
+      });
     }
     // Without Labs only the birthdays: no check-in, quiz or health nudge.
     if (!labs) return out;
     const c = f ? checkinNudge(f, t, d.timeZone, l) : null;
-    if (c) out.push({ topic: "friend", ...c, claim: () => friend.claimCheckin(t) });
+    if (c) out.push({ topic: "friend", ...c, claim: () => friend.claimCheckin(t), release: () => friend.releaseCheckin(t, f?.lastCheckin) });
     const q = s ? learningNudge(s, t, d.timeZone, l) : null;
     if (q) {
       out.push({
         topic: "learning", key: q.key, text: q.text,
         claim: async () => (await learning.claimOffer(q.key.slice("learning:".length))) && !!(await learning.ask(t, q.topic)),
+        release: () => learning.releaseOffer(q.key.slice("learning:".length), t),
       });
     }
     const n = h ? healthNudge(h, t, d.timeZone, l) : null;
-    if (n) out.push({ topic: "health", ...n, claim: () => health.claimNudge(n.key.split(":").pop()!) });
+    if (n) out.push({ topic: "health", ...n, claim: () => health.claimNudge(n.key.split(":").pop()!), release: () => health.releaseNudge(n.key.split(":").pop()!) });
     return out;
   };
 

@@ -14,7 +14,7 @@
 
 type Env = Record<string, string | undefined>;
 
-export const SLACK_CLIENT_ID = "";
+export const SLACK_CLIENT_ID = "12665943306579.12665955320899";
 export const ZOOM_CLIENT_ID = "";
 /** One multi-tenant public client for mail (IMAP) and calendar (Microsoft Graph): one consent covers both. */
 export const MS_CLIENT_ID = "";
@@ -35,6 +35,14 @@ export const GOOGLE_GMAIL_ALLOWED = false;
  * may differ from computer to computer, but this one does not.
  */
 export const SLACK_LOOPBACK_PORT = 53682;
+
+/**
+ * Where the project's Slack app sends the browser back to. Slack lets an app be installed in other workspaces only when every redirect URL
+ * is https, so it cannot return to http://localhost directly. This page on the project's site (site/connect/slack/callback.html) passes
+ * the code and state on to http://localhost:SLACK_LOOPBACK_PORT/connect/slack/callback at once and keeps nothing. The code alone is
+ * worthless: exchanging it needs the PKCE verifier, which never leaves this computer.
+ */
+export const SLACK_RELAY_REDIRECT = "https://pako-os.com/connect/slack/callback.html";
 
 /**
  * Whether the project's Slack app is listed in the Slack Marketplace. Until it is, Slack treats it as a commercially distributed app and

@@ -12,7 +12,7 @@ const logProactive = createLog("proactive");
 export function wireProactive(ctx: AfterFollowups) {
   const {
     app, local, uiLang, kv, control, timeZone, box, slack, slackRef, fakeSlack, zoom, zoomRef, calOn, calRef, smartCfg, smartRef, followupsCfg,
-    followupsRef, gentleSettings, gentleRef, proactiveCfg, lifeRef, lessons, quality, rehearsalRef, door, panel,
+    followupsRef, gentleSettings, gentleRef, proactiveCfg, lifeRef, lessons, quality, rehearsalRef, door, panel, timeRef,
   } = ctx;
   if (proactiveCfg.config) {
     const pc = proactiveCfg.config;
@@ -33,7 +33,8 @@ export function wireProactive(ctx: AfterFollowups) {
       ...(box ? { mail: () => box.items(40) } : {}),
       people: async () => (await door.people.store.read()).map((p) => p.name),
       fetch: globalThis.fetch,
-      othersToday: async () => ((await followupsRef.engine?.spentToday?.()) ?? 0) + ((await gentleRef.checkins?.spentToday()) ?? 0),
+      othersToday: async () => ((await followupsRef.engine?.spentToday?.()) ?? 0) + ((await gentleRef.checkins?.spentToday()) ?? 0)
+        + ((await timeRef.t?.spentToday()) ?? 0),
       // Gentle mode's day: fewer in all, follow-ups' nudges and these together.
       cap: async () => (await gentleSettings.view())?.maxPerDay ?? null,
       addToList: async (name, item) => {

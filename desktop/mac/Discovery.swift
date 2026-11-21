@@ -133,17 +133,29 @@ final class MacSources: PakoSources, @unchecked Sendable {
         guard calendarPermission() == "granted" else { return fail("Pako may not change this Mac's calendars (System Settings > Privacy & Security > Calendars)") }
         let s = store
         func date(_ k: String) -> Date? { (w[k] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) } }
-        /// The occurrence meant: that identifier at that start (a repeating event shares its identifier); the first one without a start.
+        /// That event's occurrences that start within a minute of `t` (a repeating event shares its identifier).
+        func occurrences(_ eid: String, at t: Date) -> [EKEvent] {
+            s.events(matching: s.predicateForEvents(withStart: t.addingTimeInterval(-60), end: t.addingTimeInterval(24 * 3600), calendars: nil))
+                .filter { $0.eventIdentifier == eid && abs($0.startDate.timeIntervalSince(t)) < 60 }
+        }
+        /// The occurrence meant: that identifier at that start; else the event itself only when it does not repeat (calendarWriteTarget).
         func find() -> EKEvent? {
             guard let eid = w["eventId"] as? String else { return nil }
-            guard let at = date("at") else { return s.event(withIdentifier: eid) }
-            let around = s.events(matching: s.predicateForEvents(withStart: at.addingTimeInterval(-60), end: at.addingTimeInterval(24 * 3600), calendars: nil))
-            return around.first { $0.eventIdentifier == eid && abs($0.startDate.timeIntervalSince(at)) < 60 } ?? s.event(withIdentifier: eid)
+            let at = date("at")
+            return calendarWriteTarget(at: at, near: at.map { occurrences(eid, at: $0) } ?? [], byID: s.event(withIdentifier: eid),
+                                       start: { $0.startDate }, repeats: { $0.hasRecurrenceRules })
         }
         do {
             switch w["op"] as? String {
             case "move":
-                guard let e = find(), let start = date("start"), let end = date("end") else { return fail("the event is no longer on the calendar") }
+                guard let start = date("start"), let end = date("end") else { return fail("the event is no longer on the calendar") }
+                guard let e = find() else {
+                    // Moved by this write's first try (the app restarted before saying so): that occurrence is at its new start already.
+                    if let before = rememberedBefore(id), let eid = w["eventId"] as? String, let moved = occurrences(eid, at: start).first {
+                        return ["id": id, "ok": true, "eventId": moved.eventIdentifier ?? eid, "before": before]
+                    }
+                    return fail("the event is no longer on the calendar")
+                }
                 guard e.calendar.allowsContentModifications else { return fail("that calendar cannot be changed from this Mac") }
                 let before: [String: Any] = rememberedBefore(id) ?? ["start": ms(e.startDate), "end": ms(e.endDate)]
                 rememberBefore(id, before)

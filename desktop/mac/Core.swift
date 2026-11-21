@@ -448,6 +448,10 @@ func feedSignedMessage(_ obj: [String: Any]) -> Data? {
 /// bytes, Info.plist PakoFeedPublicKey, from desktop/mac/feed-key.pub). No key, no signature, or anything malformed: false. The SHA-256 in
 /// the feed comes from the same place as the dmg; this signature is what ties both to the owner's key.
 func feedSignatureValid(_ obj: [String: Any], publicKey: String?) -> Bool {
+    // Several keys, comma separated (the release key, then recovery keys): any of them may sign.
+    if let all = publicKey, all.contains(",") {
+        return all.split(separator: ",").contains { feedSignatureValid(obj, publicKey: String($0)) }
+    }
     guard let k = publicKey?.trimmingCharacters(in: .whitespacesAndNewlines), let raw = Data(base64Encoded: k), raw.count == 32,
           let key = try? Curve25519.Signing.PublicKey(rawRepresentation: raw), let s = obj["signature"] as? String,
           let sig = Data(base64Encoded: s), sig.count == 64, let msg = feedSignedMessage(obj) else { return false }

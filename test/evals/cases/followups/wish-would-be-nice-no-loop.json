@@ -1,0 +1,26 @@
+{
+  "suite": "followups",
+  "behaviour": "Lena writes «would be nice to grab coffee sometime!»: a wish, no loop",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0LENA",
+          "label": "Lena Brandt (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 16:00",
+              "who": "Lena Brandt",
+              "text": "Would be nice to grab coffee sometime!"
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": []
+  }
+}

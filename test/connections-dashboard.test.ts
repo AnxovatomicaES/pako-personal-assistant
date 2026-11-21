@@ -213,9 +213,52 @@ test("an invitation mail shows on the dashboard at once, gives way to the calend
   const calendarCopy: CalEvent = { id: "cal:1", uid: "launch-77@acme.example", title: "Launch plan", start: Date.UTC(2026, 10, 18, 15), end: Date.UTC(2026, 10, 18, 16), allDay: false, calendar: "Work" };
   assert.deepEqual((await store.overlay([calendarCopy])).map((e) => e.id), ["cal:1"], "the calendar's copy wins");
   const cancel = request.replace("METHOD:REQUEST", "METHOD:CANCEL").replace("END:VEVENT", "STATUS:CANCELLED\r\nEND:VEVENT");
-  assert.equal((await store.take(cancel, NOW))?.method, "cancel");
+  assert.equal((await store.take(cancel, NOW, { address: "bea@acme.example", vouched: true }))?.method, "cancel");
   assert.deepEqual(await store.overlay([]), [], "the cancel removes it");
   assert.deepEqual(closed, ["launch-77@acme.example"], "and closes what followed it");
+});
+
+test("a cancel or a change of an invitation counts only from its organizer, as their mail server vouched; anyone else's is ignored", async () => {
+  let closed: string[] = [];
+  const store = createInviteStore({ kv: memoryKv(), timeZone: ZONE, now: () => NOW, closed: (u) => (closed = u) });
+  const BEA = { address: "bea@acme.example", vouched: true };
+  const request = ["BEGIN:VCALENDAR", "VERSION:2.0", "METHOD:REQUEST",
+    vevent({ uid: "launch-77@acme.example", title: "Launch plan", start: "20261118T150000Z", end: "20261118T160000Z", extra: ["ORGANIZER;CN=Bea:mailto:bea@acme.example"] }),
+    "END:VCALENDAR"].join("\r\n");
+  await store.take(request, NOW, BEA);
+  const cancel = request.replace("METHOD:REQUEST", "METHOD:CANCEL").replace("END:VEVENT", "STATUS:CANCELLED\r\nEND:VEVENT");
+  // Someone who learnt the UID (a forwarded invitation): their cancel, even naming themselves organizer, changes nothing.
+  const theirs = cancel.replace("mailto:bea@acme.example", "mailto:mallory@other.example");
+  await store.take(theirs, NOW, { address: "mallory@other.example", vouched: true });
+  await store.take(cancel, NOW, { address: "bea@acme.example", vouched: false });
+  const moved = request.replace("20261118T160000Z", "20261118T180000Z").replace("20261118T150000Z", "20261118T170000Z").replace("Launch plan", "Launch plan (moved)");
+  await store.take(moved, NOW, { address: "mallory@other.example", vouched: true });
+  assert.deepEqual((await store.list()).map((x) => [x.title, x.start]), [["Launch plan", Date.UTC(2026, 10, 18, 15)]], "kept as Bea sent it");
+  assert.deepEqual(closed, [], "and nothing that followed it is closed");
+  // Bea moves it, then calls it off: both count.
+  await store.take(moved, NOW, BEA);
+  assert.deepEqual((await store.list()).map((x) => x.title), ["Launch plan (moved)"]);
+  await store.take(cancel, NOW, BEA);
+  assert.deepEqual(await store.list(), []);
+  assert.deepEqual(closed, ["launch-77@acme.example"]);
+});
+
+test("over 100 invitations kept: the soonest stay, the furthest ahead give way", async () => {
+  const store = createInviteStore({ kv: memoryKv(), timeZone: ZONE, now: () => NOW });
+  const tomorrow = ["BEGIN:VCALENDAR", "METHOD:REQUEST", vevent({ uid: "soon@acme.example", title: "Board meeting", start: "20261119T100000Z", end: "20261119T110000Z" }),
+    "END:VCALENDAR"].join("\r\n");
+  await store.take(tomorrow, NOW);
+  // A season's schedule mailed as calendar files, 20 events each, all later than tomorrow.
+  for (let m = 0; m < 6; m++) {
+    const events = Array.from({ length: 20 }, (_x, i) => {
+      const day = new Date(NOW + (5 + m * 8 + (i % 8)) * 24 * HOUR + i * HOUR).toISOString().replace(/[-:]/g, "").slice(0, 15);
+      return vevent({ uid: `game-${m}-${i}@club.example`, title: `Game ${m}-${i}`, start: `${day}Z`, end: `${day.slice(0, 9)}235900Z` });
+    });
+    await store.take(["BEGIN:VCALENDAR", "METHOD:PUBLISH", ...events, "END:VCALENDAR"].join("\r\n"), NOW);
+  }
+  const kept = await store.list();
+  assert.equal(kept.length, 100);
+  assert.equal(kept[0]!.title, "Board meeting", "tomorrow's meeting is never the one pushed out");
 });
 
 test("an invitation mail read by IMAP reaches the invitations at once", async () => {
@@ -233,6 +276,33 @@ test("an invitation mail read by IMAP reaches the invitations at once", async ()
   });
   await reader.poll();
   assert.deepEqual((await store.list()).map((x) => x.title), ["Coffee"]);
+});
+
+test("by IMAP: a cancel counts only from the organizer's mail as their server vouched; a forged From with the UID is ignored", async () => {
+  const ics = (method: string) => ["BEGIN:VCALENDAR", `METHOD:${method}`,
+    vevent({ uid: "x2", title: "Coffee", start: "20261118T120000Z", end: "20261118T123000Z", extra: ["ORGANIZER;CN=Bea:mailto:bea@acme.example"] }),
+    "END:VCALENDAR"].join("\r\n");
+  const mail = (n: number, from: string, auth: string, method: string) => Buffer.from([
+    ...(auth ? [`Authentication-Results: mx.example.com; ${auth}`] : []),
+    `From: ${from}`, "To: ana@example.com", `Subject: Invitation ${n}`, `Message-ID: <inv-${n}@acme.example>`,
+    'Content-Type: multipart/mixed; boundary="b"', "", "--b", "Content-Type: text/plain", "", "See you", "--b",
+    `Content-Type: text/calendar; method=${method}; charset=utf-8`, "", ics(method), "--b--", "",
+  ].join("\r\n"));
+  const store = createInviteStore({ kv: null, timeZone: ZONE, now: () => NOW });
+  const box: { uid: number; at: number; source: Buffer }[] = [];
+  const reader = createImapReader({
+    config: { host: "imap.example.com", port: 993, user: "ana@example.com", password: "p", folders: ["INBOX"], pollMinutes: 5, workDomains: [], vip: [] },
+    kv: memoryKv(), box: createMailbox(null), enqueue: async () => true, now: () => NOW, invites: store,
+    connect: () => fakeClient({ INBOX: box }),
+  });
+  box.push({ uid: 1, at: NOW - 3 * MIN, source: mail(1, "Bea <bea@acme.example>", "dkim=pass header.d=acme.example; dmarc=pass header.from=acme.example", "REQUEST") });
+  // Not Bea's server: anyone can write her name and address on a From line.
+  box.push({ uid: 2, at: NOW - 2 * MIN, source: mail(2, "Bea <bea@acme.example>", "dkim=fail; dmarc=fail header.from=acme.example", "CANCEL") });
+  await reader.poll();
+  assert.deepEqual((await store.list()).map((x) => x.title), ["Coffee"], "the forged cancel is ignored");
+  box.push({ uid: 3, at: NOW - MIN, source: mail(3, "Bea <bea@acme.example>", "dkim=pass header.d=acme.example", "CANCEL") });
+  await reader.poll();
+  assert.deepEqual(await store.list(), [], "Bea's own cancel removes it");
 });
 
 // ---------- the dashboard's refresh and freshness ----------

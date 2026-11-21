@@ -192,6 +192,10 @@ async function fill(c: Awaited<ReturnType<typeof computer>>) {
   mkdirSync(join(state, "voice-abc"), { recursive: true });
   writeFileSync(join(state, "state.json"), JSON.stringify({ sessionId: "s1", count: 3 }));
   writeFileSync(join(state, "voice-abc", "in.ogg"), "audio");
+  // The bridge's copy of the last turn for Pako's read tools (assistant/bridge/core.ts): the message, the notes, reminders and calendar.
+  writeFileSync(join(state, "tool-data.json"), JSON.stringify({ turn: "remind me to call mum", notes: ["Likes tea"], reminders: ["Call mum"] }));
+  writeFileSync(join(state, "outside-seen.json"), JSON.stringify(["a1b2c3"]));
+  writeFileSync(join(state, "handled-unacked.json"), JSON.stringify({ "m-1": 1 }));
   return secrets;
 }
 
@@ -287,6 +291,9 @@ test("delete everything: the confirmation, then every key, the chat, Telegram, t
     assert.equal(existsSync(join(c.home.dir, "kv.json.migrated")), false, "an older store kept after the update is the person's things too");
     assert.equal(existsSync(join(c.home.dir, "assistant", "state.json")), false, "the conversation with Claude starts afresh");
     assert.equal(existsSync(join(c.home.dir, "assistant", "voice-abc")), false);
+    assert.equal(existsSync(join(c.home.dir, "assistant", "tool-data.json")), false, "the last turn's notes, reminders and calendar");
+    assert.equal(existsSync(join(c.home.dir, "assistant", "outside-seen.json")), false);
+    assert.equal(existsSync(join(c.home.dir, "assistant", "handled-unacked.json")), false);
     assert.equal(existsSync(join(c.home.dir, "kv.db.made")), true, "the mark stays: an empty store is not a lost one");
     assert.ok(out.removed.includes("kv.db") && out.removed.includes("config.json"));
     // What stays is said: the secrets to run, .env, Claude Code's history.

@@ -124,6 +124,8 @@ export interface WhatsappDeps {
     resetPressed?: (what: string, id: string) => Promise<{ say: string; card?: { body: string; buttons: { id: string; title: string }[] } }>;
     resetTyped?: (n: number) => Promise<string | null>;
   };
+  /** The beta's audit questions (src/beta-audit.ts): an answer (null: the audit is not built), then the next question asked. */
+  beta?: { pressed: (a: "y" | "n" | "s", id: string) => Promise<string | null>; next: () => Promise<boolean> };
   /**
    * A draft for one follow-up (src/brief-v2.ts draftFor): the isolated run that writes the message the owner sends to close it, told in the
    * chat when it is written. Absent when the written brief is off.
@@ -139,11 +141,18 @@ export interface WhatsappDeps {
     find: (title: string, start: number) => Promise<{ eventId: string; at: number; start: number; end: number; title: string; calendarId: string } | null>;
     enqueue: (w: Omit<CalendarWrite, "status" | "queuedAt">) => Promise<boolean>;
     get: (id: string) => Promise<CalendarWrite | null>;
+    /** A STOP: the approved changes the Mac has not taken are never made. */
+    cancelQueued?: () => Promise<void>;
   };
+  /**
+   * Time to do it (src/time-to-do.ts): a press on its card (Block, Another time, Not needed) and "find time for <words>"; what to say ("" when a
+   * card of its own said it). Absent without follow-ups.
+   */
+  timeToDo?: { pressed: (b: "b" | "a" | "n", loopId: string) => Promise<string>; findTime: (words: string) => Promise<string> };
   draftFor?: (o: {
     title: string; facts: { label: string; text: string; at?: number }[]; mailRef?: string; about?: { who?: string; where?: string; channel?: string };
     allow?: string[];
-  }) => Promise<{ status: string } | null>;
+  }) => Promise<{ id?: string; status: string } | null>;
   /**
    * What the owner's memory says about one person (src/person-context.ts about): a draft to them reads who they are to the owner, what was
    * last agreed and what is open. Absent: built from the door's own facts and people graph (no follow-ups, no lessons).
@@ -168,7 +177,7 @@ export interface WhatsappDeps {
   quality?: {
     press: (buttonId: string) => Promise<string | null>; answerText: (text: string) => Promise<string | null>; clearAsk: () => void;
     /** "you missed …" and a reopened close of Pako's: the beta's misses (src/quality.ts). */
-    missed?: (what: string) => Promise<void>; reopened?: (what: string) => Promise<void>; missedText?: (title: string | null) => string;
+    missed?: (what: string, loop?: string) => Promise<void>; reopened?: (what: string) => Promise<void>; missedText?: (title: string | null) => string;
   };
   /** The rehearsal (src/rehearsal.ts): REHEARSAL, the bridge's answers to its jobs (rh:, rb:), and those an older bridge let go unread. */
   rehearsal?: {
@@ -198,7 +207,7 @@ export interface WhatsappDeps {
     /** Whether this email is told to the owner now (its category and the owner's switches; a VIP always). */
     notifies?: (id: string) => Promise<boolean>;
     /** The email as kept (its sender and time, for the loops it makes; its thread, for the triage's loop). */
-    get?: (id: string) => Promise<{ from: string; at: number; subject: string; thread?: string } | null>;
+    get?: (id: string) => Promise<{ from: string; at: number; subject: string; thread?: string; to?: string; cc?: string } | null>;
     /**
      * The email read whole by the follow-ups when its category is one they read (src/mail-followups.ts inbox). True when they took it: the
      * triage's own LOOP line is then left out (one reading of it, not two).

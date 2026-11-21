@@ -56,6 +56,19 @@ const dayStart = (date: string, timeZone: string): number | null => {
   return Number.isFinite(t) ? dayBounds(t, timeZone).start : null;
 };
 
+/**
+ * An all-day event's day as the app wrote it: "2026-11-17", or "2026-11-17T00:00:00+09:00" (the Mac's own offset), is the 17th wherever the
+ * owner's zone is. `midnight`: it is that day's start (an end there is exclusive). Null for a number or anything else.
+ */
+const dayOf = (v: unknown): { date: string; midnight: boolean } | null => {
+  const m = typeof v === "string" ? /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?))?/.exec(v.trim()) : null;
+  return m ? { date: m[1]!, midnight: !m[2] || /^00:00(?::00(?:\.0+)?)?$/.test(m[2]) } : null;
+};
+const nextDate = (date: string): string => {
+  const [y, mo, d] = date.split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, mo - 1, d + 1)).toISOString().slice(0, 10);
+};
+
 /** What the app pushed, read field by field; the events outside the window or of a calendar not picked are dropped. Null when it is not one. */
 export function pushOf(raw: unknown, o: { now: number; timeZone: string; titles?: Map<string, string> }): Kept | null {
   if (!isObject(raw) || !Array.isArray(raw.calendars) || !Array.isArray(raw.events)) return null;
@@ -76,8 +89,11 @@ export function pushOf(raw: unknown, o: { now: number; timeZone: string; titles?
     const calendarId = line(e.calendarId, 200);
     if (!id || !picked.has(calendarId)) continue;
     const allDay = e.allDay === true;
-    const at = when(e.start, o.timeZone);
-    let end = when(e.end, o.timeZone);
+    // An all-day event's days as the Mac wrote them, in the owner's zone: a Mac in another zone (a trip) must not move it a day.
+    const days = allDay ? dayOf(e.start) : null;
+    const lastDay = days ? dayOf(e.end) : null;
+    const at = days ? when(days.date, o.timeZone) : when(e.start, o.timeZone);
+    let end = lastDay ? when(lastDay.midnight ? lastDay.date : nextDate(lastDay.date), o.timeZone) : when(e.end, o.timeZone);
     if (at === null) continue;
     // An all-day event in whole days of the owner's zone: the app sends ISO times and EventKit's end (23:59:59 of the last day), an ICS link
     // ends the same event at the next midnight; both then say it once (the core's key is its start, end and title).

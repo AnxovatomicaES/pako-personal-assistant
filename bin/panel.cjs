@@ -49,11 +49,29 @@ function pakoHome(env, cwd, userHome) {
 }
 
 /**
+ * When process `pid` started, in whole seconds since 1970, as src/local.ts processStart reads it (`ps -o lstart=` in English and UTC); null
+ * where it cannot be told (Windows, no ps, gone).
+ */
+function processStart(pid) {
+  if (process.platform === "win32") return null;
+  try {
+    var env = Object.assign({}, process.env, { LC_ALL: "C", TZ: "UTC" });
+    var r = childProcess.spawnSync("ps", ["-p", String(pid), "-o", "lstart="], { encoding: "utf8", timeout: 3000, env: env });
+    var text = r.status === 0 ? String(r.stdout || "").trim() : "";
+    var t = text ? Date.parse(text.replace(/\s+/g, " ") + " UTC") : NaN;
+    return isFinite(t) ? Math.floor(t / 1000) : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
  * The lock of the Pako using this folder (src/local.ts, lockHome): its process, its port (0 when a Pako from before this command wrote it) and
  * whether it is still there. A lock left by a Pako that was killed, or from before the computer last restarted (it has been up for less time
- * than it had then, so that process number may be any program's now), is not a live one. Null when there is no lock.
+ * than it had then, so that process number may be any program's now), is not a live one; nor one whose process started at another time than
+ * the lock says (Pako was killed and its number came round again), as src/local.ts lockHolder judges it. Null when there is no lock.
  */
-function readLock(home, upSeconds) {
+function readLock(home, upSeconds, startOf) {
   var lines;
   try {
     lines = fs.readFileSync(path.join(home, ".lock"), "utf8").split("\n");
@@ -70,6 +88,11 @@ function readLock(home, upSeconds) {
     } catch (err) {
       alive = err.code === "EPERM";
     }
+  }
+  // Its fifth line: when that process started. Unknown (an older lock, or no answer from ps): as before, it is the one.
+  if (alive && /^\d+$/.test(lines[4] || "")) {
+    var actual = (startOf || processStart)(pid);
+    if (actual !== null && Math.abs(actual - Number(lines[4])) > 2) alive = false;
   }
   return { pid: pid, port: port > 0 && port < 65536 ? port : 0, alive: alive };
 }

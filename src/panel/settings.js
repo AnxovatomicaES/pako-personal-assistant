@@ -127,16 +127,17 @@ function recall() {
 const W = (id) => (S.wiz[id] ??= { step: 0 });
 
 async function loadAll() {
-  const [connections, telegram, whatsapp, claude, discovery, localCalendar, people, details, claudeConnect, clients] = await Promise.all([
+  const [connections, telegram, whatsapp, claude, discovery, localCalendar, people, details, claudeConnect, clients, reminders] = await Promise.all([
     read("/panel/api/connections"), read("/panel/api/telegram"), read("/panel/api/whatsapp/setup"), read("/panel/api/claude"),
     read("/panel/api/discovery"), read("/panel/api/calendar/local"), read("/panel/api/people/imported"), read("/panel/api/connections/details"),
-    read("/panel/api/claude/connect"), read("/panel/api/connect/clients"),
+    read("/panel/api/claude/connect"), read("/panel/api/connect/clients"), read("/panel/api/reminders"),
   ]);
   // The cards of a lab that is off (Settings › Labs, src/labs.ts) are not drawn.
   S.hidden = labHiddenCards(await read("/panel/api/labs"));
   // Which connections are one button (the project's own apps, src/connect-clients.ts); an older Pako answers nothing: none are.
   S.data = {
     connections, telegram, whatsapp, claude, discovery: cleanDiscovery(discovery), localCalendar, people, details, claudeConnect, clients: cleanClients(clients),
+    reminders: reminders && typeof reminders === "object" ? reminders : null,
   };
   // Signed in here once: a later sign-out is "sign in again", not a first connection.
   if (claudeConnect?.account?.loggedIn) S.claudeSeen = true;
@@ -337,11 +338,13 @@ const CARD = {
   claude: { icon: "sparkles", hue: "violet" },
   calendar: { icon: "calendar-days", hue: "sky" },
   mail: { icon: "mail", hue: "rose" },
+  applemail: { icon: "laptop", hue: "sky" },
   telegram: { icon: "send", hue: "sky" },
   whatsapp: { icon: "message-circle", hue: "green" },
   slack: { icon: "hash", hue: "plum" },
   zoom: { icon: "video", hue: "blue" },
   teams: { icon: "users-round", hue: "violet" },
+  imessage: { icon: "message-square", hue: "green" },
   contacts: { icon: "users", hue: "amber" },
   tables: { icon: "utensils", hue: "rose" },
   resend: { icon: "send", hue: "rose" },
@@ -381,8 +384,10 @@ function drawCards() {
   // The essentials first; the Advanced group (a developer app on Meta, Slack or Zoom, or a fine detail) in its own list below.
   const slot = (id) => h("li", { class: "card-slot", id: `slot-${id}` });
   const ids = Object.keys(CARD).filter((id) => !S.hidden?.has(id));
-  $("#cards").replaceChildren(...ids.filter((id) => !ADVANCED.includes(id) && id !== "mail").map(slot));
-  $("#cards-mail")?.replaceChildren(slot("mail"));
+  // Mail on this Mac sits beside the mail card: two ways to the same mailbox.
+  const mailIds = ["mail", "applemail"].filter((id) => ids.includes(id));
+  $("#cards").replaceChildren(...ids.filter((id) => !ADVANCED.includes(id) && !mailIds.includes(id)).map(slot));
+  $("#cards-mail")?.replaceChildren(...mailIds.map(slot));
   $("#cards-advanced").replaceChildren(...ids.filter((id) => ADVANCED.includes(id)).map(slot));
   for (const id of ids) drawCard(id);
 }
@@ -1280,6 +1285,84 @@ VIEWS.teams = () => {
   return step({ title: t("teams.name"), children: [body] });
 };
 
+// ----- Messages and Mail on this Mac: one switch, macOS's Full Disk Access said plainly, and how it is doing (src/imessage.ts, src/apple-mail.ts) -----
+
+/** The two sources read from this Mac's own files: their card id, their route and the setting their switch saves. */
+const MAC_SOURCES = {
+  imessage: { api: "/panel/api/imessage", key: "IMESSAGE" },
+  applemail: { api: "/panel/api/apple-mail", key: "APPLE_MAIL" },
+};
+
+for (const id of Object.keys(MAC_SOURCES)) {
+  VIEWS[id] = () => {
+    const body = h("div", { "aria-live": "polite" }, testing(t(`${id}.looking`)));
+    void read(MAC_SOURCES[id].api).then((st) => macSourceView(id, body, st));
+    return step({ title: t(`${id}.s1`), children: [body] });
+  };
+}
+
+/** A card's body from its GET route: Mac only, off, waiting for Full Disk Access, or reading. */
+function macSourceView(id, body, st) {
+  const src = MAC_SOURCES[id];
+  if (!st) return body.replaceChildren(h("p", { class: "step-text" }, t(`${id}.older`)));
+  if (!st.mac) return body.replaceChildren(h("p", { class: "step-text" }, t(`${id}.macOnly`)));
+  const out = h("div", { "aria-live": "polite" });
+  const checkAgain = (label = t(`${id}.check`)) => btn(label, async (e) => {
+    e.currentTarget.disabled = true;
+    out.replaceChildren(testing());
+    const r = await api(`${src.api}/check`, { method: "POST", body: {} });
+    if (!r.ok) {
+      e.currentTarget.disabled = false;
+      return out.replaceChildren(problem(t(r.status ? "err.save" : "err.offline")));
+    }
+    await loadAll();
+    macSourceView(id, body, r.data);
+    drawCard(id);
+  }, "tiny ghost");
+  const off = btn(t(`${id}.turnOff`), () => void disconnect(id, t(`${id}.name`)), "tiny ghost");
+  // Mail read by IMAP too: the same email is taken once, said so the owner is not left wondering.
+  const both = st.imap === true ? h("p", { class: "aside" }, icon("info"), t(`${id}.withImap`)) : null;
+  if (!st.on) {
+    return body.replaceChildren(
+      h("p", { class: "step-text" }, t(`${id}.lead`)),
+      h("p", { class: "aside" }, icon("shield-check"), t(`${id}.private`)),
+      h("p", { class: "aside" }, icon("lock"), t(`${id}.fdaFirst`)),
+      both,
+      out,
+      actions(btn(t(`${id}.turnOn`), async (e) => {
+        e.currentTarget.disabled = true;
+        out.replaceChildren(testing(t("restarting")));
+        const r = await saveConnection(id, { [src.key]: "on" });
+        if (!r.ok) {
+          e.currentTarget.disabled = false;
+          return out.replaceChildren(problem(r.error));
+        }
+        drawCard(id);
+      })));
+  }
+  if (st.access === "denied") {
+    // The app opens the pane itself (desktop/mac/DiscoveryCore.swift allows it); a browser follows the link, and macOS asks first.
+    const pane = typeof st.pane === "string" ? st.pane : "";
+    const open = S.app
+      ? btn(t(`${id}.openPane`), () => tellApp(window, { type: "openURL", url: pane }), "tiny primary")
+      : h("a", { class: "btn tiny primary", href: pane }, t(`${id}.openPane`));
+    return body.replaceChildren(
+      h("div", { class: "denied" },
+        h("p", {}, icon("lock"), h("span", {}, typeof st.problem === "string" && st.problem ? st.problem : t(`${id}.fda`))),
+        h("ol", { class: "how" }, [1, 2, 3].map((n) => h("li", {}, t(`${id}.fda${n}`, { app: t(S.app ? `${id}.appMac` : `${id}.appTerminal`) })))),
+        actions(open, checkAgain())),
+      out, actions(off));
+  }
+  const lines = st.access === "missing" ? [h("p", { class: "step-text" }, t(`${id}.missing`))]
+    : st.access === "unknown" ? [problem(typeof st.problem === "string" && st.problem ? st.problem : t(`${id}.unknown`))]
+    : st.access === "ok" ? [success(t(`${id}.on`), t(`${id}.onLine`))]
+    : [h("p", { class: "step-text" }, t(`${id}.soon`))];
+  const problemLine = st.access === "ok" && typeof st.problem === "string" && st.problem ? problem(st.problem) : null;
+  return body.replaceChildren(...lines, problemLine, both,
+    rows(row(t(`${id}.lastRead`), st.lastRead ? ago(st.lastRead) : t("d.never")), row(t(`${id}.since`), st.since ? ago(st.since) : "")),
+    out, actions(checkAgain(st.access === "ok" ? t(`${id}.checkNow`) : t(`${id}.check`)), off));
+}
+
 // ----- Zoom: the recordings already on this Mac, or the guided Server-to-Server app -----
 
 VIEWS.zoom = (w) => {
@@ -1873,12 +1956,60 @@ function calendarSources(c) {
     items.length ? h("p", { class: "muted small" }, t("cal.sourcesLead")) : null);
 }
 
+/**
+ * Apple Reminders (src/reminders-local.ts): the follow-ups on the iPhone and the Watch through the person's own Reminders. Off until turned
+ * on here; the app asks macOS first (a refusal says where to turn it on), then keeps Pako's own lists in step. Only in the Mac app.
+ */
+function remindersBox() {
+  const r = S.data.reminders ?? {};
+  const out = h("div", { "aria-live": "polite" });
+  const redraw = async () => {
+    S.data.reminders = (await read("/panel/api/reminders")) ?? S.data.reminders;
+    drawCard("calendar");
+  };
+  const on = h("input", { type: "checkbox", id: "rem-on", checked: !!r.on });
+  on.addEventListener("change", async () => {
+    on.disabled = true;
+    out.replaceChildren(testing(t(on.checked ? "rem.turningOn" : "rem.turningOff")));
+    const a = await askApp(window, { type: "reminders", on: on.checked }, "pakoReminders", 60_000);
+    on.disabled = false;
+    if (!a) return out.replaceChildren(problem(t("app.noAnswer"), t("app.update")));
+    if (a.access === "denied") {
+      on.checked = false;
+      return out.replaceChildren(problem(t("rem.denied")), actions(btn(t("perm.open", { what: t("perm.reminders") }), () => {
+        tellApp(window, { type: "openURL", url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders" });
+      }, "tiny primary")));
+    }
+    if (!a.ok) return out.replaceChildren(problem(typeof a.error === "string" && a.error ? a.error.slice(0, 300) : t("rem.failed")));
+    await redraw();
+  });
+  const theirs = h("input", { type: "checkbox", id: "rem-waiting", checked: r.waiting !== false });
+  theirs.addEventListener("change", async () => {
+    theirs.disabled = true;
+    const w = await api("/panel/api/reminders/settings", { method: "POST", body: { waiting: theirs.checked } });
+    theirs.disabled = false;
+    if (!w.ok) return out.replaceChildren(problem(t("err.save")));
+    // In step now rather than at the app's next round.
+    if (r.on) await askApp(window, { type: "reminders", on: true }, "pakoReminders", 30_000);
+    await redraw();
+  });
+  return h("div", { class: "sources reminders" },
+    h("div", { class: "src-top" }, h("h4", {}, t("rem.title"))),
+    h("p", { class: "muted small" }, t("rem.lead")),
+    h("label", { class: "cal-row", for: "rem-on" }, on, h("span", {}, t("rem.on"))),
+    r.on ? h("label", { class: "cal-row", for: "rem-waiting" }, theirs, h("span", {}, t("rem.waiting"))) : null,
+    r.on ? rows(row(t("rem.inList"), t("rem.count", { owe: r.owe ?? 0, theirs: r.theirs ?? 0 })), row(t("cal.lastSync"), ago(r.at))) : null,
+    r.on && r.stale ? h("p", { class: "muted small" }, icon("info"), t("rem.stale")) : null,
+    h("p", { class: "muted small" }, t(r.on ? "rem.howOff" : "rem.private")),
+    out);
+}
+
 /** What the open card shows above its wizard: the connected account and its settings, with its actions. Nothing when not connected. */
 function details(id) {
   const d = S.data.details;
   if (!d) return null;
   const box = (...kids) => h("section", { class: "details", "aria-label": t("d.title") }, kids);
-  if (id === "calendar") return box(calendarSources(d.calendar));
+  if (id === "calendar") return box(calendarSources(d.calendar), S.app ? remindersBox() : null);
   if (id === "mail") {
     const m = d.mail?.imap;
     const parts = [];
@@ -1932,7 +2063,7 @@ function tabOf(hash) {
   if (hash === "privacy-card" || hash === "data") return "privacy";
   if (hash === "acts-card" || hash === "autonomy") return "acts";
   if (hash === "move-card" || hash === "import") return "move";
-  if (hash === "autostart" || hash === "health" || hash === "system") return "general";
+  if (hash === "autostart" || hash === "health" || hash === "system" || hash === "phone") return "general";
   return "connections";
 }
 function showTab(id, focus = false) {

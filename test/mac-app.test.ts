@@ -63,9 +63,15 @@ before(async () => {
   if (skip) return;
   cpSync(join(repo, "desktop", "mac"), join(copy, "desktop", "mac"), { recursive: true });
   cpSync(join(repo, "package.json"), join(copy, "package.json"));
+  // A source file with Finder information and a resource fork (a file that went through iCloud or the Finder): build.sh copies it into the
+  // app, and codesign refuses any app that carries such detritus. The build must still sign.
+  const detritus = join(copy, "desktop", "mac", "InfoPlist.en.strings");
+  spawnSync("xattr", ["-wx", "com.apple.FinderInfo", "0000000000000000000400000000000000000000000000000000000000000000", detritus]);
+  spawnSync("xattr", ["-w", "com.apple.ResourceFork", "detritus", detritus]);
   const [b, c] = await Promise.all([
     runAsync("sh", [join(copy, "desktop/mac/build.sh"), join(work, "out dir")], { PAKO_DEV_BUILD: "1", PAKO_BUILD: BUILD, PAKO_SIGN_IDENTITY: "", PAKO_FEED_PUBLIC_KEY: KEY.publicKey }),
-    runAsync("swiftc", ["-Onone", "-swift-version", "5", "desktop/mac/Core.swift", "desktop/mac/DiscoveryCore.swift", "test/fixtures/mac-core/main.swift", "-o", check]),
+    runAsync("swiftc", ["-Onone", "-swift-version", "5", "desktop/mac/Core.swift", "desktop/mac/DiscoveryCore.swift", "desktop/mac/RemindersCore.swift", "desktop/mac/Reminders.swift",
+      "test/fixtures/mac-core/main.swift", "-o", check]),
   ]);
   built = b;
   assert.equal(c.code, 0, `the check program did not compile:\n${c.out}`);
@@ -175,7 +181,7 @@ test("mac app: build.sh makes a bundle with its binary, Info.plist, icon and Pkg
   for (const f of ["Info.plist", "PkgInfo", "Resources/AppIcon.icns"]) assert.ok(existsSync(join(app, "Contents", f)), f);
   // Every source of the app is in the build (a file left out of build.sh would not be noticed until the app missed it).
   const listed = readFileSync(join(repo, "desktop/mac/build.sh"), "utf8");
-  const sources = ["Core", "DiscoveryCore", "Pako", "Claude", "Connect", "Status", "Texts", "Update", "Discovery", "App", "main"];
+  const sources = ["Core", "DiscoveryCore", "Pako", "Claude", "Connect", "Status", "Texts", "Update", "Discovery", "RemindersCore", "Reminders", "App", "main"];
   for (const f of sources) assert.match(listed, new RegExp(`"\\$HERE/${f}\\.swift"`), f);
   // A developer build carries no server and no Node.js: it runs the folder it was built from.
   assert.ok(!existsSync(join(app, "Contents", "Resources", "pako")) && !existsSync(join(app, "Contents", "Resources", "node")));
@@ -200,7 +206,7 @@ test("mac app: Info.plist is valid and says what the app is", { skip }, () => {
   assert.equal(plist("PakoRepoPath"), copy, "a developer build: the folder it was built from (spaces and all) is where it looks first");
   // Why macOS asks, in English only: the words in Info.plist and en.lproj, the same keys in each, and no Spanish es.lproj any more.
   const asks = ["NSCalendarsFullAccessUsageDescription", "NSCalendarsUsageDescription", "NSContactsUsageDescription", "NSAppleEventsUsageDescription",
-    "NSDocumentsFolderUsageDescription"];
+    "NSDocumentsFolderUsageDescription", "NSRemindersFullAccessUsageDescription", "NSRemindersUsageDescription"];
   for (const k of asks) assert.match(plist(k), /^Pako .+\.$/, k);
   const strings = (l: string) => JSON.parse(sh("plutil", ["-convert", "json", "-o", "-", join(app, "Contents", "Resources", `${l}.lproj`, "InfoPlist.strings")]).out) as Record<string, string>;
   const en = strings("en");
@@ -776,6 +782,73 @@ test("mac app: the connections page's own messages (its window, \"use this\", Zo
   }
 });
 
+test("mac app: Apple Reminders: which reminder is Pako's and of which loop, due dates both ways, what is posted, and which ops may be made", { skip }, () => {
+  const A = "a000000001";
+  // The loop: by its link, else by the tag at the end of its notes; anything else is not Pako's.
+  assert.equal(swift("rloop", `pako://loop/${A}`, "-"), A);
+  assert.equal(swift("rloop", "-", `You told Ana you would.\nKept in step by Pako [pako:${A}]`), A, "the link dropped by a device: the tag");
+  assert.equal(swift("rloop", "https://example.com/", "Buy milk"), null);
+  assert.equal(swift("rloop", "pako://loop/../../etc", "[pako:XYZ]"), null);
+  // Due dates: a day and a time in the owner's zone, a day with no time as its date (Pako reads it as 09:00 there).
+  assert.equal(swift("rdue", JSON.stringify({ year: 2026, month: 11, day: 21, hour: 9, minute: 30 }), "Europe/Madrid"), Date.parse("2026-11-21T08:30:00Z"));
+  assert.equal(swift("rdue", JSON.stringify({ year: 2026, month: 11, day: 21 }), "Europe/Madrid"), "2026-11-21");
+  assert.equal(swift("rdue", "-", "Europe/Madrid"), null);
+  assert.deepEqual(swift("rcomp", String(Date.parse("2026-11-21T08:30:00Z")), "Europe/Madrid"),
+    { year: 2026, month: 11, day: 21, hour: 9, minute: 30, zone: "Europe/Madrid" });
+  // What is posted: Pako's lists only, never a reminder's notes.
+  const lists = { owe: "L1", waiting: "L2", groceries: "L3" };
+  const body = swift("rpayload", "1", JSON.stringify(lists), JSON.stringify([
+    { id: "r1", list: "owe", title: "Send Ana the deck", url: `pako://loop/${A}`, notes: "secret words", due: { year: 2026, month: 11, day: 21 }, modified: 5000 },
+    { id: "r2", list: "owe", title: "Buy milk", completed: true },
+    { id: "r3", list: "groceries", title: "Eggs" },
+  ]), "Europe/Madrid") as { on: boolean; lists: Record<string, string>; reminders: Record<string, unknown>[] };
+  assert.equal(body.on, true);
+  assert.deepEqual(body.lists, { owe: "L1", waiting: "L2" });
+  assert.deepEqual(body.reminders, [
+    { id: "r1", list: "owe", loop: A, title: "Send Ana the deck", due: "2026-11-21", completed: false, modified: 5000 },
+    { id: "r2", list: "owe", title: "Buy milk", due: null, completed: true },
+  ]);
+  assert.doesNotMatch(JSON.stringify(body), /secret words/);
+  assert.deepEqual((swift("rpayload", "0", JSON.stringify(lists), "[]", "UTC") as { reminders: unknown[] }).reminders, []);
+  // The ops: a create made once (not when its reminder is already there), an update or a removal only of a reminder of Pako's lists that
+  // carries that loop's tag.
+  const ops = [
+    { op: "create", loop: A, list: "owe", title: "Send Ana the deck", due: 1000, notes: "n" },
+    { op: "create", loop: "b000000002", list: "owe", title: "Call Kenji", due: null, notes: "" },
+    { op: "create", loop: "b000000002", list: "owe", title: "Call Kenji", due: null, notes: "" },
+    { op: "create", loop: "c000000003", list: "groceries", title: "x", notes: "" },
+    { op: "update", id: "r9", loop: A, due: null, completed: true },
+    { op: "remove", id: "r8", loop: A },
+    { op: "runScript", loop: A },
+  ];
+  assert.deepEqual(swift("rops", JSON.stringify(ops), JSON.stringify([{ id: "r1", list: "owe", title: "x", url: `pako://loop/${A}` }])), [
+    { op: "create", loop: "b000000002", list: "owe", title: "Call Kenji", due: null, notes: "" },
+    { op: "update", id: "r9", loop: A, due: null, completed: true },
+    { op: "remove", id: "r8", loop: A },
+  ]);
+  const upd = JSON.stringify({ op: "update", id: "r1", loop: A, completed: true });
+  assert.equal(swift("rallowed", upd, JSON.stringify({ id: "r1", list: "owe", title: "x", url: `pako://loop/${A}` })), true);
+  assert.equal(swift("rallowed", upd, JSON.stringify({ id: "r1", list: "owe", title: "x", notes: `[pako:${A}]` })), true);
+  assert.equal(swift("rallowed", upd, JSON.stringify({ id: "r1", list: "groceries", title: "x", url: `pako://loop/${A}` })), false, "another list");
+  assert.equal(swift("rallowed", upd, JSON.stringify({ id: "r1", list: "owe", title: "Buy milk" })), false, "no tag: the person's own");
+  assert.equal(swift("rallowed", upd, JSON.stringify({ id: "r1", list: "owe", title: "x", url: "pako://loop/b000000002" })), false, "another loop");
+  assert.equal(swift("rallowed", upd, JSON.stringify({ id: "r2", list: "owe", title: "x", url: `pako://loop/${A}` })), false, "another reminder");
+  assert.equal(swift("rallowed", upd, "-"), false, "not found");
+  assert.equal(swift("rallowed", JSON.stringify({ op: "remove", id: "r1", loop: "../x" }), "-"), null, "not an op");
+  // The panel's switch, and its privacy pane.
+  assert.deepEqual(swift("msg", JSON.stringify({ type: "reminders", on: true })), { type: "reminders", on: true });
+  assert.deepEqual(swift("msg", JSON.stringify({ type: "reminders", on: false })), { type: "reminders", on: false });
+  assert.equal(swift("msg", JSON.stringify({ type: "reminders" })), null);
+  assert.equal(swift("msg", JSON.stringify({ type: "reminders", on: "yes" })), null);
+  const pane = "x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders";
+  assert.equal(swift("openurl", pane), pane);
+});
+
+test("mac app: Reminders turned off while a round is under way: off is the last thing Pako hears, and that round's changes are not made", { skip }, () => {
+  // The round read Reminders and would post "on" after the switch's "off": Pako would turn it on again and the app make its changes.
+  assert.deepEqual(swift("roff"), { posts: [false], applied: 0, on: false });
+});
+
 test("mac app: the panel opens only https, Slack, Telegram and Zoom's apps and the privacy panes of System Settings", { skip }, () => {
   for (const u of ["https://zoom.us/signin", "slack://open", "tg://resolve?domain=pako_bot", "zoommtg://zoom.us/join?confno=1",
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars", "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation",
@@ -851,6 +924,18 @@ test("mac app: calendar events: only the chosen calendars, two days back to four
   assert.deepEqual(swift("events", JSON.stringify(events), "-", String(now), "UTC"), { calendars: ["-"], events: [], writes: true }, "a push says this app makes the changes the person says yes to");
   assert.deepEqual(swift("calendars", JSON.stringify([{ id: "home", title: " Casa ", source: "iCloud", color: "#ff0000", writable: true }, { id: "", title: "x" }])),
     [{ id: "home", title: "Casa", source: "iCloud", color: "#ff0000", writable: true }]);
+});
+
+test("mac app: a calendar change touches the occurrence it means, never a repeating event's first one", { skip }, () => {
+  const at = Date.UTC(2026, 10, 24, 9);
+  const target = (near: unknown[], byID: unknown) => swift("wtarget", String(at), JSON.stringify(near), byID === null ? "-" : JSON.stringify(byID));
+  // EventKit's event(withIdentifier:) answers a repeating event's first occurrence (here a year ago).
+  const first = { name: "first", start: at - 365 * 86400_000, repeats: true };
+  assert.equal(target([{ name: "tuesday", start: at + 20_000, repeats: true }], first), "tuesday", "the occurrence at that start");
+  assert.equal(target([], first), null, "moved or deleted meanwhile (or already moved by this write): never the series' first occurrence");
+  assert.equal(target([], { name: "single", start: at + 3600_000, repeats: false }), "single", "an event that does not repeat, moved since");
+  assert.equal(target([], null), null);
+  assert.equal(swift("wtarget", "-", "[]", JSON.stringify(first)), "first", "no start said: the event itself");
 });
 
 test("mac app: contacts: a name (or the company's), addresses in lower case, merged when two cards share one, nobody without a way to reach", { skip }, () => {

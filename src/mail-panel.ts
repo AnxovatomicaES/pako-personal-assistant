@@ -39,6 +39,8 @@ export interface MailPanelDeps {
     doneFor: (ref: string) => Promise<string[]>;
     reopen: (ids: string[]) => Promise<number>;
   } | null;
+  /** Whether gentle mode is on (src/gentle.ts): the page then shows a passed time as "time passed", never "overdue" or in red. */
+  gentle?: () => Promise<boolean>;
   now?: () => number;
 }
 
@@ -76,8 +78,9 @@ const byMail = (loops: Loop[]): Map<string, Loop[]> => {
 const isOpen = (l: Loop): boolean => l.status === "open" || l.status === "snoozed";
 
 /** The dashboard's preview and each mail's loop status, from the mailbox and the loops as they are now. */
-export async function mailView(d: Pick<MailPanelDeps, "box" | "timeZone" | "loops">, now: number) {
-  if (!d.box) return { connected: false as const, needs: { rows: [], more: 0 }, loops: {} };
+export async function mailView(d: Pick<MailPanelDeps, "box" | "timeZone" | "loops" | "gentle">, now: number) {
+  const gentle = d.gentle ? await d.gentle().catch(() => false) : false;
+  if (!d.box) return { connected: false as const, needs: { rows: [], more: 0 }, loops: {}, gentle };
   const items = await d.box.items(150);
   const engine = d.loops();
   const loops = engine ? byMail(await engine.all().catch(() => [])) : new Map<string, Loop[]>();
@@ -88,7 +91,7 @@ export async function mailView(d: Pick<MailPanelDeps, "box" | "timeZone" | "loop
     const l = loops.get(m.id)?.[0];
     if (l) status[m.id] = { open: isOpen(l), title: l.title, ...(l.dueAt ? { due: l.dueAt } : {}) };
   }
-  return { connected: true as const, needs, loops: status };
+  return { connected: true as const, needs, loops: status, gentle };
 }
 
 export function mountMailPanel(app: Express, d: MailPanelDeps): void {

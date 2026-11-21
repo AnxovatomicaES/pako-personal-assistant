@@ -18,7 +18,7 @@ import type { AfterJobs } from "./parts.ts";
 export function mountTurn(b: AfterJobs) {
   const {
     config, log, api, say, run, chat, warm, readState, writeState, readSeen, writeSeen, writeToolData, replyCache, attempts, retryAt, waits,
-    toldAt, pendingNotes, flushNotes, reportUsage, loginWait, language, listen, handleEmail, handleReview, handleMeeting, handleFollowup,
+    toldAt, hold, pendingNotes, flushNotes, reportUsage, loginWait, language, listen, handleEmail, handleReview, handleMeeting, handleFollowup,
     handleBrief, handleProactive, handleJudge, handleStep, handlePaper, answerWithSlack,
   } = b;
   /** Answers one message. Returns true when it is done with (answered, or failed in a way that retrying would not fix). */
@@ -143,16 +143,24 @@ export function mountTurn(b: AfterJobs) {
       clearTimeout(notice);
       const kind = err instanceof ClaudeError ? err.kind : "other";
       log(`claude failed (${kind}): ${(err as Error).message.slice(0, 200)}`);
-      if (kind === "limit" || kind === "login") {
-        // Said once an hour; the message waits and is answered when Claude works again (the ones after it wait too, in order).
-        if (Date.now() - toldAt[kind] > 3600_000) {
-          toldAt[kind] = Date.now();
-          await say({ text: t(kind) });
-        }
-        retryAt.set(msg.id, Date.now() + (kind === "limit" ? 5 * 60_000 : loginWait()));
+      // Claude's limit: the owner was told once (runs.ts); the message waits and is answered when Claude works again (the ones after it wait
+      // too, in order).
+      if (kind === "limit") {
+        hold(msg.id);
         return false;
       }
-      await say({ text: t(kind) });
+      if (kind === "login") {
+        // Said once an hour; the message waits and is answered once they sign in again.
+        if (Date.now() - toldAt.login > 3600_000) {
+          toldAt.login = Date.now();
+          await say({ text: t(kind) });
+        }
+        retryAt.set(msg.id, Date.now() + loginWait());
+        return false;
+      }
+      // A model this Claude Code is too old for reaches here only when even Claude Code's default failed after it (runs.ts): said as any other.
+      if (noticeSent) await noticeSent; // "One moment…" never arrives after it
+      await say({ text: t(kind === "model-needs-newer-cli" ? "other" : kind) });
       return true;
     }
     clearTimeout(notice);

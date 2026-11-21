@@ -130,6 +130,17 @@ test("an all-day event as the Mac app sends it (ISO with its offset, EventKit's 
   assert.equal((await core.day(1)).match(/Cumple de Ana/g)?.length, 1);
 });
 
+test("an all-day event pushed by a Mac in another zone than the owner's keeps its own day (the date as the Mac wrote it)", () => {
+  // The Mac is in Tokyo (a trip; or PERSONAL_TIMEZONE set to home): its 17 Nov starts at 15:00 on the 16th in Madrid.
+  const push = { calendars: ["home"], events: [
+    { id: "bd@1", calendarId: "home", title: "Cumple de Ana", start: "2026-11-17T00:00:00+09:00", end: "2026-11-17T23:59:59+09:00", allDay: true },
+    { id: "trip@1", calendarId: "home", title: "Viaje", start: "2026-11-18T00:00:00+09:00", end: "2026-11-20T00:00:00+09:00", allDay: true },
+  ] };
+  const [bd, trip] = pushOf(push, { now: NOW, timeZone: TZ })!.events;
+  assert.deepEqual([bd!.start, bd!.end], [Date.parse("2026-11-16T23:00:00Z"), Date.parse("2026-11-17T23:00:00Z")], "17 Nov in Madrid, not the 16th");
+  assert.deepEqual([trip!.start, trip!.end], [Date.parse("2026-11-17T23:00:00Z"), Date.parse("2026-11-19T23:00:00Z")], "18 and 19 Nov: an end at midnight is the day after");
+});
+
 test("stopping or forgetting this Mac's calendars leaves the running calendar healthy and empty, not broken for the watchdog", async () => {
   const kv = memoryKv();
   const mac = createLocalCalendar({ kv, now: () => NOW });

@@ -253,6 +253,33 @@ test("watch: the calendar tells a change of the flight's time, and a cancellatio
   assert.equal((await u.r.read()).watches.length, 1, "ongoing");
 });
 
+test("watch: a calendar read in part (a source down for a while) never says the watched event is gone; a full reading still does", async () => {
+  const clock = { now: T0 };
+  const flight: EventSeen = { id: "e1", title: "Vuelo IB3166 a Londres", start: at("2026-11-17 10:00"), end: at("2026-11-17 12:30"), allDay: false };
+  let reading: { events: EventSeen[]; partial: boolean } = { events: [flight], partial: false };
+  const told: string[] = [];
+  const r = createRoutines({
+    kv: memKv(), timeZone: TZ, now: () => clock.now, claimMs: 2, enqueue: async () => true, notify: async (text) => void told.push(text),
+    sources: () => ({ calendar: async () => reading }),
+  });
+  assert.ok((await r.addWatch({ on: "calendar", words: "vuelo", once: false, text: "el vuelo" })).added);
+  await r.tick();
+  // The source that has the flight fails for a few looks: the reading is partial, without it.
+  reading = { events: [], partial: true };
+  for (let i = 0; i < 4; i++) {
+    clock.now += 30_000;
+    await r.tick();
+  }
+  assert.deepEqual(told, [], "not gone: its calendar could not be read");
+  reading = { events: [flight], partial: false };
+  await r.tick();
+  assert.deepEqual(told, [], "back: nothing to tell");
+  reading = { events: [], partial: false };
+  await r.tick();
+  await r.tick();
+  assert.match(told[0] ?? "", /No longer in your calendar for the coming days: Vuelo IB3166 a Londres/);
+});
+
 // ---------- 5. the door: tags, receipts, Deshacer, refusals, commands, old bridge ----------
 
 let n = 0;

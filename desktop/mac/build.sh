@@ -12,11 +12,20 @@ set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 OUT=${1:-"$REPO/dist"}
+say() { printf '  %s\n' "$*"; }
+# iCloud Drive (Desktop and Documents too, when they sync) and other File Provider folders put Finder information back on a bundle a few
+# seconds after it is cleaned, and codesign then refuses it ("resource fork, Finder information, or similar detritus not allowed"): such an
+# output folder is refused here, before anything is built.
+. "$HERE/synced.sh"
+if syncedFolder "$OUT"; then
+  say "$OUT is in a folder iCloud (or another File Provider) syncs: codesign cannot sign an app there. Build into another folder:"
+  say "  npm run mac-app -- ~/pako-build   (or: npm run mac-release -- ~/pako-build)"
+  exit 1
+fi
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
 APP="$OUT/Pako.app"
 
-say() { printf '  %s\n' "$*"; }
 if ! command -v swiftc >/dev/null 2>&1; then
   say "swiftc not found: install the Command Line Tools (xcode-select --install) and run this again."
   exit 1
@@ -41,14 +50,15 @@ esac
 # The public half of the release key (desktop/mac/feed-key.pub, or PAKO_FEED_PUBLIC_KEY): the app installs an update only from a feed signed
 # by it (desktop/mac/feed-sign.ts, docs/desktop-mac.md "Make a release"). None yet: the app is built without one and offers no update.
 FEEDKEY=${PAKO_FEED_PUBLIC_KEY:-$(cat "$HERE/feed-key.pub" 2>/dev/null || true)}
-FEEDKEY=$(printf '%s' "$FEEDKEY" | tr -d ' \n\r')
-case "$FEEDKEY" in
-  '') ;;
-  *)
-    if [ "${#FEEDKEY}" != 44 ] || [ "$(printf '%s' "$FEEDKEY" | base64 --decode 2>/dev/null | wc -c | tr -d ' ')" != 32 ]; then
-      say "the feed public key (desktop/mac/feed-key.pub or PAKO_FEED_PUBLIC_KEY) is not 32 bytes of base64."; exit 1
-    fi ;;
-esac
+# One key per line (or comma separated): the release key, then any recovery keys. The app gets them comma separated.
+KEYS=""
+for K in $(printf '%s' "$FEEDKEY" | tr ',\r' '  '); do
+  if [ "${#K}" != 44 ] || [ "$(printf '%s' "$K" | base64 --decode 2>/dev/null | wc -c | tr -d ' ')" != 32 ]; then
+    say "a feed public key (desktop/mac/feed-key.pub or PAKO_FEED_PUBLIC_KEY) is not 32 bytes of base64."; exit 1
+  fi
+  KEYS=${KEYS:+$KEYS,}$K
+done
+FEEDKEY=$KEYS
 HELP=${PAKO_HELP_URL:-https://github.com/AnxovatomicaES/pako-personal-assistant/blob/main/docs/desktop-mac.md}
 case "$HELP" in
   https://*) ;;
@@ -60,7 +70,8 @@ trap 'rm -rf "$WORK"' EXIT
 # The app's sources only: icon/ is its own small program. Kept as the arguments ("$@"), each one whole: the Pako folder's path may have
 # spaces in it (a list in one variable would be cut there).
 set -- "$HERE/Core.swift" "$HERE/DiscoveryCore.swift" "$HERE/Pako.swift" "$HERE/Claude.swift" "$HERE/Connect.swift" "$HERE/Status.swift" \
-  "$HERE/Texts.swift" "$HERE/Update.swift" "$HERE/Discovery.swift" "$HERE/App.swift" "$HERE/main.swift"
+  "$HERE/Texts.swift" "$HERE/Update.swift" "$HERE/Discovery.swift" "$HERE/RemindersCore.swift" "$HERE/Reminders.swift" \
+  "$HERE/App.swift" "$HERE/main.swift"
 for ARCH in x86_64 arm64; do
   if swiftc -O -swift-version 5 -target "$ARCH-apple-macos13" -module-name Pako -framework AppKit -framework WebKit -framework EventKit -framework Contacts \
       "$@" -o "$WORK/Pako-$ARCH" 2>"$WORK/$ARCH.log"; then

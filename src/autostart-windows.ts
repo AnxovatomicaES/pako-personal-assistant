@@ -92,11 +92,25 @@ export function launcherPaths(pakoDir: string): { dir: string; script: string; x
 }
 
 /**
+ * Settings from the window that set it up which the hidden Pako needs too (as src/autostart.ts carries them): a task started at sign-in
+ * has only the account's own variables. PAKO_SERVICE: no sign-in link is printed into the log file (src/server.ts printsLink).
+ */
+function carried(env: Env): Record<string, string> {
+  const out: Record<string, string> = { PAKO_SERVICE: "1" };
+  for (const name of ["PAKO_HOME", "PORT", "PAKO_HOST", "CLAUDE_BIN", "PAKO_SECRET_STORE"]) {
+    const v = (env[name] ?? "").trim();
+    if (v) out[name] = v;
+  }
+  return out;
+}
+
+/**
  * The PowerShell file the task runs. The last start's logs are kept as .old. A log that cannot be moved is held by a Pako already running:
  * then nothing is started (the lock would stop a second one anyway, after it had wiped the first one's log).
  */
-export function launcherScript(o: { node: string; repo: string; logs: string }): string {
+export function launcherScript(o: { node: string; repo: string; logs: string; env?: Record<string, string> }): string {
   const entry = win32.join(o.repo, "src", "server.ts");
+  const vars = Object.entries(o.env ?? {}).map(([k, v]) => `$env:${k} = ${psQuote(v)}`);
   return [
     "# Starts Pako with no window, its output in the logs folder. Written by src/autostart-windows.ts (enable): change that, not this file.",
     "$ErrorActionPreference = 'Stop'",
@@ -109,6 +123,7 @@ export function launcherScript(o: { node: string; repo: string; logs: string }):
     "  }",
     "}",
     "$env:PAKO_NO_OPEN = '1'",
+    ...vars,
     // Start-Process joins the arguments with spaces as they are: the path is quoted inside, for a folder with a space in its name.
     `Start-Process -FilePath ${psQuote(o.node)} -WorkingDirectory ${psQuote(o.repo)} -WindowStyle Hidden \``,
     `  -ArgumentList '--disable-warning=ExperimentalWarning', ${psQuote(`"${entry}"`)} \``,
@@ -223,7 +238,8 @@ export function createWindowsAutostart(over: Partial<WindowsDeps> = {}, env: Env
       d.mkdir(paths.dir);
       d.mkdir(paths.logs);
       // UTF-8 with a BOM for PowerShell 5.1, UTF-16 with a BOM for schtasks: each reads a name like "Zoë" right only in its own.
-      d.writeFile(paths.script, Buffer.from(`﻿${launcherScript({ node: d.node, repo: d.repo, logs: paths.logs })}`, "utf8"));
+      const script = launcherScript({ node: d.node, repo: d.repo, logs: paths.logs, env: carried(env) });
+      d.writeFile(paths.script, Buffer.from(`﻿${script}`, "utf8"));
       const xml = taskXml({ account: d.account, script: paths.script, repo: d.repo, description: t("description") });
       d.writeFile(paths.xml, Buffer.from(`﻿${xml}`, "utf16le"));
       const r = await d.run("schtasks.exe", schtasks.create(task, paths.xml));

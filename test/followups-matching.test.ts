@@ -38,7 +38,10 @@ const SETUP = (o: { due?: string | null; title?: string; same?: string } = {}) =
 
 type HistoryCall = { channel: string; oldest?: string; thread?: string; limit?: number };
 
-function rig(o: { at: number; kv?: ReturnType<typeof memKv>; config?: Partial<FollowupsConfig>; zoom?: () => Promise<ZoomSeen[]> }) {
+function rig(o: {
+  at: number; kv?: ReturnType<typeof memKv>; config?: Partial<FollowupsConfig>; zoom?: () => Promise<ZoomSeen[]>;
+  calendar?: () => Promise<EventSeen[] | { events: EventSeen[]; partial: boolean }>;
+}) {
   const clock = { now: o.at };
   const store = o.kv ?? memKv();
   const queued: Inbound[] = [];
@@ -57,7 +60,7 @@ function rig(o: { at: number; kv?: ReturnType<typeof memKv>; config?: Partial<Fo
     card: async (body) => (cards.push(body), true),
     notify: async (t) => void notices.push(t),
     zoom: o.zoom ?? (async () => zoomMeetings),
-    calendar: async () => events,
+    calendar: o.calendar ?? (async () => events),
     slackHistory: async (channel, q) => {
       calls.push({ channel, ...q });
       const key = q.thread ? `${channel}/${q.thread}` : channel;
@@ -346,6 +349,24 @@ test("finding 8: a night of Slack jobs never pushes a meeting's transcript out o
   assert.equal(msgs.filter((m) => m.followup).length, 3, "follow-up jobs went first");
 });
 
+test("a calendar read in part (one of its sources failed) is no proof the invitation is missing: not said as checked", async () => {
+  const T = Date.parse("2026-11-16T08:00:00Z");
+  const due = Date.parse("2026-11-17T08:30:00Z");
+  const r = rig({ at: T, calendar: async () => ({ events: [], partial: true }) });
+  await r.say(JSON.stringify({
+    loops: [{ kind: "other_promise", title: "Montar una llamada técnica con Tariq", who: "Stan", due: "2026-11-17 16:30", tz: "Asia/Hong_Kong", check: "zoomMeeting", hints: ["Tariq"] }],
+  }), { channel: "C0SALES", who: "Stan", where: "Stan en #sales" });
+  await r.at(due - HOUR);
+  assert.ok(!r.cards.some((c) => /I don't see the invitation in your calendar/.test(c)), "its calendar may be the one that could not be read");
+  // Found in what was read: done, partial or not.
+  const s = rig({ at: T, calendar: async () => ({ events: [{ title: "Tech call: Tariq / Rory / Vic", start: due }], partial: true }) });
+  await s.say(JSON.stringify({
+    loops: [{ kind: "other_promise", title: "Montar una llamada técnica con Tariq", who: "Stan", due: "2026-11-17 16:30", tz: "Asia/Hong_Kong", check: "zoomMeeting", hints: ["Tariq"] }],
+  }), { channel: "C0SALES", who: "Stan", where: "Stan en #sales" });
+  await s.at(due - HOUR);
+  assert.equal(s.cards.length, 0);
+});
+
 function reviewRig(alive: boolean) {
   const clock = { now: Date.parse("2026-11-16T10:00:00Z") };
   const queued: Inbound[] = [];
@@ -407,4 +428,29 @@ test("finding 10: two processes on one store (a deploy's overlap): the loop is c
   await first;
   assert.equal(a.cards.length + b.cards.length, 1);
   assert.equal(stateOf(JSON.parse(store.m.get(FOLLOWUPS_KEY)!)).budget.n, 1, "the budget spent once");
+});
+
+test("the same ask said in two places (Slack, then email) is one loop; another person, kind, time or thing never is", async () => {
+  const { sameAsk } = await import("../src/followups/answer.ts");
+  const at = Date.parse("2026-11-19T11:00:00Z");
+  const a = { who: "Dana Whitlock", title: "Send Dana Whitlock the signed NDA", kind: "request_to_owner", dueAt: at };
+  assert.ok(sameAsk(a, { ...a, who: "Dana", title: "Send the signed NDA to Dana Whitlock" }, 15 * MIN));
+  assert.ok(sameAsk(a, { ...a, who: "Dana", title: "Send the signed NDA to Dana", dueAt: at + 10 * MIN }, 15 * MIN));
+  assert.ok(!sameAsk(a, { ...a, who: "Mira", title: "Send Mira the signed NDA" }, 15 * MIN), "another person");
+  assert.ok(!sameAsk(a, { ...a, kind: "owner_promise" }, 15 * MIN), "another kind");
+  assert.ok(!sameAsk(a, { ...a, dueAt: at + 2 * HOUR }, 15 * MIN), "another time");
+  assert.ok(!sameAsk(a, { ...a, dueAt: undefined }, 15 * MIN), "a time on one only");
+  assert.ok(!sameAsk(a, { ...a, title: "Send Dana Whitlock the unsigned NDA" }, 15 * MIN), "another thing");
+  assert.ok(!sameAsk({ ...a, title: "Send report 1" }, { ...a, title: "Send report 2" }, 15 * MIN), "a number tells them apart");
+  assert.ok(!sameAsk({ ...a, title: "Call Dana" }, { ...a, title: "Call Dana Whitlock" }, 15 * MIN), "one word is too little to go on");
+});
+
+test("Pako's own focus block (time to do it) at a meeting's time is not taken for the meeting asked for", async () => {
+  const r = rig({ at: Date.parse("2026-11-16T08:00:00Z") });
+  await r.say(SETUP());
+  // The owner pressed Block on an at-risk card: "Focus: …" goes on the calendar at the free time, which is the meeting's time (still unset up).
+  r.events.push({ title: "Focus: Send Ana the Q4 deck", start: DUE, created: r.clock.now + MIN });
+  await r.at("2026-11-16T08:11:00Z");
+  assert.equal(r.stored().loops[0]!.status, "open", "a focus block is no meeting with them");
+  assert.equal(r.cards.length, 1, "the nudge goes");
 });

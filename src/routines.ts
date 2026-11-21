@@ -217,7 +217,8 @@ export const eventHit = (w: Pick<Watch, "words">, e: Pick<EventSeen, "title">): 
 /** What the server already has, for the watches: each absent when that part is not connected. */
 export interface WatchSources {
   mail?: () => Promise<MailSeen[]>;
-  calendar?: () => Promise<EventSeen[]>;
+  /** The coming events; `partial` when a calendar could not be read this time (its events may be missing). */
+  calendar?: () => Promise<EventSeen[] | { events: EventSeen[]; partial: boolean }>;
   slack?: () => Promise<SlackSeen[]>;
 }
 
@@ -618,7 +619,14 @@ export function createRoutines(d: RoutinesDeps) {
       fn && live(on).length ? await fn().catch((err: Error) => (log.error(`${on} could not be read: ${err.message}`), null)) : null;
     const mail = await got("mail", sources.mail);
     const slack = await got("slack", sources.slack);
-    const events = await got("calendar", sources.calendar);
+    let calPartial = false;
+    const calendar = sources.calendar;
+    const events = await got("calendar", calendar && (async () => {
+      const r = await calendar();
+      if (Array.isArray(r)) return r;
+      calPartial = r.partial;
+      return r.events;
+    }));
     const at = now();
     const mailKey = (m: MailSeen): string => m.id.slice(0, 300);
     const slackKey = (a: SlackSeen): string => hash(`${a.at}|${a.where}|${a.text}`);
@@ -665,6 +673,11 @@ export function createRoutines(d: RoutinesDeps) {
         }
         for (const [id, x] of Object.entries(prev ?? {})) {
           if (seen[id] || x.start <= at || x.start > at + 5 * DAY_MS) continue;
+          // A calendar read in part: its calendar may be the one that failed. Kept as it was, not one more look without it.
+          if (calPartial) {
+            seen[id] = x;
+            continue;
+          }
           const miss = (x.miss ?? 0) + 1;
           if (miss < 2) seen[id] = { ...x, miss };
           else {

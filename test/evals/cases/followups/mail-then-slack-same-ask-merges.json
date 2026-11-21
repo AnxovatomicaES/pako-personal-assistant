@@ -1,0 +1,49 @@
+{
+  "suite": "followups",
+  "behaviour": "Dana asks for the signed NDA by email, then pings the same on Slack: the Slack ask joins the open loop, no second one",
+  "origin": "a live run made two loops for one ask (same words in another order, «Dana» and «Dana Whitlock»): the answers recorded are those",
+  "input": {
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-16 09:00",
+          "ref": "m-dana",
+          "from": "Dana Whitlock <dana@brightwell.example>",
+          "to": "Alex <alex@acme.example>",
+          "subject": "Signed NDA",
+          "category": "needs_you",
+          "messageId": "<dw1@brightwell.example>",
+          "body": "Hi Alex,\n\ncould you send me the signed NDA by Thursday 12:00?\n\nDana"
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"request_to_owner\", \"title\": \"Send Dana Whitlock the signed NDA\", \"detail\": \"Dana Whitlock asked by email for the signed NDA by Thursday 12:00.\", \"who\": \"Dana\", \"due\": \"2026-11-19 12:00\", \"tz\": \"Europe/Madrid\", \"check\": \"none\", \"reason\": \"email\"}], \"closes\": []}"
+      },
+      {
+        "slack": {
+          "channel": "D0DANA",
+          "label": "Dana Whitlock (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 15:00",
+              "who": "Dana Whitlock",
+              "text": "Hey, did you see my email? I need the signed NDA by Thursday 12:00"
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"request_to_owner\", \"title\": \"Send the signed NDA to Dana Whitlock\", \"detail\": \"Dana asked in Slack for the signed NDA by Thursday 12:00, after mentioning her email.\", \"who\": \"Dana Whitlock\", \"due\": \"2026-11-19 12:00\", \"tz\": \"Europe/Madrid\", \"check\": \"none\", \"reason\": \"email\"}], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "merged": 1,
+    "open": [
+      {
+        "who": "Dana",
+        "titleHas": [
+          "NDA"
+        ],
+        "dueLocal": "2026-11-19 12:00"
+      }
+    ]
+  }
+}

@@ -1,6 +1,7 @@
 // STOP and RESUME: the owner's pause, answered by the server at once, before any other word.
 
 import type { Handler } from "./incoming.ts";
+import type { Door } from "./door.ts";
 import { createLog } from "../log.ts";
 
 const log = createLog("autonomy");
@@ -11,30 +12,45 @@ const squeezedOf = (command: string): string => (command.length <= 14 ? command.
  * STOP: Pako pauses, and nothing waiting goes out. "Stop…" as iOS writes it, STOP 🛑, "STOP!", “stop”, S T O P: punctuation, symbols, emoji and
  * invisible characters do not change the word.
  */
+export const isStop = (command: string): boolean => /^(stop|pause)( pako)?$/.test(command) || /^(stop|pause)$/.test(squeezedOf(command));
+
+/**
+ * What a STOP does, typed or pressed on the panel: the pause, and nothing waiting goes out. Held actions are undone, the call, send, email,
+ * held-reply and connector cards end, a booking stops, and the STOP count the focus-block and calendar cards check goes up. `line` is the
+ * action log's line (the panel's says where it came from). Whether the pause was kept in the store.
+ */
+export async function stopEverything(door: Door, at: number, line?: string): Promise<boolean> {
+  const { d, tx, note, choices, emailCards, heldQueue, sweepCards, connectorCards, endCard } = door;
+  if (!d.control) return false;
+  const kept = await d.control.setPaused(true, at);
+  door.pendingCall = null;
+  door.pendingSend = null;
+  door.heldReplies.clear(); // what a reply read from outside text asked for is not done after a STOP, even if its card is pressed
+  // A message, an email or a call still in its window to undo never goes out after a STOP (nor after a RESUME).
+  choices.clear();
+  emailCards.clear();
+  await heldQueue.cancelAll().catch((err: Error) => log.error(`STOP could not undo the held actions: ${err.message}`));
+  door.stops++;
+  sweepCards();
+  const annulled = [...connectorCards.values()].map((c) => c.ask.name);
+  for (const [id, c] of connectorCards) {
+    endCard(id, "stopped");
+    c.ask.closed("stopped");
+  }
+  connectorCards.clear();
+  d.booking?.cancel();
+  // Calendar changes approved but not yet taken by the Mac app are not made after a STOP either (src/calendar-writes.ts).
+  await d.calendarWrites?.cancelQueued?.().catch((err: Error) => log.error(`STOP could not cancel the calendar changes: ${err.message}`));
+  d.control.log("pause", line ?? tx("logStop"));
+  const cards = annulled.length ? tx("noteStopCards", { names: [...new Set(annulled)].join(", ") }) : "";
+  note(tx("noteStop", { cards }));
+  return kept;
+}
+
 export const onStop: Handler = async (door, { command, at }) => {
-  const { d, tx, sendText, note, choices, emailCards, heldQueue, sweepCards, connectorCards, endCard } = door;
-  const squeezed = squeezedOf(command);
-  if (d.control && (/^(stop|pause)( pako)?$/.test(command) || /^(stop|pause)$/.test(squeezed))) {
-    const kept = await d.control.setPaused(true, at);
-    door.pendingCall = null;
-    door.pendingSend = null;
-    door.heldReplies.clear(); // what a reply read from outside text asked for is not done after a STOP, even if its card is pressed
-    // A message, an email or a call still in its window to undo never goes out after a STOP (nor after a RESUME).
-    choices.clear();
-    emailCards.clear();
-    await heldQueue.cancelAll().catch((err: Error) => log.error(`STOP could not undo the held actions: ${err.message}`));
-    door.stops++;
-    sweepCards();
-    const annulled = [...connectorCards.values()].map((c) => c.ask.name);
-    for (const [id, c] of connectorCards) {
-      endCard(id, "stopped");
-      c.ask.closed("stopped");
-    }
-    connectorCards.clear();
-    d.booking?.cancel();
-    d.control.log("pause", tx("logStop"));
-    const cards = annulled.length ? tx("noteStopCards", { names: [...new Set(annulled)].join(", ") }) : "";
-    note(tx("noteStop", { cards }));
+  const { d, tx, sendText } = door;
+  if (d.control && isStop(command)) {
+    const kept = await stopEverything(door, at);
     await sendText(tx("stopped", { warn: kept ? "" : tx("stopNotKept") }));
     return "paused";
   }

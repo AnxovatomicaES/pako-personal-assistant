@@ -14,6 +14,7 @@ import type { wireDoor } from "./door.ts";
 import type { wirePanel } from "./panel.ts";
 import type { wireCalendar } from "./calendar.ts";
 import type { wireBrief } from "./brief.ts";
+import type { wireMobile } from "./mobile.ts";
 
 /** What createApp is given. */
 export interface AppCtx {
@@ -40,7 +41,7 @@ export type AfterChat = AfterBooking & ReturnType<typeof wireChat>;
 export type AfterDoor = AfterChat & ReturnType<typeof wireDoor>;
 export type AfterPanel = AfterDoor & ReturnType<typeof wirePanel>;
 export type AfterTelegram = AfterPanel;
-export type AfterConnect = AfterTelegram;
+export type AfterConnect = AfterTelegram & ReturnType<typeof wireMobile>;
 export type AfterCalendar = AfterConnect & ReturnType<typeof wireCalendar>;
 export type AfterBrief = AfterCalendar & ReturnType<typeof wireBrief>;
 export type AfterSchedule = AfterBrief;

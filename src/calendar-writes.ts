@@ -52,6 +52,8 @@ export interface CalendarWrite {
   was?: { start: number; end: number; title?: string; calendarId?: string; location?: string };
   /** How many times it was sent to the Mac (more than once: the app restarted mid-way). */
   sends?: number;
+  /** Last held back by the owner's pause: the half hour before it fails counts from here, not from the yes. */
+  heldAt?: number;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -63,6 +65,8 @@ export function createCalendarWrites(d: {
   now?: () => number;
   /** Told when a write is done or failed (the receipt, with Undo; or what went wrong). */
   onResult?: (w: CalendarWrite) => Promise<unknown>;
+  /** The owner's pause (STOP): while it lasts nothing goes to the Mac; what was approved waits for RESUME. */
+  paused?: () => Promise<boolean>;
 }) {
   const now = d.now ?? Date.now;
   let memory: CalendarWrite[] = [];
@@ -101,6 +105,8 @@ export function createCalendarWrites(d: {
    */
   const exchange = async (results: unknown): Promise<CalendarWrite[]> => {
     const finished: CalendarWrite[] = [];
+    // Read before the lock: the store's own answer, not this queue's.
+    const held = (await d.paused?.().catch(() => true)) ?? false;
     const out = await locked(async (list) => {
       const t = now();
       for (const r of Array.isArray(results) ? results.slice(0, 50) : []) {
@@ -139,8 +145,14 @@ export function createCalendarWrites(d: {
         }
         finished.push(w);
       }
+      if (held) {
+        // Paused: what the Mac did still counts (above), but nothing new goes, nothing is sent again, and nothing waiting fails.
+        for (const w of list) if (w.status === "queued") w.heldAt = t;
+        await save(list);
+        return [];
+      }
       for (const w of list) {
-        if (w.status === "queued" && t - w.queuedAt > EXPIRE_MS) {
+        if (w.status === "queued" && t - Math.max(w.queuedAt, w.heldAt ?? 0) > EXPIRE_MS) {
           Object.assign(w, { status: "failed", error: "the Pako app on this Mac did not pick it up (is it open?)" });
           finished.push(w);
         }
@@ -156,7 +168,18 @@ export function createCalendarWrites(d: {
 
   const get = async (id: string): Promise<CalendarWrite | null> => (await load()).find((x) => x.id === id) ?? null;
 
-  return { enqueue, exchange, get };
+  /** A STOP: the writes the Mac has not taken yet are never made, and the owner is told so. One already sent is the Mac's. */
+  const cancelQueued = async (): Promise<void> => {
+    const cancelled = await locked(async (list) => {
+      const out = list.filter((w) => w.status === "queued");
+      for (const w of out) Object.assign(w, { status: "failed", error: "you said STOP before your Mac made the change" });
+      if (out.length) await save(list);
+      return out;
+    });
+    for (const w of cancelled) await d.onResult?.(w).catch((err: Error) => log.error(`a calendar write's result: ${err.message}`));
+  };
+
+  return { enqueue, exchange, get, cancelQueued };
 }
 
 export type CalendarWrites = ReturnType<typeof createCalendarWrites>;

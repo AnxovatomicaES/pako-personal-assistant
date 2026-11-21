@@ -578,3 +578,18 @@ test("GET /panel/api/meetings without Zoom: 200, no meetings and connected: fals
   const page = repoText("src/panel/meetings.js");
   assert.match(page, /body\?\.connected === false/, "the card is not shown when Zoom is not connected");
 });
+
+test("a summary the inbox would not take is told once by Zoom's reader, and never again by the review's sweep", async () => {
+  const data = new Map<string, string>();
+  const kv = { get: async (k: string) => data.get(k) ?? null, set: async (k: string, v: string) => void data.set(k, v) } as unknown as Kv;
+  let now = Date.parse("2026-11-16T10:00:00Z");
+  const told: string[] = [];
+  const reviewer = createMeetingReview({
+    config: { waitMs: HOUR }, kv, timeZone: TZ, now: () => now, enqueue: async () => false, notify: async (t) => void told.push(t),
+  });
+  const queued = await reviewer.summary({ id: "abc==", topic: "Weekly", at: now - HOUR, text: "We agreed things.", notice: "🎥 Zoom · Weekly" });
+  assert.equal(queued, false, "not queued: Zoom's reader tells it as before");
+  now += 3 * HOUR;
+  assert.equal(await reviewer.sweep(), 0, "nothing left pending to tell a second time");
+  assert.deepEqual(told, []);
+});

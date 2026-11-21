@@ -81,8 +81,11 @@ export function wireMeetings(ctx: AfterSchedule) {
       },
       health: dog.reporter("slack"),
       eventsHealth: dog.reporter("slackEvents"),
-      // Connected with the project's own app, not yet in the Slack Marketplace: one DM a look (Slack's limit for such apps).
-      ...(!SLACK_MARKETPLACE_LISTED && (env.SLACK_CLIENT_ID ?? "").trim() && (env.SLACK_CLIENT_ID ?? "").trim() === builtInClients(env).slack ? { pollPerRound: 1 } : {}),
+      // Connected with the project's own app, not yet in the Slack Marketplace: one DM a look, and one conversation read a minute for the
+      // poll and the follow-ups together (Slack's limit for such apps, src/slack-gate.ts).
+      ...(!SLACK_MARKETPLACE_LISTED && (env.SLACK_CLIENT_ID ?? "").trim() && (env.SLACK_CLIENT_ID ?? "").trim() === builtInClients(env).slack
+        ? { pollPerRound: 1, historyPerMinute: 1 }
+        : {}),
     });
     dog.watch("slack");
     if (slack.config.appToken) dog.watch("slackEvents");

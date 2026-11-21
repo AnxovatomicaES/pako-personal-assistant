@@ -4,6 +4,9 @@ import { createFollowups } from "../followups.ts";
 import { CT } from "../gentle-checkins.ts";
 import { createFirstSteps } from "../gentle.ts";
 import { createLog } from "../log.ts";
+import { isImessageChannel } from "../imessage.ts";
+import { addressOf } from "../mail.ts";
+import { senderName } from "../mail-categories.ts";
 import { isTeamsChannel } from "../teams.ts";
 import type { AfterMeetings } from "./context.ts";
 
@@ -11,8 +14,9 @@ const logFollowups = createLog("followups");
 
 export function wireFollowups(ctx: AfterMeetings) {
   const {
-    local, uiLang, kv, control, jobs, timeZone, givenName, slack, slackRef, zoom, zoomRef, teamsCfg, teamsRef, calOn, calRef, smartCfg, followupsCfg,
-    followupsRef, personRef, gentleSettings, gentleRef, lifeRef, lessons, quality, door,
+    local, uiLang, kv, control, jobs, timeZone, givenName, slack, slackRef, zoom, zoomRef, teamsCfg, teamsRef, imessageCfg, imessageRef, calOn, calRef,
+    smartCfg, smartRef, followupsCfg, followupsRef, personRef, gentleSettings, gentleRef, lifeRef, lessons, quality, door, betaRef, timeRef,
+    box,
   } = ctx;
   if (followupsCfg.config) {
     // Looks only at what this server already reads (each part looked up when a check runs, so one set up later counts).
@@ -29,27 +33,63 @@ export function wireFollowups(ctx: AfterMeetings) {
       card: (body, buttons) => door.sendCard(body, buttons),
       notify: (text) => door.notifyOwner(text),
       ...(quality ? { quality: quality.followups } : {}),
+      // The beta's audit (src/beta-audit.ts): told of each conversation read; it keeps nothing unless the tester opted in.
+      audit: {
+        queued: (job, material, people) => betaRef.audit?.followups.queued(job, material, people),
+        answered: (o) => betaRef.audit?.followups.answered(o),
+      },
       // The day's budget is shared with proactive Pako's suggestions.
       // And with the check-ins' first asks (src/gentle-checkins.ts).
-      othersToday: async () => ((await lifeRef.engine?.spentToday()) ?? 0) + ((await gentleRef.checkins?.spentToday()) ?? 0),
+      // And with the at-risk cards of time to do it (src/time-to-do.ts).
+      othersToday: async () => ((await lifeRef.engine?.spentToday()) ?? 0) + ((await gentleRef.checkins?.spentToday()) ?? 0)
+        + ((await timeRef.t?.spentToday()) ?? 0),
       ...(zoom.config ? { zoom: () => (zoomRef.reader ? zoomRef.reader.scheduled() : Promise.reject(new Error("Zoom is not ready"))) } : {}),
-      ...(calOn && !teamsCfg.config ? { calendar: () => (calRef.reader ? calRef.reader.load() : Promise.reject(new Error("the calendar is not ready"))) } : {}),
+      ...(calOn && !teamsCfg.config ? { calendar: () => (calRef.reader ? calRef.reader.readAll() : Promise.reject(new Error("the calendar is not ready"))) } : {}),
       // With Teams, its calendar's Teams meetings count as "it happened" too (src/teams.ts events).
       ...(teamsCfg.config
         ? {
             calendar: async () => {
-              const own = calOn ? (calRef.reader ? await calRef.reader.load() : Promise.reject(new Error("the calendar is not ready"))) : [];
-              return [...(await own), ...(teamsRef.reader ? await teamsRef.reader.events().catch(() => []) : [])];
+              const own = calOn ? (calRef.reader ? await calRef.reader.readAll() : Promise.reject(new Error("the calendar is not ready"))) : null;
+              const mine = await own;
+              const teams = teamsRef.reader ? await teamsRef.reader.events().catch(() => []) : [];
+              return { events: [...(mine?.events ?? []), ...teams], partial: !!mine?.partial };
             },
           }
         : {}),
-      // A Teams conversation has a Slack-shaped id of its own (src/teams.ts teamsChannel): its history comes from Teams.
-      ...(slack.config || teamsCfg.config
+      // A Teams or Messages conversation has a Slack-shaped id of its own (src/teams.ts teamsChannel, src/imessage.ts imessageChannel): its
+      // history comes from Teams, or from Messages on this Mac.
+      ...(slack.config || teamsCfg.config || imessageCfg.config
         ? {
             slackHistory: (ch, o) =>
               isTeamsChannel(ch)
                 ? teamsRef.reader ? teamsRef.reader.history(ch, o) : Promise.reject(new Error("Teams is not ready"))
-                : slackRef.reader ? slackRef.reader.history(ch, o) : Promise.reject(new Error("Slack is not ready")),
+                : isImessageChannel(ch)
+                  ? imessageRef.reader ? imessageRef.reader.history(ch, o) : Promise.reject(new Error("Messages is not ready"))
+                  : slackRef.reader ? slackRef.reader.history(ch, o) : Promise.reject(new Error("Slack is not ready")),
+          }
+        : {}),
+      // Chasing what others owe the owner (src/followups/chase.ts): each tone written in a run of its own, from the loop, that person's own
+      // words and what the owner's memory says of them (the tone), held to those facts (src/brief-v2.ts draftFor). Only with the written brief.
+      ...(smartCfg.config
+        ? {
+            chaseDraft: async (o) => {
+              if (!smartRef.brief) return false;
+              const block = o.loop.who && personRef.c ? await personRef.c.about(o.loop.who, { exclude: [o.loop.id] }).catch(() => null) : null;
+              const about = { ...(o.loop.who ? { who: o.loop.who } : {}), where: o.loop.where.label, ...(o.loop.where.channel ? { channel: o.loop.where.channel } : {}) };
+              const task = await smartRef.brief.draftFor({
+                title: o.title, request: o.request, chase: { loop: o.loop.id, tone: o.tone }, about,
+                facts: [...o.facts, ...(block ? [{ label: `People · ${block.name}`, text: block.text }] : [])], ...(block?.own.length ? { allow: block.own } : {}),
+              });
+              return !!task && task.status !== "failed";
+            },
+          }
+        : {}),
+      ...(box
+        ? {
+            mailOf: async (ref: string) => {
+              const m = await box.get(ref);
+              return m ? { address: addressOf(m.from), name: senderName(m.from), subject: m.subject, text: (await box.body(ref).catch(() => "")) || m.preview } : null;
+            },
           }
         : {}),
       // One name per person across Slack, the mail and meetings (src/people-graph.ts).

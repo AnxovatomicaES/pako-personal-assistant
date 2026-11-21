@@ -128,6 +128,13 @@ function personTag(attrs: string, body: string): PersonTag | null {
   return { name, ...(relation ? { relation } : {}), ...(birthday ? { birthday } : {}), ...(likes.length ? { likes } : {}), ...(note ? { notes: [note] } : {}) };
 }
 
+/** A tag left half open or stray, of any kind parseReply reads: never sent to the owner as text. */
+const STRAY_TAG = new RegExp(
+  "</?(remember|forget|call|message|send|email|remind|unremind|slack|book|list|task|done|closed|promise|person|routine|watch|fact|know|health"
+    + "|goal|card|dump|checkin)\\b[^>\\n]{0,300}>?",
+  "gi",
+);
+
 /** Reads the tags out of an answer and removes every trace of them from the text. */
 export function parseReply(raw: string): ParsedReply {
   const remember: string[] = [];
@@ -331,7 +338,7 @@ export function parseReply(raw: string): ParsedReply {
   // (`<rem<remember>ember>` would otherwise leave a live tag behind).
   for (let before = ""; before !== text; ) {
     before = text;
-    text = text.replace(/<\/?(remember|forget|call|message|send|email|remind|unremind|slack|book|list|task|done|person|routine|watch|fact|know|health|goal|card|dump|checkin)\b[^>\n]{0,300}>?/gi, "");
+    text = text.replace(STRAY_TAG, "");
   }
   text = text.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
   return {

@@ -58,6 +58,8 @@ export function createApp(config: AppConfig, env: Env = process.env, local?: Loc
   if (owner?.slackSocket) lifecycle.add(named("slackSocket", owner.slackSocket), afterGuard);
   // The owner's WhatsApp set up in the panel (src/whatsapp-computer.ts): its tunnel comes back with Pako, and goes with it.
   if (whatsappComputer) lifecycle.add(named("whatsappComputer", whatsappComputer), afterGuard);
+  // The phone's server on the home network (src/app/mobile.ts): only when the owner turned it on in Settings.
+  if (owner?.mobile) lifecycle.add(named("mobile", owner.mobile), afterGuard);
   const panelLink = owner?.panelLink ?? null;
   setAppServices(app, { lifecycle, panelLink: () => (panelLink ? panelLink() : null) });
   // The same handles on app.locals, where the tests reach them (typed in src/app/services.ts).

@@ -1,0 +1,35 @@
+{
+  "suite": "followups",
+  "behaviour": "Kofi promises the owner «I'll send you the signed SOW by Thursday 12:00»: his promise to the owner, not the owner's",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0KOFI",
+          "label": "Kofi Mensah (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:00",
+              "who": "Kofi Mensah",
+              "text": "I'll send you the signed SOW by Thursday 12:00"
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"other_promise\", \"title\": \"Kofi sends the signed SOW\", \"detail\": \"Kofi, see the conversation.\", \"who\": \"Kofi\", \"due\": \"2026-11-19 12:00\", \"tz\": \"Europe/Madrid\", \"check\": \"none\", \"reason\": \"document\"}], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "other_promise",
+        "who": "Kofi",
+        "titleHas": [
+          "SOW"
+        ],
+        "dueLocal": "2026-11-19 12:00"
+      }
+    ]
+  }
+}

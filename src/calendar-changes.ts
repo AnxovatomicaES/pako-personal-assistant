@@ -3,7 +3,8 @@
 // three days. The brief's "since your last brief" facts come from this log, and the follow-ups follow a meeting that moved or was called off.
 //
 // A reading that fails, or one that comes back empty while the last one had several events ahead, is never taken for a wave of
-// cancellations: it is skipped, and the snapshot stays as it was.
+// cancellations: it is skipped, and the snapshot stays as it was. A partial one (a calendar could not be read: its events may be missing)
+// still finds what is new or moved, but nothing in it is cancelled: what it does not show stays in the snapshot until a full reading.
 
 import type { CalEvent } from "./calendar.ts";
 import type { Kv } from "./kv.ts";
@@ -116,7 +117,8 @@ export function diffEvents(prev: Snap[], next: Snap[], t: number): CalChange[] {
 
 export function createCalendarChanges(d: {
   kv: Kv | null;
-  read: () => Promise<CalEvent[]>;
+  /** The events; `partial` when some calendar could not be read this time (src/calendar.ts readAll). */
+  read: () => Promise<CalEvent[] | { events: CalEvent[]; partial: boolean }>;
   now?: () => number;
   /** Told of each reading's changes (the follow-ups move or close what was tied to a meeting). */
   onChange?: (changes: CalChange[]) => Promise<unknown>;
@@ -144,8 +146,11 @@ export function createCalendarChanges(d: {
     const run = chain.then(async (): Promise<CalChange[]> => {
       const t = now();
       let read: CalEvent[];
+      let partial = false;
       try {
-        read = await d.read();
+        const got = await d.read();
+        read = Array.isArray(got) ? got : got.events;
+        partial = !Array.isArray(got) && got.partial;
       } catch (err) {
         log.error(`the calendar could not be read for its changes: ${(err as Error).message}`);
         return [];
@@ -161,9 +166,17 @@ export function createCalendarChanges(d: {
         log.warn(`the calendar came back empty with ${ahead} events ahead before: not taken as cancellations`);
         return [];
       }
-      const changes = s.events ? diffEvents(s.events, next, t) : [];
+      // A partial first reading is no snapshot: the calendar that failed would have all its events "new" at the next one.
+      if (partial && !s.events) return [];
+      let changes = s.events ? diffEvents(s.events, next, t) : [];
+      let snap = next;
+      if (partial) {
+        const gone = new Set(changes.filter((c) => c.kind === "cancelled").map((c) => c.id));
+        changes = changes.filter((c) => c.kind !== "cancelled");
+        snap = [...next, ...(s.events ?? []).filter((e) => gone.has(e.id))];
+      }
       const kept = [...s.log.filter((c) => t - c.at < KEEP_MS), ...changes].slice(-LOG_MAX);
-      await save({ events: next, log: kept });
+      await save({ events: snap, log: kept });
       if (changes.length && d.onChange) await d.onChange(changes).catch((err: Error) => log.error(`the changes could not be passed on: ${err.message}`));
       return changes;
     });

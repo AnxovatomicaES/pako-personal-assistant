@@ -18,22 +18,23 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import {
-  findPersonalAgent, listVoiceChoices, syncPersonalAgent,
-  type AgentSyncOptions, type AgentSyncResult, type PersonalEngine,
-} from "./personal-agent.ts";
+import type { AgentSyncOptions, AgentSyncResult, PersonalEngine } from "./personal-agent.ts";
 import { pauseLabel, pausedText, type Control } from "./control.ts";
 import { locale, texts, type Lang } from "./i18n.ts";
 import { ownerTimeZone } from "./region.ts";
-import { addCommunityVoice, call as retellCall, RetellError, searchCommunityVoices } from "./retell.ts";
 import { loadKv, type Kv } from "./kv.ts";
 import { buttonLabels, callWords, cleanCallMessage, PENDING_CALL_MS, type AskResult, type OwnerAsk } from "./whatsapp.ts";
-import { GEMINI_VOICES, loadVoiceBridge, parseResult, type VoiceBridge } from "./voice-bridge.ts";
+import type { VoiceBridge } from "./voice-bridge.ts";
 import { loadVoiceTools, type VoiceTools } from "./voice-tools.ts";
 import { loadMemory, memoryText, type MemoryStore } from "./voice-memory.ts";
-import { ownerPrompt, type OwnerMode } from "./voice-prompt.ts";
-import { voiceLabCsp, voiceLabPage } from "./voice-lab.ts";
+import type { OwnerMode } from "./voice-prompt.ts";
 import { createLog } from "./log.ts";
+
+// The phone providers (LABS: calls, src/labs.ts LAB_FILES): Retell, the personal agent, the LiveKit voice, its prompt and its lab page.
+// Loaded only when a call, a voice or the agent is asked for, so with the lab off (a dry run, no voice) their code is not loaded.
+const retellApi = () => import("./retell.ts");
+const agentApi = () => import("./personal-agent.ts");
+const voiceApi = () => import("./voice-bridge.ts");
 
 const logPersonalCaller = createLog("personal-caller");
 const logVoiceLab = createLog("voice-lab");
@@ -468,7 +469,7 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
   let agent = config.agentId;
   let queue: Promise<unknown> = Promise.resolve();
   const sync: PersonalCaller["sync"] = (o = {}) => {
-    const run = queue.then(() => syncPersonalAgent({ apiKey: retell.apiKey, fetch: f, timeZone: config.timeZone, ...o })).then((r) => {
+    const run = queue.then(async () => (await agentApi()).syncPersonalAgent({ apiKey: retell.apiKey, fetch: f, timeZone: config.timeZone, ...o })).then((r) => {
       agent = r.agentId;
       logPersonalCaller.info(`agent ${r.created ? "created" : "updated"}: ${r.agentId}`);
       return r;
@@ -479,7 +480,7 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
   /** The personal agent only, never the restaurant agent. The first live call creates it when it does not exist yet. */
   const agentId = async (): Promise<string> => {
     if (agent) return agent;
-    const found = await findPersonalAgent(retell.apiKey, f);
+    const found = await (await agentApi()).findPersonalAgent(retell.apiKey, f);
     if (found) return (agent = found);
     return (await sync()).agentId;
   };
@@ -520,6 +521,7 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
     // The same call asked twice within ten minutes has the same key, so Retell can recognise it: a retry after an answer that never came must not ring twice.
     const bucket = Math.floor((deps.now?.() ?? Date.now()) / 600_000);
     const idempotency_key = createHash("sha256").update(`${kind}|${to}|${JSON.stringify(vars)}|${bucket}`).digest("hex").slice(0, 32);
+    const { call: retellCall, RetellError } = await retellApi();
     try {
       return (await retellCall(f, retell.apiKey, "POST", "/v2/create-phone-call", {
         from_number: retell.fromNumber,
@@ -545,6 +547,7 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
     const now = new Intl.DateTimeFormat(locale(), { timeZone, weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })
       .format(deps.now?.() ?? Date.now());
     // The notes only go into a verified call's prompt: an unverified one never sees them, not even to ignore them.
+    const { ownerPrompt } = await import("./voice-prompt.ts");
     const instructions = ownerPrompt({ ownerName: config.ownerName, mode, memory: verified ? memoryText(await memory.read(), timeZone) : "", now, canDelegate: true, verified });
     const opening =
       mode.kind === "message"
@@ -780,7 +783,7 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
       return { ok: true, text: JSON.stringify(wait, null, 2) };
     }
     try {
-      const c = (await retellCall(f, retell.apiKey, "GET", `/v2/get-call/${encodeURIComponent(call_id)}`)) as RetellCall;
+      const c = (await (await retellApi()).call(f, retell.apiKey, "GET", `/v2/get-call/${encodeURIComponent(call_id)}`)) as RetellCall;
       // The Retell account also holds the restaurant calls of the product's customers: only this feature's own calls are readable here.
       if (c.metadata?.source !== "personal-caller") return { ok: false, text: "That call was not placed by this connector." };
       return { ok: true, text: JSON.stringify(summarizeCall(c), null, 2) };
@@ -884,12 +887,15 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
       async () => {
         if (!config.live) return text("Dry run: voices are listed and changed only when PERSONAL_LIVE=1.");
         try {
-          const found = (await listVoiceChoices(retell.apiKey, f)).slice(0, 15);
+          const found = (await (await agentApi()).listVoiceChoices(retell.apiKey, f)).slice(0, 15);
           const voices: Record<string, unknown>[] = found.map((v) => ({
             voice_id: v.voice_id, name: v.voice_name ?? null, accent: v.accent ?? null, gender: v.gender ?? null, preview_audio_url: v.preview_audio_url ?? null,
           }));
           // The LiveKit engine speaks with Gemini's own voices: "gemini-<Name>" for set_voice.
-          if (voiceStack) voices.push(...GEMINI_VOICES.map((g) => ({ voice_id: `gemini-${g}`, name: `${g} (Gemini Live, engine livekit)`, accent: null, gender: null, preview_audio_url: null })));
+          if (voiceStack) {
+            const { GEMINI_VOICES } = await voiceApi();
+            voices.push(...GEMINI_VOICES.map((g) => ({ voice_id: `gemini-${g}`, name: `${g} (Gemini Live, engine livekit)`, accent: null, gender: null, preview_audio_url: null })));
+          }
           return text(JSON.stringify(voices, null, 2));
         } catch (err) {
           return fail(`The voices could not be listed: ${(err as Error).message}`);
@@ -910,7 +916,7 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
       async ({ query }) => {
         if (!config.live) return text("Dry run: the voice library is searched only when PERSONAL_LIVE=1.");
         try {
-          const found = await searchCommunityVoices(retell.apiKey, query, f);
+          const found = await (await retellApi()).searchCommunityVoices(retell.apiKey, query, f);
           const rows = found.slice(0, 15).map((v) => ({
             provider_voice_id: v.provider_voice_id,
             public_user_id: v.public_user_id ?? null,
@@ -943,7 +949,7 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
         const slot = voiceChanges.reserve();
         if (!slot.ok) return fail(slot.reason);
         try {
-          const v = await addCommunityVoice(retell.apiKey, { providerVoiceId: provider_voice_id, ...(public_user_id ? { publicUserId: public_user_id } : {}), name }, f);
+          const v = await (await retellApi()).addCommunityVoice(retell.apiKey, { providerVoiceId: provider_voice_id, ...(public_user_id ? { publicUserId: public_user_id } : {}), name }, f);
           return text(`Added. voice_id=${v.voice_id}, name=${v.voice_name ?? name}, preview=${v.preview_audio_url ?? "none"}. Use set_voice with that voice_id.`);
         } catch (err) {
           voiceChanges.release(slot.id);
@@ -975,7 +981,7 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
         if (!config.live) return text("Dry run: voices are listed and changed only when PERSONAL_LIVE=1.");
         const gemini = /^gemini-(\w+)$/.exec(voice_id)?.[1];
         if (gemini) {
-          const name = GEMINI_VOICES.find((g) => g.toLowerCase() === gemini.toLowerCase());
+          const name = voiceStack ? (await voiceApi()).GEMINI_VOICES.find((g) => g.toLowerCase() === gemini.toLowerCase()) : undefined;
           if (!voiceStack || !name) return fail(voiceStack ? "That is not a Gemini Live voice. Use list_voices." : "The livekit engine is not set up on the server.");
           voiceStack.voice = name;
           return text(`Gemini voice set to ${name}. The next call with the livekit engine uses it.`);
@@ -983,7 +989,7 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
         const slot = voiceChanges.reserve();
         if (!slot.ok) return fail(slot.reason);
         try {
-          const voice = (await listVoiceChoices(retell.apiKey, f)).find((v) => v.voice_id === voice_id);
+          const voice = (await (await agentApi()).listVoiceChoices(retell.apiKey, f)).find((v) => v.voice_id === voice_id);
           if (!voice) {
             voiceChanges.release(slot.id);
             return fail("That is not one of the listed voices. Use list_voices.");
@@ -1123,7 +1129,8 @@ export function mountPersonalCaller(app: Express, o: MountOptions): PersonalCall
   if (o.config.live && !creds) logPersonalCaller.error("PERSONAL_LIVE=1 but RETELL_API_KEY or RETELL_FROM_NUMBER is missing: staying in dry run.");
   const config = o.config.live && !creds ? { ...o.config, live: false } : o.config;
   const kv = o.kv !== undefined ? o.kv : loadKv(process.env.VOICE_RESULTS_URL);
-  const voice = o.voice === undefined ? loadVoiceBridge(process.env, { kv }) : o.voice;
+  // The LiveKit voice stack comes made (src/app/phone.ts, with the calls lab on): absent is none, so its code is not loaded here.
+  const voice = o.voice ?? null;
   const caller = createPersonalCaller({
     ...o,
     config,
@@ -1200,7 +1207,7 @@ export function mountPersonalCaller(app: Express, o: MountOptions): PersonalCall
       res.status(401).type("text").send("Unauthorized");
       return;
     }
-    const result = parseResult(raw);
+    const result = (await voiceApi()).parseResult(raw);
     if (!result) {
       res.status(400).type("text").send("Bad result");
       return;
@@ -1337,12 +1344,13 @@ export function mountPersonalCaller(app: Express, o: MountOptions): PersonalCall
 
   // The voice lab: talk to the assistant from the browser, no phone line in between.
   const labStarts = createLimiter({ dailyCap: 60, minGapSeconds: 5 });
-  app.get("/admin/voice-lab", o.adminLimiter, (req, res) => {
+  app.get("/admin/voice-lab", o.adminLimiter, async (req, res) => {
     if (!o.adminOnly(req, res)) return;
     if (!voice) {
       res.status(404).type("text").send("The LiveKit voice stack is not configured (LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET).");
       return;
     }
+    const [{ voiceLabCsp, voiceLabPage }, { GEMINI_VOICES }] = await Promise.all([import("./voice-lab.ts"), voiceApi()]);
     const nonce = randomBytes(16).toString("base64");
     res.set("Content-Security-Policy", voiceLabCsp(nonce, voice.livekitUrl));
     res.type("html").send(voiceLabPage(nonce, GEMINI_VOICES, voice.voice));
@@ -1380,7 +1388,7 @@ export function mountPersonalCaller(app: Express, o: MountOptions): PersonalCall
     let agentNote: string | undefined;
     if (!agent && apiKey) {
       try {
-        agent = (await findPersonalAgent(apiKey, f)) ?? "";
+        agent = (await (await agentApi()).findPersonalAgent(apiKey, f)) ?? "";
       } catch (err) {
         agentNote = `Could not look the agent up: ${(err as Error).message}`;
       }
@@ -1404,7 +1412,8 @@ export function mountPersonalCaller(app: Express, o: MountOptions): PersonalCall
       return;
     }
     try {
-      res.json({ note: "Open preview_audio_url to listen. Choose one with POST /admin/personal-caller/agent-sync {\"voiceId\":\"...\"}.", voices: await listVoiceChoices(apiKey, f) });
+      const voices = await (await agentApi()).listVoiceChoices(apiKey, f);
+      res.json({ note: "Open preview_audio_url to listen. Choose one with POST /admin/personal-caller/agent-sync {\"voiceId\":\"...\"}.", voices });
     } catch (err) {
       res.status(502).json({ error: (err as Error).message });
     }

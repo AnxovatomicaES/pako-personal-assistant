@@ -54,7 +54,7 @@ import { isLoopback } from "./dashboard.ts";
 import type { DiscoveryStore } from "./discovery.ts";
 import { hostOf } from "./guard-http.ts";
 import type { Lang } from "./i18n.ts";
-import { builtInClients, SLACK_LOOPBACK_PORT, type BuiltInDefaults } from "./connect-clients.ts";
+import { builtInClients, SLACK_LOOPBACK_PORT, SLACK_RELAY_REDIRECT, type BuiltInDefaults } from "./connect-clients.ts";
 import { SLACK_USER_SCOPES } from "./slack.ts";
 import { ZOOM_USER_SCOPES } from "./zoom.ts";
 import { createLog } from "./log.ts";
@@ -209,6 +209,8 @@ export interface ConnectSetupDeps extends RouteAuth {
   defaults?: BuiltInDefaults;
   /** The fixed loopback port the project's Slack app returns to (SLACK_LOOPBACK_PORT; the tests give 0, any free port). */
   slackPort?: number;
+  /** The https page the project's Slack app returns to, which passes the code on to the loopback port (SLACK_RELAY_REDIRECT). */
+  slackRelay?: string;
   /** Who the running Slack and Zoom readers say they are (src/slack.ts and src/zoom.ts account); absent or null: not connected. */
   slackAccount?: () => Promise<{ user: string; team: string } | null> | null;
   zoomAccount?: () => Promise<{ name: string; email: string } | null> | null;
@@ -462,7 +464,8 @@ export function mountConnectSetup(app: Express, d: ConnectSetupDeps | null): voi
     delete last[service];
     const state = base64url(randomBytes(24));
     const { verifier, challenge } = pkcePair();
-    const redirect = redirectUri(service, back);
+    // The project's Slack app returns through its https page (SLACK_RELAY_REDIRECT), which hands the code on to the loopback port.
+    const redirect = service === "slack" && !typed ? (d.slackRelay ?? SLACK_RELAY_REDIRECT) : redirectUri(service, back);
     flows.set(state, { service, clientId: raw, verifier, redirect, at: now() });
     const u = exchanges.urls;
     const q = service === "slack"

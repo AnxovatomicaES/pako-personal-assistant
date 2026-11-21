@@ -1,8 +1,11 @@
 // The checks: whether the owner did it, from their Zoom, their calendar and their own posts in that conversation; what was checked, as the
-// owner reads it, when not. A Teams chat goes through the same path as a Slack one (its ids start with GTEAMS), so the words name neither.
+// owner reads it, when not. A Teams chat goes through the same path as a Slack one (its ids start with GTEAMS), so the words name neither;
+// a Messages chat (src/imessage.ts, ids starting with GIMSG) too, and where it was seen done says Messages.
 
+import { isImessageChannel } from "../imessage.ts";
+import { isFocusBlock } from "../time-to-do.ts";
 import { fold } from "../lists.ts";
-import type { Engine } from "./parts.ts";
+import type { Base, Checks } from "./parts.ts";
 import { CREATED_SLACK_MS, NEAR_TIME_MS, SAME_TIME_MS } from "./limits.ts";
 import { T } from "./texts.ts";
 import type { Loop } from "./types.ts";
@@ -13,8 +16,7 @@ const log = createLog("followups");
 /** `replied`: the owner wrote in that conversation after the ask (not proof, but a reason to speak softly). */
 export type Seen = { done: boolean | null; what: string; said: string; replied?: boolean };
 
-export function mountChecks(fu: Engine): Pick<Engine, "runCheck"> {
-  const { d, lang } = fu;
+export function mountChecks({ d, lang }: Base): Checks {
   const hintWords = (hints: string[]): string[] =>
     [...new Set(hints.flatMap((h) => fold(h).split(/[^\p{L}\p{N}]+/u)).filter((w) => w.length >= 4 && !/^(meeting|reunion|call|llamada|with|para|zoom|https?)$/.test(w)))];
   /**
@@ -53,9 +55,13 @@ export function mountChecks(fu: Engine): Pick<Engine, "runCheck"> {
       }
       if (d.calendar) {
         try {
-          const list = await d.calendar();
-          sawCal = true;
-          if (list.some((e) => matches({ title: e.title, at: e.start, created: e.created, recurring: e.recurring }, around, words, l))) {
+          const got = await d.calendar();
+          const all = Array.isArray(got) ? got : got.events;
+          // Read in part: what is there still counts, but what is not may be in the calendar that failed.
+          sawCal = Array.isArray(got) || !got.partial;
+          // Pako's own focus block (src/time-to-do.ts) sits in free time, often the very time of a meeting still to set up: never that meeting.
+          const seen = all.filter((e) => !isFocusBlock(e.title));
+          if (seen.some((e) => matches({ title: e.title, at: e.start, created: e.created, recurring: e.recurring }, around, words, l))) {
             return { done: true, what: t("calWhere"), said: "" };
           }
         } catch (err) {
@@ -86,17 +92,18 @@ export function mountChecks(fu: Engine): Pick<Engine, "runCheck"> {
     if ("slackReply" in c || "slackPost" in c) {
       const { channel, afterTs, thread } = "slackReply" in c ? c.slackReply : c.slackPost;
       if (!d.slackHistory) return { done: null, what: "", said: t("cantSlack") };
+      const seenIn = t(isImessageChannel(channel) ? "messagesWhere" : "slackWhere");
       try {
         // A thread's replies are not in the channel's history: a check of a thread reads the thread.
         const posts = (await d.slackHistory(channel, { oldest: afterTs, limit: 50, ...(thread ? { thread } : {}) }))
           .filter((p) => p.mine && Number(p.ts) > Number(afterTs));
         if ("slackReply" in c && c.slackReply.file) {
-          return posts.some((p) => p.file) ? { done: true, what: t("slackWhere"), said: "" } : { done: false, what: "", said: t("noFile") };
+          return posts.some((p) => p.file) ? { done: true, what: seenIn, said: "" } : { done: false, what: "", said: t("noFile") };
         }
-        if ("slackReply" in c) return posts.length ? { done: true, what: t("slackWhere"), said: "" } : { done: false, what: "", said: t("noReply") };
+        if ("slackReply" in c) return posts.length ? { done: true, what: seenIn, said: "" } : { done: false, what: "", said: t("noReply") };
         const words = c.slackPost.contains.map(fold);
         const hit = posts.some((p) => words.some((w) => fold(p.text).includes(w)));
-        return hit ? { done: true, what: t("slackWhere"), said: "" } : { done: false, what: "", said: t("noPost", { words: c.slackPost.contains.join(", ") }) };
+        return hit ? { done: true, what: seenIn, said: "" } : { done: false, what: "", said: t("noPost", { words: c.slackPost.contains.join(", ") }) };
       } catch (err) {
         log.error(`Slack could not be read for a check: ${(err as Error).message}`);
         return { done: null, what: "", said: t("cantSlack") };

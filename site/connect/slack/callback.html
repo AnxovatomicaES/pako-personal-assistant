@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<title>Pako: back to your computer</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; font: 16px/1.5 system-ui, sans-serif; background: #0b0d14; color: #e8e8f0; }
+  main { max-width: 32rem; padding: 24px 16px; text-align: center; }
+  a { color: #7c6cff; }
+</style>
+</head>
+<body>
+<main>
+  <p id="say">Taking you back to Pako on your computer…</p>
+  <noscript><p>Turn on JavaScript for this page, then sign in to Slack again from Pako.</p></noscript>
+</main>
+<script>
+// Slack sends the browser here after "Allow", because a Slack app installed in other workspaces must return to an https address.
+// This page passes the sign-in on to Pako on this computer (http://localhost:53682, src/connect-clients.ts, SLACK_RELAY_REDIRECT) and
+// keeps nothing: no request, no storage, no logging. Only code, state and error go on, each checked to be plain text of a sane length.
+// The code alone is worthless: exchanging it needs the PKCE verifier, which never left Pako.
+function pakoTarget(search) {
+  var q = new URLSearchParams(search);
+  var out = new URLSearchParams();
+  var ok = /^[A-Za-z0-9._~-]{1,512}$/;
+  ["code", "state", "error"].forEach(function (k) {
+    var v = q.get(k);
+    if (v && ok.test(v)) out.set(k, v);
+  });
+  if (!out.get("state") || (!out.get("code") && !out.get("error"))) return null;
+  return "http://localhost:53682/connect/slack/callback?" + out.toString();
+}
+if (typeof location !== "undefined" && typeof document !== "undefined") {
+  var to = pakoTarget(location.search);
+  if (to) location.replace(to);
+  else document.getElementById("say").textContent = "This link is not a Slack sign-in. Open Pako and press Connect Slack again.";
+}
+</script>
+</body>
+</html>

@@ -836,6 +836,8 @@ test("at home: a start that ended before any store was made is not a loss; a dam
 async function fakeRedis(seed: Record<string, string> = {}) {
   const data = new Map(Object.entries(seed));
   const server = createTcpServer((sock) => {
+    // A client that hangs up with bytes in flight (a deadline passed under load) leaves a reset here: heard, not an uncaught exception.
+    sock.on("error", () => undefined);
     let buf = Buffer.alloc(0);
     sock.on("data", (c: Buffer) => {
       buf = Buffer.concat([buf, c]);

@@ -57,6 +57,8 @@ export interface Loop {
   /** The time zone the time was said in (America/New_York for "5:15 AM ET"). */
   tz?: string;
   check: Check;
+  /** The owner's own loop: the minutes of focused work it takes, as the extraction guessed (src/time-to-do.ts); absent: a default by kind. */
+  effort?: number;
   status: LoopStatus;
   /** When it is looked at next (ms); 0: no more automatic checks (it stays in PENDING and the brief until closed). */
   nextCheckAt: number;
@@ -74,6 +76,8 @@ export interface Loop {
    * lists these as "Closed for you" and "reopen <words>" brings one back: no close is silent.
    */
   autoClosed?: { at: number; why: string };
+  /** The owner reopened it after Pako closed it: what a check sees is what they said was wrong, so a check never closes it again. */
+  reopened?: true;
   sources: LoopSource[];
   /** Gentle mode (src/gentle.ts): when it was parked; how often it was snoozed; nudges since the owner's last press; the last wording used. */
   parkedAt?: number;
@@ -86,6 +90,37 @@ export interface Loop {
   afterAsked?: boolean;
   /** Gentle mode: its first tiny step (two minutes or less), written from its own facts and checked (src/gentle.ts parseStep). */
   step?: string;
+  /** Someone else's promise, overdue: the reminders Pako wrote for the owner to send them, and when (src/followups/chase.ts). */
+  chase?: LoopChase;
+}
+
+/** A chase's two tones: a gentle reminder and a firm one, both polite. */
+export type ChaseTone = "gentle" | "firm";
+
+/** What a waiting-on loop keeps of its chases (src/followups/chase.ts). */
+export interface LoopChase {
+  /** When the last chase was asked for (its drafts): one at most every two working days. */
+  askedAt?: number;
+  /** When its card went to the owner. */
+  offeredAt?: number;
+  /** When the owner sent one (or copied it to send themselves): the loop waits again from then. */
+  chasedAt?: number;
+  /** "Not needed": no chase is offered for it again. */
+  off?: true;
+  /** The drafts as written and checked ("": that one could not be written). */
+  gentle?: string;
+  firm?: string;
+  /** A loop from an email: the sender's address and name and the email's subject, where a chase goes as a reply. */
+  to?: string;
+  toName?: string;
+  subject?: string;
+}
+
+/** What a press on a chase card asks of the door: a text to tell, a draft to copy, or an email to send through the held path. */
+export interface ChasePress {
+  say: string;
+  copy?: string;
+  send?: { label: string; target: string; subject: string; text: string; key: string };
 }
 
 /** What "Not mine" taught: this kind of thing, from this person and place, is not the owner's. */
@@ -130,6 +165,17 @@ export interface Batch {
   where: Where;
   firstAt: number;
   msgs: BatchMsg[];
+  /** Its job on its way to the inbox (BatchClaim): the batch leaves the store only once that job is known queued. */
+  claim?: BatchClaim;
+}
+
+/**
+ * A due batch's job, named before it is queued: its inbox id and the messages (Slack ts) or emails (refs) it carries. A restart before the
+ * store heard back queues it again under the same id, which the inbox refuses if it already has it: never lost, never twice.
+ */
+export interface BatchClaim {
+  id: string;
+  keys: string[];
 }
 
 /**
@@ -156,6 +202,7 @@ export interface MailBatch {
   where: Where;
   firstAt: number;
   mails: MailSeen[];
+  claim?: BatchClaim;
 }
 
 /** A parked loop the store let go after PARKED_KEEP_MS (45 days): its note in the Parked list's history, kept 90 days. */
@@ -189,6 +236,8 @@ export interface FollowupsConfig {
   batchMs: number;
   /** Minutes of the day [start, end) with no nudges (start > end crosses midnight); null = none. */
   quiet: { start: number; end: number } | null;
+  /** The owner's working day (WORK_HOURS, WORK_DAYS; src/time-to-do.ts loadWorkHours): when a chase may come. Absent: 09:00-18:00, Mon-Fri. */
+  work?: { start: number; end: number; days: number[] };
   /**
    * Email reading jobs a day (FOLLOWUP_MAIL_JOBS_PER_DAY, 40 by default; 0: the mail's own triage lines only, as before). A thread's mail
    * gathered into one job counts once.
@@ -265,8 +314,11 @@ export interface FollowupsDeps {
   notify: (text: string) => Promise<unknown>;
   /** The owner's scheduled Zoom meetings; absent when Zoom is not connected. Throws when Zoom cannot be read now. */
   zoom?: () => Promise<ZoomSeen[]>;
-  /** The calendar's events (src/calendar.ts load); absent when there is no calendar. */
-  calendar?: () => Promise<EventSeen[]>;
+  /**
+   * The calendar's events (src/calendar.ts readAll); absent when there is no calendar. `partial` when a calendar could not be read this time:
+   * a meeting not in it is then not known to be missing.
+   */
+  calendar?: () => Promise<EventSeen[] | { events: EventSeen[]; partial: boolean }>;
   /** A Slack conversation's messages (a thread's, with `thread`), oldest first (src/slack.ts history); absent without Slack. */
   slackHistory?: (channel: string, o: { limit?: number; oldest?: string; thread?: string }) => Promise<SlackLine[]>;
   /**
@@ -288,6 +340,25 @@ export interface FollowupsDeps {
    * buttons (Done, Snooze, Park), and what similar meetings usually took.
    */
   gentle?: () => Promise<GentleRound | null>;
+  /**
+   * A chase for someone else's overdue promise (src/followups/chase.ts): one tone's draft asked of a run of its own (src/brief-v2.ts
+   * draftFor), told back through the door's chaseWritten. False when it could not be asked. Absent: no chases are offered.
+   */
+  chaseDraft?: (o: { loop: Loop; tone: ChaseTone; title: string; facts: { label: string; text: string; at?: number }[]; request: string }) => Promise<boolean>;
+  /** The email a loop came from, as the mailbox keeps it: the sender's address and name, the subject and its words; null when it is gone. */
+  mailOf?: (ref: string) => Promise<{ address: string; name: string; subject: string; text: string } | null>;
+  /**
+   * The beta's measuring audit (src/beta-audit.ts), told of each conversation read: when its job is queued (with the job's material, of which
+   * it keeps a few first lines on this computer only while the tester has opted in) and how many follow-ups it gave. Absent: nothing is told.
+   */
+  audit?: FollowupsAudit;
+}
+
+/** What the beta's audit is told of the conversations the follow-ups read. Called inside the engine's writes: it must not throw or wait. */
+export interface FollowupsAudit {
+  queued(job: Job, material: string[], people: string[]): void;
+  /** `id`: the job's (none for the mail triage's loops or a meeting review); `loops`: follow-ups it made, added to or closed. */
+  answered(o: { id?: string; source: SourceKind; label: string; at: number; loops: number }): void;
 }
 
 /** What a round of nudges reads of gentle mode. */
@@ -372,9 +443,10 @@ export interface FollowupsDoor {
   observeMail?(m: MailSeen, label: string): Promise<boolean>;
   /**
    * A new email from these people: what they owed the owner by mail in that same thread is closed. One in another thread closes nothing (Ana
-   * writing about lunch is not the contract she promised): it is noted on the loop instead.
+   * writing about lunch is not the contract she promised): it is noted on the loop instead. Only from an address known for that person
+   * (`known`: a loop's "Name <address>" lines): a display name alone is anyone's to write.
    */
-  answered?(o: { who: string[]; ref: string; thread?: string }): Promise<number>;
+  answered?(o: { who: string[]; from: string; ref: string; thread?: string; known: (l: Loop) => Promise<string[]> }): Promise<number>;
   /** The loops Pako closed on its own since a moment, newest first: the brief's "Closed for you". */
   closedForYou?(since: number): Promise<{ id: string; title: string; why: string }[]>;
   /** "reopen <words>": a loop Pako closed in the last week back on the open list; what to tell the owner. */
@@ -414,6 +486,12 @@ export interface FollowupsDoor {
   parkedText?(): Promise<string>;
   /** A parked loop back on the open list (by its id, or the words of its title or person): what to tell the owner. */
   unpark?(which: { id: string } | { words: string }): Promise<{ ok: boolean; say: string }>;
+  /** A chase's draft, written (src/brief-v2.ts result): kept on its loop; once both tones are in, the owner gets the card. */
+  chaseWritten?(o: { loop: string; tone: ChaseTone; text: string }): Promise<boolean>;
+  /** A press on a chase card: ch1 the gentle one, ch2 the firm one, ch3 Not needed. */
+  chasePressed?(button: "1" | "2" | "3", id: string): Promise<ChasePress>;
+  /** "chase <words>": the one waiting-on loop those words name, chased now (its drafts asked); what to tell the owner. */
+  chaseNow?(words: string): Promise<{ ok: boolean; say: string }>;
 }
 
 export type PressButton = "1" | "2" | "3" | "4" | "5" | "6" | "7";

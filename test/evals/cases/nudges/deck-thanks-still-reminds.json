@@ -1,0 +1,61 @@
+{
+  "suite": "nudges",
+  "behaviour": "the owner promised the deck by 17:00 and Dana only said «thanks!»: no file in the DM, so the owner is reminded, saying no file was seen",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "timeline": {
+      "until": "2026-11-16 18:00"
+    },
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0DANA",
+          "label": "Dana Whitlock (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:00",
+              "who": "Alex",
+              "text": "I'll send you the onboarding deck by 17:00 today",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"owner_promise\", \"title\": \"Send Dana the onboarding deck\", \"detail\": \"Dana, see the conversation.\", \"who\": \"Dana\", \"due\": \"2026-11-16 17:00\", \"tz\": \"Europe/Madrid\", \"check\": \"slackFile\"}], \"closes\": []}"
+      },
+      {
+        "slack": {
+          "channel": "D0DANA",
+          "label": "Dana Whitlock (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:03",
+              "who": "Dana Whitlock",
+              "text": "thanks!"
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "cards": [
+      {
+        "from": "2026-11-16 10:10",
+        "to": "2026-11-16 10:30",
+        "has": [
+          "deck",
+          "file"
+        ]
+      },
+      {
+        "from": "2026-11-16 15:55",
+        "to": "2026-11-16 17:00",
+        "has": [
+          "deck",
+          "Not long now"
+        ]
+      }
+    ]
+  }
+}

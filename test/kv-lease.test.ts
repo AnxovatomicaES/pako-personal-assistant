@@ -200,6 +200,8 @@ test("lease: the real client sends SET NX PX and EVAL as Redis expects, and read
   const seen: string[][] = [];
   const replies = ["+OK\r\n", ":1\r\n", "$-1\r\n"];
   const srv = createServer((sock) => {
+    // A client that hangs up with bytes in flight (a deadline passed under load) leaves a reset here: heard, not an uncaught exception.
+    sock.on("error", () => undefined);
     let buf = "";
     sock.on("data", (c: Buffer) => {
       buf += c.toString();

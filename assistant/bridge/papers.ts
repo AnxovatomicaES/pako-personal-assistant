@@ -12,7 +12,7 @@ import { T } from "./texts.ts";
 import type { AfterLanguage } from "./parts.ts";
 
 export function mountPapers(b: AfterLanguage) {
-  const { config, log, api, say, run, replyCache, attempts, retryAt, waits, toldAt, ownerLanguage } = b;
+  const { config, log, api, say, run, replyCache, attempts, retryAt, waits, toldAt, hold, ownerLanguage } = b;
   /**
    * A photo or a PDF the owner sent (src/papers.ts): read in a run of its own like an email (the file as a content block, no tools, no
    * conversation, tags dropped), its codes hidden, its summary kept by the server for the context and sent back on the chat it came from. What
@@ -78,18 +78,24 @@ export function mountPapers(b: AfterLanguage) {
       clearTimeout(timer);
       const kind = err instanceof ClaudeError ? err.kind : "other";
       log(`claude failed on a paper (${kind}): ${(err as Error).message.slice(0, 200)}`);
-      if (kind === "limit" || kind === "login") {
-        // As for any message of theirs: said once an hour, and read when Claude works again.
-        if (Date.now() - toldAt[kind] > 3600_000) {
-          toldAt[kind] = Date.now();
-          await say({ text: t(kind) });
-        }
-        retryAt.set(id, Date.now() + (kind === "limit" ? 5 * 60_000 : (config.loginRetryMs ?? 2 * 60_000)));
+      // As for any message of theirs: the limit was told once (runs.ts), a lost login once an hour, and the paper is read when Claude works again.
+      if (kind === "limit") {
+        hold(id);
         return false;
       }
+      if (kind === "login") {
+        if (Date.now() - toldAt.login > 3600_000) {
+          toldAt.login = Date.now();
+          await say({ text: t(kind) });
+        }
+        retryAt.set(id, Date.now() + (config.loginRetryMs ?? 2 * 60_000));
+        return false;
+      }
+      if (notice) await notice; // "One moment…" never arrives after it
       return answer(paperText("failed", ui));
     }
     clearTimeout(timer);
+    if (notice) await notice;
     if (!summary) return answer(paperText("failed", ui));
     try {
       const r = await api("/assistant/paper-summary", { method: "POST", body: { id: p.id, name: p.name, summary } });
@@ -97,7 +103,6 @@ export function mountPapers(b: AfterLanguage) {
     } catch (err) {
       log(`paper summary failed: ${(err as Error).message}`);
     }
-    if (notice) await notice; // "Un momento…" never arrives after the answer
     const head = paperText("head", ui, { name: p.name || paperText(checked.mime === "application/pdf" ? "noName" : "photo", ui) });
     return answer(`${head}\n${summary}`);
   };
