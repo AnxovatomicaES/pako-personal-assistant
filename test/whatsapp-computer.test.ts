@@ -14,8 +14,10 @@ import { join } from "node:path";
 import { test } from "node:test";
 import express from "express";
 import { createApp, loadAppConfig, type LocalContext } from "../src/app.ts";
+import { labsFor } from "../src/app/base.ts";
 import { localGuard } from "../src/guard-http.ts";
 import type { Kv } from "../src/kv.ts";
+import { loadLabCode } from "../src/lab-code.ts";
 import { createLocalChannel, createSettings, loadHome, localEnv, LOCAL_OWNER_NUMBER } from "../src/local.ts";
 import { cloudflaredAsset, createTunnel, installCloudflared, publishedSha256 } from "../src/tunnel.ts";
 import { loadMemory } from "../src/voice-memory.ts";
@@ -547,6 +549,8 @@ test("local Pako: the setup is in its panel, the door's stand-in verify token op
     kv, channel: createLocalChannel({ kv }), bridgeToken: home.bridgeToken, panelSecret: home.panelSecret,
     bridge: { status: () => ({ claude: "ok", running: true }) }, settings,
   };
+  // As src/server.ts does: the code of the labs that are on, before the app.
+  await loadLabCode(labsFor(env, local));
   const app = createApp(loadAppConfig(env), env, local);
   const server = createServer(app);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));

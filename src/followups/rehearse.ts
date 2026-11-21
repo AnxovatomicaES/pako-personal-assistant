@@ -1,7 +1,7 @@
 // The rehearsal (src/rehearsal.ts): what an answer WOULD make; nothing kept, nothing sent.
 
 import { candidate, clean, parseAnswer } from "./answer.ts";
-import type { Engine } from "./parts.ts";
+import type { Base, Engine, Rehearse } from "./parts.ts";
 import { LOOPS_PER_JOB, WHO_MAX } from "./limits.ts";
 import { isOpen } from "./record.ts";
 import type { DraftInput, DryOutcome, Job, Loop, WouldBe } from "./types.ts";
@@ -10,8 +10,13 @@ import type { DraftInput, DryOutcome, Job, Loop, WouldBe } from "./types.ts";
 const checkName = (c: Loop["check"]): WouldBe["check"] =>
   ("slackReply" in c && c.slackReply.file ? "slackFile" : Object.keys(c)[0]) as WouldBe["check"];
 
-export function mountRehearse(fu: Engine): Pick<Engine, "draft" | "dryAnswer"> {
-  const { d, now, lang, read, slackJob, textJob, jobText, keep, ruledOut, runCheck, dueText, sourceText, nudgeText, quietNow } = fu;
+export function mountRehearse(
+  { d, now, lang }: Base,
+  { read, slackJob, textJob, jobText, keep, ruledOut, runCheck, dueText, sourceText, nudgeText, quietNow }: Pick<
+    Engine,
+    "read" | "slackJob" | "textJob" | "jobText" | "keep" | "ruledOut" | "runCheck" | "dueText" | "sourceText" | "nudgeText" | "quietNow"
+  >,
+): Rehearse {
   /** A rehearsal's job: the text a real one would carry, built the same way; nothing kept, nothing queued. */
   const draft = async (o: DraftInput): Promise<{ job: Job; text: string }> => {
     const made = o.source === "slack" ? await slackJob(o) : textJob(o);

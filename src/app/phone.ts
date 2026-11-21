@@ -1,6 +1,7 @@
 // Wires the owner's phone line (src/personal-caller.ts) and reads the WhatsApp door's settings (stand-ins on a computer).
 
-import { type Booking, type BookingRequest, registerBookingTools } from "../booking.ts";
+import type { Booking, BookingRequest } from "../booking.ts";
+import { labCode } from "../lab-code.ts";
 import { LOCAL_OWNER_NUMBER } from "../local.ts";
 import { createLog } from "../log.ts";
 import { mountPersonalCaller } from "../personal-caller.ts";
@@ -18,9 +19,10 @@ export function wirePhone(ctx: OwnedCore) {
   const askRef: { ask: ((a: OwnerAsk) => Promise<AskResult>) | null } = { ask: null };
   const personal = mountPersonalCaller(app, {
     config: config.personalCaller,
-    // LABS: calls. Off: no Retell credentials (the line stays a dry run) and no LiveKit voice stack.
+    // LABS: calls. Off: no Retell credentials (the line stays a dry run), no LiveKit voice stack, and their code is not loaded
+    // (src/lab-code.ts). On: the voice stack from LIVEKIT_* (null without them), in the same store as the line's notes.
     retell: labs.on("calls") ? config.retell : { apiKey: "", fromNumber: "" },
-    ...(labs.on("calls") ? {} : { voice: null }),
+    voice: labs.on("calls") ? labCode("calls").loadVoiceBridge(process.env, { kv }) : null,
     adminOnly,
     adminLimiter,
     control,
@@ -29,7 +31,8 @@ export function wirePhone(ctx: OwnedCore) {
     quiet: !!local,
     askOwner: (a) => (askRef.ask ? askRef.ask(a) : Promise.resolve({ ok: false, why: "This server has no WhatsApp set up to send the card to." })),
     extraTools: (server) => {
-      if (bookingRef.booking && bookingRef.start) registerBookingTools(server, bookingRef.booking, bookingRef.start, ownerZone);
+      // A booking exists only while the booking lab is on, so its code is loaded (src/lab-code.ts).
+      if (bookingRef.booking && bookingRef.start) labCode("booking").registerBookingTools(server, bookingRef.booking, bookingRef.start, ownerZone);
     },
   });
   // The owner's WhatsApp door: off unless the three Meta values are set (assistant/README.md).

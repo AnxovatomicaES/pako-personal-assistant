@@ -366,6 +366,18 @@ test("anchors: “your call starts in 5” only when nothing shows the owner saw
   assert.equal(anchorsDue([e], start - 5 * MIN, { ...base, lastOwner: 0, sent: [...sent, { key: `e1@${start}`, kind: "five", at: start - 6 * MIN }] }).length, 0);
 });
 
+test("anchors: a lead of six minutes or less (the panel allows 2) still gives its one anchor, and no “in 5” after it", () => {
+  const start = Date.parse("2026-11-18T15:00:00Z");
+  const e = ev({ start, join: "https://zoom.us/j/1" });
+  const base = { timeZone: "Europe/London", leadOnlineMin: 5, leadPlaceMin: 25, quiet: null, seen: [] as string[], sent: [] as { key: string; kind: "lead" | "five"; at: number }[] };
+  // The owner wrote a few minutes ago: no "in 5" would come, so the wrap-up they asked for is the only anchor.
+  const a = anchorsDue([e], start - 5 * MIN, { ...base, lastOwner: start - 8 * MIN });
+  assert.deepEqual(a.map((x) => x.kind), ["lead"]);
+  const sent = [{ key: `e1@${start}`, kind: "lead" as const, at: start - 5 * MIN }];
+  assert.equal(anchorsDue([e], start - 4 * MIN, { ...base, lastOwner: 0, sent }).length, 0, "one anchor, not two in a row");
+  assert.deepEqual(anchorsDue([e], start - 2 * MIN, { ...base, leadOnlineMin: 2, lastOwner: 0 }).map((x) => x.kind), ["lead"]);
+});
+
 test("anchors' clock: off sends nothing; on, one card per anchor with On it; pressing it stops the “in 5”; past meetings' lengths are learnt", async () => {
   const { kv } = memKv();
   const clock = { now: Date.parse("2026-11-18T14:50:00Z") };

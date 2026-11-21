@@ -52,6 +52,9 @@ enum PakoMessage: Equatable {
     case openWindow(String)
     /// The connections page's "use this": calendars (with their ids), contacts or zoomRecordings. Answered pakoUsed({what, ok, count?}).
     case use(what: String, ids: [String])
+    /// Apple Reminders (src/reminders-local.ts): on (macOS asks first, then Pako's lists are kept in step) or off. On again: in step now.
+    /// Answered pakoReminders({ok, on, access, error?}).
+    case reminders(on: Bool)
     /// The welcome's word, older than the typed messages: {lang} and {welcomed}.
     case panelWord
 }
@@ -80,6 +83,7 @@ func parsePakoMessage(_ body: Any) -> PakoMessage? {
     case "openURL": return (d["url"] as? String).flatMap(allowedOpenURL).map { .openURL($0) }
     case "openSettingsWindow": return .openSettingsWindow
     case "calendarPush": return .calendarPush
+    case "reminders": return (d["on"] as? Bool).map { .reminders(on: $0) }
     case "openWindow":
         guard let path = d["path"] as? String, isSettingsPath(path) else { return nil }
         return .openWindow(path)
@@ -96,10 +100,10 @@ func parsePakoMessage(_ body: Any) -> PakoMessage? {
 
 /// The app schemes the panel may open (the person's own Slack, Telegram and Zoom apps).
 let openableSchemes = ["slack", "tg", "zoommtg"]
-/// The panes of System Settings the panel may open: Privacy & Security's Calendars, Contacts, Automation and Files ones, by both names
+/// The panes of System Settings the panel may open: Privacy & Security's Calendars, Reminders, Contacts, Automation and Files ones, by both names
 /// macOS has had for them (System Preferences before Ventura, System Settings after).
 let openablePanes = ["com.apple.preference.security", "com.apple.settings.PrivacySecurity.extension"]
-let openablePrivacy = ["Privacy_Calendars", "Privacy_Contacts", "Privacy_Automation", "Privacy_FilesAndFolders", "Privacy_AllFiles"]
+let openablePrivacy = ["Privacy_Calendars", "Privacy_Reminders", "Privacy_Contacts", "Privacy_Automation", "Privacy_FilesAndFolders", "Privacy_AllFiles"]
 
 /// A link the panel asked to open, when it may be: https to any site, the three apps' schemes, or one of the privacy panes. Nothing else
 /// (no file:, no http:, no other app's scheme, no other System Settings pane).
@@ -423,6 +427,16 @@ func notesLinks(_ notes: String) -> String {
     let re = try! NSRegularExpression(pattern: "https?://[^\\s\"'<>)\\]]+", options: [.caseInsensitive])
     let links = re.matches(in: notes, range: NSRange(notes.startIndex..., in: notes)).compactMap { Range($0.range, in: notes).map { String(notes[$0]) } }
     return links.filter { $0.count <= 600 }.prefix(5).joined(separator: " ")
+}
+
+/// The event a calendar write means (Discovery.swift, applyCalendarWrite): the occurrence of its event that starts at `at` (`near`: that
+/// event's occurrences around then), within a minute. None there: the event by its identifier (`byID`), only when it does not repeat. For a
+/// repeating event EventKit answers the series' first occurrence, never the one meant: moving or deleting it would change another day.
+func calendarWriteTarget<E>(at: Date?, near: [E], byID: E?, start: (E) -> Date, repeats: (E) -> Bool) -> E? {
+    guard let at = at else { return byID }
+    if let e = near.first(where: { abs(start($0).timeIntervalSince(at)) < 60 }) { return e }
+    guard let e = byID, !repeats(e) else { return nil }
+    return e
 }
 
 /// What is posted to /panel/api/calendar/local: the chosen calendars and their events.

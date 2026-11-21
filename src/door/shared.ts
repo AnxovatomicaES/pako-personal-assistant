@@ -73,7 +73,8 @@ export function chunkText(text: string, max = WHATSAPP_TEXT_MAX): string[] {
     let cut = rest.lastIndexOf("\n\n", max);
     if (cut < max / 2) cut = rest.lastIndexOf("\n", max);
     if (cut < max / 2) cut = rest.lastIndexOf(" ", max);
-    if (cut < max / 2) cut = max;
+    // Never between the two halves of one character (an emoji): half of one is refused, or shown as a broken sign.
+    if (cut < max / 2) cut = /[\uD800-\uDBFF]/.test(rest[max - 1]!) ? max - 1 : max;
     out.push(rest.slice(0, cut).trim());
     rest = rest.slice(cut).trim();
   }

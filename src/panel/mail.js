@@ -58,9 +58,9 @@ export function age(at, now = Date.now()) {
   const d = Math.round(hrs / 24);
   return d === 1 ? "yesterday" : `${d} days`;
 }
-/** A due time in words: "overdue", "today 17:00", "Fri 20 Nov". */
-export function dueWords(at, now = Date.now(), locale = localeOf()) {
-  if (at < now) return "overdue";
+/** A due time in words: "overdue" (in gentle mode "time passed", no words of shame), "today 17:00", "Fri 20 Nov". */
+export function dueWords(at, now = Date.now(), locale = localeOf(), gentle = false) {
+  if (at < now) return gentle ? "time passed" : "overdue";
   const day = (t) => new Date(t).toDateString();
   const time = new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(at);
   if (day(at) === day(now)) return `today ${time}`;
@@ -118,6 +118,9 @@ function drawNeeds() {
     mount.replaceChildren(card);
   }
   const rows = v.needs.rows.filter((r) => !st.hidden.has(r.id));
+  // Gentle mode: a time that passed is said plainly and never in red (src/gentle.ts).
+  const gentle = v.gentle === true;
+  const late = (r) => !!r.overdue && !gentle;
   const more = v.needs.more;
   if (!rows.length && !more) {
     card.classList.add("calm");
@@ -128,14 +131,14 @@ function drawNeeds() {
   card.classList.remove("calm");
   card.replaceChildren(
     h("div", { class: "card-head" }, h("h2", {}, icon("bell-ring"), h("span", {}, "Needs you"))),
-    h("ul", { class: "list needs-list" }, ...rows.map((r) => h("li", { class: `item needs-row${r.overdue ? " overdue" : ""}` },
+    h("ul", { class: "list needs-list" }, ...rows.map((r) => h("li", { class: `item needs-row${late(r) ? " overdue" : ""}` },
       h("button", { type: "button", class: "needs-open", onclick: () => openReader(r.id), "aria-label": `Open the mail from ${r.from}` },
         h("div", { class: "row" }, h("span", { class: "who" }, r.from), h("span", { class: `tag t-${r.tag}` }, TAG[r.tag] ?? r.tag),
           h("span", { class: "ago" }, age(r.at))),
         h("div", { class: "subj" }, r.subject || "(no subject)"),
         // Only the triage's own line: without one the subject is all there is.
         r.ask ? h("div", { class: "what" }, r.ask) : null,
-        r.dueAt ? h("div", { class: `due${r.overdue ? " late" : ""}` }, icon("clock"), dueWords(r.dueAt)) : null),
+        r.dueAt ? h("div", { class: `due${late(r) ? " late" : ""}` }, icon("clock"), dueWords(r.dueAt, Date.now(), localeOf(), gentle)) : null),
       h("button", { type: "button", class: "btn done-btn", onclick: () => markDone(r.id), "aria-label": `Mark the mail from ${r.from} as done` }, icon("check"), "Done")))),
     // replaceChildren writes a null as the word "null": nothing at all when there is no more.
     ...(more ? [h("p", { class: "needs-more" }, h("a", { href: "#h-mail", onclick: () => pickTab("needs_you") }, `+${more} more · open Mail`))] : []),

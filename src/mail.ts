@@ -371,12 +371,13 @@ export const withCategory = (r: RecentMail): RecentMail & { category: MailCatego
 const accountTag = (a: MailAccount | undefined, l: Lang): string => (a === "trabajo" ? T(l)("work") : a === "personal" ? T(l)("personal") : "");
 
 /**
- * The seen list, cut to its last SEEN_KEEP ids of each kind: Pako's own inbox (AgentMail ids), the owner's mailbox read by IMAP ("imap:") and
- * the same-email keys of both ("mid:"). One shared cut let a busy IMAP mailbox push out the few AgentMail ids that its listing of the latest 25
- * still shows every few minutes, and those weeks-old emails were passed on again.
+ * The seen list, cut to its last SEEN_KEEP ids of each kind: Pako's own inbox (AgentMail ids), the owner's mailbox read by IMAP ("imap:") or
+ * from Apple Mail on this Mac ("applemail:", src/apple-mail.ts) and the same-email keys of all of them ("mid:"). One shared cut let a busy
+ * IMAP mailbox push out the few AgentMail ids that its listing of the latest 25 still shows every few minutes, and those weeks-old emails
+ * were passed on again.
  */
 const keepSeen = (seen: string[]): string[] => {
-  const kind = (id: string): string => (id.startsWith("imap:") ? "imap" : id.startsWith("mid:") ? "mid" : "box");
+  const kind = (id: string): string => (id.startsWith("imap:") ? "imap" : id.startsWith("applemail:") ? "applemail" : id.startsWith("mid:") ? "mid" : "box");
   const left = new Map<string, number>();
   const out: string[] = [];
   for (let i = seen.length - 1; i >= 0; i--) {

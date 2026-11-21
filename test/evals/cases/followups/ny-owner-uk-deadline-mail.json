@@ -1,0 +1,37 @@
+{
+  "suite": "followups",
+  "behaviour": "a New York owner is asked by email for the signed terms «by 3pm UK time on Friday»: due Friday 10:00 New York, kept as London time",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "timeZone": "America/New_York",
+    "ownerName": "Jordan",
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-16 08:30",
+          "ref": "m-olivia",
+          "from": "Olivia Grant <olivia@harbourline.example>",
+          "to": "Jordan <jordan@fieldstone.example>",
+          "subject": "Terms",
+          "category": "needs_you",
+          "messageId": "<og1@harbourline.example>",
+          "body": "Hi Jordan,\n\nCould you send the signed terms by 3pm UK time on Friday?\n\nBest,\nOlivia"
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"request_to_owner\", \"title\": \"Send Olivia the signed terms\", \"detail\": \"Olivia, see the conversation.\", \"who\": \"Olivia\", \"due\": \"2026-11-20 15:00\", \"tz\": \"Europe/London\", \"check\": \"none\", \"reason\": \"email\"}], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Olivia",
+        "titleHas": [
+          "terms"
+        ],
+        "dueLocal": "2026-11-20 10:00",
+        "tz": "Europe/London"
+      }
+    ]
+  }
+}

@@ -1,13 +1,20 @@
 // Every run of Claude goes through here: counted by kind, held back by the budget, and how Claude is doing reported to the server.
 
-import { LIGHT, usageLine, WRITING, type RunKind, type Usage } from "../budget.ts";
+import { isOwnerRun, LIGHT, resetAt, usageLine, WRITING, type RunKind, type Usage } from "../budget.ts";
 import { ClaudeError, modelUnavailable, type ClaudeResult, type RunConfig } from "./claude.ts";
-import type { CliCompat } from "./cli-version.ts";
+import { overloaded } from "./claude-errors.ts";
+import { cliModelsPath, createCliModels, neededVersion } from "./cli-models.ts";
+import { compareVersions, type CliCompat } from "./cli-version.ts";
 import type { ClaudeHealth } from "./core.ts";
+import { limitText, limitWait } from "./limits.ts";
 import type { AfterCore } from "./parts.ts";
+import { T } from "./texts.ts";
+
+/** Claude overloaded for this long (and no message of the owner's waiting on it) before the owner is told: most overloads pass sooner. */
+const BUSY_TELL_MS = 10 * 60_000;
 
 export function mountRuns(b: AfterCore) {
-  const { config, log, budget, warm, runOnce, api } = b;
+  const { config, log, budget, warm, runOnce, api, say, retryAt } = b;
   /** Lost logins in a row: tried again soon at first (the person is signing in), then no more often than every two minutes. */
   let loginFails = 0;
   // How Claude is doing, as its last run found it, and what the server last took: on a computer (local mode) the chat's banner then says what
@@ -47,12 +54,30 @@ export function mountRuns(b: AfterCore) {
   // it knows of the body (the version), and one that takes no `cli` alone answers 400: not asked again until either changes.
   let version: { sha: string; committedAt: number; updatedAt?: number; autoupdate: string } | null = null;
   let cli: CliCompat | null = null;
+  // The models this Claude Code is too old to run (cli-models.ts), kept for its version: they go on the Health card with it.
+  const cliModels = createCliModels({ file: cliModelsPath(config.stateDir), log });
+  /** Which Claude Code this is as the Health card shows it: with what it is too old to run, when it refused a model ("behind"). */
+  const cliShown = (): CliCompat | null => {
+    const gap = cliModels.gap();
+    if (!gap) return cli;
+    const needs = neededVersion(gap, compareVersions);
+    const which = cli?.version || gap.version;
+    const note = `Claude Code ${which || "(version unknown)"} is older than ${Object.keys(gap.models).join(" and ")} needs`
+      + `${needs ? ` (${needs} or newer)` : ""}: Pako writes with another model meanwhile. To fix: run claude update, or update the Claude desktop app`;
+    // A failed self-test keeps its own status and sentence first: both are said.
+    if (cli?.status === "failed") return { ...cli, note: `${cli.note ?? ""} ${note}`.trim() };
+    return { version: which, status: "behind", note };
+  };
   let versionSent = "";
-  const versionKey = (): string => (version ? `${version.sha}|${version.updatedAt ?? 0}|${version.autoupdate}` : "") + (cli ? `|${cli.version}|${cli.status}` : "");
+  const versionKey = (): string => {
+    const c = cliShown();
+    return (version ? `${version.sha}|${version.updatedAt ?? 0}|${version.autoupdate}` : "") + (c ? `|${c.version}|${c.status}|${c.note ?? ""}` : "");
+  };
   const reportVersion = async (): Promise<void> => {
     const key = versionKey();
-    if ((!version && !cli) || versionSent === key) return;
-    const body = { ...(version ? { version } : {}), ...(cli ? { cli } : {}) };
+    const shown = cliShown();
+    if ((!version && !shown) || versionSent === key) return;
+    const body = { ...(version ? { version } : {}), ...(shown ? { cli: shown } : {}) };
     try {
       const r = await api("/assistant/health", { method: "POST", body, timeoutMs: 5000 });
       // An older server, or one that takes no reports from here: not asked again until the version changes.
@@ -85,11 +110,78 @@ export function mountRuns(b: AfterCore) {
       /* sent again on a later round */
     }
   };
+  // Claude's limit, told once: the first run that finds it (the owner's or a background one) says what is paused, what keeps working and when
+  // what waits is done; the first run that works again says "back" and lets the held items go at once. Whether it was told is kept by the
+  // budget (budget.json), so a restart neither says it again nor forgets the "back". The items held meanwhile stay in the server's inbox,
+  // unacknowledged: nothing is dropped, and each is tried again after a wait that grows (limitWait), never later than the named reset.
+  /** Items held for the limit, by id: how many times each met it. */
+  const held = new Map<string, number>();
+  /** Since when Claude has been overloaded (not this plan's limit); 0 when it is not. */
+  let busySince = 0;
+  /** An item that met Claude's limit (or whose run the pause held back) waits: until `until` when given, else the growing wait. */
+  const hold = (id: string, until?: number): void => {
+    const tries = (held.get(id) ?? 0) + 1;
+    held.set(id, tries);
+    const now = Date.now();
+    retryAt.set(id, until && until > now ? until : now + limitWait(tries, budget.usage().pausedUntil, now));
+  };
+  const tellLimit = async (kind: RunKind, err: ClaudeError): Promise<void> => {
+    if (budget.limitTold()) return;
+    const now = Date.now();
+    const busy = overloaded(err);
+    if (busy) {
+      busySince ||= now;
+      // An overload that may pass in a minute is said only when the owner waits on it, or once it has lasted.
+      if (!isOwnerRun(kind) && now - busySince < BUSY_TELL_MS) return;
+    }
+    const named = err.resetsAt && err.resetsAt > now ? err.resetsAt : resetAt(err.message, now);
+    if (await say({ text: limitText({ resetsAt: named, busy, now }), notice: true })) {
+      budget.markLimitTold();
+      log(`told the owner Claude is ${busy ? "overloaded" : "at its limit"}${named ? ` (resets ${new Date(named).toISOString()})` : ""}`);
+    }
+  };
+  /** The "back" note on its way: two runs that end together say it once. */
+  let backing = false;
+  const tellBack = async (): Promise<void> => {
+    busySince = 0;
+    const told = budget.working();
+    // The held items go on the next round, in their order, instead of waiting out their backoff.
+    for (const id of held.keys()) retryAt.delete(id);
+    held.clear();
+    if (!told || backing) return;
+    // The limit's notice promised it: the told mark is let go only once the note went, and a note not taken is said by the next run that works.
+    backing = true;
+    try {
+      if (await say({ text: T()("back"), notice: true })) {
+        budget.backTold();
+        log("told the owner Claude answers again");
+      }
+    } finally {
+      backing = false;
+    }
+  };
+  /** The refused models whose skip was logged by this process: once each, not for every message. */
+  const skipSaid = new Set<string>();
+  /** A model this Claude Code is too old for, told once for its version (kept across restarts, cli-models.ts): what runs instead, and the fix. */
+  const tellCliModel = async (model: string, using: string, err: ClaudeError): Promise<void> => {
+    if (cliModels.told()) return;
+    const t = T();
+    const text = t("cliModel", {
+      using: using || t("cliModelDefault"), model, version: err.cliVersion || cli?.version || t("cliModelYours"),
+      needs: err.needsCli ? t("cliModelNeeds", { version: err.needsCli }) : "",
+    });
+    if (await say({ text, notice: true })) {
+      cliModels.markTold();
+      log(`told the owner Claude Code is too old for ${model}`);
+    }
+  };
   /**
    * Every run of Claude (an answer, an email, a meeting, a Slack search) says whether Claude is signed in and within its limit, and is counted
    * by kind. The owner's turns of their conversation go to the process kept up for it (createWarmClaude), the rest to a run of their own.
    * The writing kinds (the brief, a draft) run on the writing model; when the account cannot use it (not in the plan, not there, its own
    * limit), the same run goes again on the general model at once, and the writing model is set aside for the rest of the day, said once.
+   * A model this Claude Code is too old to run (a 400 that names the version needed) goes the same way, to the general model and then to
+   * Claude Code's own default (no --model): each model is tried once, and one refused so is skipped until Claude Code changes version.
    */
   const run = async (kind: RunKind, prompt: string, c: RunConfig, sessionId?: string): Promise<ClaudeResult> => {
     budget.started(kind);
@@ -98,30 +190,53 @@ export function mountRuns(b: AfterCore) {
       warm && config.warmMs !== 0 && (kind === "message" || kind === "routine") ? warm.run(prompt, rc, sessionId) : runOnce(prompt, rc, sessionId);
     try {
       const strong = writingModel(kind, c.model);
+      // The models to try, in order, each once: the writing model, the general one, Claude Code's default ("": no --model). One this Claude
+      // Code refused as too new is left out. Only that refusal, or the account's for the writing model, moves on to the next: any other
+      // failure is the run's. The default ("") is never refused so, and is always last.
+      const ladder = [...new Set([...(strong ? [strong] : []), c.model ?? "", ""])].filter((m) => !cliModels.refused(m));
+      const configured = strong ?? c.model ?? "";
+      if (configured && cliModels.refused(configured) && !skipSaid.has(configured)) {
+        skipSaid.add(configured);
+        log(`${kind}: this Claude Code is too old for ${configured}: ${ladder[0] || "the default model"} runs instead (said once)`);
+      }
       let result: ClaudeResult | null = null;
-      let model = c.model;
-      if (strong) {
+      let model = ladder[0] ?? "";
+      for (let i = 0; i < ladder.length && !result; i++) {
+        const m = ladder[i]!;
         try {
-          result = await once({ ...c, model: strong });
-          model = strong;
+          result = await once({ ...c, model: m });
+          model = m;
         } catch (err) {
-          if (!(err instanceof ClaudeError) || !modelUnavailable(err.message, strong, err)) throw err;
+          if (!(err instanceof ClaudeError) || i === ladder.length - 1) throw err;
+          if (err.kind === "model-needs-newer-cli" && m) {
+            if (cliModels.refuse(m, err.needsCli, err.cliVersion || cli?.version)) {
+              log(`${kind}: Claude Code ${err.cliVersion ?? cli?.version ?? ""} is too old for ${m} (needs ${err.needsCli ?? "a newer one"}): `
+                + `${ladder[i + 1] || "the default model"} runs instead until Claude Code is updated`);
+            }
+            await tellCliModel(m, ladder[i + 1] ?? "", err);
+            continue;
+          }
+          if (m !== strong || !modelUnavailable(err.message, strong, err)) throw err;
           if (budget.modelOff(strong)) {
             log(`${kind}: ${strong} is not available to this account (${err.message.slice(0, 120)}): ${c.model || "the default model"} runs instead until tomorrow`);
           }
         }
       }
-      result ??= await once(c);
+      if (!result) throw new ClaudeError("no model left to try", "other");
       health = "ok";
       loginFails = 0;
-      budget.working();
+      await tellBack();
       budget.answeredBy(model);
-      return strong ? { ...result, model } : result;
+      return strong || model !== (c.model ?? "") ? { ...result, model } : result;
     } catch (err) {
       // A missing command is not reported as the health: the server finds that itself (src/local.ts, BridgeStatus "missing").
       if (err instanceof ClaudeError && (err.kind === "login" || err.kind === "limit")) health = err.kind;
-      // Any run that finds the limit (the owner's too) stops the background work until it resets.
-      if (err instanceof ClaudeError && err.kind === "limit") budget.limited(err.message);
+      // Any run that finds the limit (the owner's too) stops the background work until it resets, and the owner hears it once.
+      if (err instanceof ClaudeError && err.kind === "limit") {
+        budget.limited(err.message, err.resetsAt);
+        await tellLimit(kind, err);
+        void reportUsage(true);
+      }
       throw err;
     } finally {
       if (health !== reported) await reportHealth();
@@ -164,7 +279,7 @@ export function mountRuns(b: AfterCore) {
   /** Whether how Claude is doing changed since the server last took it: tick reports it then. */
   const healthDue = (): boolean => health !== reported;
   /** Whether the version this computer runs is still to be told: tick reports it then. */
-  const versionDue = (): boolean => (!!version || !!cli) && versionSent !== versionKey();
+  const versionDue = (): boolean => (!!version || !!cliShown()) && versionSent !== versionKey();
   /** What this computer runs (assistant/update.ts), told to the server on the next round. */
   const setVersion = (v: { sha: string; committedAt: number; updatedAt?: number; autoupdate: string }): void => {
     version = v;
@@ -172,8 +287,10 @@ export function mountRuns(b: AfterCore) {
   /** Which Claude Code this is and how it did in the self-test (cli-probe.ts), told to the server with the version. */
   const setCli = (c: CliCompat): void => {
     cli = c;
+    // A new version of Claude Code: the models the last one was too old for are tried again.
+    cliModels.setVersion(c.version);
   };
-  return { reportHealth, reportVersion, reportUsage, run, background, rehearsal, loginWait, healthDue, versionDue, setVersion, setCli };
+  return { reportHealth, reportVersion, reportUsage, run, background, rehearsal, loginWait, healthDue, versionDue, setVersion, setCli, hold };
 }
 
 export type Runs = ReturnType<typeof mountRuns>;

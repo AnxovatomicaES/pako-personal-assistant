@@ -547,3 +547,7 @@ body.ready .card-slot:nth-child(8) { animation-delay: 280ms; } body.ready .card-
 .labs-note svg.lucide { width: 16px; height: 16px; color: var(--warn); flex: none; }
 .labs-card .muted { color: var(--text-2); }
 .labs-card .small { font-size: 13px; }
+/* Settings › General › "Use on my phone" (mobile.js): the pairing QR code on white (a camera reads it in dark mode too), and its code. */
+.phone-pair img { display: block; width: 220px; max-width: 100%; height: auto; background: #fff; border-radius: 12px; padding: 8px; }
+.phone-code { font-size: 1.4rem; letter-spacing: .12em; margin: 10px 0 4px; }
+.phone .small { font-size: 13px; }

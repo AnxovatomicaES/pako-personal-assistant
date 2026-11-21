@@ -25,6 +25,13 @@ test("parseZohoTime: UTC, an offset, a local time in the event's zone, an all-da
   assert.equal(parseZohoTime("mañana", "Europe/Madrid"), null);
 });
 
+test("parseZohoTime: on a day whose clocks change at midnight (Chile in September) an all-day event starts at the first hour that exists", () => {
+  // 6 Sep 2026 in Santiago has no 00:00: the clocks go from 00:00 to 01:00. The day starts at 01:00 (04:00 UTC); it was dropped.
+  assert.deepEqual(parseZohoTime("20260906", "America/Santiago"), { at: Date.parse("2026-09-06T04:00:00Z"), allDay: true });
+  // A time in the hour that is skipped is read with the offset before it, as an ICS feed's is: 00:30 is 01:30.
+  assert.deepEqual(parseZohoTime("20260906T003000", "America/Santiago"), { at: Date.parse("2026-09-06T04:30:00Z"), allDay: false });
+});
+
 test("overlaps: timed events that cross; all-day ones never", () => {
   const e = (id: string, h1: number, h2: number, allDay = false): CalEvent => ({ id, title: id, start: h1 * 3600_000, end: h2 * 3600_000, allDay, calendar: "" });
   assert.deepEqual([...overlaps([e("a", 9, 10), e("b", 9.5, 11), e("c", 11, 12), e("d", 0, 24, true)])].sort(), ["a", "b"]);

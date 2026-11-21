@@ -1,5 +1,5 @@
 // Wires the panel's connection pages: status and details, guided connects (mail, OAuth, Teams, Slack, Zoom), what the Mac found
-// (discovery, contacts, its calendar and writes), the People directory, and the settings, labs, demo, autostart, data and move panels.
+// (discovery, contacts, its calendar and writes, Apple Reminders), the People directory, and the settings, labs, demo, autostart, data and move panels.
 
 import { mountAutostartPanel } from "../autostart-panel.ts";
 import { mountLocalCalendarPanel } from "../calendar-local.ts";
@@ -19,7 +19,10 @@ import { pakoHome } from "../local.ts";
 import { mountMailConnect } from "../mail-autoconfig.ts";
 import { mountMailOAuth } from "../mail-oauth.ts";
 import { mountMovePanel } from "../move.ts";
+import { createRemindersStore, mountRemindersPanel } from "../reminders-local.ts";
 import { createHiddenPeople, mountPeopleDirectory } from "../people-directory.ts";
+import { mountAppleMailPanel } from "../apple-mail.ts";
+import { mountImessagePanel } from "../imessage.ts";
 import { mountSettingsPage } from "../settings-page.ts";
 import { mountTeamsConnect } from "../teams-connect.ts";
 import { createZoomLocal } from "../zoom-local.ts";
@@ -27,11 +30,14 @@ import type { AfterTelegram } from "./context.ts";
 
 export function wireConnectPanels(ctx: AfterTelegram) {
   const {
-    app, env, local, uiLang, labs, demo, dog, kv, control, timeZone, startName, givenName, mail, imap, imapRef, box, slackRef, zoomRef, teamsRef,
+    app, env, local, uiLang, labs, demo, dog, kv, control, timeZone, startName, givenName, mail, imap, imapRef, appleMailRef, box, slackRef, zoomRef, teamsRef, imessageRef,
     reviewRef, macCal, calWrites, cal, calOn, calRef, icsRef, smartCfg, smartRef, followupsCfg, followupsRef, placesRef, tgRef, claudeConnect, door,
     claudeLive, panel,
   } = ctx;
-  const imapProblem = (l: Lang) => ({ imap: imapRef.reader?.problem(l) ?? null });
+  // What a running reader says is wrong now: the mailbox's refused login, Messages without Full Disk Access.
+  const imapProblem = (l: Lang) => ({
+    imap: imapRef.reader?.problem(l) ?? null, applemail: appleMailRef.reader?.problem(l) ?? null, imessage: imessageRef.reader?.problem(l) ?? null,
+  });
   // A calendar link and a Places key have no live check when saved: "connected" only once they have answered (the calendar's health part
   // read once; a Places search worked).
   const checked = () => ({
@@ -43,6 +49,7 @@ export function wireConnectPanels(ctx: AfterTelegram) {
   // The Mac app's own requests carry the bridge token it already has; the panel's carry its session.
   const discovery = local ? createDiscoveryStore(local.kv) : null;
   const contacts = local ? createContactsStore(local.kv) : null;
+  const reminders = local ? createRemindersStore(local.kv) : null;
   const zoomLocal = local && discovery
     ? createZoomLocal({
         discovery, kv: local.kv, timeZone, control, lang: uiLang, enqueue: (m) => door.inbox.add(m),
@@ -54,7 +61,7 @@ export function wireConnectPanels(ctx: AfterTelegram) {
   mountDiscoveryPanel(app, appAuth && discovery && contacts && macCal
     ? {
         ...appAuth, store: discovery, lang: uiLang, control,
-        forgetAlso: [() => macCal.forget(), () => contacts.forget(), () => zoomLocal?.forget() ?? Promise.resolve()],
+        forgetAlso: [() => macCal.forget(), () => contacts.forget(), () => zoomLocal?.forget() ?? Promise.resolve(), () => reminders?.forget() ?? Promise.resolve()],
       }
     : null);
   mountCalendarWrites(app, appAuth && calWrites ? { ...appAuth, writes: calWrites } : null);
@@ -64,6 +71,19 @@ export function wireConnectPanels(ctx: AfterTelegram) {
         inUse: () => !!cal.mac,
         restart: () => (typeof app.locals.restart === "function" ? (app.locals.restart as () => boolean)() !== false : false),
         changed: () => void calRef.reader?.load(true).catch(() => undefined),
+      }
+    : null);
+  // Apple Reminders as the phone-side copy of the follow-ups (src/reminders-local.ts): the engine looked up at each push, so one started
+  // later counts. A completion there is the Done button's own press.
+  mountRemindersPanel(app, appAuth && reminders
+    ? {
+        ...appAuth, store: reminders, timeZone, lang: uiLang, control,
+        loops: () => {
+          const e = followupsRef.engine;
+          return e
+            ? { loops: async () => (await e.read()).loops, done: (id) => e.press("1", id), reopen: (id) => e.reopen([id]), moveDue: (id, at) => e.moveDue(id, at) }
+            : null;
+        },
       }
     : null);
   mountContactsPanel(app, appAuth && contacts ? { ...appAuth, store: contacts, lang: uiLang, control } : null);
@@ -147,6 +167,12 @@ export function wireConnectPanels(ctx: AfterTelegram) {
         },
       }
     : null);
+  // Mail on this Mac (src/apple-mail.ts): its card's state, and one look now after Full Disk Access was turned on.
+  mountAppleMailPanel(app, appAuth ? {
+    ...appAuth, lang: uiLang, mac: process.platform === "darwin", reader: () => appleMailRef.reader, imapOn: () => !!imapRef.reader,
+  } : null);
+  // Messages on this Mac (src/imessage.ts): its card's state, and one look now after Full Disk Access was turned on.
+  mountImessagePanel(app, appAuth ? { ...appAuth, lang: uiLang, mac: process.platform === "darwin", reader: () => imessageRef.reader } : null);
   // The connections page the gear opens (src/panel/settings.*): a computer only.
   mountSettingsPage(app, { signedIn: panel.signedIn, lang: uiLang, local: !!local });
   // LABS: the panel's switches (Settings › Labs).

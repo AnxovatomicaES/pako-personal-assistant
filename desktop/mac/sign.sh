@@ -25,6 +25,12 @@ ID=${PAKO_SIGN_IDENTITY:--}
 # A secure timestamp needs a real identity (Apple's timestamp server refuses ad-hoc code); notarization needs it.
 if [ "$ID" = "-" ]; then TS="--timestamp=none"; else TS="--timestamp"; fi
 NODE="$APP/Contents/Resources/node/bin/node"
+. "$HERE/synced.sh"
+syncedFolder "$APP" && fail "$APP is in a folder iCloud (or another File Provider) syncs, which puts Finder information back on it: codesign
+  refuses it. Move the app to a folder outside it (sh desktop/mac/build.sh <folder> builds there)."
+# Extended attributes a copied file brought along (Finder information, a resource fork: a file from iCloud or the Finder) make codesign refuse
+# the whole app ("resource fork, Finder information, or similar detritus not allowed"); none of them belongs in a signed app.
+xattr -cr "$APP"
 
 if [ -f "$NODE" ]; then
   # Named after the app (a bare binary would otherwise be "node" plus a hash), so a crash report or a privacy prompt says whose it is.

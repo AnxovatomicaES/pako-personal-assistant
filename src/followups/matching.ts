@@ -2,9 +2,9 @@
 // time moved followed), from the bridge's answer to a job or from a meeting review.
 
 import { instructsPako } from "../brief-support.ts";
-import { fold } from "../lists.ts";
-import { candidate, clean, parseAnswer, sameThing } from "./answer.ts";
-import type { Engine } from "./parts.ts";
+import { fold, today } from "../lists.ts";
+import { candidate, clean, parseAnswer, sameAsk, sameThing } from "./answer.ts";
+import type { Base, Engine, Matching } from "./parts.ts";
 import { ESCALATE_BEFORE_MS, LOOPS_PER_JOB, NONE_BEFORE_MS, REVIEW_LOOPS_MAX, SAME_TIME_MS, WHO_MAX } from "./limits.ts";
 import { HEX10, isObject, isOpen, newId, num } from "./record.ts";
 import { T } from "./texts.ts";
@@ -13,8 +13,7 @@ import { createLog } from "../log.ts";
 
 const log = createLog("followups");
 
-export function mountMatching(fu: Engine): Pick<Engine, "ruledOut" | "keep" | "result" | "ingest" | "fromChat" | "dropFromChat"> {
-  const { d, now, lang, config, mutate } = fu;
+export function mountMatching({ d, now, lang, config }: Base, { mutate }: Pick<Engine, "mutate">): Matching {
   /** A rule "Not mine" taught covers it: the same person, the same place, the same thing. */
   const ruledOut = (s: FollowupsState, c: { who: string; title: string }, job: Job): boolean =>
     s.rules.some((r) => fold(r.who) === fold(c.who) && fold(r.where) === fold(job.where.label) && sameThing(r.title, c.title));
@@ -33,8 +32,9 @@ export function mountMatching(fu: Engine): Pick<Engine, "ruledOut" | "keep" | "r
       if (c.who && d.who) c.who = clean(d.who(c.who), WHO_MAX) || c.who;
       const src: LoopSource = { kind: job.source, label: job.label, at: job.whenSaid, ...(job.ref ? { ref: job.ref } : {}) };
       if (ruledOut(s, c, job)) continue;
-      // The same thing again: the open loop the run named (of this conversation only), the same title, or (a re-ping worded differently, in a
-      // later message) the same kind and check from the same person in the same conversation for the same time.
+      // The same thing again: the open loop the run named (of this conversation only), the same title, (a re-ping worded differently, in a
+      // later message) the same kind and check from the same person in the same conversation for the same time, or the same ask from the
+      // same person said elsewhere (on Slack, then by email), its title's words in another order.
       const here = (l: Loop): boolean =>
         (!!job.where.channel && l.where.channel === job.where.channel) || (!!job.where.mailThread && l.where.mailThread === job.where.mailThread);
       const checkKind = (k: Check): string => Object.keys(k)[0]!;
@@ -43,7 +43,8 @@ export function mountMatching(fu: Engine): Pick<Engine, "ruledOut" | "keep" | "r
       const twin = s.loops.find((l) => isOpen(l) && here(l) && l.id === named)
         ?? s.loops.find((l) => isOpen(l) && fold(l.who) === fold(c.who) && sameThing(l.title, c.title))
         ?? s.loops.find((l) => isOpen(l) && here(l) && !fresh.has(l.id) && !!c.who && fold(l.who) === fold(c.who) && l.kind === c.kind
-          && checkKind(l.check) === checkKind(c.check) && sameTime(l.dueAt, c.dueAt));
+          && checkKind(l.check) === checkKind(c.check) && sameTime(l.dueAt, c.dueAt))
+        ?? s.loops.find((l) => isOpen(l) && !fresh.has(l.id) && sameAsk(l, c, SAME_TIME_MS));
       const given = trusted && isObject(v) ? num(v.checkAt) : undefined;
       // Someone else's promise is theirs to keep: looked at once, near its time (their invitation on the calendar), never 10 minutes after.
       const theirs = c.kind === "other_promise" && !trusted && "calendarEvent" in c.check;
@@ -58,7 +59,11 @@ export function mountMatching(fu: Engine): Pick<Engine, "ruledOut" | "keep" | "r
         const repeat = twin.sources.some((x) => x.ref && x.ref === src.ref);
         const later = job.whenSaid > Math.max(twin.whenSaid, ...twin.sources.map((x) => x.at));
         // Moved in a later message ("can we make it 6:15 instead?"): the loop follows the new time, and is checked and nudged for it afresh.
-        const moved = !repeat && !!c.dueAt && !!twin.dueAt && Math.abs(c.dueAt - twin.dueAt) > SAME_TIME_MS && later;
+        // A day alone ("Friday") said of a loop that has a time that day ("Friday 12:00") is the same time said more loosely: not a move.
+        const zone = c.tz ?? d.timeZone;
+        const dayOnly = isObject(v) && typeof v.due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.due.trim());
+        const looser = dayOnly && !!c.dueAt && !!twin.dueAt && today(c.dueAt, zone) === today(twin.dueAt, zone);
+        const moved = !repeat && !looser && !!c.dueAt && !!twin.dueAt && Math.abs(c.dueAt - twin.dueAt) > SAME_TIME_MS && later;
         // A time given later in the same conversation to a loop that had none ("let's do it Friday 3pm", "I'll confirm it tomorrow 10:00"):
         // the loop takes it, as a moved one does. Only from its own conversation or thread: a time said elsewhere is another matter.
         const timed = !repeat && !!c.dueAt && !twin.dueAt && here(twin) && later;
@@ -87,6 +92,18 @@ export function mountMatching(fu: Engine): Pick<Engine, "ruledOut" | "keep" | "r
     return added;
   };
 
+  /** The loops a job made or added to: each carries its source (the same kind, place and time), as keep() writes it. */
+  const touched = (s: FollowupsState, job: Job): number =>
+    s.loops.filter((l) => l.sources.some((x) => x.kind === job.source && x.at === job.whenSaid && x.label === job.label)).length;
+  /** The beta's audit (src/beta-audit.ts): this conversation was read, and gave this many follow-ups. It never throws into the write. */
+  const told = (job: Job, loops: number, queued = true): void => {
+    try {
+      d.audit?.answered({ ...(queued ? { id: job.id } : {}), source: job.source, label: job.label, at: job.whenSaid, loops });
+    } catch (err) {
+      log.error(`the beta's audit: ${(err as Error).message}`);
+    }
+  };
+
   /** The bridge's answer to a job: each candidate checked field by field; duplicates and what a rule excludes are dropped. */
   const result: FollowupsDoor["result"] = (jobId, raw) =>
     mutate((s) => {
@@ -111,7 +128,10 @@ export function mountMatching(fu: Engine): Pick<Engine, "ruledOut" | "keep" | "r
       }
       // An email's words are other people's: a candidate that reads as an order to an assistant is not kept, whatever the run made of it.
       const loops = job.source === "mail" ? answer.loops.filter((v) => !(isObject(v) && instructsPako(`${v.title ?? ""} ${v.detail ?? ""}`))) : answer.loops;
-      return { ok: true, added: keep(s, job, loops, LOOPS_PER_JOB, false) };
+      const before = touched(s, job);
+      const added = keep(s, job, loops, LOOPS_PER_JOB, false);
+      told(job, touched(s, job) - before + answer.closes.length);
+      return { ok: true, added };
     });
 
   /**
@@ -122,7 +142,10 @@ export function mountMatching(fu: Engine): Pick<Engine, "ruledOut" | "keep" | "r
     mutate((s) => {
       const label = o.label.slice(0, 120) || "Zoom";
       const job: Job = { id: newId(), at: now(), source: "meeting", where: { type: "zoom_meeting", label }, whenSaid: o.at, label, ref: o.ref.slice(0, 200) };
-      return keep(s, job, o.loops, REVIEW_LOOPS_MAX, true);
+      const before = touched(s, job);
+      const added = keep(s, job, o.loops, REVIEW_LOOPS_MAX, true);
+      told(job, touched(s, job) - before, false);
+      return added;
     });
 
   /**
@@ -147,5 +170,5 @@ export function mountMatching(fu: Engine): Pick<Engine, "ruledOut" | "keep" | "r
       return gone;
     });
 
-  return { ruledOut, keep, result, ingest, fromChat, dropFromChat };
+  return { ruledOut, keep, result, ingest, fromChat, dropFromChat, touched, told };
 }

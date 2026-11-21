@@ -270,3 +270,28 @@ test("the login check gives up after its time and closes the connection it opene
   assert.deepEqual(r, { ok: false, kind: "network" });
   assert.equal(closed, 1);
 });
+
+test("backfill: a store that fails to answer once does not empty the catch-up's queue", async () => {
+  const data = new Map<string, string>();
+  let failing = false;
+  const kv = {
+    get: async (k: string) => {
+      if (failing) throw new Error("the store is busy");
+      return data.get(k) ?? null;
+    },
+    set: async (k: string, v: string) => void data.set(k, v),
+  };
+  let clock = 1_800_000_000_000;
+  const sent: string[] = [];
+  const b = createBackfill({ kv, config: { days: 14, allowance: 60, everyMs: 60_000 }, enqueue: async (m) => (sent.push(m.id), true), now: () => clock });
+  for (let i = 0; i < 3; i++) await b.add({ id: `mail:m${i}`, at: clock, text: "", email: { from: "a@example.com", subject: `s${i}`, text: "t" } } as never);
+  failing = true;
+  await b.tick().catch(() => undefined);
+  failing = false;
+  for (let i = 0; i < 3; i++) {
+    clock += 60_000;
+    await b.tick();
+  }
+  assert.deepEqual(sent, ["mail:m0", "mail:m1", "mail:m2"], "every queued email still goes out");
+  assert.equal((await b.progress())?.total, 3);
+});

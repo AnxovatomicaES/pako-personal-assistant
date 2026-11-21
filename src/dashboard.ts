@@ -56,6 +56,11 @@ export interface PanelDeps {
   ownerName: string;
   timeZone: string;
   control: Control;
+  /**
+   * The whole STOP (src/door/stop-resume.ts stopEverything): the pause, held actions undone, waiting cards ended. The switch uses it when
+   * given (the door is there), so a STOP pressed here is the STOP typed in the chat. `line` is the action log's. Whether the pause was kept.
+   */
+  stop?: (at: number, line: string) => Promise<boolean>;
   memory: MemoryStore;
   wa: { reminders: () => Promise<{ at: number; text: string; held: boolean }[]>; events: () => { at: number; text: string }[]; lastPoll: () => number };
   mail?: { address: string; items: () => Promise<RecentMail[]> };
@@ -245,6 +250,7 @@ PAGES["routines.js"] = "text/javascript"; // routines and watches (src/routines.
 PAGES["autostart.js"] = "text/javascript"; // the "start with this computer" switch (src/autostart-panel.ts)
 PAGES["demo.js"] = "text/javascript"; // the demo week's Settings card and banner (src/demo.ts)
 PAGES["labs.js"] = "text/javascript"; // Settings › Labs, the experimental parts' switches (src/labs.ts)
+PAGES["mobile.js"] = "text/javascript"; // Settings › General, "Use on my phone (same Wi-Fi)" (src/mobile-panel.ts)
 PAGES["privacy.js"] = "text/javascript"; // what Pako keeps, the export, deleting everything (src/data-panel.ts)
 PAGES["papers.js"] = "text/javascript"; // a photo or a PDF put in the chat (src/papers-panel.ts)
 PAGES["meetings.js"] = "text/javascript"; // the meetings reviewed (src/meeting-review.ts)
@@ -405,8 +411,13 @@ export function mountDashboard(app: Express, d: PanelDeps) {
       return;
     }
     const on = (req.body as { on?: unknown })?.on === true;
-    const kept = await d.control.setPaused(on, now());
-    d.control.log("pause", LOG(lang())(on ? "stop" : "resume"));
+    const line = LOG(lang())(on ? "stop" : "resume");
+    let kept: boolean;
+    if (on && d.stop) kept = await d.stop(now(), line); // logs it itself
+    else {
+      kept = await d.control.setPaused(on, now());
+      d.control.log("pause", line);
+    }
     res.json({ paused: on ? now() : null, why: on ? "owner" : null, kept });
   });
   // The person's own choices on a computer (src/local.ts): the name Pako calls them by, the welcome done. Same

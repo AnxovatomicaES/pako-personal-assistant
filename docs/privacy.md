@@ -61,6 +61,8 @@ the store protects them at rest and in copies, not from your own programs.
 | `import-backup-<time>.json` | What an import from another Pako replaced, kept in case you want it back (only after an import). |
 | `.lock` | That Pako is running: its process number, port, the computer's uptime and when that process started. |
 | `assistant/state.json` | The conversation in progress with Claude: its session id and a count. (`ASSISTANT_STATE_DIR` moves this folder.) |
+| `assistant/tool-data.json` | A copy of your last message's context for Pako's tools in the chat: your message, notes, reminders, lists, tasks and agenda. Rewritten at each message. |
+| `assistant/handled-unacked.json` | The ids of items the bridge answered whose receipt the server has not confirmed yet (no text), so a restart never answers one twice. Kept two days at most. |
 | `logs/pako.log`, `logs/pako.err.log` | What the Pako that starts by itself writes: its notices and errors, which can quote a message. Only with autostart on (on Windows the previous start's are kept as `.old`). |
 | `logs/app.log` (and `app.log.1` to `.3`) | What the Pako started by the Mac app writes, and the app's own lines (a crash, a restart): notices and errors, which can quote a message. Rotated past 5 MB, three kept. No sign-in link is ever written there. |
 | `autostart/` | Windows only: the small launcher the sign-in task runs. |
@@ -118,6 +120,8 @@ also capped, as said.
 | `slack-held` | Slack notices kept during quiet hours | 2 days |
 | `slack-poll` | Where Pako is in each Slack conversation it looks at (no message text) | 60 days |
 | `teams-poll` | Where Pako is in each Teams chat and channel it looks at, and the last read and error (no message text) | 60 days |
+| `apple-mail-poll` | Mail on this Mac: the last message already looked at (its number in Apple Mail's index), when it was turned on, the numbers of messages Mail had not downloaded yet, and the last read and error (no message text, subject or address) | 60 days |
+| `imessage-poll` | Messages on this Mac: the last message already looked at (its number in Messages' history), when it was turned on, and the last read and error (no message text, number or address) | 60 days |
 | `zoom-state` | Zoom meetings seen and the last 20 summaries | 60 days |
 | `meeting-reviews` | The last 40 Zoom meetings reviewed: their summary, your to-dos (who waits, by when, the words that show it), what others promised you, the decisions, the meetings agreed and the open questions | 30 days |
 | `lessons` | What Pako learned from your corrections: a short dated line for each "Not mine", undo, 👎 on a reminder or a brief item, and draft you changed before sending it (what you changed, measured: length, greeting, sign-off, language), with how often you taught it, and for a draft both texts (60 at most; Settings › How Pako acts shows and deletes them). Also Pako's drafts of the last 3 days (10 at most), to compare with what you sent | 400 days |
@@ -135,6 +139,7 @@ also capped, as said.
 | `telegram-owner` | The Telegram account paired with Pako | 5 years |
 | `telegram-pair` | A pairing code in use (a secret) | 10 minutes |
 | `telegram-off` | You wrote TELEGRAM OFF: Telegram stays unpaired | 5 years |
+| `mobile-access` | Whether "Use on my phone (same Wi-Fi)" is on, and each paired phone's name, when it was paired and last seen, and a hash of its token (a secret; never the token itself) | 10 years, or until you remove the phone |
 | `telegram-file:<id>` | Where to fetch a voice note or photo you sent by Telegram | 2 days |
 | `whatsapp-computer-last-owner` | When you last wrote to Pako on WhatsApp from a computer (WhatsApp's 24 hours) | 3 days |
 | `pako-bookings` | The tables Pako asked a restaurant for | 120 days |
@@ -148,6 +153,8 @@ also capped, as said.
 | `claude-keeper` | Whether Claude has worked on this computer and whether you were already asked to sign in again (two yes/no flags: never your address or a token) | 400 days |
 | `discovery` | What Pako for Mac found on this computer when you said yes to "Can I look at what you have on this Mac?": which apps are installed (Zoom, Slack, Telegram, WhatsApp, Mail, Outlook, Teams), your calendars' names, your mail accounts' addresses, how many contacts you have, the Zoom recordings folder, and which macOS permissions you gave. Never a mail's or an event's text. Forgotten in one click in the connections page | 10 years (until you forget it) |
 | `calendar-local` | The events of the calendars on this Mac you picked, from 2 days ago to 14 ahead: title, times, place and the video call's link (never the notes or the attendees). Forgotten with the discovery | 30 days |
+| `reminders-mirror` | Apple Reminders (off until you turn it on in Pako for Mac): whether it is on, whether "Pako: waiting on" is too, and for each follow-up its reminder's id and the title and time both sides last agreed on (never the reminder's notes). Forgotten with the discovery | 400 days |
+| `time-to-do` | Time to do it: the focus blocks offered (which follow-up, the proposed time, and whether you blocked it, asked for another or said not needed; the last 100) and today's count of those cards | 15 days |
 | `calendar-writes` | The calendar changes you said yes to (move, add, delete: title and times), and what was there before, for Undo (a week) | 8 days |
 | `relay-state` | On a host running as your relay only: your reminders of the week ahead (text and time) and which it sent | 31 days |
 | `assistant-contacts` | The contacts you chose to import from this Mac: name, email addresses, phone numbers and company (5000 at most), listed in the panel and forgotten in one click | 400 days |
@@ -166,6 +173,7 @@ also capped, as said.
 | `brain-dumps` | Your last brain dumps (10 at most): each item as it was sorted, and what it changed, so one can be removed or all undone | 2 days |
 | `gentle-checkins` | Your check-ins: what each is about (your words), its time, its "Not yet" count, how it ended; today's count | 10 days (ended: 2 days) |
 | `gentle-reset` | Weekly reset: items each reset listed (id, title, person), the week's focus, parked items asked about, what was let go | 120 days (history: 90) |
+| `beta-audit` | Only if you turned on *Beta: help measure Pako*: the conversations the follow-ups read in the last 8 days (where, who, their first two lines, how many follow-ups each gave), each week's questions and your Yes/No/Skip answers. The lines go once a question is answered, its week is over, or you turn it off; the answers stay as counts. Nothing of it leaves the computer: `npm run beta:report -- --export` writes counts only, and only if you say yes (`docs/beta.md`) | 8 days (answers: a year) |
 | `places-ok` | That your Google Places key has answered once: a fingerprint of the key (a hash), never the key, so the settings page can say "connected" | 400 days |
 | `jobs` | The runs due at a time (the daily brief, each reminder sent): when each was due, whether it was done, missed (the computer slept past its last hour) or failed, and the error. The brief's and the reminders' own words are not in it | 8 days |
 
@@ -195,11 +203,32 @@ Only to what you have connected. Each line is off until its settings are there.
 | **Zoho** Calendar | Pako reads your calendar; it doesn't write to it. | With the Zoho settings (`ZOHO_CLIENT_ID` and the rest). |
 | **LiveKit / Retell** | On calls: your voice and the other person's, the numbers, and what Pako should say, through the speech services they use. | Only with the phone line set up (`LIVEKIT_URL` or `RETELL_API_KEY`; see `docs/personal-caller.md`). |
 
+**Mail on this Mac** (off until you turn it on) adds no service to this list either, and needs no password. Pako reads the mail Apple Mail
+already downloaded, from Mail's own folder on this Mac, read only (it never writes there, and with Mail closed it opens the index immutable),
+and each email then goes exactly where mail read by IMAP goes: kept in Pako's mailbox store, and summarized and read for follow-ups by your
+own Claude (fenced as other people's words). Your own addresses, learnt from your Sent mail, stay in memory; no message text, subject or
+address is written to a log or to the reader's own record.
+
+**Apple Reminders** (off until you turn it on in Pako for Mac's calendar card) adds no service of Pako's either, but what Pako writes there
+goes wherever your Reminders go: with iCloud on, to Apple's iCloud and your iPhone and Watch. For each open follow-up, in Pako's own lists
+("Pako" and, unless you turn it off, "Pako: waiting on"): its title, its time, who and where ("Where: Slack · Dana (private)"), the line it
+came from ("From Slack · Dana (private), 16 Nov, 09:30") and a tag with its id (`pako:<id>`, also as the reminder's link,
+`pako://loop/<id>`). Never a message's words beyond the follow-up's own title. Pako reads back from those two lists only (a reminder's title,
+time, whether it is completed, and its id): never another list, and never the notes. Turning it off stops it; Pako's lists stay in Reminders
+for you to delete there.
+
+**Messages on your Mac** (iMessage and SMS, off until you turn it on) adds no service to this list. Pako reads Messages' own history file
+on this Mac, read only, and the new messages of a chat go only where Slack's and mail's already go: to your own Claude, as the material of a
+follow-up (fenced as other people's words, never instructions). The messages themselves are not kept in Pako's store, and no message text,
+phone number or address is written to a log.
+
 ## What never leaves
 
 - The files in `~/.pako` as files: nothing uploads them anywhere.
 - The keys: each goes only to its own service, and Pako's own secrets to none.
-- The panel: it opens from this computer only (unless `PAKO_HOST` says otherwise).
+- The panel: it opens from this computer only (unless `PAKO_HOST` says otherwise). With **Use on my phone (same Wi-Fi)** on, your paired
+  phones read the brief and your follow-ups over your home network (plain `http`), and keep the last copy in their browser until unpaired;
+  nothing goes through any server of ours. See [On your phone](features.md#on-your-phone).
 - Pako sends no statistics, usage or error reports to anyone. (The `claude` command follows its own settings.)
 - The audio of your voice notes: it is turned into text on this computer, when the bridge has whisper.
 - **Pako for Mac** talks to the Pako on this computer only, except: *Connect Claude* downloads Anthropic's installer from `claude.ai` (and it
@@ -215,7 +244,7 @@ In the panel, **Privacy and your data**, **Export my data**: a file `pako-export
 - the connections by name only: which are set in the panel, which outside it (`.env`, the terminal), whether a Telegram bot is set;
 - the list of files in the folder.
 
-It never holds a secret: not Pako's three tokens, not a connection's value, not `zoho-refresh` or `telegram-pair` (written as
+It never holds a secret: not Pako's three tokens, not a connection's value, not `zoho-refresh`, `telegram-pair` or `mobile-access` (written as
 `[secret: not exported]`), not the one-time codes found in the mail (written as `[hidden]`, with the email they came in), nor the chat's copy of
 Pako's answer to CODE, which shows them (its text is written as `[hidden]` too). As a last guard
 every text in it is searched for the secret values this computer holds (every setting whose name has `TOKEN`, `SECRET`, `KEY` or
@@ -233,7 +262,7 @@ In the same card, type **DELETE EVERYTHING** (or **BORRAR TODO**) and press **De
    answer says so, Pako stays paused and keeps nothing new, and pressing again once there is space finishes the job;
 3. unpairs Telegram and removes its bot token, with every connection set in the panel, from `secrets.json` or the secret store;
 4. forgets your choices in `config.json` (it keeps only the computer's own language, as on the very first start);
-5. deletes `kv.db.bad`, `kv.json.bad` and `kv.json.migrated`, any `import-backup-<time>.json`, the photos and PDFs in `~/.pako/papers`, the booking screenshots in `~/.pako/maitre` and the booking browser's profile in `~/.pako/browser` (your sign-ins to booking sites), `assistant/state.json` (Claude starts a fresh conversation) and any voice note being turned into text, and
+5. deletes `kv.db.bad`, `kv.json.bad` and `kv.json.migrated`, any `import-backup-<time>.json`, the photos and PDFs in `~/.pako/papers`, the booking screenshots in `~/.pako/maitre` and the booking browser's profile in `~/.pako/browser` (your sign-ins to booking sites), `assistant/state.json` (Claude starts a fresh conversation), `assistant/tool-data.json`, `assistant/outside-seen.json` and `assistant/handled-unacked.json` and any voice note being turned into text, and
    empties the logs in `~/.pako/logs` (the background Pako's and the Mac app's `app.log`; the `.old` and rotated `app.log.1` to `.3` are deleted);
 6. starts again, and the panel shows the welcome, as on the first day.
 

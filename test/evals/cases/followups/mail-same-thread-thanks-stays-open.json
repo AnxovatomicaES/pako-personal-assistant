@@ -1,0 +1,50 @@
+{
+  "suite": "followups",
+  "behaviour": "Mira asks for the signed SOW; the owner's reply in the thread only says «Got it, thanks»: nothing was sent, the loop stays open",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-16 09:15",
+          "ref": "m-mira",
+          "from": "Mira Okafor <mira@lumenworks.example>",
+          "to": "Alex <alex@acme.example>",
+          "subject": "SOW",
+          "category": "needs_you",
+          "messageId": "<mo1@lumenworks.example>",
+          "body": "Hi Alex,\n\nCould you send me the signed SOW by Wednesday 17:00?\n\nMira"
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"request_to_owner\", \"title\": \"Send Mira the signed SOW\", \"detail\": \"Mira, see the conversation.\", \"who\": \"Mira\", \"due\": \"2026-11-18 17:00\", \"tz\": \"Europe/Madrid\", \"check\": \"none\", \"reason\": \"email\"}], \"closes\": []}"
+      },
+      {
+        "mail": {
+          "at": "2026-11-16 09:50",
+          "ref": "s-mira",
+          "mine": true,
+          "from": "Alex <alex@acme.example>",
+          "to": "Mira Okafor <mira@lumenworks.example>",
+          "subject": "Re: SOW",
+          "messageId": "<s3@acme.example>",
+          "inReplyTo": "<mo1@lumenworks.example>",
+          "references": "<mo1@lumenworks.example>",
+          "body": "Got it, thanks Mira!\n\nAlex"
+        },
+        "recorded": "{\"loops\": [], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "closed": 0,
+    "open": [
+      {
+        "who": "Mira",
+        "titleHas": [
+          "SOW"
+        ],
+        "dueLocal": "2026-11-18 17:00"
+      }
+    ]
+  }
+}

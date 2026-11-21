@@ -189,3 +189,63 @@ test("slack poll: stop() before the first look means no look at all", async () =
     mock.timers.reset();
   }
 });
+
+test("slack poll: more busy DMs than one round reads are all read in turn, none left for days", async () => {
+  let clock = 1_800_000_000_000;
+  const s = fakeSlack(20);
+  const poll = createSlackPoll({ api: s.api, self: async () => "U1", deliver: async () => {}, kv: null, now: () => clock });
+  await poll.round();
+  // Every DM had news a minute ago: all of them are busy now.
+  clock += 60_000;
+  for (const c of s.channels) s.history.set(c.id, [{ ts: slackTs(clock - 1000), user: "U2", text: `hi from ${c.id}` }]);
+  for (let i = 0; i < 2; i++) await poll.round();
+  // News again in every DM: all twenty are busy, more than one round reads.
+  clock += 60_000;
+  for (const c of s.channels) s.history.set(c.id, [{ ts: slackTs(clock - 1000), user: "U2", text: `again from ${c.id}` }]);
+  const read = new Set<string>();
+  for (let i = 0; i < 3; i++) {
+    s.calls.length = 0;
+    await poll.round();
+    for (const c of s.calls.filter((x) => x.method === "conversations.history")) read.add(c.params.channel!);
+  }
+  assert.equal(read.size, 20, `every busy DM is read within a few rounds (missed: ${s.channels.map((c) => c.id).filter((id) => !read.has(id)).join(", ")})`);
+});
+
+test("slack poll: one DM Slack refuses does not stop the others, nor the mentions", async () => {
+  let clock = 1_800_000_000_000;
+  const s = fakeSlack(3);
+  const api = async (method: string, params: Record<string, string>): Promise<Record<string, unknown>> => {
+    if (method === "conversations.history" && params.channel === "D0000") throw new Error("Slack conversations.history: channel_not_found");
+    return s.api(method, params);
+  };
+  const got: SlackEvent[] = [];
+  const poll = createSlackPoll({ api, self: async () => "U1", deliver: async (e) => void got.push(e), kv: null, now: () => clock });
+  await poll.round();
+  clock += 60_000;
+  s.history.set("D0001", [{ ts: slackTs(clock - 1000), user: "U2", text: "Can you call me?" }]);
+  s.mentions.push({ ts: slackTs(clock - 500), user: "U3", text: "<@U1> the budget?", channel: { id: "C42" }, permalink: "" });
+  await poll.round().catch(() => undefined);
+  await poll.round().catch(() => undefined);
+  assert.deepEqual(got.map((e) => e.text).sort(), ["<@U1> the budget?", "Can you call me?"]);
+});
+
+test("slack poll (one history call a minute): a DM Slack rate-limited is read next round, not skipped for a whole turn", async () => {
+  const s = fakeSlack(3);
+  let limited = true;
+  const api = async (method: string, params: Record<string, string>): Promise<Record<string, unknown>> => {
+    if (method === "conversations.history" && params.channel === "D0001" && limited) {
+      limited = false;
+      throw new Error("Slack conversations.history: ratelimited");
+    }
+    return s.api(method, params);
+  };
+  const poll = createSlackPoll({ api, self: async () => "U1", deliver: async () => {}, kv: null, now: () => 1_800_000_000_000, perRound: 1 });
+  const read: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    s.calls.length = 0;
+    await poll.round().catch(() => undefined);
+    read.push(...s.calls.filter((c) => c.method === "conversations.history").map((c) => c.params.channel!));
+  }
+  // The refused call is not counted (it never reached the fake): D0001 is read in the round right after it, before D0002.
+  assert.deepEqual(read, ["D0000", "D0001", "D0002"], "D0001 is asked again right after Slack's refusal");
+});

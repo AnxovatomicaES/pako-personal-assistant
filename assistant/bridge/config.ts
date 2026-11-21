@@ -59,6 +59,11 @@ export interface BridgeConfig {
 const ALLOWED_TOOLS = new Set(["WebSearch", "WebFetch"]);
 /** The waits between the sends of one reply the server could not deliver. */
 export const REPLY_WAITS_MS = [5_000, 15_000, 45_000, 120_000, 300_000];
+/**
+ * The characters of a reply's text the server keeps (src/door/reply.ts): a longer text is cut here, so a very long answer is not refused
+ * whole by the server's body limit (64 KB), with what it asked for.
+ */
+export const REPLY_TEXT_MAX = 8000;
 
 /** The bridge's own folder when ASSISTANT_STATE_DIR does not name one: `claude -p` runs from it, and it holds the state and the log. */
 export const STATE_DIR_NAME = ".pako-assistant";

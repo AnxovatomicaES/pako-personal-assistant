@@ -44,7 +44,9 @@ export function parseAnswer(raw: unknown): { loops: unknown[]; closes: string[] 
 }
 
 /** A candidate as the model gave it, made into a loop's fields, or null. Only fixed words, cut texts and times this file can read get through. */
-export function candidate(v: unknown, job: Job, ownerTz: string): Pick<Loop, "kind" | "title" | "detail" | "who" | "dueAt" | "tz" | "check"> | null {
+export function candidate(
+  v: unknown, job: Job, ownerTz: string,
+): Pick<Loop, "kind" | "title" | "detail" | "who" | "dueAt" | "tz" | "check" | "effort"> | null {
   if (!isObject(v) || !(LOOP_KINDS as readonly unknown[]).includes(v.kind)) return null;
   const title = clean(v.title, TITLE_MAX);
   if (title.length < 3) return null;
@@ -90,7 +92,31 @@ export function candidate(v: unknown, job: Job, ownerTz: string): Pick<Loop, "ki
     ...(dueAt ? { dueAt } : {}),
     ...(dueAt && tz !== ownerTz ? { tz } : {}),
     check,
+    // The work it takes, in minutes (src/time-to-do.ts): a whole number from 5 to 480, or none.
+    ...(typeof v.effort === "number" && Number.isInteger(v.effort) && v.effort >= 5 && v.effort <= 480 ? { effort: v.effort } : {}),
   };
+}
+
+/** Words that say nothing of what is asked: left out when two titles are compared word by word. */
+const FILLER = new Set(["the", "to", "and", "for", "with", "of", "from", "an", "el", "la", "los", "las", "de", "del", "al", "y", "para", "con", "por"]);
+const wordsOf = (s: string, drop: Set<string>): Set<string> =>
+  new Set(fold(s).split(/[^\p{L}\p{N}]+/u).filter((w) => (w.length >= 2 || /\d/.test(w)) && !FILLER.has(w) && !drop.has(w)));
+
+/**
+ * The same ask from the same person, said in another place (on Slack, then by email): the same first name, the same kind, the same time
+ * (or none on both), and the same words in its title whatever their order, the person's own name aside ("Send Dana Whitlock the signed NDA"
+ * is "Send the signed NDA to Dana"). Two words at least: a bare "Call Dana" is never taken for another call.
+ */
+export function sameAsk(
+  a: { who: string; title: string; kind: string; dueAt?: number }, b: { who: string; title: string; kind: string; dueAt?: number }, sameTimeMs: number,
+): boolean {
+  const first = (w: string): string => fold(w).split(/\s+/)[0] ?? "";
+  if (!first(a.who) || first(a.who) !== first(b.who) || a.kind !== b.kind) return false;
+  if ((a.dueAt === undefined) !== (b.dueAt === undefined) || (a.dueAt !== undefined && Math.abs(a.dueAt - b.dueAt!) > sameTimeMs)) return false;
+  const names = new Set(`${fold(a.who)} ${fold(b.who)}`.split(/[^\p{L}\p{N}]+/u).filter(Boolean));
+  const x = wordsOf(a.title, names);
+  const y = wordsOf(b.title, names);
+  return x.size >= 2 && x.size === y.size && [...x].every((w) => y.has(w));
 }
 
 /** Same thing said twice: one title holds the other (case, accents and spaces aside). */

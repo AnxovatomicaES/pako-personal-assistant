@@ -67,7 +67,7 @@ jobs:
             if curl -fsS http://127.0.0.1:8798/health; then break; fi
             sleep 1
           done
-          curl -fsS http://127.0.0.1:8798/panel | grep -q "<title>Pako ·" || { cat server.log; exit 1; }
+          curl -fsS http://127.0.0.1:8798/panel | grep -q "Pako · Sign in" || { cat server.log; exit 1; }
           grep -q "Pako is running" server.log || { cat server.log; exit 1; }
 
   smoke:

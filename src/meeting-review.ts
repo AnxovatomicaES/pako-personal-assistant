@@ -479,18 +479,27 @@ export function createMeetingReview(d: ReviewDeps) {
   const summary = async (m: { id: string; topic: string; at: number; text: string; notice: string }): Promise<boolean> => {
     const l = lang();
     if (d.bridgeAlive && !d.bridgeAlive()) return false;
+    let registered = false;
     try {
       await register({
         id: m.id, topic: m.topic, at: m.at, source: "summary", status: "pending", queuedAt: now(), notice: m.notice, summary: m.text,
         todos: [], promises: [], decisions: [], meetings: [], questions: [],
       });
+      registered = true;
       const review: InboundReview = { source: "summary", topic: m.topic, when: when(m.at, l), head: head(m.topic, m.at, l), text: m.text };
-      return await d.enqueue({ id: reviewInboxId(m.id), at: now(), text: "", review });
+      if (await d.enqueue({ id: reviewInboxId(m.id), at: now(), text: "", review })) return true;
     } catch (err) {
       log.error(`could not queue a meeting: ${(err as Error).message}`);
-      return false;
     }
+    // Not queued: the caller tells it as before, now. Left pending, the sweep would tell it a second time once the wait is over.
+    if (registered) await settleUnqueued(m.id).catch((err: Error) => log.error(`could not mark a meeting told: ${err.message}`));
+    return false;
   };
+  const settleUnqueued = (id: string): Promise<void> =>
+    mutate((list) => {
+      const r = list.find((x) => x.id === id);
+      if (r && r.status === "pending") r.status = "fallback";
+    });
 
   /** A transcript about to go to the computer: what to add to its inbox item so a newer bridge reviews it (null: as before). */
   const transcript = async (m: { id: string; topic: string; at: number }): Promise<InboundReview | null> => {

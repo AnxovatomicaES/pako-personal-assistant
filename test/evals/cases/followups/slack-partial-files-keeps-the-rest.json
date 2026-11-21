@@ -1,0 +1,50 @@
+{
+  "suite": "followups",
+  "behaviour": "Dana asks for the Q3 and Q4 reports; the owner posts Q3's link and says Q4 comes tomorrow 12:00: exactly one loop stays open, for Q4",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0DANA",
+          "label": "Dana Whitlock (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:00",
+              "who": "Dana Whitlock",
+              "text": "Can you send me the Q3 and Q4 reports here?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"request_to_owner\", \"title\": \"Send Dana the Q3 and Q4 reports\", \"detail\": \"Dana, see the conversation.\", \"who\": \"Dana\", \"check\": \"slackFile\"}], \"closes\": []}"
+      },
+      {
+        "slack": {
+          "channel": "D0DANA",
+          "label": "Dana Whitlock (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 11:00",
+              "who": "Alex",
+              "text": "Here's Q3: <https://files.example/q3-report>. Q4 tomorrow at 12:00",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"owner_promise\", \"title\": \"Send Dana the Q4 report\", \"detail\": \"Dana, see the conversation.\", \"who\": \"Dana\", \"due\": \"2026-11-17 12:00\", \"tz\": \"Europe/Madrid\", \"check\": \"slackFile\"}], \"closes\": [\"{{loop1}}\"]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "exact": false,
+    "open": [
+      {
+        "who": "Dana",
+        "titleHas": [
+          "Q4"
+        ]
+      }
+    ]
+  }
+}

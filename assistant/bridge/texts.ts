@@ -12,7 +12,23 @@ export const T = texts(
   {
     login: "I can't answer right now: Claude needs you to sign in again. In Pako's settings, press “Connect your Claude account”; your message will be answered then. "
       + "If you're already signed in, your Claude Code may not use the sign-in for background answers (\"bare\" mode): put your ANTHROPIC_API_KEY in ~/.pako/.env or update Pako.",
-    limit: "I've hit Claude's usage limit for now. I'll try again in a while.",
+    // Said once when a run finds Claude's limit (runs.ts, limitText), and "back" once when a run works again.
+    limitHead: "Claude has reached its usage limit for now.",
+    busyHead: "Claude is overloaded right now.",
+    limitBody: "I've paused what needs it: answering your messages, reading new email and meetings, and drafts. Still working without Claude: "
+      + "your messages and email are collected, reminders you already set go out on time, and the morning brief comes in its simpler form. "
+      + "Nothing is lost: what waits will be done {when}, and I'll tell you when I'm back.",
+    whenReset: "after the limit resets at {time}",
+    whenResetDay: "after the limit resets {day} at {time}",
+    whenBack: "as soon as Claude answers again",
+    tomorrow: "tomorrow",
+    back: "Claude is answering again: I'm back, and catching up on what waited.",
+    // Said once for a version of Claude Code too old for a model Pako asks for (runs.ts tellCliModel): the work goes on, on another model.
+    cliModel: "I'm writing with {using} for now: your Claude Code ({version}) is older than {model} needs{needs}. Your brief and drafts still come. "
+      + "To fix it, run claude update in a terminal, or update the Claude desktop app; I'll switch back by myself.",
+    cliModelDefault: "Claude Code's default model",
+    cliModelYours: "the one on this computer",
+    cliModelNeeds: " (version {version} or newer)",
     other: "I couldn't work out an answer just now. Try again in a moment.",
     // The panel's words for the same trouble (src/panel/app.js BANNERS.missing), and its one button (src/claude-connect.ts).
     missing: "Pako needs Claude to think, and Claude Code isn't on this computer (or Pako can't find it). In Pako's panel, open Settings and press "

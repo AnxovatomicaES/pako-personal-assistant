@@ -17,7 +17,7 @@ import {
   type ImapClient, type ImapConfig, type ImapFetched, type ImapMailbox,
 } from "../src/imap.ts";
 import type { Kv } from "../src/kv.ts";
-import { createMailbox, takeMail } from "../src/mail.ts";
+import { addressOf, createMailbox, takeMail } from "../src/mail.ts";
 import type { Inbound } from "../src/whatsapp.ts";
 
 const PASSWORD = "app-pass-wxyz-9876";
@@ -417,6 +417,10 @@ function imapSession(socket: Socket | TLSSocket, log: string[], msgs: FakeMsg[])
   let waiting = 0;
   const send = (s: string) => socket.write(s, "latin1");
   socket.setEncoding("latin1");
+  // A client that gives up (a TLS handshake against this plain greeting, a certificate it does not trust) drops the connection with bytes
+  // still in flight, and this end reads a reset (ECONNRESET). That is the client's failure to report, not the server's: unheard, it would be
+  // an uncaught exception that fails whichever test is running (it did, under the load of the whole gate).
+  socket.on("error", () => undefined);
   send("* OK [CAPABILITY IMAP4rev1 SASL-IR AUTH=XOAUTH2] fake ready\r\n");
   socket.on("data", (chunk: string) => {
     buf += chunk;
@@ -632,4 +636,55 @@ test("signed in with a provider: a login refused with the held token is tried on
   });
   await captured(() => plain.poll());
   assert.doesNotMatch(String(plain.problem("en")), /^Sign in again/);
+});
+
+test("the Sent folder named in IMAP_FOLDERS too: the owner's sent mail is read as theirs (follow-ups), never told as news", async () => {
+  const folders: Record<string, FakeMsg[]> = {
+    INBOX: [],
+    Sent: [{ uid: 1, at: NOW + HOUR, source: mail({ id: "out-1", from: "Ana <ana.work@example.com>", subject: "Re: Cena", body: "I'll book it for Friday." }) }],
+  };
+  let open = "";
+  const client: ImapClient = {
+    connect: async () => undefined,
+    mailboxOpen: async (path) => ((open = path), { uidValidity: 1, uidNext: Math.max(0, ...folders[path]!.map((m) => m.uid)) + 1 }),
+    search: async (q) => folders[open]!.filter((m) => m.uid >= (q.uid ? Number(q.uid.split(":")[0]) : 1)).map((m) => m.uid),
+    fetchOne: async (uid) => {
+      const m = folders[open]!.find((x) => x.uid === Number(uid));
+      return m ? { uid: m.uid, internalDate: new Date(m.at), source: m.source } : false;
+    },
+    list: async () => [{ path: "INBOX" }, { path: "Sent", specialUse: "\\Sent" }],
+    logout: async () => undefined,
+    close: () => undefined,
+    on: () => client,
+  };
+  const queued: Inbound[] = [];
+  const sent: string[] = [];
+  let clock = NOW;
+  const reader = createImapReader({
+    config: { ...CONFIG, folders: ["INBOX", "Sent"] }, kv: memoryKv(), box: createMailbox(null), now: () => clock, connect: () => client,
+    enqueue: async (m) => (queued.push(m), true), sentMail: async (m) => void sent.push(m.text),
+  });
+  await reader.poll();
+  folders.Sent!.push({ uid: 2, at: NOW + 2 * HOUR, source: mail({ id: "out-2", from: "Ana <ana.work@example.com>", subject: "Hola", body: "Sending the deck Monday." }) });
+  clock = NOW + 3 * HOUR;
+  await reader.poll();
+  assert.deepEqual(queued.map((m) => m.email?.subject), [], "the owner's own sent mail is never news to them");
+  assert.deepEqual(sent, ["I'll book it for Friday.", "Sending the deck Monday."], "read by the follow-ups as the owner's, as when Sent is not listed");
+});
+
+test("parseMessage: an encoded word never makes an address (a From that passes its own DMARC cannot show as a VIP's)", () => {
+  // The address a mail server checks is the raw one (stranger@evil.example); a decoder that made "<boss@jefe.example>" out of an encoded
+  // word would show, trust and route it as that VIP's.
+  const raw = (from: string) => Buffer.from([`From: ${from}`, "To: ana@example.com", "Subject: Urgent", "Message-ID: <e1@evil.example>", "", "Pay this today."].join("\r\n"));
+  for (const from of [
+    "<stranger@evil.example> =?utf-8?q?=3Cboss=40jefe.example=3E?=",
+    "stranger@evil.example =?utf-8?b?PGJvc3NAamVmZS5leGFtcGxlPg==?=",
+    "=?utf-8?q?boss=40jefe.example?=",
+  ]) {
+    const p = parseMessage(raw(from));
+    assert.ok(!/<boss@jefe\.example>|^boss@jefe\.example$/.test(p.from), `made an address from an encoded word: ${p.from}`);
+    assert.notEqual(addressOf(p.from), "boss@jefe.example");
+  }
+  // A display name in an encoded word still reads as it should.
+  assert.equal(parseMessage(raw("=?utf-8?q?Jos=C3=A9_P=C3=A9rez?= <jose@amigos.example>")).from, "José Pérez <jose@amigos.example>");
 });

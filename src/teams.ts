@@ -296,6 +296,14 @@ export interface TeamsSeen {
   mine: boolean;
 }
 
+/**
+ * A Teams message as the follow-ups' engine takes it (src/followups/types.ts SlackSeen). The owner's own keeps `mine`: the engine leaves
+ * the owner out of a conversation's people, and names a conversation the owner opened after the other side once they answer.
+ */
+export const engineSeen = (m: TeamsSeen): { channel: string; ts: string; at: number; who: string; where: string; direct: boolean; text: string; mine?: true } => ({
+  channel: m.channel, ts: m.ts, at: m.at, who: m.who, where: m.where, direct: m.direct, text: m.text, ...(m.mine ? { mine: true as const } : {}),
+});
+
 /** A conversation of the catch-up: its last days' messages, handed to the engine paced (src/backfill.ts addChat). */
 export interface TeamsCatchUp {
   channel: string;
@@ -616,32 +624,42 @@ export function createTeams(d: TeamsDeps) {
     if (!channelList.length || rounds % 12 === 0) await listChannels();
     if (!channelList.length) return 0;
     let found = 0;
-    for (let i = 0; i < Math.min(CHANNELS_PER_ROUND, channelList.length); i++) {
-      const c = channelList[(turn + i) % channelList.length]!;
+    const these = Array.from({ length: Math.min(CHANNELS_PER_ROUND, channelList.length) }, (_, i) => channelList[(turn + i) % channelList.length]!);
+    // The turn moves on first: a channel that fails must not be the first one of every round from then on.
+    turn = (turn + CHANNELS_PER_ROUND) % channelList.length;
+    const fromStart = (c: { team: string; channel: string }, since: string): string =>
+      `/teams/${encodeURIComponent(c.team)}/channels/${encodeURIComponent(c.channel)}/messages/delta?$filter=lastModifiedDateTime%20gt%20${encodeURIComponent(since)}`;
+    for (const c of these) {
       const key = `${c.team}|${c.channel}`;
-      let link: string | null = s.channels[key]?.delta
-        ?? `/teams/${encodeURIComponent(c.team)}/channels/${encodeURIComponent(c.channel)}/messages/delta?$filter=lastModifiedDateTime%20gt%20${encodeURIComponent(s.start)}`;
-      for (let page = 0; link && page < 5; page++) {
-        const j: Record<string, unknown> = await get(link, "a channel's messages");
-        for (const m of (Array.isArray(j.value) ? (j.value as GraphMessage[]) : []).filter(usable)) {
-          const toMe = (m.mentions ?? []).some((x) => x.mentioned?.user?.id === self);
-          if (!toMe || m.from!.user!.id === self || Date.parse(m.createdDateTime!) <= Date.parse(s.start)) continue;
-          const channel = teamsChannel(`channel:${key}`);
-          const who = (m.from!.user!.displayName ?? "").slice(0, 80) || say("someone");
-          const label = say("inChannel", { who, channel: c.name || "channel" });
-          remember(s, channel, { team: c.team, channel: c.channel, label: `Teams · #${c.name || "channel"}`, direct: false });
-          await hand(s, channel, null, m, self, label);
-          found++;
+      let link: string | null = s.channels[key]?.delta ?? fromStart(c, s.start);
+      try {
+        for (let page = 0; link && page < 5; page++) {
+          const j: Record<string, unknown> = await get(link, "a channel's messages");
+          for (const m of (Array.isArray(j.value) ? (j.value as GraphMessage[]) : []).filter(usable)) {
+            const toMe = (m.mentions ?? []).some((x) => x.mentioned?.user?.id === self);
+            if (!toMe || m.from!.user!.id === self || Date.parse(m.createdDateTime!) <= Date.parse(s.start)) continue;
+            const channel = teamsChannel(`channel:${key}`);
+            const who = (m.from!.user!.displayName ?? "").slice(0, 80) || say("someone");
+            const label = say("inChannel", { who, channel: c.name || "channel" });
+            remember(s, channel, { team: c.team, channel: c.channel, label: `Teams · #${c.name || "channel"}`, direct: false });
+            await hand(s, channel, null, m, self, label);
+            found++;
+          }
+          const next = typeof j["@odata.nextLink"] === "string" ? (j["@odata.nextLink"] as string) : null;
+          // Where to go on from: the delta link at the end, or (more pages than one round reads) the next page, so the next round continues
+          // there instead of reading the same pages, and handing on the same mentions, again.
+          if (typeof j["@odata.deltaLink"] === "string") s.channels[key] = { delta: j["@odata.deltaLink"] as string };
+          else if (next) s.channels[key] = { delta: next };
+          link = next;
         }
-        const next = typeof j["@odata.nextLink"] === "string" ? (j["@odata.nextLink"] as string) : null;
-        // Where to go on from: the delta link at the end, or (more pages than one round reads) the next page, so the next round continues
-        // there instead of reading the same pages, and handing on the same mentions, again.
-        if (typeof j["@odata.deltaLink"] === "string") s.channels[key] = { delta: j["@odata.deltaLink"] as string };
-        else if (next) s.channels[key] = { delta: next };
-        link = next;
+      } catch (err) {
+        if (!(err instanceof GraphError) || ![400, 403, 404, 410].includes(err.status)) throw err;
+        // That channel's own trouble (gone, closed to this sign-in, or a delta link Graph no longer takes): the others go on. A link Graph
+        // no longer takes starts again from the last good round, so nothing said since then is missed and nothing older is handed on again.
+        log.error(`a channel could not be read: ${err.message}`);
+        if (err.status === 400 || err.status === 410) s.channels[key] = { delta: fromStart(c, new Date(s.lastRead ?? Date.parse(s.start)).toISOString()) };
       }
     }
-    turn = (turn + CHANNELS_PER_ROUND) % channelList.length;
     return found;
   };
 
@@ -674,43 +692,62 @@ export function createTeams(d: TeamsDeps) {
     return list;
   };
 
+  /** At most this many finished meetings are looked up a round: one with no transcript yet does not hold back the others. */
+  const MEETINGS_PER_ROUND = 3;
   const readTranscripts = async (s: State): Promise<number> => {
     if (!d.offer || s.transcriptsOff) return 0;
     const t = now();
     const done = (await meetings()).filter((m) => m.end < t - 10 * 60_000 && m.end > t - 2 * 24 * 3600_000 && !s.meetings.includes(m.id));
-    const m = done[0];
-    if (!m) return 0;
-    try {
-      const filter = encodeURIComponent(`JoinWebUrl eq '${m.joinUrl.replace(/'/g, "''")}'`);
-      const om = await get(`/me/onlineMeetings?$filter=${filter}`, "a meeting");
-      const id = ((Array.isArray(om.value) ? om.value : []) as { id?: string }[])[0]?.id;
-      if (typeof id !== "string") {
-        s.meetings.push(m.id);
-        return 0;
+    let offered = 0;
+    for (const m of done.slice(0, MEETINGS_PER_ROUND)) {
+      try {
+        offered += await transcriptOf(s, m, t);
+      } catch (err) {
+        if (err instanceof GraphError && (err.status === 403 || err.status === 404)) {
+          // The admin turned Graph's access to transcripts off for the whole company: said on the card, not tried again.
+          if (err.code === "GraphAccessToTranscriptsDisabled") s.transcriptsOff = true;
+          // A meeting Graph will not show this sign-in (one it did not organise): given up, not asked every round.
+          s.meetings.push(m.id);
+          if (s.transcriptsOff) break;
+          continue;
+        }
+        throw err;
       }
-      const ts = await get(`/me/onlineMeetings/${encodeURIComponent(id)}/transcripts`, "a meeting's transcripts");
-      const list = (Array.isArray(ts.value) ? ts.value : []) as { id?: string; createdDateTime?: string }[];
-      const last = list.filter((x) => typeof x.id === "string").sort((a, b) => String(a.createdDateTime).localeCompare(String(b.createdDateTime))).at(-1);
-      if (!last) {
-        // No transcript (nobody turned it on): looked for again until six hours after the meeting, then given up.
-        if (t - m.end > 6 * 3600_000) s.meetings.push(m.id);
-        return 0;
-      }
-      const c = await get(`/me/onlineMeetings/${encodeURIComponent(id)}/transcripts/${encodeURIComponent(last.id!)}/content?$format=text/vtt`, "a transcript", { accept: "text/vtt" });
-      const text = vttText(typeof c.text === "string" ? c.text : "");
-      s.meetings.push(m.id);
-      if (!text) return 0;
-      await d.offer({ source: "meeting", ref: `teams:${createHash("sha256").update(m.id).digest("hex").slice(0, 24)}`, label: `Teams · ${m.title || "meeting"}`, text, at: m.start });
-      return 1;
-    } catch (err) {
-      if (err instanceof GraphError && err.status === 403) {
-        // The admin turned Graph's access to transcripts off for the whole company: said on the card, not tried again.
-        if (err.code === "GraphAccessToTranscriptsDisabled") s.transcriptsOff = true;
-        s.meetings.push(m.id);
-        return 0;
-      }
-      throw err;
     }
+    return offered;
+  };
+  /**
+   * One finished meeting's transcript, handed on once. A recurring meeting's occurrences share one online meeting, and so its list of
+   * transcripts: only one made while this occurrence ran (from an hour before it to two hours after its end) is its own.
+   */
+  const transcriptOf = async (s: State, m: TeamsMeeting, t: number): Promise<number> => {
+    const filter = encodeURIComponent(`JoinWebUrl eq '${m.joinUrl.replace(/'/g, "''")}'`);
+    const om = await get(`/me/onlineMeetings?$filter=${filter}`, "a meeting");
+    const id = ((Array.isArray(om.value) ? om.value : []) as { id?: string }[])[0]?.id;
+    if (typeof id !== "string") {
+      s.meetings.push(m.id);
+      return 0;
+    }
+    const ts = await get(`/me/onlineMeetings/${encodeURIComponent(id)}/transcripts`, "a meeting's transcripts");
+    const list = (Array.isArray(ts.value) ? ts.value : []) as { id?: string; createdDateTime?: string }[];
+    const during = (x: { createdDateTime?: string }): boolean => {
+      if (!m.recurring) return true;
+      const at = Date.parse(String(x.createdDateTime ?? ""));
+      return Number.isFinite(at) && at >= m.start - 3600_000 && at <= m.end + 2 * 3600_000;
+    };
+    const last = list.filter((x) => typeof x.id === "string" && during(x))
+      .sort((a, b) => String(a.createdDateTime).localeCompare(String(b.createdDateTime))).at(-1);
+    if (!last) {
+      // No transcript (nobody turned it on): looked for again until six hours after the meeting, then given up.
+      if (t - m.end > 6 * 3600_000) s.meetings.push(m.id);
+      return 0;
+    }
+    const c = await get(`/me/onlineMeetings/${encodeURIComponent(id)}/transcripts/${encodeURIComponent(last.id!)}/content?$format=text/vtt`, "a transcript", { accept: "text/vtt" });
+    const text = vttText(typeof c.text === "string" ? c.text : "");
+    s.meetings.push(m.id);
+    if (!text) return 0;
+    await d.offer!({ source: "meeting", ref: `teams:${createHash("sha256").update(m.id).digest("hex").slice(0, 24)}`, label: `Teams · ${m.title || "meeting"}`, text, at: m.start });
+    return 1;
   };
 
   // ----- the catch-up of the last days, once -----

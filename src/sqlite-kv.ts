@@ -9,6 +9,7 @@
 import { createRequire } from "node:module";
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import type { FileKv } from "./local.ts";
 import type { StoreLost } from "./store-guard.ts";
 import { createLog } from "./log.ts";
@@ -28,23 +29,26 @@ export const STORE_FILES = {
 } as const;
 
 // The subset of node:sqlite used here: typed by hand so the module loads (and type-checks) on any Node the project supports.
-interface Statement {
-  run(...params: (string | number)[]): unknown;
-  get(...params: (string | number)[]): Record<string, unknown> | undefined;
-  all(...params: (string | number)[]): Record<string, unknown>[];
+/** What a statement binds: text, numbers (a bigint past 2^53), null, bytes. */
+export type SqlValue = string | number | bigint | null | Uint8Array;
+export interface Statement {
+  run(...params: SqlValue[]): unknown;
+  get(...params: SqlValue[]): Record<string, unknown> | undefined;
+  all(...params: SqlValue[]): Record<string, unknown>[];
 }
-interface Database {
+export interface Database {
   exec(sql: string): void;
   prepare(sql: string): Statement;
   close(): void;
 }
 
-let DatabaseSync: (new (path: string) => Database) | undefined;
+let DatabaseSync: (new (path: string, o?: { readOnly?: boolean; timeout?: number }) => Database) | undefined;
 /**
  * node:sqlite, loaded on first use. On Node 22 it prints an "experimental" warning when it loads: that one warning is held back (the person
- * would read it at every start and think something broke); any other warning goes through as usual.
+ * would read it at every start and think something broke); any other warning goes through as usual. Messages' history (src/imessage.ts)
+ * is opened with it too, read only.
  */
-function sqlite(): new (path: string) => Database {
+export function sqlite(): new (path: string, o?: { readOnly?: boolean; timeout?: number }) => Database {
   if (DatabaseSync) return DatabaseSync;
   const emit = process.emitWarning;
   process.emitWarning = ((warning: string | Error, ...rest: unknown[]) => {
@@ -53,7 +57,7 @@ function sqlite(): new (path: string) => Database {
     return (emit as (...a: unknown[]) => void).call(process, warning, ...rest);
   }) as typeof process.emitWarning;
   try {
-    DatabaseSync = (createRequire(import.meta.url)("node:sqlite") as { DatabaseSync: new (path: string) => Database }).DatabaseSync;
+    DatabaseSync = (createRequire(import.meta.url)("node:sqlite") as { DatabaseSync: new (path: string, o?: { readOnly?: boolean; timeout?: number }) => Database }).DatabaseSync;
   } finally {
     process.emitWarning = emit;
   }
@@ -94,6 +98,32 @@ const move = (from: string, to: string): void => {
  * older Pako's kv.json.made, remembers that), or it was damaged and kept aside (kv.db.bad, or kv.json.bad for an old JSON file). Null when
  * it was read, migrated, or never made.
  */
+/**
+ * Another app's database (Messages' chat.db, Mail's Envelope Index), read only, closed by the caller at once. While that app runs, its
+ * write-ahead log sits beside it (-wal): read through it. With the app closed there is none, and a read-only open would still leave an
+ * empty -wal and -shm behind: the file is then opened immutable, which writes nothing at all (an older SQLite without URI filenames falls
+ * back to the plain read-only open). `query_only` on top, so no statement can change it.
+ */
+export function openForeignReadOnly(path: string): Database {
+  const Db = sqlite();
+  let db: Database | null = null;
+  if (!existsSync(`${path}-wal`)) {
+    try {
+      db = new Db(`${pathToFileURL(path).href}?immutable=1`, { readOnly: true, timeout: 2000 });
+    } catch {
+      /* no URI filenames here: the plain read-only open below */
+    }
+  }
+  db ??= new Db(path, { readOnly: true, timeout: 2000 });
+  try {
+    db.exec("PRAGMA query_only = ON");
+  } catch (err) {
+    db.close();
+    throw err;
+  }
+  return db;
+}
+
 export function sqliteKv(dir: string, now: () => number = Date.now): FileKv {
   const p = (name: keyof typeof STORE_FILES): string => join(dir, STORE_FILES[name]);
   let lost: StoreLost | null = null;

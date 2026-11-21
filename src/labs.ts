@@ -76,6 +76,29 @@ export const LABS: readonly LabDef[] = [
 ];
 
 export const LAB_IDS: readonly LabId[] = LABS.map((l) => l.id);
+
+/**
+ * Each lab's own files: core never imports one of them except with `import type`, and loads them with import() only while the lab is on
+ * (src/lab-code.ts). test/labs-boundary.test.ts holds src/ to it. A path ending in "/" is a whole folder.
+ * Left in core on purpose: src/whatsapp.ts builds the chat door of every channel (Telegram, the panel), src/personal-caller.ts is the
+ * owner's connector and the line's dry run (it loads the phone providers below itself, only when a call or a voice is asked for),
+ * src/voice-memory.ts and src/voice-tools.ts are the notes and the friend-call card every door uses, and src/door/calls.ts only shows
+ * what the booking and call services hand it. The companion lab is a switch in src/companion.ts, whose red flag answer and birthdays
+ * are always on: it has no files of its own.
+ */
+export const LAB_FILES: Readonly<Record<LabId, readonly string[]>> = {
+  booking: ["src/booking.ts", "src/app/booking.ts", "src/maitre/", "src/restaurants/"],
+  calls: ["src/retell.ts", "src/personal-agent.ts", "src/voice-bridge.ts", "src/voice-prompt.ts", "src/voice-lab.ts"],
+  whatsapp: ["src/whatsapp-computer.ts", "src/tunnel.ts"],
+  relay: ["src/relay.ts", "src/relay-client.ts"],
+  companion: [],
+};
+
+/** The lab a file under src/ belongs to (a path from the repository's root, with "/"), or null for core. */
+export function labOfFile(path: string): LabId | null {
+  for (const id of LAB_IDS) if (LAB_FILES[id].some((f) => (f.endsWith("/") ? path.startsWith(f) : path === f))) return id;
+  return null;
+}
 const isLab = (v: string): v is LabId => (LAB_IDS as readonly string[]).includes(v);
 
 /** The words the panel shows with every lab. */

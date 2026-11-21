@@ -88,6 +88,13 @@ export function mountHeld(door: Door): Pick<Door, "heldQueue" | "holdAction" | "
     input: { type: HeldType; label: string; target: string; text: string; subject?: string; direct?: boolean }, seconds: number, key: string,
   ): Promise<void> => {
     const id = heldId(key, input.type);
+    // Asked while paused: refused now, not held. Held, it would go by itself after a RESUME within its window.
+    const pause = d.control ? await d.control.state() : null;
+    if (pause && pause.paused !== null) {
+      d.control?.log("autonomy", at("paused", { what: whatOf(input.type), to: input.label }));
+      await sendText(at("paused", { what: whatOf(input.type), to: input.label }));
+      return;
+    }
     const t = now();
     let fresh: boolean;
     try {

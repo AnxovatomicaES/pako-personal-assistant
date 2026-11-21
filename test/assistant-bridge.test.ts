@@ -462,8 +462,9 @@ test("bridge: an email Claude cannot read now (its limit) waits without holding 
     assert.deepEqual(await h.bridge.tick(0), { seen: 1, done: 0 });
     setFake({ reply: "hola" });
     h.inbox.push({ id: "o1", at: 2, text: "¿estás?" });
-    assert.deepEqual(await h.bridge.tick(0), { seen: 2, done: 1 }, "the owner's message is answered; the email waits its turn");
-    assert.deepEqual(h.acked, ["o1"]);
+    // Claude answers the owner's message: it goes first, and the email held for the limit no longer waits out its retry (it was held, not lost).
+    assert.deepEqual(await h.bridge.tick(0), { seen: 2, done: 2 }, "the owner's message is answered first; the email goes after it");
+    assert.deepEqual(h.acked, ["o1", "mail:<a@x>"]);
   } finally {
     h.close();
   }
@@ -897,4 +898,132 @@ test("stopRunningClaude: a Claude run under way (and what it started) ends with 
   await new Promise((r) => setTimeout(r, 100));
   assert.throws(() => process.kill(grandchild, 0), /ESRCH/, "the grandchild is gone too");
   assert.equal(stopRunningClaude("SIGTERM"), 0, "nothing left");
+});
+
+test("a very long answer still reaches the owner: its text is cut to what the server keeps, not refused whole for the server's body limit", async () => {
+  const replies: Record<string, unknown>[] = [];
+  const inbox = [{ id: "long-1", at: 1, text: "write me a very long story" }];
+  const fakeFetch = (async (url: string | URL, init?: RequestInit) => {
+    const path = new URL(String(url)).pathname;
+    const json = (v: unknown, status = 200) => new Response(JSON.stringify(v), { status, headers: { "content-type": "application/json" } });
+    if (path === "/assistant/inbox") return json({ messages: inbox.splice(0) });
+    if (path === "/assistant/context") return json({ now: "Saturday 14 November 2026, 12:00", ownerName: "Marta", contacts: [], memory: "" });
+    if (path === "/assistant/ack") return json({ ok: true });
+    // The server's bridge routes take a JSON body of 64 KB at most (src/door/bridge.ts) and keep 8000 characters of a reply's text.
+    const body = String(init?.body ?? "");
+    if (Buffer.byteLength(body) > 64 * 1024) return json({ error: "too large" }, 413);
+    if (path === "/assistant/reply") replies.push(JSON.parse(body));
+    return json({ ok: true });
+  }) as typeof fetch;
+  const config: BridgeConfig = {
+    server: "http://127.0.0.1:9", token: TOKEN, claudeBin: "claude", model: "", stateDir: mkdtempSync(join(tmpdir(), "asst-long-")), tools: [],
+    runTimeoutMs: 20_000, rotateAfter: 30, noticeMs: 60_000, whisperModel: "", whisperBin: "", ffmpegBin: "", whisperLang: "auto",
+  };
+  const long = "Once upon a time. ".repeat(5000); // 90,000 characters, as a long story can be
+  const bridge = createBridge({
+    config, fetch: fakeFetch, log: () => undefined, replyWaitsMs: [0, 0, 0, 0, 0],
+    run: async () => ({ text: `${long}<remind at="2026-11-20 09:00">call Ana</remind>`, sessionId: "s1", costUsd: 0 }),
+  });
+  for (let i = 0; i < 8 && replies.length === 0; i++) await bridge.tick(0);
+  assert.equal(replies.length, 1, "the answer went through");
+  const r = replies[0] as { text: string; remind?: unknown[] };
+  assert.ok(r.text.length <= 8000 && r.text.startsWith("Once upon a time."), "cut to what the server keeps");
+  assert.equal(r.remind?.length, 1, "and what it asked for is not lost with it");
+});
+
+test("a job's answer the server does not take now is sent again as it is, later: Claude is not asked again every round", async () => {
+  let runs = 0;
+  const posts: string[] = [];
+  let status = 503;
+  const inbox = [
+    { id: "rh:followup-1", at: 1, text: "", followup: { source: "mail", label: "x", text: "Ana: can you send the deck by Friday?" } },
+    { id: "brief:do-1", at: 2, text: "", brief: { kind: "do", label: "draft", text: "Reply to Ana about the deck", draft: true } },
+  ];
+  const acked: string[] = [];
+  const fakeFetch = (async (url: string | URL, init?: RequestInit) => {
+    const path = new URL(String(url)).pathname;
+    const json = (v: unknown, s = 200) => new Response(JSON.stringify(v), { status: s, headers: { "content-type": "application/json" } });
+    if (path === "/assistant/inbox") return json({ messages: inbox.filter((m) => !acked.includes(m.id)) });
+    if (path === "/assistant/ack") {
+      acked.push(...(JSON.parse(String(init?.body)).ids as string[]));
+      return json({ ok: true });
+    }
+    if (path === "/assistant/followups" || path === "/assistant/brief") {
+      posts.push(path);
+      return json({ error: "store down" }, status);
+    }
+    return json({ ok: true });
+  }) as typeof fetch;
+  const config: BridgeConfig = {
+    server: "http://127.0.0.1:9", token: TOKEN, claudeBin: "claude", model: "", stateDir: mkdtempSync(join(tmpdir(), "asst-jobs-")), tools: [],
+    runTimeoutMs: 20_000, rotateAfter: 30, noticeMs: 60_000, whisperModel: "", whisperBin: "", ffmpegBin: "", whisperLang: "auto",
+  };
+  const bridge = createBridge({
+    config, fetch: fakeFetch, log: () => undefined,
+    run: async () => {
+      runs++;
+      return { text: '{"loops":[]}', sessionId: "", costUsd: 0.01 };
+    },
+  });
+  for (let i = 0; i < 6; i++) await bridge.tick(0);
+  assert.equal(runs, 2, "one run for each job, however many rounds the server refuses its answer");
+  assert.ok(posts.length <= 4, `not posted again every round (${posts.length})`);
+  assert.deepEqual(acked, [], "not let go while the server may take it later");
+});
+
+test("\"One moment…\" never arrives after the note that the answer failed", async () => {
+  const said: string[] = [];
+  const inbox = [{ id: "slow-1", at: 1, text: "hola" }];
+  const fakeFetch = (async (url: string | URL, init?: RequestInit) => {
+    const path = new URL(String(url)).pathname;
+    const json = (v: unknown) => new Response(JSON.stringify(v), { status: 200, headers: { "content-type": "application/json" } });
+    if (path === "/assistant/inbox") return json({ messages: inbox.splice(0) });
+    if (path === "/assistant/context") return json({ now: "Saturday 14 November 2026, 12:00", ownerName: "Marta", contacts: [], memory: "" });
+    if (path === "/assistant/reply") {
+      const text = String(JSON.parse(String(init?.body)).text ?? "");
+      // WhatsApp takes a moment to send the notice: it is with the owner when its request ends.
+      if (/One moment/.test(text)) await new Promise((r) => setTimeout(r, 300));
+      said.push(text);
+    }
+    return json({ ok: true });
+  }) as typeof fetch;
+  const config: BridgeConfig = {
+    server: "http://127.0.0.1:9", token: TOKEN, claudeBin: "claude", model: "", stateDir: mkdtempSync(join(tmpdir(), "asst-moment-")), tools: [],
+    runTimeoutMs: 20_000, rotateAfter: 30, noticeMs: 20, whisperModel: "", whisperBin: "", ffmpegBin: "", whisperLang: "auto",
+  };
+  const bridge = createBridge({
+    config, fetch: fakeFetch, log: () => undefined,
+    run: async () => {
+      await new Promise((r) => setTimeout(r, 80));
+      throw new ClaudeError("something broke", "other");
+    },
+  });
+  await bridge.tick(0);
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal(said.length, 2);
+  assert.match(said[0]!, /One moment/);
+  assert.match(said[1]!, /couldn't work out an answer/);
+});
+
+test("Windows: the flags of a Claude Code installed with npm (a .js run with Node) are read from its --help too", async () => {
+  const { offersFlag, offersNoBare } = await import("../assistant/bridge.ts");
+  const dir = mkdtempSync(join(tmpdir(), "claude-js-"));
+  // What src/local.ts finds behind npm's claude.cmd: a .js file, which Windows cannot start by itself (nor can this test's system).
+  const js = join(dir, "cli.js");
+  writeFileSync(js, 'console.log("Usage: claude [options]\\n  --no-bare  keep the sign-in\\n  --effort <level>\\n  --input-format <format>");\n', { mode: 0o644 });
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+  Object.defineProperty(process, "platform", { value: "win32" });
+  try {
+    assert.equal(offersNoBare(js), true);
+    assert.equal(offersFlag(js, "--effort"), true);
+    assert.equal(offersFlag(js, "--input-format"), true);
+  } finally {
+    Object.defineProperty(process, "platform", platform);
+  }
+});
+
+test("parseReply: a half-open <closed> or <promise> never reaches the owner as markup either", () => {
+  assert.equal(parseReply("Done. <closed>the deck").text, "Done. the deck");
+  assert.equal(parseReply('Noted <promise who="Ana">send the deck').text, "Noted send the deck");
+  assert.equal(parseReply("ok </closed> fine").text, "ok fine");
 });

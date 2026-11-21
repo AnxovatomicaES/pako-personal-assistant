@@ -1,0 +1,42 @@
+{
+  "suite": "followups",
+  "behaviour": "Jake asks in English whether the budget is ready; the owner answers in Spanish «te lo mando mañana antes de las 10:00»: the owner's promise, in Spanish",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "ownerLanguage": "es",
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0JAKE",
+          "label": "Jake Morrow (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 16:00",
+              "who": "Jake Morrow",
+              "text": "Is the budget ready?"
+            },
+            {
+              "at": "2026-11-16 16:05",
+              "who": "Alex",
+              "text": "Todavía no, te lo mando mañana antes de las 10:00",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"owner_promise\", \"title\": \"Mandar a Jake el presupuesto\", \"detail\": \"Jake, see the conversation.\", \"who\": \"Jake\", \"due\": \"2026-11-17 10:00\", \"tz\": \"Europe/Madrid\", \"check\": \"slackFile\"}], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "owner_promise",
+        "who": "Jake",
+        "titleHas": [
+          "presupuesto"
+        ],
+        "dueLocal": "2026-11-17 10:00"
+      }
+    ]
+  }
+}

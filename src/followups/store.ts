@@ -6,7 +6,7 @@ import {
   BATCHES_MAX, CLOSED_KEEP_MS, JOB_KEEP_MS, JOBS_MAX, LOOPS_MAX, MAIL_BATCHES_MAX, MAIL_READ_MAX, OPEN_KEEP_MS, PARKED_KEEP_MS, PAST_HIDE_MS, RULES_MAX,
 } from "./limits.ts";
 import { EXPIRED_MAX, stateOf } from "./record.ts";
-import type { Engine } from "./parts.ts";
+import type { Base, Store } from "./parts.ts";
 import type { FollowupsState } from "./types.ts";
 import { readJsonRecord } from "../json-record.ts";
 
@@ -16,8 +16,7 @@ const TTL_SECONDS = 60 * 24 * 3600;
 /** How long a note of a parked loop let go after 45 days stays in the Parked list's history (as the weekly reset's own notes). */
 const EXPIRED_KEEP_MS = 90 * 24 * 3600_000;
 
-export function mountStore(fu: Engine): Pick<Engine, "mutate" | "read"> {
-  const { d, now } = fu;
+export function mountStore({ d, now }: Base): Store {
   let memory: FollowupsState = stateOf({});
   let chain: Promise<unknown> = Promise.resolve();
 

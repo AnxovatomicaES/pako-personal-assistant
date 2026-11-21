@@ -19,6 +19,7 @@ import type { Control } from "./control.ts";
 import { locale, texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import type { HealthReport } from "./watchdog.ts";
+import { createSlackGate } from "./slack-gate.ts";
 import { createSlackPoll } from "./slack-poll.ts";
 import { createSlackSocket, type SlackSocketDeps } from "./slack-socket.ts";
 import { createLog } from "./log.ts";
@@ -212,6 +213,13 @@ export interface SlackDeps {
    * Marketplace, is a "commercially distributed" app to Slack and gets 1 conversations.history call a minute: 1 then.
    */
   pollPerRound?: number;
+  /**
+   * Conversation reads a minute Slack allows this token (src/slack-gate.ts): 1 for the project's own app before it is listed; none for an
+   * app made by the workspace (only Slack's own Retry-After is kept).
+   */
+  historyPerMinute?: number;
+  /** The gate's wait, for the tests. */
+  historySleep?: (ms: number) => Promise<void>;
 }
 
 /** Without the app's secret the events address can only answer Slack's one-time check, so the app can be created before Render has its values. */
@@ -229,6 +237,9 @@ export function mountSlack(app: Express, d: SlackDeps) {
   const now = d.now ?? Date.now;
   const lang = d.lang ?? ((): Lang => "en");
 
+  // One gate for this token's conversation reads: the poll's and the follow-ups' (history below) share Slack's budget and its waits.
+  const gate = createSlackGate({ now, ...(d.historyPerMinute ? { perMinute: d.historyPerMinute } : {}), ...(d.historySleep ? { sleep: d.historySleep } : {}) });
+  const READS = new Set(["conversations.history", "conversations.replies"]);
   const api = async (method: string, params: Record<string, string>): Promise<Record<string, unknown>> => {
     let r: globalThis.Response;
     try {
@@ -239,7 +250,12 @@ export function mountSlack(app: Express, d: SlackDeps) {
     }
     const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
     if (!r.ok || j.ok !== true) {
-      const why = typeof j.error === "string" ? j.error : `HTTP ${r.status}`;
+      const why = typeof j.error === "string" ? j.error : r.status === 429 ? "ratelimited" : `HTTP ${r.status}`;
+      // Slack busy: it answered, and asks to wait (Retry-After, in seconds). Neither a failure nor a round that went through.
+      if (why === "ratelimited") {
+        if (READS.has(method)) gate.limited(Number(r.headers.get("retry-after")) * 1000);
+        throw new Error(`Slack ${method}: ratelimited`);
+      }
       // A message or a channel this token may not read is that one's; anything else (the token, Slack itself) is Slack failing.
       if (!/^(channel_not_found|not_in_channel|thread_not_found|message_not_found|user_not_found|missing_scope)$/.test(why)) {
         d.health?.(false, `Slack ${method}: ${why}`);
@@ -507,10 +523,15 @@ export function mountSlack(app: Express, d: SlackDeps) {
   const socket = config.appToken
     ? createSlackSocket({ appToken: config.appToken, receive, fetch: f, ...(d.eventsHealth ? { health: d.eventsHealth } : {}), ...(d.socket ?? {}) })
     : null;
+  // The poll's reads never wait: a call the gate does not give now is Slack's limit to it, and that conversation is read first next round.
+  const pollApi = async (method: string, params: Record<string, string>): Promise<Record<string, unknown>> => {
+    if (READS.has(method) && !gate.poll()) throw new Error(`Slack ${method}: ratelimited (waiting for the next free call)`);
+    return api(method, params);
+  };
   // Neither live way set up (what connecting from the panel gives): Pako looks for new messages itself (src/slack-poll.ts), started by the
   // app like Zoom's listing. A message that fails is logged and the round goes on with the next one.
   const poll = !config.appToken && !config.signingSecret
-    ? createSlackPoll({ api, self: whoAmI, deliver: (e) => handle(e), kv: d.kv, now, ...(d.pollPerRound ? { perRound: d.pollPerRound } : {}) })
+    ? createSlackPoll({ api: pollApi, self: whoAmI, deliver: (e) => handle(e), kv: d.kv, now, ...(d.pollPerRound ? { perRound: d.pollPerRound } : {}) })
     : null;
 
   const when = (at: number, l: Lang = lang()) =>
@@ -549,6 +570,8 @@ export function mountSlack(app: Express, d: SlackDeps) {
       const self = await whoAmI();
       const limit = Math.min(100, Math.max(1, o.limit ?? 15));
       const q = { channel, limit: String(o.thread ? 100 : limit), ...(o.oldest ? { oldest: o.oldest } : {}), ...(o.thread ? { ts: o.thread } : {}) };
+      // Its turn at the gate, before the poll's: a check that cannot read Slack would remind the owner of what they may have done.
+      if (!(await gate.check())) throw new Error("Slack is busy: ratelimited for longer than a read waits");
       const j = await api(o.thread ? "conversations.replies" : "conversations.history", q);
       const l = lang();
       const t = T(l);

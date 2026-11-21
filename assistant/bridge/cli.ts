@@ -29,6 +29,12 @@ export function childEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return out;
 }
 
+/** `claude --help`, started as every run is (claudeCommand: on Windows a .js behind npm's claude.cmd goes through Node). */
+function helpOf(bin: string): string {
+  const [cmd, args] = claudeCommand(bin, ["--help"]);
+  return spawnSync(cmd, args, { encoding: "utf8", timeout: 5000, env: childEnv(process.env), windowsHide: true }).stdout ?? "";
+}
+
 /**
  * Whether this Claude Code takes `--no-bare`. Anthropic says `--bare` (no plan sign-in, API key only) will become the default for `-p`; a
  * Claude Code that offers the opt-out gets it on every run, so a plan's sign-in keeps working. Asked once per program (its --help), cached.
@@ -39,7 +45,7 @@ export function offersNoBare(bin: string, help?: () => string): boolean {
   if (known !== undefined) return known;
   let text = "";
   try {
-    text = help ? help() : spawnSync(bin, ["--help"], { encoding: "utf8", timeout: 5000, env: childEnv(process.env), windowsHide: true }).stdout ?? "";
+    text = help ? help() : helpOf(bin);
   } catch {
     text = "";
   }
@@ -58,7 +64,7 @@ export function offersFlag(bin: string, flag: string, help?: () => string): bool
   let text = helpSeen.get(bin);
   if (text === undefined) {
     try {
-      text = help ? help() : spawnSync(bin, ["--help"], { encoding: "utf8", timeout: 5000, env: childEnv(process.env), windowsHide: true }).stdout ?? "";
+      text = help ? help() : helpOf(bin);
     } catch {
       text = "";
     }

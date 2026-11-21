@@ -1,22 +1,29 @@
-// Wires the mail readers: Pako's own inbox (AgentMail), the owner's mailbox by IMAP with its catch-up and sign-in tokens, and Teams.
+// Wires the mail readers: Pako's own inbox (AgentMail), the owner's mailbox by IMAP with its catch-up and sign-in tokens, the mail Apple
+// Mail downloaded on this Mac, Teams, and Messages on this Mac.
 
+import { createAppleMail, forgetAppleMail } from "../apple-mail.ts";
 import { type BackfillChat, createBackfill } from "../backfill.ts";
+import { runsInMacApp } from "../autostart.ts";
 import { appliedAtStart, writeStored } from "../connections.ts";
+import { createContactsStore } from "../contacts.ts";
 import { createImapReader } from "../imap.ts";
+import { createImessage, forgetImessage } from "../imessage.ts";
 import { pakoHome } from "../local.ts";
 import { createLog } from "../log.ts";
 import { createTokenSource } from "../mail-oauth.ts";
 import { mountMail } from "../mail.ts";
-import { createTeams } from "../teams.ts";
+import { createTeams, engineSeen } from "../teams.ts";
 import type { AfterProactive } from "./context.ts";
 
+const logAppleMail = createLog("apple-mail");
 const logImap = createLog("imap");
+const logImessage = createLog("imessage");
 const logMail = createLog("mail");
 const logTeams = createLog("teams");
 
 export function wireMail(ctx: AfterProactive) {
   const {
-    app, env, local, uiLang, dog, kv, control, mail, imap, imapRef, box, teamsCfg, teamsRef, invites, backfillCfg, backfillRef, followupsCfg,
+    app, env, local, uiLang, dog, kv, control, mail, imap, imapRef, appleMailCfg, appleMailRef, box, teamsCfg, teamsRef, imessageCfg, imessageRef, invites, backfillCfg, backfillRef, followupsCfg,
     followupsRef, followupsDoor, mailFollowups, lessons, door,
   } = ctx;
   if (mail.config && box) {
@@ -69,6 +76,20 @@ export function wireMail(ctx: AfterProactive) {
     imapRef.reader.start();
     logImap.info(`ON: ${imap.config.host}, read only, ${imap.config.folders.join(", ")}, every ${imap.config.pollMinutes} min`);
   }
+  if (appleMailCfg.config && local && box) {
+    // The same intake as IMAP's (src/mail-intake.ts): the mailbox, the triage, the follow-ups, the lessons and the invitations. No catch-up:
+    // it starts from the moment it was turned on.
+    appleMailRef.reader = createAppleMail({
+      config: appleMailCfg.config, kv: local.kv, inApp: runsInMacApp(env), box, control, lang: uiLang, now: Date.now,
+      enqueue: (m) => door.inbox.add(m), ownSent: (o) => lessons.ownSent(o),
+      ...(mailFollowups ? { sentMail: (m) => mailFollowups.sent(m), filed: (id, category) => mailFollowups.inbox(id, { category }) } : {}),
+      ...(invites ? { invites } : {}),
+    });
+    appleMailRef.reader.start();
+    logAppleMail.info(`ON: read only, every ${appleMailCfg.config.pollMinutes} min${imap.config ? " (IMAP is on too: an email read both ways is taken once)" : ""}`);
+  } else if (local) {
+    void forgetAppleMail(local.kv).catch((err: Error) => logAppleMail.error(`could not forget where it was: ${err.message}`));
+  }
   if (teamsCfg.config) {
     // The catch-up shares the mailbox's when there is one (one allowance, one pace); otherwise Teams gets its own.
     if (!backfillRef.b) {
@@ -81,7 +102,7 @@ export function wireMail(ctx: AfterProactive) {
     teamsRef.reader = createTeams({
       config: teamsCfg.config, kv, health: dog.reporter("teams"), notify: (text) => door.notifyOwner(text),
       observe: (m) => {
-        void followupsRef.engine?.observeSlack({ channel: m.channel, ts: m.ts, at: m.at, who: m.who, where: m.where, direct: m.direct, text: m.text });
+        void followupsRef.engine?.observeSlack(engineSeen(m));
       },
       ...(followupsCfg.config ? { offer: (o) => followupsDoor.offer(o) } : {}),
       catchUp: { days: backfillCfg.config.days, add: (c) => bf.addChat(c) },
@@ -99,5 +120,23 @@ export function wireMail(ctx: AfterProactive) {
     dog.probe(30 * 60_000, () => teamsReader.check());
     teamsReader.start();
     logTeams.info(`ON: ${teamsCfg.config.account || "connected"}, read only, every ${teamsCfg.config.pollMinutes} min`);
+  }
+  if (imessageCfg.config && local) {
+    // Each new message of a chat goes to the follow-ups as a message of that conversation, the owner's own too (their promises, and what
+    // closes an ask). Names come from the contacts imported from this Mac.
+    const contacts = createContactsStore(local.kv);
+    imessageRef.reader = createImessage({
+      config: imessageCfg.config, kv: local.kv, inApp: runsInMacApp(env), paused: async () => (await control.paused()) !== null,
+      contacts: async () => (await contacts.read()).people,
+      observe: (m) => {
+        void followupsRef.engine?.observeSlack({
+          channel: m.channel, ts: m.ts, at: m.at, who: m.who, where: m.where, direct: m.direct, text: m.text, ...(m.mine ? { mine: true } : {}),
+        });
+      },
+    });
+    imessageRef.reader.start();
+    logImessage.info(`ON: read only, every ${imessageCfg.config.pollMinutes} min`);
+  } else if (local) {
+    void forgetImessage(local.kv).catch((err: Error) => logImessage.error(`could not forget where it was: ${err.message}`));
   }
 }

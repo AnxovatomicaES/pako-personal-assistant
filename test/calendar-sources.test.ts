@@ -48,6 +48,24 @@ test("ics: an EXDATE given as a day (VALUE=DATE) removes that day's occurrence o
   assert.deepEqual(starts(text), ["2026-11-16T09:00:00.000Z", "2026-11-18T09:00:00.000Z"]);
 });
 
+test("ics: an EXDATE or RECURRENCE-ID with no zone on a series in another zone is that series' own wall clock, not the owner's", () => {
+  // New York's 10:00 is 15:00 UTC; read in the owner's zone (Madrid) the EXDATE was 09:00 UTC and matched nothing.
+  const text = cal([
+    "BEGIN:VEVENT", "UID:ny-daily", "DTSTART;TZID=America/New_York:20261116T100000", "DTEND;TZID=America/New_York:20261116T110000",
+    "RRULE:FREQ=DAILY;COUNT=4", "EXDATE:20261117T100000", "SUMMARY:NY daily", "END:VEVENT",
+  ], [
+    "BEGIN:VEVENT", "UID:ny-daily", "RECURRENCE-ID:20261118T100000", "DTSTART;TZID=America/New_York:20261118T120000",
+    "DTEND;TZID=America/New_York:20261118T130000", "SUMMARY:NY daily (moved)", "END:VEVENT",
+  ]);
+  const ev = icsEvents(parseFeed(text), window, "c");
+  assert.deepEqual(ev.map((e) => [e.title, new Date(e.start).toISOString()]), [
+    ["NY daily", "2026-11-16T15:00:00.000Z"],
+    ["NY daily (moved)", "2026-11-18T17:00:00.000Z"],
+    ["NY daily", "2026-11-19T15:00:00.000Z"],
+  ]);
+  assert.equal(ev[1]!.id, `ny-daily@${Date.parse("2026-11-18T15:00:00Z")}`, "the moved one keeps its occurrence's id");
+});
+
 const source = (label: string, events: CalEvent[]): CalendarSource => ({ label, events: async () => ({ events, partial: false }) });
 const core = (sources: CalendarSource[], now = NOW) =>
   createCalendarCore({ sources, timing: { remindMinutes: 10 }, kv: memoryKv(), timeZone: ZONE, now: () => now, notify: async () => undefined, lang: () => "en" });

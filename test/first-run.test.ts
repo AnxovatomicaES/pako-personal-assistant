@@ -40,7 +40,7 @@ const preflight = require(PREFLIGHT) as {
 const panel = require(PANEL) as {
   readEnvFile: (path: string, names: string[]) => Record<string, string>;
   pakoHome: (env: Record<string, string | undefined>, cwd: string, userHome: string) => string;
-  readLock: (home: string, upSeconds: number) => { pid: number; port: number; alive: boolean } | null;
+  readLock: (home: string, upSeconds: number, startOf?: (pid: number) => number | null) => { pid: number; port: number; alive: boolean } | null;
 };
 
 /** Waits for a condition, checking often; the long limit is for a machine running the whole suite at once. */
@@ -515,6 +515,22 @@ test("npm run panel finds the folder as npm start does (this terminal, then the 
   release();
 });
 
+test("npm run panel: a lock whose process number now belongs to another program is not a live Pako, so the token is not sent", () => {
+  // Pako was killed and its number came round again: the server (src/local.ts lockHolder) and the Mac app check when that process started;
+  // npm run panel did not, and sent the bridge token to whatever listened on the lock's port.
+  const dir = tmp();
+  writeFileSync(join(dir, ".lock"), `${process.pid}\n8790\n100\n\n1000\n`);
+  assert.equal(panel.readLock(dir, 5000, () => 5_000_000)?.alive, false, "started long after the lock says");
+  assert.equal(panel.readLock(dir, 5000, () => 1001)?.alive, true, "the same start, give or take two seconds");
+  assert.equal(panel.readLock(dir, 5000, () => null)?.alive, true, "unknown (no ps): as before");
+  writeFileSync(join(dir, ".lock"), `${process.pid}\n8790\n100\n`);
+  assert.equal(panel.readLock(dir, 5000, () => 5_000_000)?.alive, true, "an older lock with no start time: as before");
+  // The real start of this very process, as src/local.ts writes it.
+  const release = lockHome(dir, 8796);
+  assert.equal(panel.readLock(dir, uptime())?.alive, true);
+  release();
+});
+
 // ---------- 3. how Claude is doing: the bridge says it, the chat shows it ----------
 
 /** A stand-in for the bridge process: it runs until it is stopped or made to exit; `kills` counts the signals it was sent. */
@@ -801,7 +817,8 @@ test("bridge: a lost login is reported once and said once (this computer, not 't
     s.inbox.push({ id: "local-2", at: 2, text: "¿y ahora?" });
     await bridge.tick(0);
     assert.deepEqual(s.health, ["login", "ok", "limit"]);
-    assert.match(String(s.replies.at(-1)!.text), /Claude's usage limit/);
+    assert.match(String(s.replies.at(-1)!.text), /^Claude has reached its usage limit for now\./);
+    assert.equal(s.replies.at(-1)!.notice, true, "said once, as a notice (assistant/bridge/runs.ts)");
   } finally {
     s.close();
   }

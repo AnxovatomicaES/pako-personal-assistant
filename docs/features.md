@@ -29,8 +29,8 @@ Slack messages with promises both ways, eight emails (a newsletter, and one you 
 with one meeting moved and one cancelled overnight, follow-ups in every state, a draft, a meeting prep and a lesson. Tick a to-do, press
 Done or Not mine, ask “what did I promise Ana?”. With Claude signed in, the brief and the chat run on it for real; without, recorded ones
 show under “Connect Claude to see it live”. It lives in `~/.pako/demo`, apart from your data: every connection is off, any email or
-calendar change only says “Demo: nothing was sent”, the export refuses, and nothing it learns reaches your own setup. **Leave demo**
-deletes it.
+calendar change only says “Demo: nothing was sent”, the export and Delete everything refuse (leave the demo first), and nothing it
+learns reaches your own setup. **Leave demo** deletes it.
 
 ## Who it is for, and who it is not
 
@@ -106,7 +106,8 @@ Pako's one job is that nothing you promised, or were promised, gets dropped. **C
 
 - the chat, in the panel and in the Mac app; Telegram, the phone channel;
 - memory and the people in your life; reminders; tasks and lists; the morning brief;
-- follow-ups from Slack, mail (your own mailbox by IMAP, Pako's AgentMail inbox, sending through Resend), Zoom and Teams (read only);
+- follow-ups from Slack, mail (your own mailbox by IMAP, or with no password the mail Apple Mail has on this Mac; Pako's AgentMail inbox;
+  sending through Resend), Zoom, Teams and Messages on the Mac (iMessage and SMS) (read only);
 - calendars (an ICS link, the Mac's calendars, Google Calendar, Zoho);
 - [Gentle mode](#gentle-mode) and the [demo week](#try-it-on-a-demo-week).
 
@@ -179,6 +180,53 @@ already written, such as an entry in the log, stays as it was written.
   shown back (only "set" and the last four characters), and Pako restarts itself to apply them. A value in the terminal, `~/.pako/.env` or
   `./.env` wins, and the page says so.
 
+## On your phone
+
+Your brief and your follow-ups, on your phone, at home. Off until you turn it on: **Settings › General › Use on my phone (same Wi-Fi)**.
+
+- **What you get** at `http://<this computer's address>:8788/m` on the phone: *Needs you now* (what you owe that was reminded or is due
+  within three hours) with one-tap **Done**, **In 1 h**, **Tomorrow** and **Park**; today's brief with the sources each item cites; what you
+  owe and what others owe you; *Parked* and *Closed lately*, each with **Reopen**; and **Draft a reply**, which writes the message on your
+  computer (as `DRAFT` does in the chat) and gives it back with **Copy** and **Open in Mail**. The buttons do exactly what the chat's
+  buttons do. Big buttons, light and dark, one column at any width.
+- **Add to Home Screen** (Safari's Share menu, or Chrome's menu) gives Pako its own icon and full screen, like an app.
+- **Pairing.** Press **Pair a phone**: a QR code and a ten-letter code. Scan the QR code with the phone's camera, or open the page and type
+  the code. A code works once, for 10 minutes; the newest replaces the one before, and five wrong tries burn it. The phone then keeps a key
+  of its own (in a cookie only the page's server reads); Pako keeps only a hash of it, with the phone's name and when it was last seen.
+  Settings lists each phone, and **Remove** shuts one out at once. On the phone, **Unpair this phone** does the same.
+- **Same Wi-Fi only.** Turned on, Pako also listens on this computer's address on your home network, on its own port (`PAKO_PHONE_PORT`,
+  Pako's port + 1 by default), and answers there with the phone's page and nothing else: never the panel, the chat or the bridge. Anyone on
+  that Wi-Fi can reach the page, but it shows nothing until a phone is paired, and the connection is plain `http` (not encrypted), so use it
+  on a network you trust. Off again, that port closes.
+- **Away from home** the phone cannot reach your computer this way: Pako reaches you on [Telegram](channels.md) instead, with the brief and
+  the reminders' buttons (Done, In 1 h, Not mine; in Gentle mode Done, Snooze, Park). The brief's link in the chat points to this page while
+  it is on, and otherwise says the full brief is in the panel on your computer.
+- **When the computer cannot be reached** (asleep, or you left home) the page shows what it last loaded, with its time. It is kept in the
+  phone's browser until you unpair it.
+
+## On your iPhone, through Reminders
+
+Your follow-ups in Apple Reminders, so they are on your iPhone and Apple Watch anywhere, with no new app: Reminders and iCloud carry them.
+Pako for Mac only, and off until you turn it on: in the calendar card of the settings page (the gear), **On your iPhone, through
+Reminders › Put my follow-ups in Reminders**.
+macOS asks first (*Pako would like to access your Reminders*); if you said no, the card says where to turn it on (System Settings › Privacy &
+Security › Reminders).
+
+- **Two lists of Pako's own**, made in your default Reminders account: **Pako** (one reminder for each open thing you owe) and, unless you
+  untick *Also what others owe me*, **Pako: waiting on** (what others promised you). Each reminder has the follow-up's title, its time in
+  your time zone (with an alert then), and in its notes who and where, the line it came from, and a tag (`[pako:…]`) that ties it to the
+  follow-up. Never a message's words.
+- **Tick it anywhere, it's done here.** Completing a reminder on the iPhone, the Watch or the Mac closes the follow-up exactly as the Done
+  button does. Un-ticking it opens it again. Moving its date moves the follow-up's time (a date with no time counts as 09:00 that day).
+- **And the other way.** When Pako closes a follow-up (you pressed Done, said so in the chat, or a check saw it done), its reminder is
+  ticked; parked, it is removed; snoozed past its time, it moves to when Pako brings it back. A new title from Pako replaces the old one;
+  a title you changed in Reminders stays yours. Deleting a reminder takes that follow-up off your phone; the follow-up itself stays in Pako.
+- **When both changed** the same time between two rounds, the newer change wins. Pako for Mac looks every three minutes and a few seconds
+  after Reminders changes, so a tick on the Watch reaches Pako within moments while the Mac is awake (or when it wakes).
+- **Nothing else is touched.** Pako reads and writes only its two lists, and in them only the reminders carrying a follow-up's tag: a
+  reminder you add to a Pako list yourself is left alone, and your other lists are never read. Turning it off stops it; Pako's lists stay
+  in Reminders for you to delete there. What goes to iCloud: [privacy](privacy.md#what-leaves-the-computer-and-to-whom).
+
 ## Memory that knows time and people
 
 Every fact Pako keeps is dated: since when it holds, when Pako learnt it, and who said it where (`src/memory-facts.ts`). A new value for the
@@ -246,7 +294,7 @@ commitment you may be missing, a contradiction, a deadline, or the result of a c
 **What it checks.**
 - Your Zoom meetings: one starting near the agreed time, or one whose topic names those people.
 - Your calendar, in the same way.
-- Your own posts in that Slack conversation after the ask: a reply, or your Zoom link.
+- Your own posts in that Slack conversation after the ask: a reply, or your Zoom link. The same for a Teams chat and a Messages chat.
 - Your Sent mail, when your mailbox is connected by IMAP: a reply in that thread closes what it answers.
 
 **What it cannot see, and says so instead of guessing.**
@@ -257,6 +305,66 @@ commitment you may be missing, a contradiction, a deadline, or the result of a c
 - Any connection that is down at the moment.
 
 A source that could not be read is named in the brief as unread, never claimed as checked.
+
+### Time to do it
+
+A promise is often dropped not because you forgot it but because there was no time left to do it. For each open follow-up that you owe
+(your own promise, something asked of you, a deadline of yours) with a time in the next three working days, Pako guesses the work it takes
+and looks at your calendar for free working time before then.
+
+- **The work it takes.** What similar things took you before, once gentle mode has learned it from three or more; otherwise the guess the
+  follow-up was read with (Pako asks for one when it reads the conversation); otherwise a careful default: a reply 15 minutes, a review, a
+  document or a deck 60 minutes, anything else 30.
+- **Free working time.** Your working hours (`WORK_HOURS`, `WORK_DAYS`; 09:00–18:00, and the working week of your country), never your
+  quiet hours, never a meeting (a declined one aside). An all-day event is not busy unless it says you are away (*Out of office*,
+  *Vacation*, *Day off*). In your time zone, across clock changes. Pieces under 15 minutes do not count.
+- **At risk** when there is less free time than the work, or room for it only once before its time. With room for it twice or more,
+  nothing is said. A follow-up that already has an event before its time named after it counts as planned.
+- **What you see.** The morning brief lists what is at risk: *"At risk: “Send Ana the Q4 deck” is due Fri 12:00 and you have one free
+  hour before then — Thu 10:00–11:00. Block it?"*, and once per follow-up a card with **Block Thu 10–11**, **Another time** (the next free
+  time that holds it) and **Not needed**. *"find time for <words>"* asks for one yourself, at risk or not.
+- **Your yes, and only your yes.** Pressing **Block** is what puts *"Focus: Send Ana the Q4 deck"* on your calendar, through the Pako app on
+  your Mac like any other calendar change (a receipt with **Undo** follows). Nothing is ever written without that press, nothing while Pako
+  is paused, and a block whose time has passed is proposed again rather than written. A calendar Pako can only read (an ICS link, Zoho, or
+  the Mac app closed) is said so, with **Snooze 1 h** instead of Block.
+- **Limits.** At most one at-risk card per follow-up, none for one due in under two hours (too close to plan), none in the quiet hours, and
+  within the day's nudge cap shared with the reminders, check-ins and Pako's own suggestions. In gentle mode: its own cap, no card for an
+  item it stopped nudging, and none after two of these cards went unanswered (the brief still lists them).
+- A follow-up that is itself a meeting to set up is left out: a block named after it could pass for that meeting.
+
+### Mail on this Mac, with no password
+
+Connecting a mailbox by IMAP needs an app password or a sign-in. On a Mac where you read your email in Apple's Mail app, there is a
+shorter way: **Settings › Mail on this Mac › Turn on Mail on this Mac**. Off by default.
+
+- **What it reads.** The mail Apple Mail already downloaded on this Mac, every account you added there (iCloud, Gmail, Outlook,
+  Exchange, any IMAP), read only: your inboxes and your Sent mailboxes. Never Junk, Trash, Drafts or archives.
+- **From when.** Only mail from the moment you turned it on; each message once. While `STOP` is on nothing is read, as with IMAP; after
+  `RESUME` the mail that came meanwhile is read.
+- **The same mail as IMAP's.** Summaries, categories, the morning brief, invitations and follow-ups work the same, and your replies in
+  Sent close what they answer. With IMAP on too for the same account, each email is taken once.
+- **Full Disk Access.** macOS guards Mail's folder: the card says so in plain words, with **Open Full Disk Access** and **Check again**, as
+  for Messages.
+
+### Messages on the Mac (iMessage and SMS)
+
+Personal promises live in Messages: "I'll pick up the keys Saturday", "can you send me the photos?". On a Mac, Pako can read them too, the
+same way it reads a Slack DM. Off by default: turn it on in **Settings › Messages › Turn on Messages**.
+
+- **What it reads.** Messages' own history on this Mac (`~/Library/Messages/chat.db`), read only: iMessage, and the SMS your iPhone relays
+  to the Mac (Text Message Forwarding). 1:1 and group chats, your own messages too: they carry your promises and close what they answer.
+  Names come from the contacts you imported from this Mac; without one, the number or address.
+- **From when.** Only messages from the moment you turned it on: no history floods your follow-ups. Reactions (tapbacks), group events
+  and messages with only a photo or a file are skipped; each message is read once. While `STOP` is on nothing is read; after `RESUME`
+  the messages that came meanwhile are.
+- **Full Disk Access.** macOS guards Messages' folder. The card says so in plain words, with **Open Full Disk Access**: turn on Pako (or,
+  for Pako run from a terminal, that terminal app), come back, and press **Check again**.
+- **Closing the loop.** A later message of yours in the same chat that answers or delivers ("sent!", a photo, a link) closes it quietly,
+  as a reply in the same Slack thread does.
+- **Other people's words.** Information for you, never instructions: "ignore previous instructions" in a text changes nothing.
+- **Privacy.** Nothing leaves your Mac except what the follow-ups already send to your own Claude. Pako never sends a message, and never
+  logs a message's text, a number or an address. See [Privacy](privacy.md).
+- **Mac only.** On Windows and Linux the card says so.
 
 **Safe by design.** Other people's words are information, never instructions. Each reading runs on the assistant's computer in an isolated
 `claude` run with no tools and no conversation, behind its own random fence. The answer is strict JSON that the server checks field by field:
@@ -312,6 +420,22 @@ from what was said and what you told it about that person, says where it goes (t
 for anything it does not know. The brief's page has **Draft it** on each follow-up. When the follow-up came from an email, the draft also
 comes back as an email card (a reply to that sender, "Re:" its subject) with a **Send** button; it goes from Pako's own inbox only when you
 press it. Otherwise nothing is sent: you copy it and press send.
+
+**When someone owes you.** When someone promised you something with a time ("I'll send the Q3 numbers Tuesday at 10") and that time has
+passed, Pako offers a short reminder for them, ready to go, in two tones: **gentle** and **firm** (both polite). It waits half a working
+day after the time first (working hours are 9:00 to 18:00, Monday to Friday, in your zone), never offers one on a weekend or in your quiet
+hours, and offers at most one per promise every two working days; it counts in the day's reminders. Each reminder is written from what
+was promised and when, in the language that person writes to you in (Pako's own words around it stay in English), and checked like
+every draft: a date, an amount or a person the facts do not hold is taken out. It goes in the same place:
+- **From an email:** a reply to their email, "Re:" its subject, with **Send gentle** and **Send firm**. Your press is the yes: it goes
+  through the same send as any email Pako sends for you (from Pako's inbox, with its receipt and **Undo** window), once.
+- **From Slack, Teams or Messages:** Pako cannot post there, so **Copy gentle** and **Copy firm** give you the message on its own to copy,
+  with a link that opens Slack or Teams.
+
+Either way the promise waits again from then. **Not needed** stops the reminders for that promise (it stays on your open list), and a
+parked one is never chased. `CHASE` and a few words (`CHASE q3 numbers`) writes one now, whatever the time. Whether your own promise
+depends on theirs ("I'll send the report once Ana sends the numbers") is not read from your conversations yet, so a chase never comes
+earlier because of it. Needs follow-ups and the written brief.
 
 **Say it's done.** Tell Pako in the chat ("just sent Ana the deck", "the call with Omar is booked") and the follow-up it names is closed,
 as **Done** would. You get a receipt with **Undo**. If your words fit no open follow-up, or several, nothing is closed and Pako says which.

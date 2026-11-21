@@ -62,6 +62,21 @@ export function contactOf(v: unknown, stored = false): Contact | null {
   return { name, emails, phones, ...(org ? { org } : {}) };
 }
 
+/**
+ * The name the address book has for a phone number or an email address (a Messages handle, "+34612345678" or "ana@example.com"); null when
+ * none has it.
+ */
+export function contactNameFor(book: readonly Contact[], handle: string): string | null {
+  const h = handle.trim();
+  if (!h) return null;
+  if (h.includes("@")) {
+    const e = emailOf(h);
+    return (e && book.find((c) => c.emails.includes(e))?.name) || null;
+  }
+  const p = phoneOf(h);
+  return (p && book.find((c) => c.phones.includes(p))?.name) || null;
+}
+
 export interface ImportCount {
   total: number;
   added: number;

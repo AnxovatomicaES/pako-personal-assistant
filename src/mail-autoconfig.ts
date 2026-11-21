@@ -19,7 +19,7 @@ import { emailOf, guard, isObject, limit, line, localOnly, type RouteAuth, withi
 import type { ConnectionsSaver } from "./connections-panel.ts";
 import { texts, type Lang } from "./i18n.ts";
 import { failKind, type ImapConfig, type ImapConnect, imapflowConnect, type FailKind } from "./imap.ts";
-import { guardedGet, type Resolver } from "./restaurants/website.ts";
+import { guardedGet, type Resolver } from "./public-fetch.ts";
 
 export type MailProvider = "icloud" | "google" | "microsoft" | "yahoo" | "fastmail" | "zoho" | "other";
 
@@ -173,7 +173,7 @@ export function parseAutoconfig(xml: string, address: string): { host: string; p
 
 export interface AutoconfigDeps {
   fetch?: typeof fetch;
-  /** The name lookup each hop's host is checked with (src/restaurants/website.ts checkUrl): every address must be public. */
+  /** The name lookup each hop's host is checked with (src/public-fetch.ts checkUrl): every address must be public. */
   resolve?: Resolver;
   resolveMx?: (domain: string) => Promise<{ exchange: string; priority: number }[]>;
   now?: () => number;

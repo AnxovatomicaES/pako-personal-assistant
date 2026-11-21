@@ -95,6 +95,8 @@ export function cardStates(s = {}) {
   out.slack = hasProblem(conn(c, "slack")) ? "problem" : st("slack");
   out.zoom = hasProblem(conn(c, "zoom")) ? "problem" : st("zoom");
   out.teams = hasProblem(conn(c, "teams")) ? "problem" : st("teams");
+  out.imessage = hasProblem(conn(c, "imessage")) ? "problem" : st("imessage");
+  out.applemail = hasProblem(conn(c, "applemail")) ? "problem" : st("applemail");
   out.contacts = importedCount(s.people) > 0 ? "on" : "off";
   out.tables = hasProblem(conn(c, "tables")) ? "problem" : st("tables") === "on" && unchecked("tables") ? "saved" : st("tables");
   out.resend = hasProblem(conn(c, "resend")) ? "problem" : st("resend");

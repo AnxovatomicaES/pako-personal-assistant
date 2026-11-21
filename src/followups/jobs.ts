@@ -4,7 +4,7 @@
 import { lessonsSection } from "../lessons.ts";
 import { personSection } from "../person-context.ts";
 import { inline, neutralise } from "../quarantine.ts";
-import type { Engine } from "./parts.ts";
+import type { Base, Engine, JobsPart } from "./parts.ts";
 import { BATCH_MSGS_MAX, jobInboxId, WHO_MAX } from "./limits.ts";
 import { CHANNEL, isOpen, newId, TS } from "./record.ts";
 import { T } from "./texts.ts";
@@ -16,8 +16,7 @@ const log = createLog("followups");
 /** The lessons an extraction reads: follow-ups said not to be the owner's, reminders that were not useful, follow-ups the owner undid. */
 const FOLLOWUP_LESSONS = ["follow-up", "follow-up reminder", "follow-up kept", "follow-up closed"] as const;
 
-export function mountJobs(fu: Engine): Pick<Engine, "jobText" | "enqueueJob" | "slackJob" | "flushBatch" | "observeSlack" | "textJob" | "offer"> {
-  const { d, now, lang, mutate, read, stamp } = fu;
+export function mountJobs({ d, now, lang }: Base, { mutate, read, stamp }: Pick<Engine, "mutate" | "read" | "stamp">): JobsPart {
   /**
    * The text a job carries: now, the language, the source, the rules taught, what the owner's memory says of its people (`people`: their
    * names, Slack ids or addresses), what is open in that conversation, and its material.
@@ -57,19 +56,26 @@ export function mountJobs(fu: Engine): Pick<Engine, "jobText" | "enqueueJob" | "
     ].join("\n");
   };
 
-  const enqueueJob = async (job: Job, material: string[], people: string[] = []): Promise<boolean> => {
+  /**
+   * A job into the inbox: "queued", "refused" (the inbox said no: it will not answer, so the job does not hold its conversation's next one)
+   * or "failed" (an error: the inbox may or may not have it). `again`: this id may have reached the inbox before a restart; the inbox then
+   * refuses it as seen, which means it is there.
+   */
+  const queueJob = async (job: Job, material: string[], people: string[] = [], again = false): Promise<"queued" | "refused" | "failed"> => {
     const text = await jobText(job, material, people);
     await mutate((st) => {
-      st.jobs.push(job);
+      st.jobs = [...st.jobs.filter((j) => j.id !== job.id), job];
     });
     // A chat promise is kept at once (fromChat), never a job: "chat" never reaches here, and an older bridge knows only the other three.
     const source = job.source === "chat" ? "slack" : job.source;
-    // Never queued (refused, or the inbox could not be written): no answer will come, so the job does not hold its conversation's next one.
-    const ok = await d.enqueue({ id: jobInboxId(job.id), at: now(), text: "", followup: { source, label: job.label, text: text.slice(0, 16_000) } })
-      .catch((err: Error) => (log.error(`could not queue a job: ${err.message}`), false));
-    if (!ok) await mutate((st) => void (st.jobs = st.jobs.filter((j) => j.id !== job.id)));
-    return ok;
+    const out = await d.enqueue({ id: jobInboxId(job.id), at: now(), text: "", followup: { source, label: job.label, text: text.slice(0, 16_000) } })
+      .then((ok) => (ok || again ? "queued" as const : "refused" as const))
+      .catch((err: Error) => (log.error(`could not queue a job: ${err.message}`), "failed" as const));
+    if (out !== "queued") await mutate((st) => void (st.jobs = st.jobs.filter((j) => j.id !== job.id)));
+    else d.audit?.queued(job, material, people);
+    return out;
   };
+  const enqueueJob = async (job: Job, material: string[], people: string[] = []): Promise<boolean> => (await queueJob(job, material, people)) === "queued";
 
   /** A conversation's new messages, with its last ones (the owner's replies too) when Slack can be read, as a job's material, and that job. */
   const slackJob = async (b: Pick<Batch, "channel" | "thread" | "where" | "msgs">): Promise<{ job: Job; material: string[]; people: string[] }> => {
@@ -103,22 +109,34 @@ export function mountJobs(fu: Engine): Pick<Engine, "jobText" | "enqueueJob" | "
   };
 
   /**
-   * A conversation's batch is due: it becomes one job. One that could not be queued goes back to the store (before any message that came
-   * since), and the next tick tries it again: what was asked in it is never lost.
+   * A conversation's batch is due: it becomes one job, named in the store first (its claim, set by the tick). The batch stays in the store
+   * until that job is queued: a restart meanwhile queues it again under the same id (`again`), never lost and never twice. A job the inbox
+   * refused lets its claim go, and the next tick tries again; messages that came meanwhile wait for the next job.
    */
-  const flushBatch = async (b: Batch): Promise<boolean> => {
-    const ok = await (async () => {
-      const { job, material, people } = await slackJob(b);
-      return enqueueJob(job, material, people);
-    })().catch((err: Error) => (log.error(`could not queue a Slack conversation: ${err.message}`), false));
-    if (!ok) {
-      await mutate((s) => {
-        const later = s.batches.find((x) => x.channel === b.channel && x.thread === b.thread);
-        if (!later) s.batches.push(b);
-        else Object.assign(later, { firstAt: b.firstAt, msgs: [...b.msgs, ...later.msgs.filter((m) => !b.msgs.some((x) => x.ts === m.ts))].slice(-BATCH_MSGS_MAX) });
-      });
-    }
-    return ok;
+  const flushBatch = async (b: Batch, again = false): Promise<boolean> => {
+    const claim = b.claim ?? { id: newId(), keys: b.msgs.map((m) => m.ts) };
+    const msgs = b.msgs.filter((m) => claim.keys.includes(m.ts));
+    const out = !msgs.length ? "refused" as const : await (async () => {
+      const { job, material, people } = await slackJob({ ...b, msgs });
+      return queueJob({ ...job, id: claim.id }, material, people, again);
+    })().catch((err: Error) => (log.error(`could not queue a Slack conversation: ${err.message}`), "failed" as const));
+    await mutate((s) => {
+      const x = s.batches.find((y) => y.channel === b.channel && y.thread === b.thread);
+      // Gone from the store meanwhile (its cap): one not queued goes back.
+      if (!x) {
+        const { claim: _, ...rest } = b;
+        if (out !== "queued") s.batches.push(out === "failed" ? { ...rest, claim } : rest);
+        return;
+      }
+      if (x.claim?.id !== claim.id) return;
+      if (out === "failed") return;
+      delete x.claim;
+      if (out === "refused") return;
+      x.msgs = x.msgs.filter((m) => !claim.keys.includes(m.ts));
+      if (!x.msgs.length) s.batches = s.batches.filter((y) => y !== x);
+      else x.firstAt = now();
+    });
+    return out === "queued";
   };
 
   /** A Slack message kept for the owner: added to its conversation's batch (a few minutes, then one job). */
@@ -164,5 +182,5 @@ export function mountJobs(fu: Engine): Pick<Engine, "jobText" | "enqueueJob" | "
     }
   };
 
-  return { jobText, enqueueJob, slackJob, flushBatch, observeSlack, textJob, offer };
+  return { jobText, enqueueJob, queueJob, slackJob, flushBatch, observeSlack, textJob, offer };
 }

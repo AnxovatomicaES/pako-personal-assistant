@@ -59,14 +59,22 @@ test("mail: an email from Mariana does not close what Ana owes; one from Ana in 
   const theirs = (id: string, who: string) =>
     loop(id, `Send the signed contract (${who})`, who, { kind: "other_promise", where: { type: "mail", label: "email", mailThread: TH } });
   const r = rig([theirs("a000000001", "Ana"), theirs("a000000002", "Ruiz")]);
-  assert.equal(await r.engine.answered({ who: ["Mariana Lopez", "mariana.lopez@example.com"], ref: "new-1", thread: TH }), 0);
-  assert.equal(await r.engine.answered({ who: ["Peter Druiz", "peter@example.com"], ref: "new-2", thread: TH }), 0);
+  // What Pako knows of each person's addresses (the contacts, the mail the promise came from).
+  const known = async (l: { who: string }) => (l.who === "Ana" ? ["Ana Garcia <ana.garcia@example.com>"] : ["Ruiz <ruiz@example.com>"]);
+  const from = (who: string, address: string, ref: string, thread?: string) =>
+    r.engine.answered({ who: [who, address], from: address, ref, known, ...(thread ? { thread } : {}) });
+  assert.equal(await from("Mariana Lopez", "mariana.lopez@example.com", "new-1", TH), 0);
+  assert.equal(await from("Peter Druiz", "peter@example.com", "new-2", TH), 0);
   assert.deepEqual(r.stored().loops.map((l) => l.status), ["open", "open"]);
   // Ana writes about lunch, in another thread: not the contract she promised.
-  assert.equal(await r.engine.answered({ who: ["", "ana.garcia@example.com"], ref: "new-3", thread: "fedcba9876543210" }), 0);
-  assert.equal(await r.engine.answered({ who: ["", "ana.garcia@example.com"], ref: "new-4" }), 0, "no thread known: not taken as the answer");
+  assert.equal(await from("", "ana.garcia@example.com", "new-3", "fedcba9876543210"), 0);
+  assert.equal(await from("", "ana.garcia@example.com", "new-4"), 0, "no thread known: not taken as the answer");
   assert.equal(r.stored().loops[0]!.status, "open");
-  assert.equal(await r.engine.answered({ who: ["", "ana.garcia@example.com"], ref: "new-5", thread: TH }), 1);
+  // Someone else writes in that thread with Ana's name (or an address that looks like hers): her name alone closes nothing.
+  assert.equal(await from("Ana Garcia", "billing@attacker.example", "new-6", TH), 0);
+  assert.equal(await from("", "ana@attacker.example", "new-7", TH), 0);
+  assert.equal(r.stored().loops[0]!.status, "open");
+  assert.equal(await from("", "Ana.Garcia@example.com", "new-5", TH), 1);
   const ana = r.stored().loops[0] as unknown as { status: string; autoClosed?: { why: string } };
   assert.equal(ana.status, "done");
   assert.match(ana.autoClosed!.why, /answered in that email thread/, "closed by Pako, with why: the brief lists it");

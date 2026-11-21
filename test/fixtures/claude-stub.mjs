@@ -6,7 +6,9 @@
 // prompt and the message, for each answer.
 //
 // CLAUDE_STUB_LOG: a file that gets one JSON line per start and per turn ({event, pid, args | prompt}). CLAUDE_STUB_REPLY: the answer ("ok").
-// CLAUDE_STUB_MODE: ok, limit (the plan's limit, "resets 9pm"), gone (a --resume of a conversation that is not there), hang (never answers).
+// CLAUDE_STUB_MODE: ok, limit (the plan's limit, "resets 9pm"), gone (a --resume of a conversation that is not there), hang (never answers),
+// old-cli (a Claude Code too old for the --model it is given, CLAUDE_STUB_TOO_NEW, claude-opus-5-5 by default: refused as 2.1.258 refused it;
+// any other model, or none, answers as usual).
 
 import { appendFileSync, readFileSync } from "node:fs";
 
@@ -103,6 +105,21 @@ if (flag("--model") === "pako-self-test-no-such-model" || resumed === "00000000-
 
 note({ event: "start", args });
 await sleep(Number(env("CLAUDE_STUB_START_MS", "0")));
+// A Claude Code too old for this model, word for word as 2.1.258 said it on a Mac: the tag on the error output, an error result, and exit 0.
+if (mode === "old-cli" && flag("--model") && flag("--model") === env("CLAUDE_STUB_TOO_NEW", "claude-opus-5-5")) {
+  const model = flag("--model");
+  process.stderr.write(`[claude-code:unrecognized_model] ${JSON.stringify({ model, query_source: "sdk" })}\n`);
+  const refused = {
+    type: "result", subtype: "success", is_error: true, terminal_reason: "api_error", api_error_status: 400, num_turns: 1, total_cost_usd: 0, session_id: session,
+    result: "API Error: 400 Claude Code 2.1.258 does not support this model; version 2.1.280 or newer is required. "
+      + "Run 'claude update', or update the Claude desktop app, then try again.",
+  };
+  if (flag("--input-format") === "stream-json") {
+    process.stdout.write(`${JSON.stringify({ type: "system", subtype: "init", session_id: session, model, mcp_servers: [] })}\n`);
+  }
+  process.stdout.write(`${JSON.stringify(refused)}\n`);
+  process.exit(0);
+}
 if (mode === "gone" && resumed) {
   process.stderr.write(`No conversation found with session ID: ${resumed}`);
   process.exit(1);

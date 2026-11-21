@@ -187,6 +187,8 @@ export interface LearningStore {
   answer(text: string, now: number): Promise<{ card: Card; quality: number; next: number } | null>;
   /** A quiz offered by the proactive check today: false when one was already offered. */
   claimOffer(day: string): Promise<boolean>;
+  /** The day's quiz given back (its card could not be sent): unclaimed, and the question asked at `at` no longer waits for an answer. */
+  releaseOffer(day: string, at: number): Promise<void>;
 }
 
 const match = (topic: string, g: Goal): boolean => {
@@ -300,6 +302,19 @@ export function createLearning(kv: Kv | null): LearningStore {
         if (s.offered === day) return { out: false, changed: false };
         s.offered = day;
         return { out: true, changed: true };
+      }),
+    releaseOffer: (day, at) =>
+      change((s) => {
+        let changed = false;
+        if (s.offered === day) {
+          delete s.offered;
+          changed = true;
+        }
+        if (s.asking?.at === at) {
+          delete s.asking;
+          changed = true;
+        }
+        return { out: undefined, changed };
       }),
   };
 }

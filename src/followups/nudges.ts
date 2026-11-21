@@ -2,18 +2,23 @@
 // loops, closing them silently or nudging the owner within the day's budget.
 
 import { today } from "../lists.ts";
-import type { Engine } from "./parts.ts";
-import { CLAIM_MS, ESCALATE_BEFORE_MS, RECHECK_FOR_MS, RECHECK_MS } from "./limits.ts";
-import { isOpen } from "./record.ts";
+import type { Base, Engine, Nudges } from "./parts.ts";
+import { CLAIM_MS, ESCALATE_BEFORE_MS, JOB_HOLD_MS, RECHECK_FOR_MS, RECHECK_MS } from "./limits.ts";
+import { isOpen, newId } from "./record.ts";
 import { T } from "./texts.ts";
 import type { Batch, CardFeedback, GentleRound, Loop } from "./types.ts";
-import { GT, gentleNudgeText, isStuck, pickVariant, VARIANTS } from "../gentle.ts";
+import { GT, gentleNudgeText, isStuck, pickVariant, UNANSWERED_STOP, VARIANTS } from "../gentle.ts";
 import { createLog } from "../log.ts";
 
 const log = createLog("followups");
 
-export function mountNudges(fu: Engine): Pick<Engine, "quietNow" | "nextAfter" | "tick"> {
-  const { d, now, lang, config, mutate, read, flushBatch, flushMailDue, runCheck, nudgeText, dueText, sourceText } = fu;
+export function mountNudges(
+  { d, now, lang, config }: Base,
+  { mutate, read, flushBatch, flushMailDue, runCheck, nudgeText, dueText, sourceText }: Pick<
+    Engine,
+    "mutate" | "read" | "flushBatch" | "flushMailDue" | "runCheck" | "nudgeText" | "dueText" | "sourceText"
+  >,
+): Nudges {
   const quietNow = (t: number): boolean => {
     const q = config.quiet;
     if (!q) return false;
@@ -44,14 +49,19 @@ export function mountNudges(fu: Engine): Pick<Engine, "quietNow" | "nextAfter" |
       const t = now();
       const due = await mutate((s) => {
         // A conversation whose last job is still unanswered waits for that answer: the next job then lists the loop it made, so a later
-        // "never mind" can close it. A job never answered is forgotten after JOB_KEEP_MS, and the wait with it.
-        const waiting = (b: Batch): boolean => s.jobs.some((j) => j.source === "slack" && j.where.channel === b.channel && j.where.thread === b.thread);
-        const ready = s.batches.filter((b) => t - b.firstAt >= config.batchMs && !waiting(b));
-        s.batches = s.batches.filter((b) => !ready.includes(b));
-        return ready;
+        // "never mind" can close it. A job not answered within JOB_HOLD_MS (the inbox may have let it go) no longer holds it.
+        const waiting = (b: Batch): boolean => s.jobs.some((j) =>
+          t - j.at < JOB_HOLD_MS && j.id !== b.claim?.id && j.source === "slack" && j.where.channel === b.channel && j.where.thread === b.thread);
+        // A batch already claimed was on its way when the server stopped: tried again under the same id. The others are claimed here,
+        // in the store, before anything is read or queued; each leaves the store only once its job is (flushBatch).
+        const ready = s.batches.filter((b) => b.claim || (t - b.firstAt >= config.batchMs && !waiting(b)));
+        return ready.map((b) => {
+          const again = !!b.claim;
+          b.claim ??= { id: newId(), keys: b.msgs.map((m) => m.ts) };
+          return { b: structuredClone(b), again };
+        });
       });
-      // One not queued is back in the store (flushBatch), for the next tick.
-      for (const b of due) if (await flushBatch(b)) out.jobs++;
+      for (const { b, again } of due) if (await flushBatch(b, again)) out.jobs++;
       // Email threads too, each one job (src/followups/mail-jobs.ts).
       out.jobs += await flushMailDue(t);
       if (quietNow(t)) return out;
@@ -60,9 +70,10 @@ export function mountNudges(fu: Engine): Pick<Engine, "quietNow" | "nextAfter" |
       const cap = g ? g.maxPerDay : config.maxPerDay;
       const st = await read();
       // A loop whose conversation has a job still unanswered is looked at after that answer: it may say the loop was called off.
+      const held = st.jobs.filter((j) => t - j.at < JOB_HOLD_MS);
       const asking = (l: Loop): boolean =>
-        (!!l.where.channel && st.jobs.some((j) => j.source === "slack" && j.where.channel === l.where.channel && j.where.thread === l.where.thread))
-        || (!!l.where.mailThread && st.jobs.some((j) => j.source === "mail" && j.where.mailThread === l.where.mailThread));
+        (!!l.where.channel && held.some((j) => j.source === "slack" && j.where.channel === l.where.channel && j.where.thread === l.where.thread))
+        || (!!l.where.mailThread && held.some((j) => j.source === "mail" && j.where.mailThread === l.where.mailThread));
       const ready = st.loops.filter((l) => isOpen(l) && l.nextCheckAt > 0 && l.nextCheckAt <= t && !asking(l));
       for (const l of ready) {
         // Claimed first, in the store: another process (a deploy's overlap) that read the same loop finds it moved on and leaves it.
@@ -74,7 +85,9 @@ export function mountNudges(fu: Engine): Pick<Engine, "quietNow" | "nextAfter" |
           return true;
         });
         if (!claimed) continue;
-        const seen = await runCheck(l);
+        // Reopened by the owner after Pako closed it: what the check sees is what they said was wrong, so it is said, never taken as done.
+        const looked = await runCheck(l);
+        const seen = looked.done && l.reopened ? { ...looked, done: false, what: "", said: l.lastCheck ?? "" } : looked;
         out.checked++;
         const lg = lang();
         if (seen.done) {
@@ -89,7 +102,7 @@ export function mountNudges(fu: Engine): Pick<Engine, "quietNow" | "nextAfter" |
           continue;
         }
         // Gentle: two nudges with no answer and it is not nudged again; it waits in the brief (and PENDING), where it can be closed or parked.
-        if (g && (l.unanswered ?? 0) >= 2) {
+        if (g && (l.unanswered ?? 0) >= UNANSWERED_STOP) {
           await mutate((s) => {
             const x = s.loops.find((y) => y.id === l.id);
             if (unchanged(x)) Object.assign(x, { nextCheckAt: 0, folded: true, lastCheck: seen.said, checkedAt: now() });

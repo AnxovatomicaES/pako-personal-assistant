@@ -1,0 +1,50 @@
+{
+  "suite": "followups",
+  "behaviour": "Bruno asks for the signed contract and the Q3 invoice; the owner sends the contract and says the invoice follows Monday 10:00: one loop left, for the invoice, due Monday",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-16 09:00",
+          "ref": "m-bruno",
+          "from": "Bruno Keller <bruno@northgate.example>",
+          "to": "Alex <alex@acme.example>",
+          "subject": "Contract and invoice",
+          "category": "needs_you",
+          "messageId": "<bk1@northgate.example>",
+          "body": "Hi Alex,\n\nCould you send me the signed contract and the Q3 invoice by Thursday 12:00?\n\nThanks,\nBruno"
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"request_to_owner\", \"title\": \"Send Bruno the signed contract and the Q3 invoice\", \"detail\": \"Bruno, see the conversation.\", \"who\": \"Bruno\", \"due\": \"2026-11-19 12:00\", \"tz\": \"Europe/Madrid\", \"check\": \"none\", \"reason\": \"email\"}], \"closes\": []}"
+      },
+      {
+        "mail": {
+          "at": "2026-11-16 12:10",
+          "ref": "s-bruno3",
+          "mine": true,
+          "from": "Alex <alex@acme.example>",
+          "to": "Bruno Keller <bruno@northgate.example>",
+          "subject": "Re: Contract and invoice",
+          "messageId": "<s4@acme.example>",
+          "inReplyTo": "<bk1@northgate.example>",
+          "references": "<bk1@northgate.example>",
+          "body": "Hi Bruno,\n\nAttached is the signed contract. The Q3 invoice will follow on Monday at 10:00.\n\nAlex"
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"owner_promise\", \"title\": \"Send Bruno the Q3 invoice\", \"detail\": \"Bruno, see the conversation.\", \"who\": \"Bruno\", \"due\": \"2026-11-23 10:00\", \"tz\": \"Europe/Madrid\", \"check\": \"none\", \"reason\": \"email\"}], \"closes\": [\"{{loop1}}\"]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "exact": false,
+    "open": [
+      {
+        "who": "Bruno",
+        "titleHas": [
+          "invoice"
+        ],
+        "dueLocal": "2026-11-23 10:00"
+      }
+    ]
+  }
+}

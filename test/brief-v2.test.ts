@@ -266,6 +266,29 @@ test("validated: an event the model left out is added; hostile text is cut; no J
   assert.equal(validateBrief(JSON.stringify({ todos: [{ title: "x", sources: ["Q77"] }] }), g, { now: T0, timeZone: MADRID, lang: "en", id: "x" }), null);
 });
 
+test("validated: a day item with no event behind it keeps only a time its facts hold; one the model made up goes", async () => {
+  const g = await gather();
+  const task = idOf(g, "Revisar el contrato");
+  const stan = idOf(g, "3:30 or 4:30");
+  const bank = idOf(g, "Llamar al banco");
+  const raw = JSON.stringify({
+    opening: "Un lunes tranquilo.",
+    day: [
+      // A task has no time at all: 15:00 is the model's.
+      { time: "15:00", title: "Revisar el contrato de Vic", sources: [task] },
+      // The Slack message says 3:30 or 4:30 AM New York, never 18:00.
+      { time: "18:00", end: "19:00", title: "Llamada AcmeCo", sources: [stan] },
+      // The reminder is at 13:00 in Madrid: that time is the fact's own.
+      { time: "13:00", title: "Llamar al banco", sources: [bank] },
+    ],
+  });
+  const doc = validateBrief(raw, g, { now: T0, timeZone: MADRID, lang: "en", id: "0123456789" })!;
+  assert.deepEqual(doc.dayItems.map((d) => [d.time, d.title, d.confirmed]), [
+    ["13:00", "Llamar al banco", false],
+    ["16:00", "Comité de producto", true],
+  ]);
+});
+
 // ---------- 3. the chat's short version ----------
 
 test("the chat: opening, focus, to-dos, the day with the unconfirmed meeting, and the page's address", async () => {

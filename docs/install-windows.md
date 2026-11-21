@@ -43,7 +43,7 @@ For example: `$env:PAKO_AUTOSTART = "1"; irm https://raw.githubusercontent.com/A
 
 Autostart is a Task Scheduler task that belongs to your account and is called `Pako-<your user name>`. It runs when you sign in, as you, with no window, and has no time limit. It also runs on battery. `src/autostart-windows.ts` makes it with `schtasks` from an XML file, because plain `schtasks` flags cannot make a sign-in task without an administrator, and the tasks they make stop after 72 hours and never start on battery.
 
-The task runs `%USERPROFILE%\.pako\autostart\start-pako.ps1`. That file starts `node.exe` (its full path) on `src\server.ts`, hidden, with `PAKO_NO_OPEN=1` so a browser tab does not open at every sign-in. Pako's output goes to `%USERPROFILE%\.pako\logs\pako.log` and `pako.err.log`, and the previous start's logs are kept as `.old`.
+The task runs `%USERPROFILE%\.pako\autostart\start-pako.ps1`. That file starts `node.exe` (its full path) on `src\server.ts`, hidden, with `PAKO_NO_OPEN=1` so a browser tab does not open at every sign-in, `PAKO_SERVICE=1` so no sign-in link is written into its log, and the `PAKO_HOME`, `PORT`, `PAKO_HOST`, `CLAUDE_BIN` and `PAKO_SECRET_STORE` the window that turned it on had. Pako's output goes to `%USERPROFILE%\.pako\logs\pako.log` and `pako.err.log`, and the previous start's logs are kept as `.old`.
 
 From Pako's folder:
 

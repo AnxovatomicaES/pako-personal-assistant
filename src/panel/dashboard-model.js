@@ -192,9 +192,10 @@ export function oneSuggestion(status) {
 export function healthSummary(state, now) {
   const parts = Array.isArray(state?.parts) ? state.parts : [];
   const bad = parts.filter((p) => p.status === "down" || p.status === "failing");
-  // A Claude Code that failed the bridge's self-test is a problem too, though Claude still answers: the sentence says how to go back.
+  // A Claude Code that failed the bridge's self-test is a problem too, though Claude still answers: the sentence says how to go back. So is
+  // one too old for a model Pako asks for ("behind"): the sentence says how to update it.
   const cli = state?.cli;
-  if (cli && cli.status === "failed" && typeof cli.note === "string" && cli.note) bad.push({ key: "claude", detail: cli.note });
+  if (cli && (cli.status === "failed" || cli.status === "behind") && typeof cli.note === "string" && cli.note) bad.push({ key: "claude", detail: cli.note });
   const times = parts.map((p) => Math.max(Number(p.okAt) || 0, Number(p.failSince) || 0)).filter(Boolean);
   const last = times.length ? Math.max(...times) : now;
   return bad.length

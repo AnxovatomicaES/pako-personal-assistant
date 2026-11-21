@@ -47,3 +47,12 @@ test(".env.example: every setting in it is one the code reads and the docs expla
   slack.SLACK_SIGNING_SECRET = "0123456789abcdef0123456789abcdef";
   assert.deepEqual(loadSlackConfig({ ...slack }).problems, []);
 });
+
+test("ci.yml: the smoke start looks for words the signed-out panel really serves", () => {
+  // It looked for "Panel de Pako" after the texts became English: the check could only fail.
+  const yaml = read(".github/workflows/ci.yml");
+  const wanted = [...yaml.matchAll(/curl -fsS http:\/\/127\.0\.0\.1:\d+\/panel \| grep -q "([^"]+)"/g)].map((m) => m[1]!);
+  assert.ok(wanted.length > 0, "the smoke start checks the panel");
+  const page = read("src/panel/signin-local.html");
+  for (const w of wanted) assert.ok(page.includes(w), `the signed-out panel says ${JSON.stringify(w)}`);
+});

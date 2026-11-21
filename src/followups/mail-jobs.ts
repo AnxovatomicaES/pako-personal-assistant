@@ -10,16 +10,15 @@ import { today } from "../lists.ts";
 import { cleanMailBody, MAIL_BODY_MAX, MAIL_THREAD } from "../mail-body.ts";
 import { inline, neutralise } from "../quarantine.ts";
 import { createLog } from "../log.ts";
-import { JOB_KEEP_MS, MAIL_BATCH_MAX, MAIL_JOB_CHARS, MAIL_JOBS_PER_DAY } from "./limits.ts";
-import type { Engine } from "./parts.ts";
+import { JOB_HOLD_MS, JOB_KEEP_MS, MAIL_BATCH_MAX, MAIL_JOB_CHARS, MAIL_JOBS_PER_DAY } from "./limits.ts";
+import type { Base, Engine, MailJobs } from "./parts.ts";
 import { newId } from "./record.ts";
 import { T } from "./texts.ts";
 import type { Job, MailBatch, MailSeen } from "./types.ts";
 
 const log = createLog("followups");
 
-export function mountMailJobs(fu: Engine): Pick<Engine, "observeMail" | "flushMailDue"> {
-  const { d, now, lang, config, mutate, enqueueJob, stamp } = fu;
+export function mountMailJobs({ d, now, lang, config }: Base, { mutate, queueJob, stamp }: Pick<Engine, "mutate" | "queueJob" | "stamp">): MailJobs {
   const perDay = config.mailPerDay ?? MAIL_JOBS_PER_DAY;
 
   /**
@@ -79,36 +78,55 @@ export function mountMailJobs(fu: Engine): Pick<Engine, "observeMail" | "flushMa
     return { job, material: [t("mailThread"), "", blocks.join("\n\n")], people: [...new Set(names)].slice(0, 8) };
   };
 
-  /** One batch queued, or put back for the next tick (before any email that came since): what was in it is never lost. */
-  const flushMail = async (b: MailBatch): Promise<boolean> => {
-    const ok = await (async () => {
-      const { job, material, people } = mailJob(b);
-      return enqueueJob(job, material, people);
-    })().catch((err: Error) => (log.error(`could not queue an email thread: ${err.message}`), false));
+  /**
+   * One batch queued under its claim (named in the store by flushMailDue): it leaves the store only once its job is queued, and a restart
+   * meanwhile queues it again under the same id (`again`): never lost, never twice. Emails that came meanwhile wait for the next job.
+   */
+  const flushMail = async (b: MailBatch, again: boolean): Promise<boolean> => {
+    const claim = b.claim ?? { id: newId(), keys: b.mails.map((m) => m.ref) };
+    const mails = b.mails.filter((m) => claim.keys.includes(m.ref));
+    const out = !mails.length ? "refused" as const : await (async () => {
+      const { job, material, people } = mailJob({ ...b, mails });
+      return queueJob({ ...job, id: claim.id }, material, people, again);
+    })().catch((err: Error) => (log.error(`could not queue an email thread: ${err.message}`), "failed" as const));
     await mutate((s) => {
-      if (ok) {
+      if (out === "queued") {
         const day = today(now(), d.timeZone);
         if (s.mailBudget.day !== day) s.mailBudget = { day, n: 0 };
         s.mailBudget.n++;
+      }
+      const x = s.mailBatches.find((y) => y.thread === b.thread);
+      // Gone from the store meanwhile (its cap): one not queued goes back.
+      if (!x) {
+        const { claim: _, ...rest } = b;
+        if (out !== "queued") s.mailBatches.push(out === "failed" ? { ...rest, claim } : rest);
         return;
       }
-      const later = s.mailBatches.find((x) => x.thread === b.thread);
-      if (!later) s.mailBatches.push(b);
-      else Object.assign(later, { firstAt: b.firstAt, mails: [...b.mails, ...later.mails.filter((m) => !b.mails.some((x) => x.ref === m.ref))].slice(-MAIL_BATCH_MAX) });
+      if (x.claim?.id !== claim.id || out === "failed") return;
+      delete x.claim;
+      if (out === "refused") return;
+      x.mails = x.mails.filter((m) => !claim.keys.includes(m.ref));
+      if (!x.mails.length) s.mailBatches = s.mailBatches.filter((y) => y !== x);
+      else x.firstAt = now();
     });
-    return ok;
+    return out === "queued";
   };
 
   /** The threads whose batch is due, each as one job; a thread whose last job is unanswered waits for it (its loops then come listed). */
   const flushMailDue = async (t: number): Promise<number> => {
     const due = await mutate((s) => {
-      const waiting = (b: MailBatch): boolean => s.jobs.some((j) => j.source === "mail" && j.where.mailThread === b.thread);
-      const ready = s.mailBatches.filter((b) => t - b.firstAt >= config.batchMs && !waiting(b));
-      s.mailBatches = s.mailBatches.filter((b) => !ready.includes(b));
-      return ready;
+      const waiting = (b: MailBatch): boolean =>
+        s.jobs.some((j) => t - j.at < JOB_HOLD_MS && j.id !== b.claim?.id && j.source === "mail" && j.where.mailThread === b.thread);
+      // Claimed in the store before anything is queued; one claimed already was on its way when the server stopped: tried again.
+      const ready = s.mailBatches.filter((b) => b.claim || (t - b.firstAt >= config.batchMs && !waiting(b)));
+      return ready.map((b) => {
+        const again = !!b.claim;
+        b.claim ??= { id: newId(), keys: b.mails.map((m) => m.ref) };
+        return { b: structuredClone(b), again };
+      });
     });
     let n = 0;
-    for (const b of due) if (await flushMail(b)) n++;
+    for (const { b, again } of due) if (await flushMail(b, again)) n++;
     return n;
   };
 

@@ -75,7 +75,9 @@ export function mountTick(b: AfterTurn) {
       done++;
       attempts.delete(m.id);
       retryAt.delete(m.id);
-      if (!(await ack(m.id))) handledUnacked.add(m.id);
+      // Kept as answered before the ack is asked for: a restart in between acks it again instead of answering it a second time.
+      handledUnacked.add(m.id);
+      if (await ack(m.id)) handledUnacked.delete(m.id);
       // One email or transcript per round: each is a whole run of Claude, and the owner's message that arrived meanwhile must wait for one, not for all of them.
       // A check let go without a run took no time: the next item goes in this round.
       if (side && !superseded) break;

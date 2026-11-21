@@ -5,8 +5,10 @@
 // Two kinds of message matter for what the owner was asked or promised:
 // - Direct messages and group DMs. The list of them comes from conversations.list (every ten rounds); each one's new messages come from
 //   conversations.history, after the last one seen there (the owner's own too: src/slack.ts reads them for the owner's promises). At most
-//   `perRound` conversations are read in a round: those with news in the last two days every round, then the rest in turn. With hundreds
-//   of DMs, a quiet one is read every few minutes and a busy one every minute, well inside the limits of an app made by its own workspace (Slack's Tier 3, 50+ a minute).
+//   `perRound` conversations are read in a round: those with news in the last two days, then the rest in turn (a third of the round stays
+//   for the quiet ones, and more busy ones than fit are read in turn too). With hundreds of DMs, a quiet one is read every few minutes and a
+//   busy one every minute or two, well inside the limits of an app made by its own workspace (Slack's Tier 3, 50+ a minute). One
+//   conversation Slack will not show is passed by; its rate limit ends the round's DMs, and that one is read first next round.
 // - Mentions of the owner in channels, from search.messages (one call every other round), after the last one seen.
 //
 // Only what came after Slack was connected is taken: the first round marks where to start and nothing older is looked at, so a new
@@ -116,23 +118,41 @@ export function createSlackPoll(d: SlackPollDeps) {
     convs = out;
   };
 
-  /** This round's conversations: every one with news in the last two days, then the others in turn, up to perRound. */
-  const pick = (s: PollState): typeof convs => {
+  /**
+   * This round's conversations: every one with news in the last two days, then the others in turn, up to perRound. More busy ones than a
+   * round reads are read in turn too, so none of them waits for the others to go quiet. `back(c)`: a conversation Slack did not let this
+   * round read (its rate limit) is the first of the next round, instead of waiting for its turn to come round again.
+   */
+  let hotTurn = 0;
+  const pick = (s: PollState): { chosen: typeof convs; back: (c: (typeof convs)[number]) => void } => {
     const t = now();
     // One or two a look (the project's app before it is in the Slack Marketplace): every conversation in turn, so a busy one cannot keep
     // the others from ever being read.
     if (perRound <= 2) {
       const chosen = convs.length ? Array.from({ length: Math.min(perRound, convs.length) }, (_, i) => convs[(turn + i) % convs.length]!) : [];
       turn = convs.length ? (turn + chosen.length) % convs.length : 0;
-      return chosen;
+      return { chosen, back: (c) => void (turn = Math.max(0, convs.indexOf(c))) };
     }
-    const hot = convs.filter((c) => t - (s.active[c.id] ?? 0) < HOT_MS).slice(0, perRound);
-    const cold = convs.filter((c) => !hot.includes(c));
+    const busy = convs.filter((c) => t - (s.active[c.id] ?? 0) < HOT_MS);
+    const cold = convs.filter((c) => !busy.includes(c));
+    // A third of the round stays for the quiet ones while there are any, so a news in one of them is never held back by the busy ones.
+    const cap = cold.length ? perRound - Math.max(1, Math.floor(perRound / 3)) : perRound;
+    let hot = busy;
+    if (busy.length > cap) {
+      hot = Array.from({ length: cap }, (_, i) => busy[(hotTurn + i) % busy.length]!);
+      hotTurn = (hotTurn + cap) % busy.length;
+    } else hotTurn = 0;
     const room = perRound - hot.length;
     const chosen = [...hot];
     for (let i = 0; i < Math.min(room, cold.length); i++) chosen.push(cold[(turn + i) % cold.length]!);
     turn = cold.length ? (turn + Math.max(room, 0)) % cold.length : 0;
-    return chosen;
+    return {
+      chosen,
+      back: (c) => {
+        if (cold.includes(c)) turn = cold.indexOf(c);
+        else if (busy.length > cap) hotTurn = busy.indexOf(c);
+      },
+    };
   };
 
   type Msg = SlackEvent & { bot_id?: string };
@@ -161,9 +181,28 @@ export function createSlackPoll(d: SlackPollDeps) {
   };
   const readDms = async (s: PollState, self: string): Promise<number> => {
     let found = 0;
-    for (const c of pick(s)) {
+    const { chosen, back } = pick(s);
+    for (const c of chosen) {
       const after = s.after[c.id] ?? s.start;
-      const msgs = (await historyAfter(c.id, after)).filter((m) => typeof m.ts === "string" && later(m.ts, after));
+      let read: Msg[];
+      try {
+        read = await historyAfter(c.id, after);
+      } catch (err) {
+        const why = (err as Error).message;
+        // Slack's rate limit: no more DMs this round, and this one first next round; the mentions are still looked at.
+        if (/\bratelimited\b/.test(why)) {
+          back(c);
+          log.error("Slack asked to slow down: the next DM is read in the next look");
+          break;
+        }
+        // One conversation this token may not read (closed, gone) is that one's: the others and the mentions go on.
+        if (/\b(channel_not_found|not_in_channel|missing_scope|is_archived)\b/.test(why)) {
+          log.error(`a conversation could not be read: ${why}`);
+          continue;
+        }
+        throw err;
+      }
+      const msgs = read.filter((m) => typeof m.ts === "string" && later(m.ts, after));
       if (!msgs.length) continue;
       // Oldest first, as they were written.
       msgs.sort((a, b) => Number(a.ts) - Number(b.ts));

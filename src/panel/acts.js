@@ -7,6 +7,7 @@
 //   things it keeps), and the week's suggestions with what became of them. Off (PROACTIVE=off): the card says so.
 // - Gentle mode (src/gentle.ts, /panel/api/gentle): opt-in, with its not-medical line; the day's nudge cap, the time anchors' lead times, and
 //   the Parked list, each with a button that brings it back.
+// - Beta: help measure Pako (src/beta-audit.ts, /panel/api/beta-audit): opt-in; this week's questions as numbers, never what they were about.
 // - What Pako learned from you (src/lessons.ts, /panel/api/lessons): each correction kept as a short dated lesson (Not mine, an undo, a 👎,
 //   a draft changed before it was sent), how often it was taught, and a button that deletes one.
 // Saved with the strict session cookie and the x-pako header, like STOP. Everything is put on the page as text, never as HTML.
@@ -42,6 +43,12 @@ const WORDS = {
   st_sent: "", st_accepted: "accepted", st_declined: "no, thanks", st_less: "topic off",
   trabajo: "Work", comida: "Food", viajes: "Travel", ocio: "Fun", deporte: "Sport", aficiones: "Hobbies", bienestar: "Wellbeing",
   aprendizaje: "Learning", amigos: "Friends", topicFailed: "I couldn't change it. Try again.",
+  betaTitle: "Beta: help measure Pako",
+  betaOn: "Ask me a few questions a week",
+  betaWeek: "This week: {asked} of {n} questions asked, {answered} answered.",
+  betaStopped: "Two went unanswered, so no more this week.",
+  betaNone: "No questions yet this week.",
+  betaReport: "To see the numbers: npm run beta:report. Only an export you choose to send leaves this computer.",
   gentleTitle: "Gentle mode",
   gentleOn: "Gentle mode",
   gentleCap: "Nudges a day at most",
@@ -97,7 +104,24 @@ function h(tag, attrs = {}, ...children) {
   return el;
 }
 
-const st = { autonomy: null, life: null, lessons: null, gentle: null, auNote: "", lifeNote: "", lessonsNote: "", gentleNote: "", card: null };
+const st = {
+  autonomy: null, life: null, lessons: null, gentle: null, beta: null, auNote: "", lifeNote: "", lessonsNote: "", gentleNote: "", betaNote: "", card: null,
+};
+
+async function saveBeta(on) {
+  try {
+    const r = await fetch("/panel/api/beta-audit", {
+      method: "POST", credentials: "same-origin", headers: { "content-type": "application/json", "x-pako": "1" }, body: JSON.stringify({ on }),
+    });
+    if (!r.ok) throw new Error(String(r.status));
+    st.beta = await r.json();
+    st.betaNote = t("saved");
+  } catch {
+    /* offline or refused: said in the note */
+    st.betaNote = t("failed");
+  }
+  paint();
+}
 
 async function saveGentle(change, path = "/panel/api/gentle") {
   try {
@@ -306,6 +330,27 @@ function gentlePart() {
   ];
 }
 
+function betaPart() {
+  if (!st.beta) return [];
+  const w = st.beta.week;
+  return [
+    h("h3", { id: "h-acts-beta" }, t("betaTitle")),
+    h("p", { class: "tg-lead", id: "beta-desc" }, str(st.beta.description)),
+    h("div", { class: "tg-form" },
+      h("label", { for: "beta-on" }, t("betaOn")),
+      h("input", {
+        id: "beta-on", type: "checkbox", role: "switch", checked: !!st.beta.on, "aria-describedby": "beta-desc",
+        onchange: (e) => void saveBeta(!!e.target.checked),
+      })),
+    st.beta.on
+      ? h("p", { class: "muted small" }, w ? t("betaWeek", { asked: num(w.asked), n: num(w.questions), answered: num(w.answered) }) : t("betaNone"))
+      : "",
+    st.beta.on && w?.stopped ? h("p", { class: "muted small" }, t("betaStopped")) : "",
+    h("p", { class: "muted small" }, t("betaReport")),
+    st.betaNote ? h("p", { class: "hint", role: "status" }, st.betaNote) : "",
+  ];
+}
+
 function lessonsPart() {
   if (!st.lessons) return [];
   const list = Array.isArray(st.lessons.lessons) ? st.lessons.lessons : [];
@@ -327,7 +372,7 @@ function lessonsPart() {
 }
 
 function paint() {
-  if (!st.card || (!st.autonomy && !st.life && !st.lessons && !st.gentle)) return;
+  if (!st.card || (!st.autonomy && !st.life && !st.lessons && !st.gentle && !st.beta)) return;
   st.card.hidden = false;
   st.card.replaceChildren(
     h("div", { class: "card-head" }, h("h2", { id: "h-acts" }, h("i", { "data-lucide": "sparkles" }), h("span", {}, t("title")))),
@@ -335,6 +380,7 @@ function paint() {
       st.autonomy ? h("div", { class: "part" }, ...autonomyPart()) : "",
       st.gentle ? h("div", { class: "part", id: "acts-gentle" }, ...gentlePart()) : "",
       st.life ? h("div", { class: "part" }, ...lifePart()) : "",
+      st.beta ? h("div", { class: "part", id: "acts-beta" }, ...betaPart()) : "",
       st.lessons ? h("div", { class: "part" }, ...lessonsPart()) : ""),
   );
   window.lucide?.createIcons?.({ attrs: { "aria-hidden": "true" } });
@@ -354,6 +400,16 @@ async function loadGentle() {
   try {
     const r = await fetch("/panel/api/gentle", { credentials: "same-origin", cache: "no-store" });
     if (r.ok) st.gentle = await r.json();
+  } catch {
+    /* the server is restarting: the next load asks again */
+  }
+  paint();
+}
+
+async function loadBeta() {
+  try {
+    const r = await fetch("/panel/api/beta-audit", { credentials: "same-origin", cache: "no-store" });
+    if (r.ok) st.beta = await r.json();
   } catch {
     /* the server is restarting: the next load asks again */
   }
@@ -390,6 +446,7 @@ function mount() {
   void loadGentle();
   void loadLife();
   void loadLessons();
+  void loadBeta();
   setInterval(() => void loadLife(), 5 * 60_000);
 }
 

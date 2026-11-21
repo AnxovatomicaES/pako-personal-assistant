@@ -100,6 +100,10 @@ test("provenance: a name, a number or an address the owner wrote is theirs; one 
   // A relation the owner wrote names the person it belongs to (the people in their life).
   assert.deepEqual(recipientOrigin("Ana", SRC(["dile a mi hermana que llego tarde"], [], [{ name: "Ana", relation: "mi hermana" }])), { from: "owner" });
   assert.deepEqual(recipientOrigin("Ana", SRC(["dile a mi jefe que llego tarde"], [], [{ name: "Ana", relation: "mi hermana" }])), { from: "pako" });
+  // Two people with that relation: "my client" names neither of them, so the model's pick is its own (a card asks first).
+  const clients = [{ name: "Ana", relation: "client" }, { name: "Omar", relation: "client" }, { name: "Luis", relation: "my boss" }];
+  assert.deepEqual(recipientOrigin("Ana", SRC(["tell my client the invoice is ready"], [], clients)), { from: "pako" });
+  assert.deepEqual(recipientOrigin("Luis", SRC(["tell my boss the invoice is ready"], [], clients)), { from: "owner" }, "one boss: named");
 });
 
 test("provenance: words copied or paraphrased from outside text are someone else's; Pako's own wording is not", () => {
@@ -322,7 +326,6 @@ async function rig(o: RigOptions = {}) {
     autonomy: { config: { mode: o.autonomy ?? "direct", seconds: 10 }, delay: (ms) => (ms > 0 ? (o.windowMs ?? 800) : 0) },
     fetch: meta, now: () => clock.now, callCheckMs: 60_000, receiptWaitMs: 60_000, lang: () => "en",
   });
-  void door;
   const server: Server = createServer(app);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -352,7 +355,7 @@ async function rig(o: RigOptions = {}) {
   const shown = (): string[] => sent.map((b) => (b.type === "text" ? (b.text.body as string) : `${b.interactive.body.text}\n[${(b.interactive.action.buttons as Body[]).map((x) => x.reply.id).join(" | ")}]`));
   const buttons = (): string[] => ([...sent].reverse().find((b) => b.type === "interactive")?.interactive.action.buttons as Body[] ?? []).map((x) => String(x.reply.id));
   return {
-    sent, clock, control, calls, mails, say, press, answer, context, shown, buttons,
+    sent, clock, control, door, calls, mails, say, press, answer, context, shown, buttons,
     close: () => {
       server.close();
       server.closeAllConnections();
@@ -746,7 +749,9 @@ test("door: a held email that did not go (paused in its window, or refused) is n
     await s.answer({ text: "Sending it.", email: { to: "Ana", subject: "", text: "Marta is running late." }, key });
     const undo = s.buttons()[0]!;
     assert.match(undo, /^a0:/);
-    await s.control.setPaused(true, s.clock.now); // the panel's switch: no STOP typed, so the action is still held
+    // A pause that is not a STOP (the store guard's, src/store-guard.ts) leaves the action held: it is refused when its window ends.
+    // (The panel's switch is a whole STOP now, which undoes it at once: "the panel's STOP switch does what a typed STOP does".)
+    await s.control.setPaused(true, s.clock.now);
     await until(() => /I'm paused: I didn't send the email to Ana/.test(s.shown().at(-1)!));
     await s.press(undo);
     assert.equal(sent.length, 0);
@@ -759,6 +764,41 @@ test("door: a held email that did not go (paused in its window, or refused) is n
     await until(() => /couldn't send the email to Ana/.test(s.shown().at(-1)!));
     await s.press(undo2);
     assert.equal(s.shown().at(-1), "That's no longer pending.");
+  } finally {
+    s.close();
+  }
+});
+
+test("door: the panel's STOP switch does what a typed STOP does: a held email never goes, even after a RESUME inside its window", async () => {
+  const s = await rig({ windowMs: 1500 });
+  try {
+    const key = await s.say("email Ana that I'm late");
+    await s.answer({ text: "Sending it.", email: { to: "Ana", subject: "", text: "Marta is running late." }, key });
+    const undo = s.buttons()[0]!;
+    assert.match(undo, /^a0:/);
+    const stopsBefore = s.door.stops();
+    assert.equal(await s.door.stop(s.clock.now, "STOP from the panel: everything stopped"), true);
+    assert.equal(s.door.stops(), stopsBefore + 1, "the cards that check the STOP count end too");
+    assert.ok((await s.control.recent(5)).some((l) => l.text === "STOP from the panel: everything stopped"));
+    await s.control.setPaused(false, s.clock.now); // the panel's RESUME, still inside the window
+    await pause(1700);
+    assert.equal(s.mails.length, 0, "a STOP from the panel undoes what was held, like a typed one");
+  } finally {
+    s.close();
+  }
+});
+
+test("door: an action the assistant asks for while paused is not held for after RESUME: it is refused at once", async () => {
+  const s = await rig({ windowMs: 1500 });
+  try {
+    const key = await s.say("email Ana that I'm late");
+    await s.say("STOP");
+    await s.answer({ text: "Sending it.", email: { to: "Ana", subject: "", text: "Marta is running late." }, key });
+    assert.equal(s.shown().at(-1), "I'm paused: I didn't send the email to Ana.");
+    assert.ok(!s.buttons().some((b) => b.startsWith("a0:")), "no Undo card promising it goes in a few seconds");
+    await s.say("RESUME");
+    await pause(1700);
+    assert.equal(s.mails.length, 0, "RESUME does not send what was asked while paused");
   } finally {
     s.close();
   }

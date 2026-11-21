@@ -24,7 +24,7 @@ import { connectionDetails } from "../src/connections-details.ts";
 import { createFollowups } from "../src/followups.ts";
 import { CHANNEL } from "../src/followups/record.ts";
 import {
-  createTeams, features, isTeamsChannel, plainTeams, retryAfterMs, teamsChannel, TEAMS_KEY, vttText, type TeamsSeen,
+  createTeams, engineSeen, features, isTeamsChannel, plainTeams, retryAfterMs, teamsChannel, TEAMS_KEY, vttText, type TeamsSeen,
 } from "../src/teams.ts";
 import { adminRequest, mountTeamsConnect, needsAdmin } from "../src/teams-connect.ts";
 import { memoryKv, PANEL, auth } from "./helpers/connect-rig.ts";
@@ -623,11 +623,13 @@ function pagedGraph(o: { granted: string[]; route: (path: string, url: URL) => u
     return out === undefined ? json({ error: { code: "NotFound" } }, 404) : json(out);
   }) as typeof fetch;
   const seen: TeamsSeen[] = [];
+  const offers: { ref: string; label: string; text: string; at: number }[] = [];
   const clock = { now: T0 };
   const logged: string[] = [];
   const teams = createTeams({
     config: { clientId: MS_ID, refreshToken: REFRESH, account: "", name: "Owner Person", org: "", pollMinutes: 5 }, kv: memoryKv(),
     observe: (m) => void seen.push(m), fetch: fake, graph: GRAPH, tokenUrl: "https://login.test/token", now: () => clock.now, sleep: async () => {},
+    offer: async (x) => (offers.push(x), true),
   });
   const quiet = async <V>(fn: () => Promise<V>): Promise<V> => {
     const keep = console.error;
@@ -638,7 +640,7 @@ function pagedGraph(o: { granted: string[]; route: (path: string, url: URL) => u
       console.error = keep;
     }
   };
-  return { teams, seen, clock, paths, logged, quiet, GRAPH };
+  return { teams, seen, offers, clock, paths, logged, quiet, GRAPH };
 }
 const gm = (id: string, at: number, text: string, from = ANA, mentions: string[] = []) => ({
   id, messageType: "message", createdDateTime: iso(at), lastModifiedDateTime: iso(at), deletedDateTime: null,
@@ -772,4 +774,147 @@ test("teams members: a failed lookup is not kept for the process; it is asked ag
   assert.equal(memberCalls(), good, "a good lookup is kept");
   await say(T0 + 30 * MIN + 7 * 60 * MIN);
   assert.equal(memberCalls(), good + 1, "and asked again once it is old");
+});
+
+const ALL_ADMIN = ["User.Read", "Chat.Read", "Calendars.Read", "ChannelMessage.Read.All", "Team.ReadBasic.All", "Channel.ReadBasic.All",
+  "OnlineMeetings.Read", "OnlineMeetingTranscript.Read.All"];
+const vtt = (who: string, said: string) => `WEBVTT\n\n00:00:01.000 --> 00:00:03.000\n<v ${who}>${said}</v>`;
+const teamsEvent = (id: string, startMs: number, endMs: number, joinUrl: string, o: { occurrence?: boolean } = {}) => ({
+  id, subject: id, start: { dateTime: iso(startMs).replace("Z", "") }, end: { dateTime: iso(endMs).replace("Z", "") }, isOnlineMeeting: true,
+  onlineMeetingProvider: "teamsForBusiness", onlineMeeting: { joinUrl }, createdDateTime: iso(startMs - 7 * 24 * 3600_000),
+  type: o.occurrence ? "occurrence" : "singleInstance", ...(o.occurrence ? { seriesMasterId: "series" } : {}),
+});
+
+test("teams: a channel Graph no longer shows (gone, or its delta link expired) does not stop the mentions after it, nor the transcripts", async () => {
+  const GONE = "19:gone@thread.tacv2";
+  const GEN = "19:general@thread.tacv2";
+  let mention = false;
+  let served = false;
+  const r = pagedGraph({
+    granted: ALL_ADMIN,
+    route: (path) => {
+      if (path === "/me/chats") return { value: [] };
+      if (path === "/me/joinedTeams") return { value: [{ id: "team-1" }] };
+      if (path === "/teams/team-1/channels") return { value: [{ id: GONE, displayName: "Gone" }, { id: GEN, displayName: "General" }] };
+      if (path === `/teams/team-1/channels/${GONE}/messages/delta`) return undefined; // 404
+      if (path === `/teams/team-1/channels/${GEN}/messages/delta`) {
+        const fresh = mention && !served;
+        if (fresh) served = true;
+        return { value: fresh ? [gm("c1", T0 + MIN, "Owner, the launch plan?", ANA, [ME])] : [], "@odata.deltaLink": `${r.GRAPH}/teams/team-1/channels/${encodeURIComponent(GEN)}/messages/delta?$deltatoken=x` };
+      }
+      if (path === "/me/calendarView") return { value: [teamsEvent("Launch sync", T0 - 60 * MIN, T0 - 30 * MIN, "https://teams.microsoft.com/l/meetup-join/one")] };
+      if (path === "/me/onlineMeetings") return { value: [{ id: "OM1" }] };
+      if (path === "/me/onlineMeetings/OM1/transcripts") return { value: [{ id: "t1", createdDateTime: iso(T0 - 59 * MIN) }] };
+      if (path === "/me/onlineMeetings/OM1/transcripts/t1/content") return new Response(vtt("Ana", "Owner sends the budget."), { headers: { "content-type": "text/vtt" } });
+      return undefined;
+    },
+  });
+  r.clock.now = T0 - MIN;
+  await r.quiet(() => r.teams.round());
+  mention = true;
+  r.clock.now = T0 + 5 * MIN;
+  for (let i = 0; i < 3; i++) await r.quiet(() => r.teams.round());
+  assert.deepEqual(r.seen.map((m) => m.text), ["Owner, the launch plan?"], "the mention in the channel after the gone one is read");
+  assert.deepEqual(r.offers.map((o) => o.label), ["Teams · Launch sync"], "and the transcripts still come");
+});
+
+test("teams: a recurring meeting's occurrence gets its own transcript, never the one of an earlier occurrence", async () => {
+  const JOIN = "https://teams.microsoft.com/l/meetup-join/standup";
+  const day = 24 * 3600_000;
+  let today = false;
+  const r = pagedGraph({
+    granted: ALL_ADMIN,
+    route: (path) => {
+      if (path === "/me/chats") return { value: [] };
+      if (path === "/me/joinedTeams") return { value: [] };
+      if (path === "/me/calendarView") {
+        return { value: [
+          teamsEvent("standup-yesterday", T0 - day, T0 - day + 15 * MIN, JOIN, { occurrence: true }),
+          teamsEvent("standup-today", T0, T0 + 15 * MIN, JOIN, { occurrence: true }),
+        ] };
+      }
+      // One online meeting for the whole series: its transcripts are every occurrence's.
+      if (path === "/me/onlineMeetings") return { value: [{ id: "OMS" }] };
+      if (path === "/me/onlineMeetings/OMS/transcripts") {
+        return { value: [{ id: "y", createdDateTime: iso(T0 - day + MIN) }, ...(today ? [{ id: "t", createdDateTime: iso(T0 + MIN) }] : [])] };
+      }
+      if (path === "/me/onlineMeetings/OMS/transcripts/y/content") return new Response(vtt("Ana", "Yesterday's words."), { headers: { "content-type": "text/vtt" } });
+      if (path === "/me/onlineMeetings/OMS/transcripts/t/content") return new Response(vtt("Ana", "Today's words."), { headers: { "content-type": "text/vtt" } });
+      return undefined;
+    },
+  });
+  r.clock.now = T0 - day + 30 * MIN;
+  await r.quiet(() => r.teams.round());
+  r.clock.now = T0 - day + 40 * MIN;
+  await r.quiet(() => r.teams.round());
+  assert.deepEqual(r.offers.map((o) => o.text), ["Ana: Yesterday's words."], "yesterday's occurrence, its own words");
+  // Today's occurrence ended; its transcript is not ready yet.
+  r.clock.now = T0 + 30 * MIN;
+  await r.quiet(() => r.teams.round());
+  r.clock.now = T0 + 35 * MIN;
+  await r.quiet(() => r.teams.round());
+  assert.equal(r.offers.length, 1, "yesterday's transcript is not handed on again as today's");
+  today = true;
+  r.clock.now = T0 + 40 * MIN;
+  await r.quiet(() => r.teams.round());
+  assert.deepEqual(r.offers.map((o) => o.text), ["Ana: Yesterday's words.", "Ana: Today's words."], "today's comes once it is there");
+});
+
+test("teams: a meeting with no transcript (yet) does not hold back the next meeting's transcript for hours", async () => {
+  const r = pagedGraph({
+    granted: ALL_ADMIN,
+    route: (path, url) => {
+      if (path === "/me/chats") return { value: [] };
+      if (path === "/me/joinedTeams") return { value: [] };
+      if (path === "/me/calendarView") {
+        return { value: [
+          teamsEvent("Untranscribed", T0 - 120 * MIN, T0 - 90 * MIN, "https://teams.microsoft.com/l/meetup-join/a"),
+          teamsEvent("Planning", T0 - 60 * MIN, T0 - 30 * MIN, "https://teams.microsoft.com/l/meetup-join/b"),
+        ] };
+      }
+      if (path === "/me/onlineMeetings") return { value: [{ id: /join\/a'/.test(url.searchParams.get("$filter") ?? "") ? "OMA" : "OMB" }] };
+      if (path === "/me/onlineMeetings/OMA/transcripts") return { value: [] };
+      if (path === "/me/onlineMeetings/OMB/transcripts") return { value: [{ id: "b1", createdDateTime: iso(T0 - 59 * MIN) }] };
+      if (path === "/me/onlineMeetings/OMB/transcripts/b1/content") return new Response(vtt("Ana", "Owner books the venue."), { headers: { "content-type": "text/vtt" } });
+      return undefined;
+    },
+  });
+  await r.quiet(() => r.teams.round());
+  r.clock.now = T0 + 5 * MIN;
+  await r.quiet(() => r.teams.round());
+  assert.deepEqual(r.offers.map((o) => o.label), ["Teams · Planning"], "the second meeting's transcript comes without waiting six hours");
+});
+
+test("follow-ups: the owner's own Teams message reaches the engine as theirs (never one of the conversation's people)", async () => {
+  const ms = await fakeMicrosoft();
+  try {
+    const r = reader(ms);
+    const queued: { followup?: { text: string } }[] = [];
+    const asked: string[][] = [];
+    const clock = r.clock;
+    const engine = createFollowups({
+      config: { delayMs: 10 * MIN, maxPerDay: 6, batchMs: 3 * MIN, quiet: null }, kv: memoryKv(), timeZone: "Europe/Madrid", lang: () => "en",
+      now: () => clock.now, enqueue: async (m) => (queued.push(m as never), true), card: async () => true, notify: async () => undefined,
+      people: async (names) => (asked.push(names), []),
+    });
+    await r.teams.round();
+    // The owner opens the conversation; Ana answers a minute later.
+    ms.g.chats.set(CHAT, { type: "oneOnOne", topic: null, msgs: [
+      { id: "20", at: T0 + MIN, from: ME, name: "Owner Person", html: "I'll send you the deck by Friday." },
+      { id: "21", at: T0 + 2 * MIN, from: ANA, name: "Ana", html: "Great, thanks!" },
+    ] });
+    clock.now = T0 + 5 * MIN;
+    await r.teams.round();
+    assert.equal(engineSeen(r.seen[0]!).mine, true);
+    for (const m of r.seen) await engine.observeSlack(engineSeen(m));
+    clock.now += 3 * MIN;
+    await engine.tick();
+    assert.equal(queued.length, 1);
+    const text = queued[0]!.followup!.text;
+    assert.match(text, /Teams · Ana \(private\)/, "named after the other side once she answers");
+    assert.doesNotMatch(text, /Teams · Owner Person \(private\)/);
+    assert.ok(asked.every((names) => !names.includes("Owner Person")), `the owner is not one of the people: ${JSON.stringify(asked)}`);
+  } finally {
+    await ms.close();
+  }
 });

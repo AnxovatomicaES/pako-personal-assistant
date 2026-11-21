@@ -13,6 +13,7 @@
 //
 //   node desktop/mac/feed-sign.ts keygen         a new key: the private half into the login keychain (pako-feed-signing), the public
 //                                                half into desktop/mac/feed-key.pub (commit that one). Refuses when either exists.
+//   node desktop/mac/feed-sign.ts keygen-recovery <file>  a second key the app also trusts (its private half to <file>, for offline)
 //   node desktop/mac/feed-sign.ts check          the signing key is there and is the one the app will carry (release.sh, first thing)
 //   node desktop/mac/feed-sign.ts sign <feed>    signs feed.json in place
 //   node desktop/mac/feed-sign.ts verify <feed>  checks it against the public key, as the app will
@@ -89,6 +90,9 @@ export function signFeed(feed: Record<string, unknown>, privateKey: string): Rec
 
 /** As the app checks it: a 64-byte signature over feedMessage, by this public key. */
 export function verifyFeed(feed: Record<string, unknown>, publicKey: string): boolean {
+  // More than one key (the release key, then recovery keys): any of them may sign.
+  const keys = publicKeyList(publicKey);
+  if (keys.length > 1) return keys.some((k) => verifyFeed(feed, k));
   const sig = typeof feed.signature === "string" ? Buffer.from(feed.signature, "base64") : null;
   const msg = feedMessage(feed);
   const key = publicKeyObject(publicKey);
@@ -109,6 +113,11 @@ export function loadSigningKey(env: Env): string {
   if ((env.PAKO_FEED_KEYCHAIN ?? "").trim().toLowerCase() === "off" || process.platform !== "darwin") return "";
   const r = spawnSync("security", ["find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"], { encoding: "utf8" });
   return r.status === 0 ? r.stdout.trim() : "";
+}
+
+/** The public keys in a setting or feed-key.pub: one per line (or separated by commas or spaces), the release key first, then recovery keys. */
+export function publicKeyList(text: string): string[] {
+  return text.split(/[\s,]+/).map((k) => k.trim()).filter(Boolean);
 }
 
 /** The public key the app will carry: the setting, else desktop/mac/feed-key.pub; "" when there is none. */
@@ -138,7 +147,7 @@ export function checkKeys(env: Env, file = PUBLIC_KEY_FILE): string {
   } catch (e) {
     return `The feed signing key cannot be read: ${(e as Error).message}`;
   }
-  if (mine !== pub) return "The feed signing key is not the one the app carries (desktop/mac/feed-key.pub): no app would install this release.";
+  if (!publicKeyList(pub).includes(mine)) return "The feed signing key is not the one the app carries (desktop/mac/feed-key.pub): no app would install this release.";
   return "";
 }
 
@@ -160,10 +169,24 @@ function main(argv: string[], env: Env): number {
     say(`The public key is in ${PUBLIC_KEY_FILE}: commit it. Every Pako.app built from then on carries it.`);
     return 0;
   }
+  if (cmd === "keygen-recovery" && file) {
+    // A second key the app also trusts, for the day the release key is lost (as on 2026-11-20): its private half goes to `file` (never
+    // the keychain, never printed), for the owner to keep off this Mac (a password manager, paper), then delete the file.
+    if (!existsSync(PUBLIC_KEY_FILE)) return say(`${PUBLIC_KEY_FILE} is missing: make the release key first (keygen).`), 1;
+    if (existsSync(file)) return say(`${file} exists already: not replaced.`), 1;
+    const k = generateFeedKey();
+    writeFileSync(file, `${k.privateKey}\n`, { mode: 0o600, flag: "wx" });
+    writeFileSync(PUBLIC_KEY_FILE, `${readFileSync(PUBLIC_KEY_FILE, "utf8").trim()}\n${k.publicKey}\n`);
+    say(`Made a recovery key. Its private half is in ${file}: put it in a password manager or on paper, away from this Mac, then delete`);
+    say(`the file. Its public half was added to ${PUBLIC_KEY_FILE}: commit it. Apps built from then on install a feed signed by either key;`);
+    say("to sign with the recovery key: PAKO_FEED_SIGNING_KEY=<it> npm run mac-release.");
+    return 0;
+  }
   if (cmd === "check") {
     const why = checkKeys(env);
     if (why) return say(why), 1;
-    say("feed signing key: ok (it matches desktop/mac/feed-key.pub)");
+    const n = publicKeyList(loadPublicKey(env)).length;
+    say(`feed signing key: ok (it matches desktop/mac/feed-key.pub)${n > 1 ? `; ${n - 1} recovery key(s) also trusted` : "; no recovery key yet (keygen-recovery)"}`);
     return 0;
   }
   if (cmd === "sign" && file) {

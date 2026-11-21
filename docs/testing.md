@@ -29,7 +29,7 @@ a case fails the push.
 bridge uses and no tools. Each case runs k times (`--k 3` by default) and passes only if **every** run passes (pass^k: consistency, not one
 lucky answer). The code judges decide first; a case's `rubric` (a yes/no question for an LLM judge) is asked only for what code cannot judge,
 and only when every code check passed. It shows the number of runs and the estimated cost and asks before starting; `--max-usd` (5 by
-default) stops it once spent. Options: `--suite followups`, `--case rohan`, `--model`, `--yes`. The report goes to `.claude/evals/<date>.md`.
+default) stops it once spent. Options: `--suite followups`, `--case rohan` (several names with commas), `--model`, `--yes`. The report goes to `.claude/evals/<date>.md`, with the raw answers of each failed run.
 
 **Weekly** (`npm run evals:weekly`, the quality bar, never in the gate): every live-capable golden case once (k=1), about a hundred, under a
 cap (`--max-usd`, 5 by default; `--yes` to run without the question). The report, `.claude/evals/weekly-YYYY-MM-DD.md`, has one line per case

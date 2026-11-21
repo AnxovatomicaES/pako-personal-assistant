@@ -641,10 +641,3 @@ export function createComputerWhatsapp(o: ComputerWhatsappDeps) {
     },
   };
 }
-
-/** A server's panel: the setup routes do not exist there (its WhatsApp is set in its settings). */
-export function mountWhatsappSetupAbsent(app: Express): void {
-  app.all("/panel/api/whatsapp/setup", (_req, res) => {
-    res.status(404).set(HEADERS).json({ error: "local mode only" });
-  });
-}

@@ -1,0 +1,42 @@
+{
+  "suite": "followups",
+  "behaviour": "Ines asks for the vendor list, then writes in the same thread that she no longer needs it: the loop is closed",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "mail": {
+          "at": "2026-11-16 09:30",
+          "ref": "m-ines",
+          "from": "Ines Varga <ines@corvel.example>",
+          "to": "Alex <alex@acme.example>",
+          "subject": "Vendor list",
+          "category": "needs_you",
+          "messageId": "<iv1@corvel.example>",
+          "body": "Hi Alex,\n\nCould you send me the vendor list when you get a chance?\n\nInes"
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"request_to_owner\", \"title\": \"Send Ines the vendor list\", \"detail\": \"Ines, see the conversation.\", \"who\": \"Ines\", \"check\": \"none\", \"reason\": \"email\"}], \"closes\": []}"
+      },
+      {
+        "mail": {
+          "at": "2026-11-16 13:05",
+          "ref": "m-ines2",
+          "from": "Ines Varga <ines@corvel.example>",
+          "to": "Alex <alex@acme.example>",
+          "subject": "Re: Vendor list",
+          "category": "needs_you",
+          "messageId": "<iv2@corvel.example>",
+          "inReplyTo": "<iv1@corvel.example>",
+          "references": "<iv1@corvel.example>",
+          "body": "Hi Alex,\n\nNo need anymore, Tomas sent it to me this morning. Thanks anyway!\n\nInes"
+        },
+        "recorded": "{\"loops\": [], \"closes\": [\"{{loop1}}\"]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "closed": 1,
+    "open": []
+  }
+}

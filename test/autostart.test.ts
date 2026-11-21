@@ -688,8 +688,9 @@ test("install.sh: with a Pako running in another terminal, the update stops befo
   r = install("sh", { PAKO_DIR: dir, PAKO_AUTOSTART: "1", PAKO_HOME: pakoHome }, home);
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /--autostart on/);
-  // A lock from before the computer restarted, or of a process that is gone: nothing is running.
-  for (const lock of [`${process.pid}\n8787\n999999999\n`, "999999999\n8787\n1\n"]) {
+  // A lock from before the computer restarted, or of a process that is gone, or whose number now belongs to a process that started at another
+  // time (Pako was killed, the number came round again; its fifth line says when Pako started): nothing is running.
+  for (const lock of [`${process.pid}\n8787\n999999999\n`, "999999999\n8787\n1\n", `${process.pid}\n8787\n1\n\n1000\n`]) {
     writeFileSync(join(pakoHome, ".lock"), lock);
     r = install("sh", { PAKO_DIR: dir, PAKO_AUTOSTART: "0", PAKO_HOME: pakoHome }, home);
     assert.equal(r.code, 0, r.out);

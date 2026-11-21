@@ -16,7 +16,8 @@
 //   never once its time has passed. After the nudge it is still looked at, silently, so it can close by itself. Someone else's promise is
 //   looked at once, near its time (their invitation on the calendar). A later message of the conversation can close a loop (`closes`).
 // - "Not mine" keeps a short rule that the next extraction is given, and that this file applies itself to the same person and place.
-// - A follow-up never ACTS: it never posts, schedules or writes anywhere; it reminds.
+// - A follow-up never ACTS: it never posts, schedules or writes anywhere; it reminds. For what others owe the owner, once overdue, it offers a
+//   reminder to send them (src/followups/chase.ts); only the owner's press sends it, through the door's usual send.
 // - An older bridge lets a `followup` job go unread (its text is empty): no loops, no nudges, nothing else changes.
 //
 // One key in the store (FOLLOWUPS_KEY), written one change at a time, never from a copy that could not be read.
@@ -26,7 +27,7 @@ export { LOOPS_MAX, FOLLOWUP_BUTTON, jobInboxId } from "./followups/limits.ts";
 export { LOOP_KINDS } from "./followups/types.ts";
 export type {
   LoopKind, LoopStatus, SourceKind, Where, Check, LoopSource, Loop, LearnedRule, Job, FollowupsState, FollowupsConfig, SlackSeen, SlackLine,
-  ZoomSeen, EventSeen, FollowupsDeps, CardFeedback, FollowupsQuality, DraftInput, WouldBe, DryOutcome, FollowupsDoor, MailSeen, MailBatch,
+  ZoomSeen, EventSeen, FollowupsDeps, FollowupsAudit, CardFeedback, FollowupsQuality, DraftInput, WouldBe, DryOutcome, FollowupsDoor, MailSeen, MailBatch,
 } from "./followups/types.ts";
 export { loadFollowupsConfig } from "./followups/config.ts";
 export { zoneOf, zoneName, zonedTime } from "./followups/time.ts";

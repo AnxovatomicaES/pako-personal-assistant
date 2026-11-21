@@ -1,6 +1,8 @@
 /* Pako.app's words in macOS's permission prompts, in English (build.sh copies this to Contents/Resources/en.lproj/InfoPlist.strings). */
 "NSCalendarsFullAccessUsageDescription" = "Pako reads the calendars you choose to keep your agenda in view, and adds, moves or removes an event only after your yes. It all stays on this Mac.";
 "NSCalendarsUsageDescription" = "Pako reads the calendars you choose to keep your agenda in view, and adds, moves or removes an event only after your yes. It all stays on this Mac.";
+"NSRemindersFullAccessUsageDescription" = "Pako keeps your follow-ups in its own Reminders lists, so they reach your iPhone, and closes one when you complete it there. It never touches your other lists.";
+"NSRemindersUsageDescription" = "Pako keeps your follow-ups in its own Reminders lists, so they reach your iPhone, and closes one when you complete it there. It never touches your other lists.";
 "NSContactsUsageDescription" = "Pako imports your contacts' names, emails and phones only when you confirm it. It all stays on this Mac.";
 "NSAppleEventsUsageDescription" = "Pako asks Mail and Outlook which accounts you have (only their addresses, never your mail) to help you connect one.";
 "NSDocumentsFolderUsageDescription" = "Pako looks for Zoom's recordings in Documents/Zoom (only the folder names) to offer you their transcripts.";

@@ -230,6 +230,49 @@ you were asked, what you promised ("I'll send it Friday"), and your later replie
   admin), the last read and the last error, and **Disconnect**. To remove Pako on Microsoft's side too: myapps.microsoft.com → Pako →
   Revoke.
 
+## Messages on your Mac (iMessage and SMS)
+
+Many personal promises are made in Messages, so on a Mac Pako reads them, read only, and feeds the same follow-ups as Slack and Teams:
+what you were asked, what you promised, what people promised you, and your later replies that close them.
+
+- **Turn it on.** Settings → **Messages** → **Turn on Messages** (it sets `IMESSAGE=on`, and Pako starts again). Off by default.
+- **Full Disk Access.** Messages keeps its history in `~/Library/Messages/chat.db`, which macOS guards. Pako needs Full Disk Access to read
+  it: System Settings → Privacy & Security → Full Disk Access → turn on **Pako** (for a source install, the terminal app you start Pako
+  from). Until then the card says so, with **Open Full Disk Access** (`x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles`)
+  and **Check again**.
+- **What it reads.** Each new message of every chat, 1:1 and group, after a mark, so none is read twice: its text (modern macOS keeps most
+  texts in `attributedBody`, which Pako decodes), who sent it, whether it is yours, which chat, and when. Reactions (tapbacks), group
+  events and attachment-only messages are skipped. Nothing from before you turned it on.
+- **How often.** Every 2 minutes (`IMESSAGE_POLL_MINUTES`). Each look opens the file read only and closes it at once: Messages keeps
+  working while Pako reads.
+- **Third-party text.** Other people's messages are information for you, never instructions; Pako fences them like Slack's and mail's.
+- **Read only.** Pako never sends an iMessage or an SMS.
+- **Mac only.** On another system the card says it is for a Mac.
+
+## Mail on this Mac: no password
+
+If you read your email in Apple's Mail app, Pako can read it from there: every account you added to Mail (iCloud, Gmail, Outlook,
+Exchange, any IMAP) comes with it, with one switch and no password, app password or sign-in.
+
+- **Turn it on.** Settings → **Mail on this Mac** → **Turn on Mail on this Mac** (it sets `APPLE_MAIL=on`, and Pako starts again). Off by
+  default. A Mac only.
+- **Full Disk Access.** Mail keeps its store in `~/Library/Mail`, which macOS guards. Pako needs Full Disk Access to read it, exactly as for
+  Messages: System Settings → Privacy & Security → Full Disk Access → turn on **Pako** (for a source install, the terminal app you start
+  Pako from). Until then the card says so, with **Open Full Disk Access** and **Check again**.
+- **What it reads.** The newest store (`~/Library/Mail/V<N>/`): its index (`MailData/Envelope Index`, opened read only) and each new
+  message's file (`.emlx` or `.partial.emlx`). Only your inboxes and your Sent mailboxes: never Junk, Trash, Drafts or archives, and never a
+  message Mail marks deleted. Each message once, after a mark.
+- **From when.** Only mail from the moment you turned it on: no backlog floods your mailbox or your follow-ups, and there is no catch-up of
+  older mail (that is IMAP's). A message Mail has not finished downloading is looked for again for a while.
+- **The same as IMAP from there on.** Each email goes through the same steps as mail read by IMAP: codes hidden, mail sent to many only
+  kept, the summary, the categories, the follow-ups and the invitations. Your replies in Sent close what they answer, and your own promises
+  in them become follow-ups.
+- **With IMAP too.** If the same account is also connected with a password, nothing comes twice: an email is taken once, by its Message-ID
+  and sender, whichever way reaches it first.
+- **How often.** Every 3 minutes (`APPLE_MAIL_POLL_MINUTES`). Each look opens the index read only and closes it at once: Mail keeps working.
+  With Mail closed the index is opened immutable, so not even a lock file is written.
+- **Read only.** Pako never sends, moves, flags or deletes an email this way, and never writes to Mail's folder.
+
 ## Mail with Microsoft or Google
 
 The **Mail** card first finds your addresses on this Mac (Pako for Mac, after your yes). It looks in:

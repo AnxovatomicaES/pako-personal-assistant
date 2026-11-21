@@ -25,6 +25,10 @@ async function fakeServer(password?: string) {
   const data = new Map<string, string>();
   const seen: string[][] = [];
   const server = createServer((sock) => {
+    // The client hangs up as soon as it has the reply it wants (after a refused AUTH, before the reply to the command behind it): bytes still
+    // on their way then make its kernel answer with a reset, which this end reads as ECONNRESET. A real store shrugs that off; unheard, it
+    // would be an uncaught exception that fails whichever test is running (it did, under the load of the whole gate).
+    sock.on("error", () => undefined);
     let buf = Buffer.alloc(0);
     sock.on("data", (c: Buffer) => {
       buf = Buffer.concat([buf, c]);

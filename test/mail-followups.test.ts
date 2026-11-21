@@ -311,6 +311,28 @@ test("door: a Needs you verdict sends the email's own words to the follow-ups an
   }
 });
 
+test("door: a mail in the thread with the name of who owed it, from an address not theirs, does not close it; theirs does", async () => {
+  const r = await doorRig({ mailPerDay: 0 });
+  try {
+    r.records.set("m1", { id: "m1", at: T0, from: "Ana Ruiz <ana@client.example>", subject: "Contract", preview: "", category: "waiting", thread: T1 });
+    const waiting = { category: "waiting", why: "Ana will send it", loop: { title: "Send the signed contract", who: "Ana Ruiz", due: "2026-11-20" } };
+    await r.post({ id: "mail:m1", summary: "Ana will send the signed contract.", verdict: waiting });
+    await settle();
+    assert.equal((await r.engine.read()).loops[0]!.kind, "other_promise");
+    // Anyone who knows the thread can write "Ana Ruiz" on the From line.
+    r.records.set("m2", { id: "m2", at: T0 + MIN, from: "Ana Ruiz <ana.ruiz@lookalike.example>", subject: "Re: Contract", preview: "", category: "important", thread: T1 });
+    await r.post({ id: "mail:m2", summary: "Here it is.", verdict: { category: "important", why: "x" } });
+    await settle();
+    assert.equal((await r.engine.read()).loops[0]!.status, "open", "her display name alone closes nothing");
+    r.records.set("m3", { id: "m3", at: T0 + 2 * MIN, from: "Ana R. <ANA@client.example>", subject: "Re: Contract", preview: "", category: "important", thread: T1 });
+    await r.post({ id: "mail:m3", summary: "Here it is.", verdict: { category: "important", why: "x" } });
+    await settle();
+    assert.equal((await r.engine.read()).loops[0]!.status, "done", "from the address of the mail the promise came from");
+  } finally {
+    r.close();
+  }
+});
+
 test("door: with no email jobs left (or off), the triage's loop line is kept as before; a promotion goes to neither", async () => {
   const r = await doorRig({ mailPerDay: 0 });
   try {
@@ -328,4 +350,32 @@ test("door: with no email jobs left (or off), the triage's loop line is kept as 
   } finally {
     r.close();
   }
+});
+
+test("restart mid-flush: an email thread's due batch stays in the store until its job is queued; queued once after a restart", async () => {
+  const seen = new Set<string>();
+  const inbox: Inbound[] = [];
+  const add = async (m: Inbound) => (seen.has(m.id) ? false : (seen.add(m.id), inbox.push(m), true));
+  const hang = () => new Promise<never>(() => undefined);
+  const store = memKv();
+  const on = (now: number, enqueue: (m: Inbound) => Promise<boolean>) => createFollowups({
+    config: { delayMs: 10 * MIN, maxPerDay: 6, batchMs: 3 * MIN, quiet: null }, kv: store.kv, timeZone: "Europe/London", now: () => now, enqueue,
+    card: async () => true, notify: async () => undefined,
+  });
+  const a = on(T0, add);
+  assert.equal(await a.observeMail(mail({ ref: "m1", thread: T1 }), "email · Ana"), true);
+  // Killed before the inbox kept it: the email is marked read, so it never comes back on its own.
+  void on(T0 + 3 * MIN, () => hang()).tick();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal((await on(T0 + 4 * MIN, add).tick()).jobs, 1, "queued after the restart");
+  // Killed after the inbox kept it: not queued twice.
+  assert.equal(await a.observeMail(mail({ ref: "m2", thread: T2, subject: "Deck", body: "Send me the deck?" }), "email · Bo"), true);
+  void on(T0 + 8 * MIN, async (m) => (await add(m), hang())).tick();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(inbox.length, 2);
+  await on(T0 + 9 * MIN, add).tick();
+  assert.equal(inbox.length, 2, "queued once");
+  const st = await a.read();
+  assert.equal(st.mailBatches.length, 0);
+  assert.equal(st.mailBudget.n, 2, "each counted once");
 });

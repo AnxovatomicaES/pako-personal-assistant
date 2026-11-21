@@ -18,6 +18,11 @@ export const MAIL_JOBS_PER_DAY = 40;
 export const REVIEW_LOOPS_MAX = 14;
 /** A job the bridge never answered (an older bridge, a computer off for days) is forgotten after this. */
 export const JOB_KEEP_MS = 2 * 24 * 3600_000;
+/**
+ * A job waiting for its answer holds its conversation (its next job, the checks of its loops) this long at most: the inbox lets go of the
+ * oldest follow-up jobs when more than ten wait (src/door/inbox.ts), and one never answered must not silence a conversation for two days.
+ */
+export const JOB_HOLD_MS = 30 * 60_000;
 /** An open loop nobody closed goes after this; a closed one is kept this long (the brief, an undo of a press). */
 export const OPEN_KEEP_MS = 14 * 24 * 3600_000;
 export const CLOSED_KEEP_MS = 7 * 24 * 3600_000;

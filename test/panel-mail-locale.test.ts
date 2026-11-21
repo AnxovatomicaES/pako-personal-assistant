@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 const { dueWords } = (await import(new URL("../src/panel/mail.js", import.meta.url).href)) as {
-  dueWords: (at: number, now?: number, locale?: string) => string;
+  dueWords: (at: number, now?: number, locale?: string, gentle?: boolean) => string;
 };
 
 test("mail panel: a due time is written in the owner's locale, not always on a 24-hour clock", () => {
@@ -14,4 +14,10 @@ test("mail panel: a due time is written in the owner's locale, not always on a 2
   // No country known (the tests, a bare page): the panel's fallback, a 24-hour clock.
   assert.equal(dueWords(at, now), "today 17:00");
   assert.equal(dueWords(now - 1, now, "en-US"), "overdue");
+});
+
+test("mail panel, gentle mode: a time that passed is “time passed”, never “overdue” (no words of shame)", () => {
+  const now = new Date(2026, 10, 18, 9, 0).getTime();
+  assert.equal(dueWords(now - 1, now, "en-GB", true), "time passed");
+  assert.equal(dueWords(now + 8 * 3600_000, now, "en-GB", true), "today 17:00");
 });

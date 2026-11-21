@@ -1,0 +1,53 @@
+{
+  "suite": "followups",
+  "behaviour": "a 1:1 agreed with Mateo for Wednesday 10:00 moves on the calendar («Mateo / Alex») to Thursday 10:00: the loop follows it",
+  "origin": "a calendar move matched by the person's name (src/followups/owner.ts calendarChanged)",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0MATEO",
+          "label": "Mateo Ruiz (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 11:00",
+              "who": "Mateo Ruiz",
+              "text": "Shall we do our 1:1 on Wednesday 10:00?"
+            },
+            {
+              "at": "2026-11-16 11:01",
+              "who": "Alex",
+              "text": "Yes, Wednesday 10:00 works",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"agreed_meeting\", \"title\": \"1:1 with Mateo\", \"detail\": \"Mateo, see the conversation.\", \"who\": \"Mateo\", \"due\": \"2026-11-18 10:00\", \"tz\": \"Europe/Madrid\", \"check\": \"calendarEvent\", \"hints\": [\"Mateo\", \"1:1\"]}], \"closes\": []}"
+      },
+      {
+        "calendar": [
+          {
+            "kind": "moved",
+            "title": "Mateo / Alex",
+            "start": "2026-11-19 10:00",
+            "was": "2026-11-18 10:00",
+            "at": "2026-11-17 07:00"
+          }
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "who": "Mateo"
+      }
+    ],
+    "open": [
+      {
+        "who": "Mateo",
+        "dueLocal": "2026-11-19 10:00"
+      }
+    ]
+  }
+}

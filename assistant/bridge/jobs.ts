@@ -9,12 +9,14 @@ import type { BriefJob, FollowupJob, JudgeJob, ProactiveJob, StepJob } from "./i
 import type { AfterLanguage } from "./parts.ts";
 
 export function mountJobs(b: AfterLanguage) {
-  const { config, log, api, budget, background, rehearsal, retryAt, attempts } = b;
+  const { config, log, api, budget, background, rehearsal, retryAt, hold, unsent, deliver } = b;
   /**
    * A follow-ups job (src/followups.ts): other people's words read in a run of its own (no tools, no conversation, nothing acted on), whose
    * answer goes back to the server as raw text; the server takes only the JSON it asked for, field by field. Nothing is said to the owner here.
    */
   const handleFollowup = async (id: string, job: FollowupJob): Promise<boolean> => {
+    const kept = unsent.get(id);
+    if (kept !== undefined) return deliver(id, "/assistant/followups", kept, "followup");
     const fence = `SEGUIMIENTO-${randomBytes(4).toString("hex")}`;
     const prompt = [`<<<${fence}`, fenced(job.text, 16_000), `${fence}>>>`].join("\n");
     let text = "";
@@ -23,7 +25,7 @@ export function mountJobs(b: AfterLanguage) {
       const r = await background(rehearsal(id) ? "rehearsal" : "followup", job.text, prompt, { ...config, tools: [], systemPrompt: FOLLOWUP_PROMPT.replaceAll("SEGUIMIENTO", fence) });
       if ("skipped" in r) {
         if (r.skipped === "paused") {
-          retryAt.set(id, r.until);
+          hold(id, r.until);
           return false;
         }
       } else {
@@ -34,20 +36,12 @@ export function mountJobs(b: AfterLanguage) {
       const kind = err instanceof ClaudeError ? err.kind : "other";
       log(`claude failed on a followup (${kind}): ${(err as Error).message.slice(0, 200)}`);
       if (kind === "limit" || kind === "login") {
-        retryAt.set(id, Date.now() + 5 * 60_000);
+        if (kind === "limit") hold(id);
+        else retryAt.set(id, Date.now() + 5 * 60_000);
         return false;
       }
     }
-    try {
-      const r = await api("/assistant/followups", { method: "POST", body: { id, text } });
-      if (!r.ok) log(`followup refused: ${r.status}`);
-      return r.ok || r.status === 400;
-    } catch (err) {
-      log(`followup failed: ${(err as Error).message}`);
-      const n = (attempts.get(id) ?? 0) + 1;
-      attempts.set(id, n);
-      return n >= 3;
-    }
+    return deliver(id, "/assistant/followups", text, "followup");
   };
 
   /**
@@ -124,6 +118,8 @@ export function mountJobs(b: AfterLanguage) {
    * said to the owner from here: the server decides what goes to the chat.
    */
   const handleBrief = async (id: string, job: BriefJob): Promise<boolean> => {
+    const kept = unsent.get(id);
+    if (kept !== undefined) return deliver(id, "/assistant/brief", kept, "brief");
     const fence = `BRIEF-${randomBytes(4).toString("hex")}`;
     const prompt = [`<<<${fence}`, fenced(job.text, 32_000), `${fence}>>>`].join("\n");
     const system = (job.kind === "brief" ? BRIEF_PROMPT : BRIEF_TASK_PROMPT).replaceAll("BRIEF", fence);
@@ -144,20 +140,12 @@ export function mountJobs(b: AfterLanguage) {
       const kind = err instanceof ClaudeError ? err.kind : "other";
       log(`claude failed on a brief (${kind}): ${(err as Error).message.slice(0, 200)}`);
       if (kind === "limit" || kind === "login") {
-        retryAt.set(id, Date.now() + 5 * 60_000);
+        if (kind === "limit") hold(id);
+        else retryAt.set(id, Date.now() + 5 * 60_000);
         return false;
       }
     }
-    try {
-      const r = await api("/assistant/brief", { method: "POST", body: { id, text } });
-      if (!r.ok) log(`brief refused: ${r.status}`);
-      return r.ok || r.status === 400;
-    } catch (err) {
-      log(`brief failed: ${(err as Error).message}`);
-      const n = (attempts.get(id) ?? 0) + 1;
-      attempts.set(id, n);
-      return n >= 3;
-    }
+    return deliver(id, "/assistant/brief", text, "brief");
   };
   /**
    * A first-tiny-step job (gentle mode, src/gentle.ts): one stuck follow-up's facts read in a run of its own (no tools, no conversation,

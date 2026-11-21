@@ -1,0 +1,54 @@
+{
+  "suite": "nudges",
+  "behaviour": "«let's meet Thursday 15:00» agreed on Slack and nothing on the calendar: the owner is reminded, saying it is not in the calendar",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "calendarEvents": [],
+    "timeline": {
+      "until": "2026-11-19 16:00",
+      "stepMin": 10
+    },
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0OMAR",
+          "label": "Omar Lindqvist (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:00",
+              "who": "Omar Lindqvist",
+              "text": "Let's meet Thursday 15:00 to go over the roadmap?"
+            },
+            {
+              "at": "2026-11-16 10:02",
+              "who": "Alex",
+              "text": "Works for me, I'll send the invite",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"agreed_meeting\", \"title\": \"Roadmap review with Omar\", \"detail\": \"Omar, see the conversation.\", \"who\": \"Omar\", \"due\": \"2026-11-19 15:00\", \"tz\": \"Europe/Madrid\", \"check\": \"calendarEvent\", \"hints\": [\"roadmap\", \"Omar\"]}], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "cards": [
+      {
+        "from": "2026-11-16 10:10",
+        "to": "2026-11-16 10:30",
+        "has": [
+          "roadmap",
+          "calendar"
+        ]
+      },
+      {
+        "from": "2026-11-19 13:55",
+        "to": "2026-11-19 15:00",
+        "has": [
+          "roadmap",
+          "Not long now"
+        ]
+      }
+    ]
+  }
+}

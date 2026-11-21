@@ -46,6 +46,9 @@ export interface FriendStore {
   /** A birthday offered for this year, or the check-in sent: false when it already was (two ticks never both send it). */
   claimBirthday(personId: string, year: string): Promise<boolean>;
   claimCheckin(now: number): Promise<boolean>;
+  /** A claim given back: its card could not be sent, so it was never said (`before`: the check-in's last time before that claim). */
+  releaseBirthday(personId: string, year: string): Promise<void>;
+  releaseCheckin(at: number, before?: number): Promise<void>;
 }
 
 export function createFriend(kv: Kv | null): FriendStore {
@@ -95,6 +98,20 @@ export function createFriend(kv: Kv | null): FriendStore {
         if (!s.checkin || (s.lastCheckin && now - s.lastCheckin < 6.5 * DAY_MS)) return { out: false, changed: false };
         s.lastCheckin = now;
         return { out: true, changed: true };
+      }),
+    releaseBirthday: (id, year) =>
+      change((s) => {
+        const k = `${id}:${year}`;
+        if (!s.offered.includes(k)) return { out: undefined, changed: false };
+        s.offered = s.offered.filter((x) => x !== k);
+        return { out: undefined, changed: true };
+      }),
+    releaseCheckin: (at, before) =>
+      change((s) => {
+        if (s.lastCheckin !== at) return { out: undefined, changed: false };
+        if (before === undefined) delete s.lastCheckin;
+        else s.lastCheckin = before;
+        return { out: undefined, changed: true };
       }),
   };
 }

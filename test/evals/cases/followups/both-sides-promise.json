@@ -1,0 +1,49 @@
+{
+  "suite": "followups",
+  "behaviour": "Kofi promises the specs tomorrow 10:00 and the owner promises to review them by Friday 17:00: two loops, each with its side",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0KOFI",
+          "label": "Kofi Mensah (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:00",
+              "who": "Kofi Mensah",
+              "text": "I'll send you the specs tomorrow at 10:00"
+            },
+            {
+              "at": "2026-11-16 10:03",
+              "who": "Alex",
+              "text": "Great, I'll review them by Friday 17:00",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"other_promise\", \"title\": \"Kofi sends the specs\", \"detail\": \"Kofi, see the conversation.\", \"who\": \"Kofi\", \"due\": \"2026-11-17 10:00\", \"tz\": \"Europe/Madrid\", \"check\": \"slackFile\"}, {\"kind\": \"owner_promise\", \"title\": \"Review Kofi's specs\", \"detail\": \"Kofi, see the conversation.\", \"who\": \"Kofi\", \"due\": \"2026-11-20 17:00\", \"tz\": \"Europe/Madrid\", \"check\": \"slackReply\"}], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "other_promise",
+        "who": "Kofi",
+        "titleHas": [
+          "specs"
+        ],
+        "dueLocal": "2026-11-17 10:00"
+      },
+      {
+        "kind": "owner_promise",
+        "who": "Kofi",
+        "titleHas": [
+          "specs"
+        ],
+        "dueLocal": "2026-11-20 17:00"
+      }
+    ]
+  }
+}

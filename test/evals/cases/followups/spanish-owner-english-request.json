@@ -1,0 +1,36 @@
+{
+  "suite": "followups",
+  "behaviour": "a Spanish-speaking owner gets an English ask for the signed contract: one loop, titled in Spanish",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "ownerLanguage": "es",
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0JAKE",
+          "label": "Jake Morrow (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:00",
+              "who": "Jake Morrow",
+              "text": "Can you send me the signed contract by Friday 12:00?"
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"request_to_owner\", \"title\": \"Enviar a Jake el contrato firmado\", \"detail\": \"Jake, see the conversation.\", \"who\": \"Jake\", \"due\": \"2026-11-20 12:00\", \"tz\": \"Europe/Madrid\", \"check\": \"slackFile\"}], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "kind": "request_to_owner",
+        "who": "Jake",
+        "titleHas": [
+          "contrato"
+        ],
+        "dueLocal": "2026-11-20 12:00"
+      }
+    ]
+  }
+}

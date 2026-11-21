@@ -1,4 +1,4 @@
-// Wires the owner's name and the settings of what Pako reads: the mail (AgentMail, Resend, IMAP), Slack, Zoom, Teams, the meeting
+// Wires the owner's name and the settings of what Pako reads: the mail (AgentMail, Resend, IMAP), Slack, Zoom, Teams, Messages, the meeting
 // review, the calendars (Zoho, ICS links, this Mac, Google, the demo's) and the mailbox catch-up, with the refs their readers fill later.
 
 import { type Backfill, loadBackfillConfig } from "../backfill.ts";
@@ -9,13 +9,16 @@ import { type CalendarReader, loadCalendarConfig, loadCalendarTiming } from "../
 import { demoCalendar, demoSlack } from "../demo.ts";
 import { loadGoogleCalendarConfig } from "../google-calendar.ts";
 import { createIcsSource, icsHosts, loadIcsConfig } from "../ics.ts";
+import { type AppleMailReader, loadAppleMailConfig } from "../apple-mail.ts";
 import { type ImapReader, loadImapConfig } from "../imap.ts";
+import { type ImessageReader, loadImessageConfig } from "../imessage.ts";
 import { createInviteStore } from "../invites.ts";
+import { labCode } from "../lab-code.ts";
 import { STAND_IN_NAME } from "../local.ts";
 import { createLog } from "../log.ts";
 import { createMailbox, loadMailConfig, loadMailFilters } from "../mail.ts";
 import { loadReviewConfig, type MeetingReviewer, type ReviewDoor } from "../meeting-review.ts";
-import { loadRelayClientConfig, type RelayClient } from "../relay-client.ts";
+import type { RelayClient } from "../relay-client.ts";
 import { chooseSender, loadResendConfig } from "../resend.ts";
 import { loadSlackConfig, type SlackReader } from "../slack.ts";
 import { loadTeamsConfig, type TeamsReader } from "../teams.ts";
@@ -24,7 +27,9 @@ import type { OwnerCtx } from "./context.ts";
 
 const logBackfill = createLog("backfill");
 const logCalendar = createLog("calendar");
+const logAppleMail = createLog("apple-mail");
 const logImap = createLog("imap");
+const logImessage = createLog("imessage");
 const logMail = createLog("mail");
 const logRelay = createLog("relay");
 const logReview = createLog("review");
@@ -33,7 +38,7 @@ const logTeams = createLog("teams");
 const logZoom = createLog("zoom");
 
 export function wireSources(ctx: OwnerCtx) {
-  const { config, env, local, uiLang, labs, demo, kv } = ctx;
+  const { config, env, local, uiLang, labs, demo, kv, control } = ctx;
   const friends = config.personalCaller.contacts;
   const plain = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
   const timeZone = config.personalCaller.timeZone;
@@ -60,9 +65,14 @@ export function wireSources(ctx: OwnerCtx) {
     logImap.info("Pako's inbox is on too: if that mailbox is forwarded there, stop forwarding it (an email whose forward changes it could come twice)");
   }
   const imapRef: { reader: ImapReader | null } = { reader: null };
+  // Mail on this Mac (src/apple-mail.ts): what Apple Mail already downloaded, read only, no password; off unless turned on in its card
+  // (APPLE_MAIL=on). Its mail joins the same mailbox as IMAP's, and an email read both ways is taken once.
+  const appleMailCfg = local ? loadAppleMailConfig(env) : { config: null, problems: [] as string[] };
+  if (appleMailCfg.problems.length) logAppleMail.error(`off, because: ${appleMailCfg.problems.join("; ")}`);
+  const appleMailRef: { reader: AppleMailReader | null } = { reader: null };
   // A reply of the owner's found in their Sent mail closes the loops of the mail it answers (the follow-ups are built later: looked up then).
   const repliedRef: { close: (ids: string[]) => void } = { close: () => undefined };
-  const box = mail.config || imap.config || demo
+  const box = mail.config || imap.config || appleMailCfg.config || demo
     ? createMailbox(kv, { showCodes: loadMailFilters(env).showCodes, lang: uiLang, onReplied: (ids) => repliedRef.close(ids) })
     : null;
   // Both addresses when both are read: the assistant's context and the panel say which mail it is.
@@ -81,6 +91,10 @@ export function wireSources(ctx: OwnerCtx) {
   const teamsCfg = loadTeamsConfig(env);
   if (teamsCfg.problems.length) logTeams.error(`off, because: ${teamsCfg.problems.join("; ")}`);
   const teamsRef: { reader: TeamsReader | null } = { reader: null };
+  // The owner's Messages on this Mac, read only (src/imessage.ts): off unless turned on in the panel's Messages card (IMESSAGE=on).
+  const imessageCfg = local ? loadImessageConfig(env) : { config: null, problems: [] as string[] };
+  if (imessageCfg.problems.length) logImessage.error(`off, because: ${imessageCfg.problems.join("; ")}`);
+  const imessageRef: { reader: ImessageReader | null } = { reader: null };
   // Every meeting reviewed (src/meeting-review.ts): with Zoom, unless ZOOM_REVIEW=off. Built once the door is; the door reaches it here.
   const reviewCfg = zoom.config ? loadReviewConfig(env) : { config: null, problems: [] };
   if (reviewCfg.problems.length) logReview.error(`${reviewCfg.problems.join("; ")}`);
@@ -104,12 +118,14 @@ export function wireSources(ctx: OwnerCtx) {
   // On a computer, this Mac's calendars too (src/calendar-local.ts), once the Mac app has pushed them: a first push restarts Pako to add them.
   const macCal = local && !demo ? createLocalCalendar({ kv: local.kv }) : null;
   // This Mac's calendar written by its app (src/calendar-writes.ts): the queue the owner's yes on a card goes into; the door tells the result.
-  // LABS: relay. Off: no sync timer to a relay.
-  const relayClientCfg = labs.on("relay") ? loadRelayClientConfig(env) : { config: null, problems: [] as string[] };
+  // LABS: relay. Off: no sync timer to a relay, and its code is not loaded (src/lab-code.ts).
+  const relayClientCfg = labs.on("relay") ? labCode("relay").loadRelayClientConfig(env) : { config: null, problems: [] as string[] };
   if (relayClientCfg.problems.length) logRelay.error(relayClientCfg.problems.join("; "));
   const relayRef: { c: RelayClient | null } = { c: null };
   const calDoorRef: { result: ((w: CalendarWrite) => Promise<void>) | null } = { result: null };
-  const calWrites = macCal && local ? createCalendarWrites({ kv: local.kv, onResult: (w) => (calDoorRef.result ? calDoorRef.result(w) : Promise.resolve()) }) : null;
+  const calWrites = macCal && local ? createCalendarWrites({
+      kv: local.kv, onResult: (w) => (calDoorRef.result ? calDoorRef.result(w) : Promise.resolve()), paused: async () => (await control.paused()) !== null,
+    }) : null;
   // Google Calendar, connected with one button (src/google-calendar.ts): one more source of the same calendar.
   const googleCal = loadGoogleCalendarConfig(env);
   if (googleCal.problems.length) logCalendar.error(`Google Calendar is off, because: ${googleCal.problems.join("; ")}`);
@@ -128,16 +144,17 @@ export function wireSources(ctx: OwnerCtx) {
   // The private links' source, once built: its rows on the connections page and a broken link's line in the brief.
   const icsRef: { source: ReturnType<typeof createIcsSource> | null } = { source: null };
   // The owner's own addresses: their answer to an invitation is read from their attendee line.
-  const myAddresses = (): string[] => [env.IMAP_USER, env.ZOOM_USER].map((x) => (x ?? "").trim().toLowerCase()).filter((x) => x.includes("@"));
+  const myAddresses = (): string[] => [env.IMAP_USER, env.ZOOM_USER, ...(appleMailRef.reader?.addresses() ?? [])]
+    .map((x) => (x ?? "").trim().toLowerCase()).filter((x) => x.includes("@"));
   // Invitations caught from the owner's mail (src/invites.ts): on the dashboard before the calendar has them.
-  const invites = imap.config ? createInviteStore({ kv, timeZone, me: myAddresses }) : null;
+  const invites = imap.config || appleMailCfg.config ? createInviteStore({ kv, timeZone, me: myAddresses }) : null;
   // A new mailbox's catch-up (src/backfill.ts): its last days, quiet and paced; built with the reader, below.
   const backfillCfg = loadBackfillConfig(env);
   if (backfillCfg.problems.length) logBackfill.error(`${backfillCfg.problems.join("; ")}`);
   const backfillRef: { b: Backfill | null } = { b: null };
   return {
-    friends, plain, timeZone, startName, givenName, ownerName, mail, outgoing, imap, imapRef, repliedRef, box, mailAddress, slack, slackRef,
-    fakeSlack, zoom, zoomRef, teamsCfg, teamsRef, reviewCfg, reviewRef, reviewsDoor, timing, macCal, relayClientCfg, relayRef, calDoorRef, calWrites,
+    friends, plain, timeZone, startName, givenName, ownerName, mail, outgoing, imap, imapRef, appleMailCfg, appleMailRef, repliedRef, box, mailAddress, slack, slackRef,
+    fakeSlack, zoom, zoomRef, teamsCfg, teamsRef, imessageCfg, imessageRef, reviewCfg, reviewRef, reviewsDoor, timing, macCal, relayClientCfg, relayRef, calDoorRef, calWrites,
     cal, calOn, calLabel, calRef, calChangesRef, icsRef, myAddresses, invites, backfillCfg, backfillRef,
   };
 }

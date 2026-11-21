@@ -1,0 +1,32 @@
+{
+  "suite": "followups",
+  "behaviour": "the owner writes «it would be nice to rewrite the onboarding docs one day»: a wish to no one, no loop",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0DANA",
+          "label": "Dana Whitlock (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 16:00",
+              "who": "Dana Whitlock",
+              "text": "The new hires found the docs confusing"
+            },
+            {
+              "at": "2026-11-16 16:02",
+              "who": "Alex",
+              "text": "Yeah, it would be nice to rewrite the onboarding docs one day",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": []
+  }
+}

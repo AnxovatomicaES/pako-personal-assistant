@@ -91,6 +91,25 @@ test("panel: an old link is refused; STOP needs the cookie and the custom header
   }
 });
 
+test("panel: the STOP switch runs the whole STOP (held actions, cards), the same as a typed one; its RESUME only lifts the pause", async () => {
+  let clock = Date.parse("2026-11-15T09:00:00Z");
+  const stops: { at: number; line?: string }[] = [];
+  const r = await rig({ now: () => clock, stop: async (at, line) => (stops.push({ at, line }), true) });
+  try {
+    const cookie = cookieOf(await fetch(`${r.base}${new URL(r.panel.link()).pathname}`, { redirect: "manual" }));
+    const press = (on: boolean) =>
+      fetch(`${r.base}/panel/api/pause`, { method: "POST", headers: { "content-type": "application/json", cookie, "x-pako": "1" }, body: JSON.stringify({ on }) });
+    assert.equal((await press(true)).status, 200);
+    assert.deepEqual(stops, [{ at: clock, line: "STOP from the panel: everything stopped" }]);
+    clock += 1000;
+    assert.equal((await press(false)).status, 200);
+    assert.equal(stops.length, 1);
+    assert.equal(await r.d.control.paused(), null);
+  } finally {
+    r.close();
+  }
+});
+
 test("panel: the overview is what Pako really has (no sample data): calendar with overlaps, mail, Slack, reminders, notes, the log", async () => {
   const t = Date.parse("2026-11-15T09:00:00Z");
   const memory = loadMemory(null);

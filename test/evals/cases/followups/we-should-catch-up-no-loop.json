@@ -1,0 +1,32 @@
+{
+  "suite": "followups",
+  "behaviour": "«We should catch up at some point» and the owner's «Definitely!»: no time, no ask, no loop",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0PABLO",
+          "label": "Pablo Ferraz (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 17:00",
+              "who": "Pablo Ferraz",
+              "text": "Great seeing you at the conference. We should catch up at some point"
+            },
+            {
+              "at": "2026-11-16 17:05",
+              "who": "Alex",
+              "text": "Definitely!",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": []
+  }
+}

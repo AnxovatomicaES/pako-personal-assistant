@@ -32,15 +32,13 @@ import type { Control } from "./control.ts";
 import { english, texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import { mailClients, type MailOAuthProvider } from "./mail-clients.ts";
-import { authenticated, providerOf } from "./mail-categories.ts";
-import {
-  addressOf, htmlToText, loadMailFilters, takeMail, takeOwnMail, type AgentMailMessage, type IntakeDeps, type MailAccount, type Mailbox,
-} from "./mail.ts";
+import { providerOf } from "./mail-categories.ts";
+import { addressOf, loadMailFilters, type IntakeDeps, type MailAccount, type Mailbox } from "./mail.ts";
+import { createMailIntake } from "./mail-intake.ts";
 import type { Inbound } from "./whatsapp.ts";
 import type { HealthReport } from "./watchdog.ts";
 import type { InviteStore } from "./invites.ts";
 import type { Backfill } from "./backfill.ts";
-import { cleanMailBody } from "./mail-body.ts";
 import type { SentMail } from "./mail-followups.ts";
 import { createLog } from "./log.ts";
 import { readJsonRecord } from "./json-record.ts";
@@ -279,15 +277,25 @@ function qpBytes(s: string, header = false): Buffer {
 
 const ENCODED_WORD = /=\?([^?\s]{1,40})\?([bBqQ])\?([^?\s]{0,2000})\?=/g;
 
-/** RFC 2047 encoded words; neighbours in the same charset are joined before decoding (a character may be split across two). */
-export function decodeHeader(raw: string): string {
+/** "<", ">" and "@" made from an encoded word in an address header: shown, but never read as address syntax (RFC 2047 5). */
+const ADDRESS_SAFE: Record<string, string> = { "<": "‹", ">": "›", "@": "＠" };
+
+/**
+ * RFC 2047 encoded words; neighbours in the same charset are joined before decoding (a character may be split across two). `address`: an
+ * address header (From, To, Reply-To...), where an encoded word is only ever a name: what it decodes to can never make an address, so
+ * a mail whose real From passes its own server's checks cannot show, or be trusted, as someone else's.
+ */
+export function decodeHeader(raw: string, address = false): string {
   const s = rawHeaderText(raw);
   let out = "";
   let at = 0;
   let charset = "";
   let bytes: Buffer[] = [];
   const flush = () => {
-    if (bytes.length) out += decodeCharset(Buffer.concat(bytes), charset);
+    if (bytes.length) {
+      const text = decodeCharset(Buffer.concat(bytes), charset);
+      out += address ? text.replace(/[<>@]/g, (c) => ADDRESS_SAFE[c]!) : text;
+    }
     bytes = [];
   };
   for (const m of s.matchAll(ENCODED_WORD)) {
@@ -436,8 +444,9 @@ export function parseMessage(source: Buffer): ParsedMessage {
   } catch (err) {
     log.error(`a message could not be read whole (${(err as Error).name}): its headers are kept`);
   }
-  const headers = h.map((x) => ({ name: x.name, value: decodeHeader(x.value) }));
-  const pick = (n: string) => decodeHeader(get(h, n));
+  const addressHeader = (n: string): boolean => /^(from|sender|reply-to|to|cc|bcc|delivered-to|x-original-to|return-path)$/i.test(n);
+  const headers = h.map((x) => ({ name: x.name, value: decodeHeader(x.value, addressHeader(x.name)) }));
+  const pick = (n: string) => decodeHeader(get(h, n), addressHeader(n));
   return {
     messageId: get(h, "message-id").replace(/\s+/g, "").slice(0, 500),
     from: pick("from"),
@@ -715,76 +724,33 @@ export function createImapReader(d: ImapDeps) {
     return true;
   };
 
-  /** One message into the mail intake (src/mail.ts takeMail): the same codes hidden, bulk kept, VIP, mailbox and summary run. */
-  /** A sent email of the catch-up: the owner's own words, to the catch-up for the follow-ups (their promises); what it answers is noted. */
+  /** The mail intake both readers of the owner's mailbox share (src/mail-intake.ts): the mailbox, the follow-ups, the lessons, the invitations. */
+  const intake = createMailIntake({
+    box: d.box, enqueue: d.enqueue, control: d.control, lang, now, vip: config.vip, provider, filed: d.filed, invites: d.invites, ownSent: d.ownSent,
+    sentMail: d.sentMail, backfill: d.backfill, log,
+  });
+
+  /** A sent email: what it answers is noted for the catch-up, then the shared intake takes it (paced through the catch-up in one). */
   const passSent = async (source: Buffer, at: number, uid: number, catchUp: boolean): Promise<boolean> => {
     const p = parseMessage(source);
     for (const h of p.headers) {
       if (/^(in-reply-to|references)$/i.test(h.name)) for (const m of h.value.match(/<[^<>\s]{1,300}>/g) ?? []) answered.add(m.toLowerCase());
     }
-    // What it answers and is already kept leaves the dashboard's preview (src/mail.ts takeOwnMail).
-    await takeOwnMail(d.box, { headers: p.headers }, now()).catch((err: Error) => log.error(`a reply of the owner's could not be matched: ${err.message}`));
-    // The owner's own email beside a draft Pako wrote for that address: what they changed is learnt (src/lessons.ts).
-    if (d.ownSent) {
-      const mine = (p.text ?? (p.html ? htmlToText(p.html) : "")).replace(/\n>.*$/gs, "").trim().slice(0, 3000);
-      if (mine) await d.ownSent({ to: p.to.map((x) => addressOf(x)), text: mine, at }).catch((err: Error) => log.error(`a sent email's lesson failed: ${err.message}`));
-    }
-    // The owner's own email, read whole by the follow-ups (src/mail-followups.ts): what they promise in it ("I'll send it Friday") becomes
-    // their loop, and a reply that does what was asked closes it. A reply also takes the email it answers off the dashboard (above).
-    const header = (name: string): string => p.headers.filter((h) => h.name.toLowerCase() === name).map((h) => h.value).join(", ");
-    const sent: SentMail = {
-      messageId: p.messageId, inReplyTo: header("in-reply-to"), references: header("references"), subject: p.subject.slice(0, 300),
-      to: header("to").slice(0, 200), cc: header("cc").slice(0, 200), text: cleanMailBody(p.text ?? (p.html ? htmlToText(p.html) : "")), at, from: p.from.slice(0, 200),
-    };
-    if (!sent.text) return false;
-    if (!catchUp || !d.backfill) {
-      if (d.sentMail) await d.sentMail(sent).catch((err: Error) => log.error(`a sent email could not reach the follow-ups: ${err.message}`));
-      return false;
-    }
-    // A catch-up's goes through the catch-up, paced on its allowance.
-    const to = sent.to || p.to.join(", ").slice(0, 200);
-    await d.backfill.addSent({
-      ref: `imap-sent:${uid}`, label: to ? `email to ${to}` : "sent email", text: `To: ${to}\nSubject: ${p.subject}\n\n${sent.text}`, at, mail: sent,
-    });
-    return true;
+    return intake.sent(p, at, { catchUp, ref: `imap-sent:${uid}` });
   };
 
+  /** One message into the shared intake (src/mail-intake.ts, then src/mail.ts takeMail), under this mailbox's own id. */
   const pass = async (
     source: Buffer, at: number, folder: string, validity: string, uid: number, quiet: boolean, catchUp = false, sentFolder = false,
   ): Promise<"queued" | "stored" | "seen" | "own"> => {
     const p = parseMessage(source);
-    // An invitation (or its cancellation) shows on the dashboard at once, whatever else the mail is: kept apart, never acted on.
-    if (p.calendar && d.invites) await d.invites.take(p.calendar, at).catch((err: unknown) => log.error(`an invitation could not be read: ${(err as Error)?.name}`));
-    // Mail the owner wrote (a Sent folder, a note to self) is not news to them; the mail it answers is dealt with (src/mail.ts takeOwnMail).
-    // Anyone can write the owner's address on a From line: outside the Sent folder only a mail their own server vouched for (DKIM or DMARC
-    // aligned) closes what it answers. A forged one is not news either, and closes nothing.
-    if (own && addressOf(p.from) === own) {
-      const vouched = sentFolder || authenticated(p.from, p.headers.filter((h) => /^authentication-results$/i.test(h.name)).map((h) => h.value));
-      if (vouched) await takeOwnMail(d.box, { headers: p.headers }, now()).catch((err: Error) => log.error(`a reply of the owner's could not be matched: ${err.message}`));
-      return "own";
-    }
     // The same email in two folders (Gmail's labels) or read again after a renumbering is the same id; the sender's address is part of it, so
     // a stranger who copies another email's Message-ID cannot hide that email.
     const key = p.messageId ? `${own}\n${p.messageId}\n${addressOf(p.from)}` : `${own}\n${folder}\n${validity}\n${uid}`;
     const id = `imap:${createHash("sha256").update(key).digest("hex").slice(0, 32)}`;
-    if (await d.box.isSeen(id)) return "seen";
-    const m: AgentMailMessage = {
-      message_id: id,
-      from: p.from,
-      subject: p.subject,
-      to: p.to,
-      headers: p.headers,
-      timestamp: new Date(at).toISOString(),
-      attachments: p.attachments.map((filename) => ({ filename })),
-      ...(p.text !== undefined ? { text: p.text } : {}),
-      ...(p.html !== undefined ? { html: p.html } : {}),
-    };
-    // A catch-up email goes to the catch-up, which hands it out paced on its own allowance; one the owner already answered is marked so.
+    // A catch-up email the owner already answered is marked so.
     const replied = catchUp && !!p.messageId && answered.has(p.messageId.toLowerCase());
-    const bf = catchUp ? d.backfill : undefined;
-    return takeMail({ box: d.box, enqueue: d.enqueue, control: d.control, lang, now, vip: config.vip, provider, filed: d.filed }, id, m, accountOf(p), {
-      quiet, ...(replied ? { replied: true } : {}), ...(bf ? { enqueue: (x: Inbound) => bf.add(x, { from: addressOf(p.from), replied }) } : {}),
-    });
+    return intake.inbox(p, at, { id, own: own ? [own] : [], account: accountOf(p), quiet, replied, catchUp, sentFolder });
   };
 
   const fail = (err: unknown): void => {
@@ -846,7 +812,10 @@ export function createImapReader(d: ImapDeps) {
         if (listed) sentPath = listed.find((f) => /\\sent/i.test(f.specialUse ?? ""))?.path ?? null;
       }
       if (sentPath && !config.folders.includes(sentPath)) await readFolder(client, sentPath, state, out, { catchUp, sent: true, firstLook });
-      for (const folder of config.folders) await readFolder(client, folder, state, out, { catchUp, firstLook });
+      // The Sent folder named in IMAP_FOLDERS too is still the owner's own mail: read first and as Sent, never as news (an alias in From is
+      // theirs), so a catch-up knows what they answered before it reads the inbox.
+      const order = [...config.folders].sort((a, b) => Number(b === sentPath) - Number(a === sentPath));
+      for (const folder of order) await readFolder(client, folder, state, out, { catchUp, firstLook, sent: !!sentPath && folder === sentPath });
       await client.logout().catch(() => undefined);
       client = null;
       // A new account read whole for the first time: one calm line, once. Kept as told before it is sent, so a failing send is never repeated

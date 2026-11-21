@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sqliteKv } from "../src/sqlite-kv.ts";
+import { openForeignReadOnly, sqlite, sqliteKv } from "../src/sqlite-kv.ts";
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), "pako-sqlite-"));
 
@@ -124,4 +124,29 @@ test("sqliteKv: opening it prints no 'experimental' warning to the person", () =
   assert.equal(r.status, 0, r.stderr);
   assert.ok(!/experimental/i.test(r.stderr), r.stderr);
   assert.match(r.stderr, /other warning/, "other warnings still show");
+});
+
+test("another app's database, read only: nothing is written beside it when that app is closed, and its live log is read when it runs", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pako-foreign-"));
+  const path = join(dir, "their.db");
+  const Db = sqlite();
+  const w = new Db(path);
+  w.exec("PRAGMA journal_mode = WAL; CREATE TABLE t (x INTEGER); INSERT INTO t VALUES (1);");
+  w.close(); // the app quits: SQLite folds its log back in and removes -wal and -shm
+  assert.equal(existsSync(`${path}-wal`), false);
+  const before = readFileSync(path);
+  const r = openForeignReadOnly(path);
+  assert.equal((r.prepare("SELECT count(*) AS n FROM t").get() as { n: number }).n, 1);
+  assert.throws(() => r.exec("INSERT INTO t VALUES (2)"), "no statement can change it");
+  r.close();
+  assert.equal(existsSync(`${path}-wal`), false, "no empty -wal left behind");
+  assert.equal(existsSync(`${path}-shm`), false, "no empty -shm left behind");
+  assert.deepEqual(readFileSync(path), before, "the file itself is untouched");
+  // The app running again (its log beside the file): its newest rows are seen through it.
+  const live = new Db(path);
+  live.exec("PRAGMA journal_mode = WAL; INSERT INTO t VALUES (3);");
+  const r2 = openForeignReadOnly(path);
+  assert.equal((r2.prepare("SELECT count(*) AS n FROM t").get() as { n: number }).n, 2);
+  r2.close();
+  live.close();
 });

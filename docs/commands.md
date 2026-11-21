@@ -32,7 +32,7 @@ Commands are English words; anything else, in any language, goes to Claude.
 | Command | What happens |
 | --- | --- |
 | `HELP` | What Pako does (ask in your own words first), and the shortcuts that are on in your Pako. |
-| `STOP` · `PAUSE` | Halts every call and outgoing message, a table request included. Your chat, reminders and mail summaries go on. |
+| `STOP` · `PAUSE` | Halts every call and outgoing message (a table request included), cancels what is waiting to go out, and stops reading new mail and Messages and changing your calendar or Reminders until `RESUME`, which picks up where it left off. Your chat with Pako and its reminders go on. |
 | `RESUME` | Back to normal. |
 | `LOG` | The last 15 things Pako did. |
 | `UNDO` | Undoes the latest change Pako made by itself (a note, a reminder, a list or a task) in the last 24 hours. Each receipt also has an **Undo** button, good for 7 days. |
@@ -62,6 +62,8 @@ Commands are English words; anything else, in any language, goes to Claude.
 | `SLACK` | Slack messages for you in the last 24 hours. Needs Slack. |
 | `PENDING` · `OPEN` · `OPEN LOOPS` | What you were asked or promised that Pako does not see done yet, newest first, each with where it came from. Needs follow-ups (on by default with Slack, mail or Zoom). |
 | `DRAFT` · `DRAFT` and a few words | The message that closes a follow-up, written for you to copy and send yourself: right after a reminder, for that one; with words (`DRAFT contract`), for the one they name. Nothing is sent. Needs follow-ups and the written brief. |
+| `find time for` and a few words (`find time for the Ana deck`) | A focus block for one of your open follow-ups: the first free working time before it is due that holds it (or in the next three working days, without a time), on a card with **Block**, **Another time** and **Not needed**. Only **Block** writes your calendar, through the Pako app on your Mac; a calendar Pako cannot write is said so, with **Snooze 1 h** instead. Needs follow-ups and a calendar. See [Time to do it](features.md#time-to-do-it). |
+| `CHASE` and a few words | A gentle and a firm reminder for someone who owes you something (`CHASE q3 numbers`), written now in the language they write to you in: **Send** on a card for an email (a reply, through the usual send with **Undo**), **Copy** and a link to the app for Slack, Teams or Messages. Nothing is sent without your press. Pako also offers one by itself once their time has passed (see "When someone owes you" in features.md). Needs follow-ups and the written brief. |
 | `MEETING TODOS` | What is still open from the last 7 days of Zoom meetings, by meeting, with the open questions. Needs Zoom. |
 | `HEALTH` · `STATUS` | How Pako is doing, in words: what is down and the one thing to do, what has been failing for a little while, what has not been heard from yet, and what works (the panel's **System** card), then the last 7 days of the **Quality** card in one line. Answered while paused too. |
 | `REHEARSAL` · `REHEARSE` · `DRY RUN` | A dry run: the follow-ups read over the last 48 h of what Pako already keeps (Slack, mail summaries, meeting summaries) and today's written brief. The panel's **Rehearsal** card shows what Pako WOULD have said: each would-be reminder with its source and what its check found. Nothing is sent, nothing changes. Also a button on the card. |

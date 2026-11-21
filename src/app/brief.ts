@@ -18,7 +18,7 @@ export function wireBrief(ctx: AfterCalendar) {
   const {
     env, uiLang, demo, kv, control, timeZone, givenName, mail, imap, box, slack, slackRef, fakeSlack, zoom, zoomRef, reviewRef, calOn, calRef,
     calChangesRef, icsRef, backfillRef, briefCfg, briefRef, smartCfg, smartRef, followupsCfg, followupsRef, personRef, gentleSettings, gentleRef,
-    followupsDoor, lessons, quality, publicUrl, door, claudeLive,
+    followupsDoor, lessons, quality, publicUrl, door, claudeLive, phoneLink, timeRef,
   } = ctx;
   // The morning brief, then one waiting "is this the same person?" question with its buttons (at most one a day).
   const briefSent = async (text: string): Promise<void> => {
@@ -54,7 +54,11 @@ export function wireBrief(ctx: AfterCalendar) {
       () => (quality ? quality.monday() : Promise.resolve(null)),
     ],
     // Gentle mode: the week's focus first (src/gentle-reset.ts); check-ins kept for the brief after it (src/gentle-checkins.ts).
-    first: [async () => (gentleRef.reset ? gentleRef.reset.briefLine() : null), async () => (gentleRef.checkins ? gentleRef.checkins.briefLine() : null)],
+    // And the follow-ups at risk for want of free time, with their focus block (src/time-to-do.ts).
+    first: [
+      async () => (gentleRef.reset ? gentleRef.reset.briefLine() : null), async () => (gentleRef.checkins ? gentleRef.checkins.briefLine() : null),
+      async () => (timeRef.t ? timeRef.t.briefLine() : null),
+    ],
     notify: briefSent,
     notifyNote: (text) => door.notifyOwner(text, { urgent: true }),
     ...(smartCfg.config
@@ -109,7 +113,10 @@ export function wireBrief(ctx: AfterCalendar) {
       ...(followupsCfg.config ? { closedForYou: (since: number) => followupsDoor.closedForYou!(since) } : {}),
       // And first in the chat's version, with the check-ins kept for the brief (src/gentle-checkins.ts).
       weekFocus: async () => {
-        const lines = [gentleRef.reset ? await gentleRef.reset.briefLine() : null, gentleRef.checkins ? await gentleRef.checkins.briefLine() : null];
+        const lines = [
+          gentleRef.reset ? await gentleRef.reset.briefLine() : null, gentleRef.checkins ? await gentleRef.checkins.briefLine() : null,
+          timeRef.t ? await timeRef.t.briefLine() : null,
+        ];
         return lines.filter((x): x is string => !!x).join("\n") || null;
       },
       enqueue: (m) => door.inbox.add(m),
@@ -120,6 +127,8 @@ export function wireBrief(ctx: AfterCalendar) {
       changes: (since) => door.changesBrief(since),
       notify: briefSent,
       tell: (text) => door.notifyOwner(text),
+      // A chase's draft goes back to its follow-up, which shows both tones on one card (src/followups/chase.ts).
+      ...(followupsCfg.config ? { chaseWritten: (o: { loop: string; tone: "gentle" | "firm"; text: string }) => followupsDoor.chaseWritten!(o) } : {}),
       lessons: (q) => lessons.lines(q),
       // A draft written for the chat: kept to compare with what the owner sends to that conversation or address (src/lessons.ts).
       drafted: async (o) => {
@@ -137,6 +146,7 @@ export function wireBrief(ctx: AfterCalendar) {
           }
         : {}),
       url: () => publicUrl() || null,
+      phone: phoneLink,
       ...(followupsCfg.config ? { closeLoop: (id: string) => followupsDoor.press("1", id) } : {}),
       tickTask: (id: string, done: boolean) => door.lists.tickTask(id, done, Date.now()),
       ...(quality ? { quality: { monday: () => quality.monday(), line: (l: Lang) => quality.briefLine(l), asked: quality.briefAsked } } : {}),

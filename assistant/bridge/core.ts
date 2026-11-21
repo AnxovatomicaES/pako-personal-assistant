@@ -1,13 +1,14 @@
 // The bridge's base: its dependencies, the conversation's state on disk, the server's API, the reply and the notes sent to it.
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { HANDLED_FILE, HandledIds } from "./handled.ts";
 import { join } from "node:path";
 import { outsideOf, type OutsideSource } from "../../src/quarantine.ts";
 import { systemPromptFor, toolsSystemPromptFor, type LabsOff } from "../prompt.ts";
 import { toolDataOf } from "../tools.ts";
 import { createBudget, loadBudgetConfig, type Budget } from "../budget.ts";
 import type { VoiceConfig } from "../voice.ts";
-import { REPLY_WAITS_MS, type BridgeConfig } from "./config.ts";
+import { REPLY_TEXT_MAX, REPLY_WAITS_MS, type BridgeConfig } from "./config.ts";
 import { runClaude, type RunConfig } from "./claude.ts";
 import { setFallbackLog } from "./fallbacks.ts";
 import { mcpConfigFor, toolDataPath } from "./mcp.ts";
@@ -90,11 +91,12 @@ export function mountCore(b: Base) {
   const attempts = new Map<string, number>();
   /** Not before this time (ms): an item that hit Claude's limit or a lost login waits instead of being tried every few seconds. */
   const retryAt = new Map<string, number>();
-  /** Answered, but the server did not confirm the ack: acknowledged again, never answered twice. */
-  const handledUnacked = new Set<string>();
+  /** Answered, but the server did not confirm the ack: acknowledged again, never answered twice, across a restart too (handled.ts). */
+  const handledUnacked = new HandledIds(join(config.stateDir, HANDLED_FILE), log);
   /** The reply already worked out for a message whose sending failed: sent again as it is, without asking Claude (and acting) again. */
   const replyCache = new Map<string, Parameters<typeof say>[0]>();
-  const toldAt = { limit: 0, login: 0 };
+  /** When a lost login was last said to the owner (once an hour). Claude's limit is said once, by runs.ts. */
+  const toldAt = { login: 0 };
 
   const readState = (): State => {
     try {
@@ -169,13 +171,41 @@ export function mountCore(b: Base) {
   };
   const say = async (body: SayBody): Promise<boolean> => {
     try {
-      const r = await api("/assistant/reply", { method: "POST", body });
+      const cut = typeof body.text === "string" && body.text.length > REPLY_TEXT_MAX ? { ...body, text: body.text.slice(0, REPLY_TEXT_MAX) } : body;
+      const r = await api("/assistant/reply", { method: "POST", body: cut });
       if (!r.ok) log(`reply refused: ${r.status}`);
       return r.ok;
     } catch (err) {
       log(`reply failed: ${(err as Error).message}`);
       return false;
     }
+  };
+
+  /**
+   * A job's answer the server did not take (an error, or no answer at all): kept, and sent again as it is after a wait, so Claude is not
+   * asked again every round (a rehearsal's or a draft's run is never reused otherwise). Let go after the third try.
+   */
+  const unsent = new Map<string, string>();
+  const deliver = async (id: string, path: string, text: string, what: string): Promise<boolean> => {
+    try {
+      const r = await api(path, { method: "POST", body: { id, text } });
+      if (r.ok || r.status === 400) {
+        unsent.delete(id);
+        return true;
+      }
+      log(`${what} refused: ${r.status}`);
+    } catch (err) {
+      log(`${what} failed: ${(err as Error).message}`);
+    }
+    const n = (attempts.get(id) ?? 0) + 1;
+    attempts.set(id, n);
+    if (n >= 3) {
+      unsent.delete(id);
+      return true;
+    }
+    unsent.set(id, text);
+    retryAt.set(id, Date.now() + n * 30_000);
+    return false;
   };
 
   const waits = d.replyWaitsMs ?? REPLY_WAITS_MS;
@@ -198,7 +228,7 @@ export function mountCore(b: Base) {
   };
   return {
     config, f, runOnce, log, budget, warm, chat, writeToolData, attempts, retryAt, handledUnacked, replyCache, toldAt, readState,
-    writeState, readSeen, writeSeen, api, say, waits, pendingNotes, flushNotes,
+    writeState, readSeen, writeSeen, api, say, waits, pendingNotes, flushNotes, unsent, deliver,
   };
 }
 

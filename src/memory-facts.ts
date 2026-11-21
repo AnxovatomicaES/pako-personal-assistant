@@ -351,7 +351,12 @@ export function createFacts(kv: Kv | null, o: { seed?: () => Promise<FactSeed>; 
             ...(input.multi ? { multi: true as const } : {}),
           };
           const rivals = fact.multi ? [] : same.filter((f) => !f.multi);
-          if (rivals.length && opt.judge) {
+          // One that began after this one ("works at Acme" since October, "at Initech" since 2020 told today): this one is history. It was
+          // true until the next began, and it closes nothing.
+          const next = rivals.filter((f) => f.validFrom > fact.validFrom).sort((a, b) => a.validFrom - b.validFrom)[0];
+          if (next) {
+            Object.assign(fact, { validTo: next.validFrom, closedAt: now, closedBy: next.id });
+          } else if (rivals.length && opt.judge) {
             fact.pending = { until: now + JUDGE_MS, against: rivals.map((f) => f.id).slice(0, 10) };
             out.pending.push({ fact: structuredClone(fact), against: structuredClone(rivals) });
           } else {
@@ -456,8 +461,10 @@ export function factLine(f: Fact, l: Lang, timeZone: string): string {
 /** What changed: facts Pako learnt stopped holding since `since`, each with what replaced it, newest first. */
 export function changesSince(facts: Fact[], since: number, l: Lang, timeZone: string, max = 10): string[] {
   const t = T(l);
+  // A fact learnt as history (closed by one Pako knew before it) is not a change.
+  const history = (f: Fact): boolean => !!f.closedBy && (facts.find((x) => x.id === f.closedBy)?.learnedAt ?? 0) < f.learnedAt;
   return facts
-    .filter((f) => !holds(f) && (f.closedAt ?? 0) >= since)
+    .filter((f) => !holds(f) && (f.closedAt ?? 0) >= since && !history(f))
     .sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))
     .slice(0, max)
     .map((f) => {

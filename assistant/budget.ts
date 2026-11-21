@@ -10,7 +10,9 @@
 // - Nothing changed: a proactive check whose material is the same as the last one that found nothing to say gets "nothing to say" again
 //   for ASSISTANT_UNCHANGED_MIN (120 by default) without a run.
 // - Claude's limit: when a run (any run, the owner's too) says the plan's limit was reached, background work stops until the reset the CLI
-//   names ("resets 9pm", or an epoch after a "|"), or for half an hour when it names none. A later run that works ends the pause early.
+//   names (a rate_limit_event's resetsAt, "resets 9pm", or an epoch after a "|"), or for half an hour when it names none. A later run that
+//   works ends the pause early. Whether the owner was told of the limit is kept here too (limitTold), so it is said once, not per job or
+//   per restart, and "back" is said once when a run works again.
 // - The model: the writing kinds (the morning brief, a draft) run on the writing model (ASSISTANT_WRITING_MODEL), the rest on the general one.
 //   The day's runs are counted by the model that answered too, and a writing model the account cannot use is set aside until the next day.
 //
@@ -151,6 +153,8 @@ interface Saved {
   modelsOff: string[];
   skipped: Usage["skipped"];
   pausedUntil: number;
+  /** The owner was told Claude is at its limit, and not yet that it is back. */
+  told?: boolean;
 }
 
 const localDay = (t: number): string => {
@@ -182,6 +186,7 @@ export function createBudget(o: { config: BudgetConfig; stateDir?: string; now?:
         modelsOff,
         skipped: { cap: n(v.skipped?.cap), paused: n(v.skipped?.paused), same: n(v.skipped?.same) },
         pausedUntil: n(v.pausedUntil),
+        ...(v.told === true ? { told: true } : {}),
       };
     } catch {
       return fresh(localDay(now()));
@@ -201,7 +206,7 @@ export function createBudget(o: { config: BudgetConfig; stateDir?: string; now?:
   const today = (): Saved => {
     const d = localDay(now());
     if (s.day !== d) {
-      s = { ...fresh(d), pausedUntil: s.pausedUntil };
+      s = { ...fresh(d), pausedUntil: s.pausedUntil, ...(s.told ? { told: true } : {}) };
       save();
     }
     return s;
@@ -286,10 +291,13 @@ export function createBudget(o: { config: BudgetConfig; stateDir?: string; now?:
       cache.push({ key, kind, at: now(), text: text.slice(0, 40_000) });
       while (cache.length > CACHE_MAX) cache.shift();
     },
-    /** A run said Claude's limit was reached: background work waits until the reset. Returns that time. */
-    limited(message: string): number {
+    /**
+     * A run said Claude's limit was reached: background work waits until the reset. Returns that time. `resetsAt`: the reset the stream gave
+     * in structure (ClaudeError.resetsAt), believed before the words.
+     */
+    limited(message: string, resetsAt?: number): number {
       const t = now();
-      const named = resetAt(message, t);
+      const named = resetsAt && resetsAt > t ? resetsAt : resetAt(message, t);
       const until = Math.min(named && named > t ? named : t + UNKNOWN_RESET_MS, t + MAX_PAUSE_MS);
       const x = today();
       if (until > x.pausedUntil) {
@@ -299,14 +307,36 @@ export function createBudget(o: { config: BudgetConfig; stateDir?: string; now?:
       }
       return x.pausedUntil;
     },
-    /** A run worked: whatever the pause said, Claude answers again. */
-    working(): void {
+    /** Whether the owner was told of this limit (until a run works again), kept across restarts so a restart does not say it again. */
+    limitTold(): boolean {
+      return today().told === true;
+    },
+    /** The owner was told of the limit (the notice went through): not said again until a run works. */
+    markLimitTold(): void {
+      const x = today();
+      if (x.told) return;
+      x.told = true;
+      save();
+    },
+    /**
+     * A run worked: whatever the pause said, Claude answers again. True when the owner was told of a limit and is still to hear it is over:
+     * true again on each run that works until backTold says the note went.
+     */
+    working(): boolean {
       const x = today();
       if (x.pausedUntil > now()) {
         x.pausedUntil = 0;
         save();
         log("Claude answers again: background runs resume");
       }
+      return x.told === true;
+    },
+    /** The "back" note went through: the limit's notice is closed. */
+    backTold(): void {
+      const x = today();
+      if (!x.told) return;
+      delete x.told;
+      save();
     },
     usage(): Usage {
       const x = today();

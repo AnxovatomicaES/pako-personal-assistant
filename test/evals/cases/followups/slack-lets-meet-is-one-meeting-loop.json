@@ -1,0 +1,40 @@
+{
+  "suite": "followups",
+  "behaviour": "«Let's meet Thursday 15:00 to go over the roadmap?» and the owner's «works, I'll send the invite»: one loop for that meeting, not two",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0OMAR",
+          "label": "Omar Lindqvist (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:00",
+              "who": "Omar Lindqvist",
+              "text": "Let's meet Thursday 15:00 to go over the roadmap?"
+            },
+            {
+              "at": "2026-11-16 10:02",
+              "who": "Alex",
+              "text": "Works for me, I'll send the invite",
+              "mine": true
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"agreed_meeting\", \"title\": \"Roadmap review with Omar\", \"detail\": \"Omar, see the conversation.\", \"who\": \"Omar\", \"due\": \"2026-11-19 15:00\", \"tz\": \"Europe/Madrid\", \"check\": \"calendarEvent\", \"hints\": [\"roadmap\", \"Omar\"]}], \"closes\": []}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [
+      {
+        "who": "Omar",
+        "titleHas": [
+          "roadmap"
+        ],
+        "dueLocal": "2026-11-19 15:00"
+      }
+    ]
+  }
+}

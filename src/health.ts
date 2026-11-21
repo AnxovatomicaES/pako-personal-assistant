@@ -320,6 +320,8 @@ export interface HealthStore {
   add(entry: HealthEntry): Promise<HealthState>;
   /** The day a habit nudge was offered; false when one was already offered that day. */
   claimNudge(day: string): Promise<boolean>;
+  /** The day's claim given back: its card could not be sent. */
+  releaseNudge(day: string): Promise<void>;
   /** Everything gone: the diary and the medication schedule. */
   forget(): Promise<void>;
 }
@@ -365,6 +367,13 @@ export function createHealth(kv: Kv | null): HealthStore {
         s.nudged = day;
         await write(s);
         return true;
+      }),
+    releaseNudge: (day) =>
+      locked(async () => {
+        const s = await readStrict();
+        if (s.nudged !== day) return;
+        delete s.nudged;
+        await write(s);
       }),
     forget: () => locked(() => write(empty())),
   };

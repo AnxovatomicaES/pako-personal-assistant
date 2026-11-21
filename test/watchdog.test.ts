@@ -202,6 +202,11 @@ test("Claude signed out for 15 minutes is told with what to do on that computer;
   await r.settle();
   assert.deepEqual(r.said, []);
   assert.equal(r.dog.state().parts.find((p) => p.key === "claude")?.status, "warn");
+  assert.match(r.dog.summary(), /• Claude has reached its usage limit: it comes back by itself when that renews\./);
+  // The reset the computer said with its numbers is in the summary, in the owner's clock.
+  const usage = { day: "2026-11-14", interactive: 1, background: 2, perDay: 40, skipped: { cap: 0, paused: 3, same: 0 }, pausedUntil: r.clock.t + 2 * HOUR };
+  r.dog.bridgeReport({ usage });
+  assert.match(r.dog.summary(), /when that renews, around \d{2}:\d{2}\. What needs it waits; nothing is lost\./);
   r.dog.bridgeReport({ claude: "login" });
   await r.settle();
   r.clock.t += 10 * MIN;

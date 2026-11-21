@@ -171,6 +171,22 @@ test("told facts: another value for the same subject and attribute closes the ol
   assert.deepEqual(currentAbout(await facts.read(), ["Rohan"]).filter((f) => f.attribute === "habla").map((f) => f.value).sort(), ["hindi", "inglés"]);
 });
 
+test("told facts: a value that held before the current one (told late) is history; it never closes the newer one, nor shows as a change", async () => {
+  const kv = memKv();
+  const facts = createFacts(kv, { now: () => T0 });
+  const src = { who: "owner", where: "chat", at: T0 };
+  await facts.add([{ subject: "Ana", attribute: "works at", value: "Acme", source: src, validFrom: T0 - 30 * DAY }], T0 - 30 * DAY);
+  // Today the owner mentions where Ana was in 2020; the weekly review of a meeting held before her last one comes late: the same rule.
+  const r = await facts.add([{ subject: "Ana", attribute: "works at", value: "Initech", source: src, validFrom: Date.parse("2020-01-01T00:00:00Z") }], T0, { judge: true });
+  assert.equal(r.closed.length, 0);
+  assert.equal(r.pending.length, 0, "nothing for the judge: the dates already say which came first");
+  const all = await facts.read();
+  assert.deepEqual(currentAbout(all, ["Ana"]).map((f) => f.value), ["Acme"]);
+  const old = all.find((f) => f.value === "Initech")!;
+  assert.equal(old.validTo, T0 - 30 * DAY, "true until Acme began");
+  assert.deepEqual(changesSince(all, T0 - DAY, "en", TZ), [], "nothing changed: Pako learnt some history");
+});
+
 test("the judge: a candidate waits; compatible keeps both, contradicts closes, anything not strict JSON or no answer in time is the newest winning", async () => {
   const clock = { now: T0 };
   const facts = createFacts(memKv(), { now: () => clock.now });

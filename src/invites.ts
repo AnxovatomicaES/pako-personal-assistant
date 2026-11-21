@@ -5,6 +5,10 @@
 // - REQUEST: kept as "Invited (from email)" until a calendar source has the same event (its UID): then the calendar's copy wins and this one
 //   is dropped from the view. Gone by itself once the meeting is over.
 // - CANCEL: the invitation is removed, and any follow-up about that meeting is closed.
+// - Anyone who learnt a meeting's UID (a forwarded invitation) could write a cancel or a change for it. Once an invitation is kept, a cancel
+//   or a new REQUEST for its UID counts only from its organizer's address (or the address the first invitation came from), and only when the
+//   owner's mail server vouched for that sender (DKIM or DMARC aligned, src/mail-categories.ts authenticated). Anything else is logged and
+//   the invitation stays as it was.
 //
 // The invitation is a stranger's text, like the rest of the mail: it is parsed by the same bounded iCalendar reader as the calendar links
 // (src/ics.ts), its words are only shown (cut, one line each), and nothing in it ever acts. Kept in the store under "mail-invites".
@@ -13,6 +17,9 @@ import type { CalEvent } from "./calendar.ts";
 import type { Kv } from "./kv.ts";
 import { icsEvents, parseFeed } from "./ics.ts";
 import { readJsonRecord } from "./json-record.ts";
+import { createLog } from "./log.ts";
+
+const log = createLog("invites");
 
 export const INVITES_KEY = "mail-invites";
 const KEEP_S = 60 * 24 * 3600;
@@ -27,10 +34,34 @@ export interface MailInvite {
   end: number;
   allDay: boolean;
   organizer?: string;
+  /** The organizer's address (ORGANIZER's mailto), and the address the invitation's mail came from: who may change or cancel it. */
+  organizerAddress?: string;
+  from?: string;
   location?: string;
   join?: string;
   /** When the mail came. */
   at: number;
+}
+
+/** Who sent the mail an invitation came in: the From address, and whether the owner's mail server vouched for it. */
+export interface InviteSender {
+  address: string;
+  vouched: boolean;
+}
+
+/** Each event's organizer address (its mailto), by UID. */
+function organizers(ics: string): Map<string, string> {
+  const out = new Map<string, string>();
+  try {
+    for (const v of parseFeed(ics.slice(0, 256 * 1024)).getAllSubcomponents("vevent").slice(0, 50)) {
+      const uid = String(v.getFirstPropertyValue("uid") ?? "");
+      const org = String(v.getFirstProperty("organizer")?.getFirstValue() ?? "").replace(/^mailto:/i, "").trim().toLowerCase();
+      if (uid && org.includes("@") && !out.has(uid)) out.set(uid, org.slice(0, 200));
+    }
+  } catch {
+    /* not a calendar file: no organizers */
+  }
+  return out;
 }
 
 export type InviteMethod = "request" | "cancel" | "other";
@@ -56,7 +87,7 @@ export function readInvite(ics: string, o: { now: number; timeZone: string; me?:
 
 export interface InviteStore {
   /** One mail's invitation taken in: kept, changed or removed. `closed` hears the UIDs a cancel removed (the follow-ups close on them). */
-  take: (ics: string, at: number) => Promise<{ method: InviteMethod; uids: string[] } | null>;
+  take: (ics: string, at: number, sender?: InviteSender) => Promise<{ method: InviteMethod; uids: string[] } | null>;
   /** The invitations still ahead, oldest first. */
   list: () => Promise<MailInvite[]>;
   /**
@@ -90,25 +121,43 @@ export function createInviteStore(o: { kv: Kv | null; timeZone: string; now?: ()
     memory = list;
     if (o.kv) await o.kv.set(INVITES_KEY, JSON.stringify(list), KEEP_S);
   };
-  const ahead = (list: MailInvite[]): MailInvite[] => list.filter((x) => x.end > now()).sort((a, b) => a.start - b.start).slice(-MAX);
+  // Over MAX, the furthest ahead give way: the meeting tomorrow matters more than one in two months.
+  const ahead = (list: MailInvite[]): MailInvite[] => list.filter((x) => x.end > now()).sort((a, b) => a.start - b.start).slice(0, MAX);
 
   return {
-    take: (ics, at) =>
+    take: (ics, at, sender) =>
       locked(async () => {
         const got = readInvite(ics, { now: now(), timeZone: o.timeZone, ...(o.me ? { me: o.me() } : {}) });
         if (!got || got.method === "other") return null;
-        const uids = [...new Set(got.events.map((e) => e.uid!))];
-        const list = (await read()).filter((x) => !uids.includes(x.uid));
+        const kept = await read();
+        const from = sender?.address.trim().toLowerCase() ?? "";
+        // A kept invitation changes or goes only by its organizer's (or first sender's) own mail, as their server vouched.
+        const may = (uid: string): boolean => {
+          const was = kept.filter((x) => x.uid === uid);
+          if (!was.length) return true;
+          if (!sender?.vouched || !from.includes("@")) return false;
+          return was.every((x) => x.organizerAddress === from || x.from === from);
+        };
+        const all = [...new Set(got.events.map((e) => e.uid!))];
+        const uids = all.filter(may);
+        if (uids.length < all.length) log.warn(`a ${got.method} for ${all.length - uids.length} kept invitation(s) not from its organizer: ignored`);
+        const list = kept.filter((x) => !uids.includes(x.uid));
+        const orgs = organizers(ics);
         if (got.method === "request") {
-          for (const e of got.events) {
+          for (const e of got.events.filter((x) => uids.includes(x.uid!))) {
+            const organizerAddress = orgs.get(e.uid!);
             list.push({
               uid: e.uid!, title: e.title.slice(0, 150), start: e.start, end: e.end, allDay: e.allDay, at,
-              ...(e.organizer ? { organizer: e.organizer } : {}), ...(e.location ? { location: e.location } : {}), ...(e.join ? { join: e.join } : {}),
+              ...(e.organizer ? { organizer: e.organizer } : {}), ...(organizerAddress ? { organizerAddress } : {}),
+              ...(from.includes("@") ? { from: from.slice(0, 200) } : {}),
+              ...(e.location ? { location: e.location } : {}), ...(e.join ? { join: e.join } : {}),
             });
           }
         }
         await write(ahead(list));
-        if (got.method === "cancel" && uids.length) o.closed?.(uids);
+        // What followed a meeting closes only for one kept here (its sender checked above): a cancel for a UID never seen proves nothing.
+        const gone = uids.filter((u) => kept.some((x) => x.uid === u));
+        if (got.method === "cancel" && gone.length) o.closed?.(gone);
         return { method: got.method, uids };
       }),
     list: async () => ahead(await read()),

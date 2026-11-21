@@ -127,8 +127,9 @@ export interface BridgeVersion {
  * Which Claude Code the assistant's computer drives, and how it did in the bridge's self-test (assistant/bridge/cli-probe.ts). `note` is the
  * sentence the Health card shows when it is not plain "ok": "Claude Code X.Y: tested by probe", or, when it failed, what failed and the
  * command that goes back to the last version that passed. "newer" and "older": the self-test could not run (and from bridges before it).
+ * "behind": it refused a model Pako asks for as too new for it, and Pako writes with another one until it is updated (the note says how).
  */
-export const BRIDGE_CLI_STATUSES = ["ok", "probed", "failed", "newer", "older", "unknown"] as const;
+export const BRIDGE_CLI_STATUSES = ["ok", "probed", "failed", "newer", "older", "unknown", "behind"] as const;
 export interface BridgeCli {
   version: string;
   status: (typeof BRIDGE_CLI_STATUSES)[number];
@@ -232,6 +233,7 @@ const T = texts(
     "sum.failing": "• {name} has been failing {since} ({detail}). If it goes on, I'll tell you.",
     "sum.waiting": "• {name}: nothing heard yet.",
     "sum.limit": "• Claude has reached its usage limit: it comes back by itself when that renews.",
+    "sum.limitAt": "• Claude has reached its usage limit: it comes back by itself when that renews, around {time}. What needs it waits; nothing is lost.",
     "sum.quiet": "(It's your quiet hours now: what isn't urgent I'll tell you when they end.)",
   },
 );
@@ -658,12 +660,17 @@ export function createWatchdog(d: WatchdogDeps) {
     for (const p of st.parts.filter((x) => x.status === "failing")) {
       lines.push(t("sum.failing", { name: nameOf(p.key, l), since: sinceText(p.failSince ?? now(), l), detail: p.detail || "?" }));
     }
-    if (st.parts.some((x) => x.status === "warn")) lines.push(t("sum.limit"));
+    if (st.parts.some((x) => x.status === "warn")) {
+      // The reset the assistant's computer last said with its numbers (assistant/budget.ts pausedUntil), when it is still ahead.
+      const until = st.usage?.pausedUntil ?? 0;
+      lines.push(until > now() ? t("sum.limitAt", { time: ownerClock(until, d.timeZone, l) }) : t("sum.limit"));
+    }
     for (const p of st.parts.filter((x) => x.status === "waiting" && x.key !== "update")) lines.push(t("sum.waiting", { name: nameOf(p.key, l) }));
     const ok = st.parts.filter((x) => x.status === "ok" && x.key !== "update").map((x) => listName(x.key));
     if (ok.length) lines.push(t("sum.ok", { names: ok.join(", ") }));
     // A Claude Code that failed the bridge's self-test: its own sentence, with the command that goes back (assistant/bridge/cli-probe.ts).
-    if (st.cli?.status === "failed" && st.cli.note) lines.unshift(st.cli.note);
+    // One too old for a model Pako asks for: its sentence, with the update that fixes it (assistant/bridge/runs.ts).
+    if ((st.cli?.status === "failed" || st.cli?.status === "behind") && st.cli.note) lines.unshift(st.cli.note);
     if (!lines.length) lines.push(t("sum.none"));
     if (st.quietNow && st.parts.some((x) => x.status === "down")) lines.push(t("sum.quiet"));
     return lines.join("\n");

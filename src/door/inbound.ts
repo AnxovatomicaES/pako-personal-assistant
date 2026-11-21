@@ -7,10 +7,11 @@ import type { OwnerChannel } from "./deps.ts";
 import { PENDING_CALL_MS } from "./shared.ts";
 import type { Door } from "./door.ts";
 import type { Handler, Incoming } from "./incoming.ts";
-import { onResume, onStop } from "./stop-resume.ts";
+import { isStop, onResume, onStop } from "./stop-resume.ts";
 import {
   onAgenda, onBookings, onBrief, onDraft, onFollowups, onHealth, onLog, onMail, onMeetingTodos, onParked, onRehearsal, onReopen, onMissed, onResetPark, onSlack, onView, onZoom,
 } from "./views.ts";
+import { onChase } from "./chase.ts";
 import { onDumpRemove } from "./dump.ts";
 import { onCodes } from "./codes.ts";
 import { onCompanion, onLifeTopics } from "./life.ts";
@@ -26,6 +27,7 @@ import { onUndo } from "./revert.ts";
 import { onNumbers } from "./messages.ts";
 import { onBookingAnswer, onCallAnswer, onRepeatedAnswer, onSendAnswer } from "./confirmations.ts";
 import { toAssistant } from "./assistant.ts";
+import { onFindTime } from "./time-to-do.ts";
 
 /**
  * The order the door answers a text message in. The first step that answers ends it; a message none of them answers goes to the assistant
@@ -48,10 +50,12 @@ const HANDLERS: readonly Handler[] = [
   onFollowups,
   onParked,
   onReopen,
+  onFindTime,
   onMissed,
   onResetPark,
   onDumpRemove,
   onDraft,
+  onChase,
   onBookings,
   onSlack,
   onPanel,
@@ -112,14 +116,18 @@ const handleMessageOnce = async (door: Door, m: Record<string, unknown>, channel
   if (!text) return "empty";
   // The owner's controls are answered here, by the server, at once: they work even when the Mac is off.
   const msg: Incoming = { m, channel, text, command: plainWords(text), ...heard };
-  for (const handler of HANDLERS) {
+  // A forwarded message is someone else's words: never the owner's command (a RESUME, a yes to a card, an UNDO, a FORGET). It goes to the
+  // assistant as outside text. Only STOP is still heard: it can only halt.
+  for (const handler of heard.ownWords ? HANDLERS : [onStop]) {
     const outcome = await handler(door, msg);
-    if (outcome !== null) return outcome;
+    if (outcome === null) continue;
+    if (heard.stopping) await door.flushHeld(); // what intake left for after the pause
+    return outcome;
   }
   return toAssistant(door, msg);
 };
 
-type Heard = Pick<Incoming, "id" | "at" | "ownWords" | "waiting" | "waitingSend" | "waitingBooking">;
+type Heard = Pick<Incoming, "id" | "at" | "ownWords" | "waiting" | "waitingSend" | "waitingBooking"> & { stopping: boolean };
 
 /**
  * What every message goes through first, whatever its kind: who sent it, the card it may answer in words, a red flag, a verdict on a
@@ -162,12 +170,14 @@ const intake = async (door: Door, m: Record<string, unknown>, channel: OwnerChan
   }
   const thanks = d.quality && typed && !waiting && !waitingSend && !waitingBooking ? await d.quality.answerText(typed).catch(() => null) : null;
   if (!thanks) d.quality?.clearAsk();
-  await flushHeld();
+  // A STOP is answered before anything else goes: the notices kept for later are given once it holds (handleMessageOnce).
+  const stopping = !!d.control && m.type === "text" && isStop(plainWords(typed));
+  if (!stopping) await flushHeld();
   if (thanks) {
     await sendText(thanks);
     return "feedback kept";
   }
-  return { id, at, ownWords, waiting, waitingSend, waitingBooking };
+  return { id, at, ownWords, waiting, waitingSend, waitingBooking, stopping };
 };
 
 /** A message that is not text: a button pressed, a voice note, a photo or a PDF, the template's button, anything else. Null for text. */

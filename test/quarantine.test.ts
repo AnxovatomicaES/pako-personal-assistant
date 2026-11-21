@@ -107,6 +107,11 @@ test("heldCard: English around the person's own words (Spanish here), what would
   assert.match(heldCard(a, ["forwarded"], "en"), /^⚠️ This answer was written while reading other people's text \(a forwarded message\)/);
   const many = heldCard({ ...a, remember: Array.from({ length: 3 }, () => "n".repeat(300)), tasks: Array.from({ length: 3 }, () => ({ text: "t".repeat(200), due: "" })) }, ["web"], "en");
   assert.ok(many.length < 1000, "fits a WhatsApp card");
+  // More things than the card has lines for: the card says how many it does not show, never fewer lines with no word.
+  const lots = heldCard({ ...a, message: null, lists: [], remember: [], remind: Array.from({ length: 12 }, (_, i) => ({ at: "2026-11-16 09:00", text: `r${i}` })),
+    forget: ["everything"] }, ["forwarded"], "en");
+  assert.match(lots, /• …and 1 more\n/, "the hidden FORGET is counted");
+  assert.ok(lots.length < 1000);
 });
 
 test("readTheWeb: more than one turn or a web request counted is reading the web; an older claude that says neither is not", () => {

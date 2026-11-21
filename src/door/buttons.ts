@@ -1,12 +1,16 @@
 // What each button press means: the owner's answer to a card, routed by the button's id.
 
+import { AUDIT_BUTTON } from "../beta-audit.ts";
 import { CLAUDE_BUTTON } from "../claude-connect.ts";
 import { pausedText } from "../control.ts";
+import { isAddress } from "../autonomy.ts";
 import { FOLLOWUP_BUTTON } from "../followups.ts";
+import { CHASE_BUTTON } from "../followups/chase.ts";
 import type { PressButton } from "../followups/types.ts";
 import { CHECKIN_BUTTON, CHECKIN_LOOP_BUTTON } from "../gentle-checkins.ts";
 import { RESET_BUTTON } from "../gentle-reset.ts";
 import { PROACTIVE_BUTTON } from "../proactive.ts";
+import { TIME_BUTTON } from "../time-to-do.ts";
 import { PENDING_CALL_MS } from "./shared.ts";
 import { CALENDAR_BUTTON } from "./calendar-cards.ts";
 import type { Door } from "./door.ts";
@@ -57,6 +61,27 @@ export function mountButtons(door: Door): Pick<Door, "pressed" | "NO" | "SEND_YE
       await sendText(d.followups ? await d.followups.press(fu[1] as PressButton, fu[2]!) : tx("expired"));
       return;
     }
+    // Time to do it (src/time-to-do.ts): Block (the owner's yes to the focus block), Another time, Not needed.
+    const ttd = TIME_BUTTON.exec(buttonId);
+    if (ttd) {
+      const say = d.timeToDo ? await d.timeToDo.pressed(ttd[1] as "b" | "a" | "n", ttd[2]!) : tx("expired");
+      if (say) await sendText(say);
+      return;
+    }
+    // A chase for what someone owes the owner (src/followups/chase.ts): the press is the yes. An email reply goes through the held path
+    // (its receipt and Undo window, then the send); a read-only chat gets the draft back to copy, with the app's link.
+    const ch = CHASE_BUTTON.exec(buttonId);
+    if (ch) {
+      if (!d.followups?.chasePressed) return void (await sendText(tx("expired")));
+      const r = await d.followups.chasePressed(ch[1] as "1" | "2" | "3", ch[2]!);
+      if (r.copy) await sendText(r.copy);
+      if (r.say) await sendText(r.say);
+      if (r.send && isAddress(r.send.target)) {
+        const { key, ...mail } = r.send;
+        await door.holdAction({ type: "email", ...mail }, (await door.effective("email")).seconds, key);
+      }
+      return;
+    }
     // Gentle mode's time anchors: "On it" (src/gentle.ts).
     const anchor = /^ga:([0-9a-f]{10})$/.exec(buttonId);
     if (anchor) {
@@ -84,6 +109,14 @@ export function mountButtons(door: Door): Pick<Door, "pressed" | "NO" | "SEND_YE
         const buttons = r.card.buttons.map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } }));
         await door.graph({ type: "interactive", interactive: { type: "button", body: { text: r.card.body }, action: { buttons } } });
       }
+      return;
+    }
+    // The beta's audit (src/beta-audit.ts): Yes, No or Skip, then its next question at once.
+    const au = AUDIT_BUTTON.exec(buttonId);
+    if (au) {
+      const say = d.beta ? await d.beta.pressed(au[1] as "y" | "n" | "s", au[2]!) : null;
+      await sendText(say ?? tx("expired"));
+      if (say !== null) await d.beta?.next().catch(() => false);
       return;
     }
     // A brain dump's card (src/door/dump.ts): Keep all, Undo all, Remove n.

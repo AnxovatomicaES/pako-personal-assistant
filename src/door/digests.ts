@@ -3,6 +3,7 @@
 import { categoryOf, loopFromVerdict, readVerdict, senderAddress, senderName, VERDICT_WORD, type Verdict } from "../mail-categories.ts";
 import type { Change } from "../undo.ts";
 import type { Door } from "./door.ts";
+import type { Loop } from "../followups/types.ts";
 
 export function mountDigests(door: Door): void {
   const { app, d, now, tx, keyOf, noteReceipt, failed, bridge, json, strings } = door;
@@ -85,8 +86,19 @@ export function mountDigests(door: Door): void {
         const label = "email";
         const category = verdict?.category ?? categoryOf({ kind: worth ? "aviso" : "guardado", scam, summary });
         if (mail && category !== "suspicious" && fu.answered) {
-          void fu.answered({ who: [senderName(mail.from), senderAddress(mail.from)], ref: id, ...(mail.thread ? { thread: mail.thread } : {}) })
-            .catch(() => undefined);
+          // The addresses Pako knows for the person who owed it: the owner's contacts, and the people on the mail the promise came from.
+          // Never the new mail's own display name: that is anyone's to write.
+          const known = async (l: Loop): Promise<string[]> => {
+            const out = (d.contactEmails?.() ?? []).map((c) => `${c.name} <${c.address}>`);
+            for (const s of l.sources.filter((x) => x.kind === "mail" && x.ref && x.ref !== id).slice(0, 5)) {
+              const m = await d.mail?.get?.(s.ref!).catch(() => null);
+              if (m) out.push(m.from, ...[m.to ?? "", m.cc ?? ""].flatMap((x) => x.split(",")).filter((x) => x.includes("@")));
+            }
+            return out;
+          };
+          void fu.answered({
+            who: [senderName(mail.from), senderAddress(mail.from)], from: senderAddress(mail.from), ref: id, known, ...(mail.thread ? { thread: mail.thread } : {}),
+          }).catch(() => undefined);
         }
         // The email's own words, read whole: one reading of it, so the triage's loop line is left out when the follow-ups take it.
         const whole = d.mail.followups && category !== "suspicious"

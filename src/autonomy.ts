@@ -97,8 +97,11 @@ export function recipientOrigin(to: string, src: TurnSources): Origin {
     return outside && !src.owner.some((t) => asksToReach(t, names)) ? { from: "third-party", source: outside.source } : { from: "owner" };
   }
   const person = (src.people ?? []).find((p) => fold(p.name) === fold(to) || fold(p.name).split(" ")[0] === fold(to));
-  const rel = person?.relation ? fold(person.relation).split(" ").filter((w) => w.length >= 4) : [];
-  if (rel.length && src.owner.some((t) => rel.every((w) => hasWords(t, w)))) {
+  const relWords = (r: string | undefined): string[] => (r ? fold(r).split(" ").filter((w) => w.length >= 4) : []);
+  const rel = relWords(person?.relation);
+  // Another person with the same relation ("my client" with two clients): the owner's words name neither, so the pick is the model's own.
+  const shared = rel.length > 0 && (src.people ?? []).some((p) => p !== person && relWords(p.relation).join(" ") === rel.join(" "));
+  if (rel.length && !shared && src.owner.some((t) => rel.every((w) => hasWords(t, w)))) {
     // The same rule for a relation: «¿Qué dice mi jefe?» only asks about him; «dile a mi jefe...» asks to reach him.
     const names = [fold(person?.relation ?? ""), ...rel];
     return outside && !src.owner.some((t) => asksToReach(t, names)) ? { from: "third-party", source: outside.source } : { from: "owner" };

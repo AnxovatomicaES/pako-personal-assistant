@@ -1,0 +1,42 @@
+{
+  "suite": "followups",
+  "behaviour": "Kofi promised the specs, then writes he cannot send them after all, the project is on hold: the loop is closed",
+  "origin": "checks before it reminds: made up for the eval, no real person or company",
+  "input": {
+    "turns": [
+      {
+        "slack": {
+          "channel": "D0KOFI",
+          "label": "Kofi Mensah (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 10:00",
+              "who": "Kofi Mensah",
+              "text": "I'll send you the specs tomorrow at 10:00"
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [{\"kind\": \"other_promise\", \"title\": \"Kofi sends the specs\", \"detail\": \"Kofi, see the conversation.\", \"who\": \"Kofi\", \"due\": \"2026-11-17 10:00\", \"tz\": \"Europe/Madrid\", \"check\": \"slackFile\"}], \"closes\": []}"
+      },
+      {
+        "slack": {
+          "channel": "D0KOFI",
+          "label": "Kofi Mensah (private)",
+          "msgs": [
+            {
+              "at": "2026-11-16 16:30",
+              "who": "Kofi Mensah",
+              "text": "Sorry, I won't send the specs after all, the project is on hold"
+            }
+          ]
+        },
+        "recorded": "{\"loops\": [], \"closes\": [\"{{loop1}}\"]}"
+      }
+    ]
+  },
+  "expect": {
+    "loops": [],
+    "closed": 1,
+    "open": []
+  }
+}

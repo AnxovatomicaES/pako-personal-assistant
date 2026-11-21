@@ -4,7 +4,8 @@
   Pako.app itself under the hardened runtime: only what discovery (Discovery.swift) needs, and only to ask. With the hardened runtime macOS
   refuses these to an app that lacks them, without a prompt; with them, macOS still asks the person first (Info.plist says why), and nothing
   is asked before they say yes in the panel. The app is not sandboxed; the bundled node has its own two JIT entitlements (node.entitlements).
-    calendars       EventKit: the calendars the person chooses, and their events
+    calendars       EventKit: the calendars the person chooses, and their events; and Pako's own Reminders lists, when turned on
+                    (macOS has no entitlement of its own for Reminders: EventKit's one covers both)
     addressbook     Contacts: how many there are; names, emails and phones when the person confirms the import
     apple-events    asking Mail for its accounts' addresses (osascript, this app's child)
 -->

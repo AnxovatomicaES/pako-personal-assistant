@@ -8,7 +8,7 @@ FILES="autonomy brief-day-shape brief-later-and-overlaps brief-people brief-supp
   followups-drafts followups-loop-lifetime followups-loops followups-matching followups-own-promises followups-rehearse-rules followups
   gentle-checkins gentle-robust gentle google-calendar held-action-after-sleep i18n-door i18n-modules i18n ics jobs-claim-atomic jobs lock-start-time-zone-free
   mac-calendar-feed meeting-agreements meeting-prep memory-time-and-people panel-agenda-days panel-i18n personal-caller proactive region
-  routine-same-hour-other-day routine-weekday-first-on-weekend routines tasks together undo zoom-review"
+  routine-same-hour-other-day routine-weekday-first-on-weekend routines tasks time-to-do together undo zoom-review"
 PATHS=""
 for f in $FILES; do PATHS="$PATHS test/$f.test.ts"; done
 for zone in ${PAKO_TEST_ZONES:-America/Los_Angeles Asia/Kolkata}; do

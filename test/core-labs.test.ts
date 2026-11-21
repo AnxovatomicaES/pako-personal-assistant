@@ -14,6 +14,8 @@ import { answerCall } from "../assistant/mcp-server.ts";
 import { labsOffOf, SYSTEM_PROMPT, systemPromptFor, toolsSystemPromptFor } from "../assistant/prompt.ts";
 import { toolDataOf, unavailable } from "../assistant/tools.ts";
 import { createApp, loadAppConfig, type LocalContext } from "../src/app.ts";
+import { labsFor } from "../src/app/base.ts";
+import { loadLabCode } from "../src/lab-code.ts";
 import {
   grandfatherNote, LAB_IDS, LABS, LABS_NOTE, parseLabsSetting, readLabChoices, resolveLabs, writeLabChoice, type LabId,
 } from "../src/labs.ts";
@@ -97,6 +99,8 @@ async function rig(o: { env?: Record<string, string>; choices?: Partial<Record<L
     kv, channel: createLocalChannel({ kv }), bridgeToken: home.bridgeToken, panelSecret: home.panelSecret,
     bridge: { status: () => ({ claude: "ok", running: true }) }, settings: createSettings(home.dir, env),
   };
+  // As src/server.ts does: the code of the labs that are on, before the app.
+  await loadLabCode(labsFor(env, local));
   const app = createApp(loadAppConfig(env), env, local);
   const server = createServer(app);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
@@ -164,10 +168,12 @@ test("an existing install keeps what it set up: booking, the relay and WhatsApp 
   assert.equal(settings.setWhatsapp!({ phoneNumberId: "123456789012345", tunnel: false }), true);
   const env = { ...localEnv({}, home, 0), PAKO_HOME: home.dir };
   const kv = sqliteKv(home.dir);
-  const app = createApp(loadAppConfig(env), env, {
+  const local: LocalContext = {
     kv, channel: createLocalChannel({ kv }), bridgeToken: home.bridgeToken, panelSecret: home.panelSecret,
     bridge: { status: () => ({ claude: "ok", running: true }) }, settings,
-  });
+  };
+  await loadLabCode(labsFor(env, local));
+  const app = createApp(loadAppConfig(env), env, local);
   assert.ok(app.locals.whatsappComputer, "the WhatsApp of this computer is still there");
   (app.locals.whatsappComputer as { stop(): void }).stop();
 });

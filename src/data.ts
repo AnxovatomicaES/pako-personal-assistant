@@ -80,6 +80,8 @@ const KEY_LIST = [
   { key: "slack-held", keep: 2 * DAY },
   { key: "slack-poll", keep: 60 * DAY }, // slack-poll.ts
   { key: "teams-poll", keep: 60 * DAY }, // teams.ts
+  { key: "imessage-poll", keep: 60 * DAY }, // imessage.ts
+  { key: "apple-mail-poll", keep: 60 * DAY }, // apple-mail.ts
   { key: "zoom-state", keep: 60 * DAY }, // zoom.ts
   { key: "followups", keep: 60 * DAY }, // followups.ts
   { key: "lessons", keep: 400 * DAY }, // lessons.ts
@@ -97,6 +99,7 @@ const KEY_LIST = [
   { key: "telegram-owner", keep: 5 * 365 * DAY }, // telegram.ts
   { key: "telegram-pair", keep: 10 * 60, secret: "whole" },
   { key: "telegram-off", keep: 5 * 365 * DAY },
+  { key: "mobile-access", keep: 3650 * DAY, secret: "whole" }, // mobile-access.ts (phone access: on or off, the paired phones' token hashes)
   { key: "telegram-file:", prefix: true, keep: 2 * DAY },
   { key: "whatsapp-computer-last-owner", keep: 3 * DAY }, // whatsapp-computer.ts
   { key: "pako-bookings", keep: 120 * DAY }, // booking.ts
@@ -111,6 +114,8 @@ const KEY_LIST = [
   { key: "discovery", keep: 3650 * DAY }, // discovery.ts
   { key: "calendar-local", keep: 30 * DAY }, // calendar-local.ts
   { key: "calendar-writes", keep: 8 * DAY }, // calendar-writes.ts
+  { key: "reminders-mirror", keep: 400 * DAY }, // reminders-local.ts
+  { key: "time-to-do", keep: 15 * DAY }, // time-to-do.ts
   { key: "relay-state", keep: 31 * DAY }, // relay.ts (only on a host running as the relay)
   { key: "assistant-contacts", keep: 400 * DAY }, // contacts.ts
   { key: "people-hidden", keep: 400 * DAY }, // people-directory.ts
@@ -130,6 +135,7 @@ const KEY_LIST = [
   { key: "brain-dumps", keep: 2 * DAY }, // door/dump.ts
   { key: "gentle-checkins", keep: 10 * DAY }, // gentle-checkins.ts
   { key: "gentle-reset", keep: 120 * DAY }, // gentle-reset.ts
+  { key: "beta-audit", keep: 400 * DAY }, // beta-audit.ts
 ] as const satisfies readonly KeyFact[];
 
 export const DATA_KEYS: readonly KeyFact[] = KEY_LIST;
@@ -174,6 +180,10 @@ const ABOUT = texts<AboutKey | "unknown">(
     "slack-held": "Slack notices kept during quiet hours",
     "slack-poll": "Where Pako is in each Slack conversation it looks at (no message text)",
     "teams-poll": "Where Pako is in each Teams chat and channel it looks at, and the last read and error (no message text)",
+    "apple-mail-poll": "Mail on this Mac: the last message already looked at (its number in Apple Mail's index), when it was turned on, the numbers "
+      + "of messages Mail had not downloaded yet, and the last read and error (no message text, subject or address)",
+    "imessage-poll": "Messages on this Mac: the last message already looked at (its number in Messages' history), when it was turned on, "
+      + "and the last read and error (no message text, number or address)",
     "zoom-state": "Zoom meetings seen and the last 20 summaries",
     followups: "Open items Pako follows up (what you were asked or promised), the \"Not mine\" rules, today's reminders, and new emails waiting "
       + "a few minutes to be read for them (gone once read; the ids of those read, so none is read twice)",
@@ -192,6 +202,7 @@ const ABOUT = texts<AboutKey | "unknown">(
     "telegram-owner": "The Telegram account paired with Pako",
     "telegram-pair": "A pairing code in use (a secret: never exported)",
     "telegram-off": "You wrote TELEGRAM OFF: Telegram stays unpaired",
+    "mobile-access": "Whether Pako is on your phone (same Wi-Fi), and the phones paired: their names, when last seen, a hash of each one's key",
     "telegram-file:": "Where to fetch a voice note or photo you sent by Telegram",
     "whatsapp-computer-last-owner": "When you last wrote to Pako on WhatsApp (WhatsApp's 24 hours)",
     "pako-bookings": "The tables Pako asked a restaurant for",
@@ -206,6 +217,9 @@ const ABOUT = texts<AboutKey | "unknown">(
     discovery: "What Pako found on this Mac when you let it look: apps, calendar names, mail addresses, how many contacts",
     "calendar-local": "The events of the calendars on this Mac you picked (title, times, place and video-call link), 2 days back and 14 ahead",
     "calendar-writes": "The calendar changes you said yes to (move, add, delete: title and times), and what was there before, for Undo (a week)",
+    "reminders-mirror": "Apple Reminders: whether it is on, \"waiting on\" too, and per follow-up its reminder's id and the title and time both sides last agreed on",
+    "time-to-do": "Time to do it: the focus blocks offered (which follow-up, the proposed time, and whether you blocked it, asked for "
+      + "another or said not needed; the last 100) and today's count of those cards",
     "relay-state": "On a host running as your relay only: your reminders of the week ahead (text and time) and which it sent (30 days)",
     "assistant-contacts": "The contacts you imported from this Mac: name, emails, phones and company (5000 at most)",
     "people-hidden": "The people you hid from the People list: only their addresses, numbers or ids, so they stay hidden (2000 at most)",
@@ -228,6 +242,8 @@ const ABOUT = texts<AboutKey | "unknown">(
       + "and today's count (shared with the day's nudges)",
     "gentle-reset": "Gentle mode's weekly reset: the items each reset listed (by their follow-up), this week's focus, the parked items asked "
       + "“bring back or let go?”, and what was let go after a month (title, person, dates)",
+    "beta-audit": "The beta's weekly check, only if you opted in: the conversations read in the last 8 days (where, who, their first two lines), "
+      + "the week's questions, and your Yes/No answers (kept a year, as counts)",
     unknown: "A key this version of Pako doesn't know",
   },
 );
@@ -578,6 +594,9 @@ export async function deleteEverything(d: DeleteDeps): Promise<DeleteResult> {
   }
   const state = stateDir(d.dir, d.env);
   gone(join(state, "state.json"), "assistant/state.json");
+  // The bridge's copy of the last turn for Pako's read tools (the message, the notes, reminders, lists and calendar), and the lines of
+  // other people's text it has seen (by a hash).
+  for (const f of ["tool-data.json", "tool-data.json.tmp", "outside-seen.json", "handled-unacked.json", "handled-unacked.json.tmp"]) gone(join(state, f), `assistant/${f}`);
   try {
     for (const f of readdirSync(state)) if (f.startsWith("voice-")) gone(join(state, f), `assistant/${f}`);
   } catch {
