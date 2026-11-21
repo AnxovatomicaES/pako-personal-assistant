@@ -1,6 +1,6 @@
 {
   "name": "pako",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "description": "Pako: a personal AI assistant that runs on your own computer, with Claude as its brain. Chat, memory, reminders, mail, calendar, Slack, tables, phone. No key needed to start.",
   "type": "module",
   "private": true,
