@@ -101,6 +101,22 @@ function Install-Pako {
     Say "Actualizando Pako en $dir..." "Updating Pako in $dir..."
     Run-Native { & git -C $dir pull --ff-only }
     if ($LASTEXITCODE -ne 0) {
+      # The public history was rewritten once (21 November 2026): a copy with no changes of its own, whose files are exactly one version
+      # from origin's history, goes to origin's newest. The install clones with --depth 1, so the history is fetched first.
+      $dirty = Run-Native { & git -C $dir status --porcelain --untracked-files=no }
+      $up = Run-Native { & git -C $dir rev-parse --verify --quiet '@{upstream}' }
+      $tree = Run-Native { & git -C $dir rev-parse --verify --quiet 'HEAD^{tree}' }
+      if (-not $dirty -and $up -and $tree) {
+        Run-Native { & git -C $dir fetch --quiet --depth 200 origin } | Out-Null
+        $up = Run-Native { & git -C $dir rev-parse --verify --quiet '@{upstream}' }
+        $trees = Run-Native { & git -C $dir log --format=%T $up }
+        if ($trees -contains $tree) {
+          Say "La historia p^ublica de Pako se reescribi^o el 21 de noviembre de 2026; tu copia no ten^ia cambios propios y pasa a la nueva." "Pako's public history was rewritten on 21 November 2026; your copy had no changes of its own, so it moves to the new one."
+          Run-Native { & git -C $dir reset --keep $up }
+        }
+      }
+    }
+    if ($LASTEXITCODE -ne 0) {
       Say "git no pudo actualizar $dir (mira el mensaje de arriba). Pako sigue como estaba." "git could not update $dir (see the message above). Pako is as it was."
       return
     }

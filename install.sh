@@ -8,7 +8,7 @@
 # What it does, in order:
 #   1. Checks that it is not run as root, and that Node.js 22.18 or newer and git are here. It never installs them and never uses sudo:
 #      when one is missing it says how to get it on this system, and stops.
-#   2. Gets Pako into ~/pako (PAKO_DIR to choose another folder): git clone the first time, git pull --ff-only after that. Running this
+#   2. Gets Pako into ~/pako (PAKO_DIR to choose another folder): git clone the first time, git pull --ff-only after that (see catch_up_git). Running this
 #      script again is how Pako is updated.
 #   3. Installs what Pako needs to run: npm ci --omit=dev --ignore-scripts (no development tools, and no package runs code of its own).
 #   4. Looks for the claude command and whether it seems signed in. It never asks for a key: Pako uses your own Claude, signed in with claude.
@@ -71,6 +71,22 @@ is_pako() {
   [ -f "$1/src/server.ts" ] && [ -f "$1/src/autostart.ts" ] && [ -f "$1/bin/panel.cjs" ] && grep -q '"name": "pako"' "$1/package.json" 2>/dev/null
 }
 
+# catch_up_git DIR: brings a Pako checkout up to date. A fast-forward when it can be one; failing that, a copy with no changes of its own whose
+# files are exactly one version from origin's history goes to origin's newest (the public history was rewritten once, on 21 November 2026,
+# so every older clone stopped being a fast-forward). Anything else (changed files, commits of its own) is left as it is: it returns 1.
+# >>> catch_up_git
+catch_up_git() {
+  if run git -C "$1" pull --ff-only; then return 0; fi
+  [ "$DRY" = 1 ] && return 0
+  [ -z "$(git -C "$1" status --porcelain --untracked-files=no 2>/dev/null)" ] || return 1
+  up=$(git -C "$1" rev-parse --verify --quiet '@{upstream}') || return 1
+  tree=$(git -C "$1" rev-parse --verify --quiet 'HEAD^{tree}') || return 1
+  git -C "$1" log --format=%T "$up" | grep -qx "$tree" || return 1
+  msg "  Pako's public history was rewritten on 21 November 2026; your copy had no changes of its own, so it moves to the new one."
+  run git -C "$1" reset --keep "$up"
+}
+# <<< catch_up_git
+
 # Everything runs from main, called on the last line: piped straight into sh, a download cut halfway runs nothing at all.
 main() {
   if [ "$DRY" = 1 ]; then
@@ -130,7 +146,7 @@ main() {
       die "$DIR already exists and isn't a copy of Pako: leaving it alone. Pick another folder: PAKO_DIR=/another/folder sh install.sh"
     fi
     msg "  Already there: updating it."
-    if ! run git -C "$DIR" pull --ff-only; then
+    if ! catch_up_git "$DIR"; then
       die "I couldn't update $DIR (changes of yours in that folder?). Look with: git -C \"$DIR\" status"
     fi
   elif [ -e "$DIR" ] && [ -n "$(ls -A "$DIR" 2>/dev/null)" ]; then
