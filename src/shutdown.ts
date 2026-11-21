@@ -13,6 +13,7 @@
 // SHUTDOWN: off, or the time (HH:MM); by default the end of WORK_HOURS.
 
 import { randomBytes } from "node:crypto";
+import { addDays, hhmm, weekdayOf } from "./day-time.ts";
 import type { CalEvent } from "./calendar.ts";
 import type { Loop } from "./followups/types.ts";
 import { zonedTime } from "./followups/time.ts";
@@ -90,8 +91,8 @@ export function loadShutdownConfig(env: Record<string, string | undefined>, hour
   const v = (env.SHUTDOWN ?? "").trim().toLowerCase();
   if (!v || v === "on") return { at: hours.end, problems: [] };
   if (v === "off" || v === "0" || v === "false") return { at: null, problems: [] };
-  const m = /^(\d{1,2}):(\d{2})$/.exec(v);
-  if (m && Number(m[1]) < 24 && Number(m[2]) < 60) return { at: Number(m[1]) * 60 + Number(m[2]), problems: [] };
+  const at = hhmm(v);
+  if (at !== null) return { at, problems: [] };
   return { at: hours.end, problems: [`SHUTDOWN must be off or a time like 18:00, not "${v.slice(0, 20)}": the end of the working day is used`] };
 }
 
@@ -123,15 +124,7 @@ const stateOf = (v: unknown): State => {
   return { sent: sent.slice(-14) };
 };
 
-/** The calendar day after "YYYY-MM-DD". */
-const nextDate = (day: string, k = 1): string => {
-  const [y, m, d] = day.split("-").map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, d + k)).toISOString().slice(0, 10);
-};
-const weekdayOf = (day: string): number => {
-  const [y, m, d] = day.split("-").map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-};
+const nextDate = addDays;
 /** The owner's next working day after `day` (within two weeks), or null. */
 export function nextWorkingDay(day: string, hours: WorkHours): string | null {
   for (let k = 1; k <= 14; k++) {

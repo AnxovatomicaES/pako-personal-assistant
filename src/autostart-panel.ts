@@ -10,11 +10,12 @@
 // The same protection as the STOP switch: the panel's signed-in session, and on a POST the x-pako header that another site cannot send. A
 // server's panel has none of this (every route answers 404): a server is started by its host, never by a login.
 
-import express, { type Express, type Request, type RequestHandler } from "express";
+import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import { autostartFor, autostartLog, type AnyAutostart } from "./autostart.ts";
 import type { Control } from "./control.ts";
 import type { Lang } from "./i18n.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 export interface AutostartPanelDeps {
   /** The panel's session check (src/dashboard.ts). */
@@ -46,14 +47,7 @@ export function mountAutostartPanel(app: Express, d: AutostartPanelDeps | null):
   }
   const auto = d.autostart ?? autostartFor({ env: d.env, lang: d.lang });
   // Not signed in is answered before anything is counted: only the owner's own requests use up the allowance.
-  const auth = (post: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (!d.signedIn(req) || (post && req.get("x-pako") !== "1")) {
-      res.status(401).json({ error: "sign in" });
-      return;
-    }
-    next();
-  };
+  const auth = panelGuard(d.signedIn);
   const limit = (n: number) =>
     rateLimit({ windowMs: 60_000, limit: n, standardHeaders: "draft-8", legacyHeaders: false, handler: (_req, res) => void res.status(429).json({ error: "too many" }) });
 

@@ -20,6 +20,7 @@
 //   pass for that meeting.
 
 import { randomBytes } from "node:crypto";
+import { addDays, hhmm, weekdayOf } from "./day-time.ts";
 import type { CalEvent } from "./calendar.ts";
 import { zonedTime } from "./followups/time.ts";
 import type { Loop, LoopKind } from "./followups/types.ts";
@@ -114,14 +115,6 @@ export interface WorkHours {
 const SUN_THU = new Set(["IL", "SA", "EG", "KW", "QA", "BH", "OM", "JO", "DZ", "IQ", "YE", "LY", "SD", "SY"]);
 const DAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
-const hhmm = (s: string): number | null => {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
-  if (!m) return null;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  return h < 24 && min < 60 ? h * 60 + min : null;
-};
-
 /** "mon-fri", "sun-thu", "sat-wed" or "mon,tue,thu": the weekdays, or null when it does not read. */
 function daysOf(raw: string): number[] | null {
   const s = raw.trim().toLowerCase();
@@ -193,18 +186,11 @@ export interface Span {
   end: number;
 }
 
-/** The calendar day after "YYYY-MM-DD" (no zone: a date). */
-const nextDate = (day: string, k = 1): string => {
-  const [y, m, d] = day.split("-").map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, d + k)).toISOString().slice(0, 10);
-};
-const weekday = (day: string): number => {
-  const [y, m, d] = day.split("-").map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
-};
+const nextDate = addDays;
+const weekday = weekdayOf;
 const stampOf = (day: string, minutes: number): string =>
   `${day} ${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
-/** That minute of that day in the zone; the day's end (minutes 1440) is the next day's 00:00. Null when the clock skips it (DST). */
+/** That minute of that day in the zone; the day's end (minutes 1440) is the next day's 00:00. A minute the clock skips (DST) is the one after it. */
 const at = (day: string, minutes: number, tz: string): number | null =>
   minutes >= 24 * 60 ? zonedTime(stampOf(nextDate(day), 0), tz) : zonedTime(stampOf(day, minutes), tz);
 

@@ -197,10 +197,6 @@ export const WORDS = {
   "demo.banner": "Demo week: invented data.",
   "demo.live": "Connect Claude to see it live",
   "demo.leave": "Leave demo",
-  "demo.leaving": "Leaving the demo… Pako is starting again.",
-  "demo.starting": "Setting up the demo week… Pako is starting again.",
-  "demo.failed": "That didn't work. Try again.",
-  "demo.notBack": "Pako hasn't come back yet. Reload this page in a moment.",
 
   // ---------- the welcome (first visit on a computer) ----------
   "w.aria": "Welcome",

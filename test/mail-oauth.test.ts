@@ -21,6 +21,7 @@ import { readStored } from "../src/connections.ts";
 import { failKind, type ImapClient, type ImapConfig } from "../src/imap.ts";
 import { createTokenSource, mailClients, mountMailOAuth, SignInAgain, type ProviderUrls } from "../src/mail-oauth.ts";
 import { auth, PANEL } from "./helpers/connect-rig.ts";
+import { eventually } from "./helpers/wait.ts";
 
 const MS_ID = "11111111-2222-3333-4444-555555555555";
 const G_ID = "1234567890-abcdefghij.apps.googleusercontent.com";
@@ -187,7 +188,7 @@ test("Microsoft: sign in, the code exchanged with PKCE and no secret, one XOAUTH
       IMAP_HOST: "outlook.office365.com", IMAP_USER: "ana@outlook.example", IMAP_OAUTH: "microsoft", IMAP_REFRESH_TOKEN: "refresh-microsoft-0123456789",
     });
     assert.deepEqual((await p.get("/panel/api/mail/oauth/account")).body, { state: "connected", account: { user: "ana@outlook.example", provider: "microsoft" } });
-    await new Promise((r) => setTimeout(r, 300));
+    await eventually(() => p.restarts.length >= 1, { then: 50 });
     assert.equal(p.restarts.length, 1);
     assert.equal((await fetch(page.url)).status, 400, "the state worked once");
   } finally {

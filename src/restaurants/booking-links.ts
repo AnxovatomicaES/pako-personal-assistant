@@ -103,11 +103,6 @@ export function detectAllBookingPlatforms(html: string): BookingTarget[] {
   return out;
 }
 
-/** The first booking target in a page, by platform priority. */
-export function detectBookingPlatform(html: string): BookingTarget | undefined {
-  return detectAllBookingPlatforms(html)[0];
-}
-
 const PRIORITY: Platform[] = ["opentable", "resy", "tock", "sevenrooms", "yelp"];
 const FILLER = new Set(["r", "at", "the", "and", "restaurant", "restaurants", "reservations", "reservation", "booking", "book", "nyc", "usa", "us", "bar", "grill", "kitchen", "cafe", "steakhouse"]);
 const STATES: Record<string, string[]> = { ny: ["new", "york"], ca: ["california"], il: ["illinois"], fl: ["florida"], tx: ["texas"], dc: ["washington"] };
@@ -435,21 +430,5 @@ export function bookingUrl(t: BookingTarget, slot: string, partySize: number): s
       return `https://www.sevenrooms.com/reservations/${t.id}?${new URLSearchParams({ date, party_size: seats, start_time: time })}`;
     case "yelp":
       return `https://www.yelp.com/reservations/${t.id}?${new URLSearchParams({ date, time: time.replace(":", ""), covers: seats })}`;
-  }
-}
-
-/** What to tell the customer if the platform shows no table at that time. */
-export function notifyHint(p: Platform): string {
-  switch (p) {
-    case "resy":
-      return "If that time is gone, tap Notify on Resy to get an alert when a table opens.";
-    case "opentable":
-      return "If that time is gone, use OpenTable's Notify me option to get an alert when a table opens.";
-    case "tock":
-      return "If that time is gone, join the waitlist on Tock.";
-    case "sevenrooms":
-      return "If that time is gone, join the waitlist on the SevenRooms page if the restaurant offers one.";
-    case "yelp":
-      return "If that time is gone, try the nearby times Yelp shows or join the restaurant's waitlist.";
   }
 }

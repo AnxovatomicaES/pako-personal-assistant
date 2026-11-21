@@ -13,13 +13,14 @@
 // `why` comes with "no-token" when there is a bot but it cannot be used here (its news go to a server, or to another Pako): a sentence for
 // the person, and the card asks for another bot. `fixed` is true when TELEGRAM_BOT_TOKEN decides the bot: the panel does not offer to change it.
 
-import express, { type Express, type Request, type RequestHandler } from "express";
+import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import { renderSVG } from "uqr";
 import type { Control } from "./control.ts";
 import { texts, type Lang } from "./i18n.ts";
 import { loadTelegramConfig, type TelegramChannel, type TelegramConfig } from "./telegram.ts";
 import { createLog } from "./log.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const log = createLog("telegram");
 
@@ -94,14 +95,7 @@ export function mountTelegramPanel(app: Express, d: TelegramPanelDeps | null): v
   }
   const t = () => T(d.lang());
   // Not signed in is answered before anything is counted: only the owner's own requests use up the allowance.
-  const auth = (post: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (!d.signedIn(req) || (post && req.get("x-pako") !== "1")) {
-      res.status(401).json({ error: "sign in" });
-      return;
-    }
-    next();
-  };
+  const auth = panelGuard(d.signedIn);
   const limit = (n: number) =>
     rateLimit({ windowMs: 60_000, limit: n, standardHeaders: "draft-8", legacyHeaders: false, handler: (_req, res) => void res.status(429).json({ error: "too many" }) });
   // The panel looks every few seconds while a phone is being paired; a change asks Telegram, so those are fewer.

@@ -15,9 +15,10 @@
 
 import { readFileSync, writeFileSync, renameSync, chmodSync } from "node:fs";
 import { join } from "node:path";
-import express, { type Express, type Request, type RequestHandler } from "express";
+import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import { createLog } from "./log.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const log = createLog("labs");
 
@@ -231,15 +232,10 @@ export interface LabsPanelDeps {
   restart?: () => boolean | void;
 }
 
-const HEADERS = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
 
 export function mountLabsPanel(app: Express, d: LabsPanelDeps): void {
   const limiter = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
-  const auth = (change: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (!d.signedIn(req) || (change && req.get("x-pako") !== "1")) return void res.status(401).json({ error: "sign in" });
-    next();
-  };
+  const auth = panelGuard(d.signedIn);
   app.get("/panel/api/labs", auth(false), limiter, (_req, res) => {
     res.json({ note: LABS_NOTE, labs: d.labs.states().map((s) => ({ ...s, locked: s.source === "env" })) });
   });

@@ -417,8 +417,10 @@ test("settings page: an import of contacts or of the Mac's calendars redraws 'Lo
 });
 
 test("settings page: custom properties in a style object are set (the sparks fly, the rows stagger); a step's column never grows past the card", () => {
-  const js = read("src/panel/settings.js");
-  const h = js.slice(js.indexOf("function h(tag"), js.indexOf("const icon ="));
+  // h() is the panel's shared one now (src/panel/dom.js), imported by settings.js.
+  assert.match(read("src/panel/settings.js"), /import \{[^}]*\bh\b[^}]*\} from "\.\/dom\.js";/);
+  const dom = read("src/panel/dom.js");
+  const h = dom.slice(dom.indexOf("export function h(tag"), dom.indexOf("export function words"));
   assert.match(h, /p\.startsWith\("--"\) \? el\.style\.setProperty\(p, String\(x\)\)/);
   assert.doesNotMatch(h, /Object\.assign\(el\.style/);
   const css = read("src/panel/settings.css");

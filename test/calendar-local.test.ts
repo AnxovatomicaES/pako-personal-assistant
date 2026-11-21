@@ -8,6 +8,7 @@ import { type CalendarSource, createCalendarCore } from "../src/calendar.ts";
 import { createLocalCalendar, hasLocalCalendar, LOCAL_CALENDAR_KEY, mountLocalCalendarPanel, pushOf } from "../src/calendar-local.ts";
 import { createDiscoveryStore } from "../src/discovery.ts";
 import { APP, auth, memoryKv, serve } from "./helpers/connect-rig.ts";
+import { eventually } from "./helpers/wait.ts";
 
 const TZ = "Europe/Madrid";
 const NOW = Date.parse("2026-11-16T08:00:00Z"); // 09:00 in Madrid
@@ -89,7 +90,7 @@ test("the push route keeps the events, names the calendars from the discovery, a
     assert.deepEqual(first.body, { ok: true, events: 4, restarting: true });
     const second = await p.post("/panel/api/calendar/local", PUSH, APP);
     assert.deepEqual(second.body, { ok: true, events: 4 }, "asked once only");
-    await new Promise((r) => setTimeout(r, 300));
+    await eventually(() => restarts >= 1, { then: 50 });
     assert.equal(restarts, 1);
     assert.equal(changed, 2);
     const shown = await p.get("/panel/api/calendar/local");

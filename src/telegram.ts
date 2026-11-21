@@ -566,11 +566,10 @@ export function createTelegram(d: TelegramDeps): TelegramChannel {
   // ---------- how the news arrive ----------
 
   const mountWebhook = (app: Express, path: string): void => {
-    app.post(path, express.json({ limit: "1mb" }), async (req, res) => {
-      if (!same(String(req.get("x-telegram-bot-api-secret-token") ?? ""), secret)) {
-        res.status(401).type("text").send("Unauthorized");
-        return;
-      }
+    // The secret header is checked before the body is read (audit finding: a stranger could make it parse a megabyte first).
+    const known: express.RequestHandler = (req, res, next) =>
+      same(String(req.get("x-telegram-bot-api-secret-token") ?? ""), secret) ? next() : void res.status(401).type("text").send("Unauthorized");
+    app.post(path, known, express.json({ limit: "1mb" }), async (req, res) => {
       try {
         await handle(req.body);
         res.status(200).type("text").send("ok");

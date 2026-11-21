@@ -32,6 +32,7 @@ import { nationalNumber, withoutTrunkZero } from "./region.ts";
 import type { Tunnel } from "./tunnel.ts";
 import type { OwnerChannel, WhatsappLine } from "./whatsapp.ts";
 import { createLog } from "./log.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const log = createLog("whatsapp");
 
@@ -590,14 +591,7 @@ export function createComputerWhatsapp(o: ComputerWhatsappDeps) {
   };
 
   const mountPanel = (app: Express, signedIn: (req: Request) => boolean): void => {
-    const auth = (post: boolean): RequestHandler => (req, res, next) => {
-      res.set(HEADERS);
-      if (!signedIn(req) || (post && req.get("x-pako") !== "1")) {
-        res.status(401).json({ error: "sign in" });
-        return;
-      }
-      next();
-    };
+    const auth = panelGuard(signedIn);
     const limit = (n: number) =>
       rateLimit({ windowMs: 60_000, limit: n, standardHeaders: "draft-8", legacyHeaders: false, handler: (_q, r) => void r.status(429).json({ error: "too many" }) });
     // The page looks every second or two while a step is under way (the download, Meta's check, the owner's reply).

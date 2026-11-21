@@ -6,6 +6,8 @@
 //                               (the connection cards are hidden then: connecting is refused in the demo, src/demo.ts demoGuard).
 // Starting or leaving restarts Pako on the other folder; the page waits for it and reloads. Everything is put on the page as text.
 
+import { h, waitForRestart } from "./dom.js";
+
 const WORDS = {
   title: "Demo week",
   leadOff: "See Pako on an invented week (people, mail, Slack, meetings, follow-ups) before you connect anything. Nothing is sent, and "
@@ -25,16 +27,6 @@ const WORDS = {
 
 const t = (key) => WORDS[key] ?? key;
 
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === false || v == null) continue;
-    if (k === "class") el.className = v;
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 
 /** The server's word: { on, live }; null until it answered (or on a server). */
 let state = null;
@@ -42,25 +34,30 @@ let busy = false;
 let note = "";
 const views = [];
 
-async function waitForRestart() {
-  const start = Date.now();
-  let down = false;
-  while (Date.now() - start < 60_000) {
-    await new Promise((r) => setTimeout(r, 700));
-    let up = false;
+
+/**
+ * Starts the demo week ("start") or leaves it ("leave"), wherever it is pressed (this card, the banner, the dashboard's welcome and its
+ * banner in app.js): Pako starts again on the other folder, the Mac app is told (so its Connect window does not open over the demo), and
+ * the page reloads once Pako is back. `say` shows each step's words. Before, app.js kept its own copy, and only that one told the app.
+ */
+export async function switchDemo(kind, say) {
+  try {
+    const r = await fetch(`/panel/api/demo/${kind}`, { method: "POST", credentials: "same-origin", headers: { "x-pako": "1" } });
+    if (r.status === 401) return void location.reload();
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const body = await r.json();
+    say(t(kind === "start" ? "starting" : "leaving"));
     try {
-      up = (await fetch("/health", { cache: "no-store" })).ok;
+      window.webkit?.messageHandlers?.pako?.postMessage({ demo: kind === "start" });
     } catch {
-      /* still restarting: asked again */
-      up = false;
+      /* not in the app */
     }
-    if (!up) down = true;
-    else if (down || Date.now() - start > 8_000) {
-      location.reload();
-      return true;
-    }
+    if (!body.restarting) return void location.reload();
+    if (!(await waitForRestart())) say(t("notBack"));
+  } catch {
+    /* offline: said in the note */
+    say(t("failed"));
   }
-  return false;
 }
 
 async function change(kind) {
@@ -68,19 +65,10 @@ async function change(kind) {
   busy = true;
   note = "";
   paint();
-  try {
-    const r = await fetch(`/panel/api/demo/${kind}`, { method: "POST", credentials: "same-origin", headers: { "x-pako": "1" } });
-    if (r.status === 401) return void location.reload();
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const body = await r.json();
-    note = t(kind === "start" ? "starting" : "leaving");
+  await switchDemo(kind, (text) => {
+    note = text;
     paint();
-    if (!body.restarting) return void location.reload();
-    if (!(await waitForRestart())) note = t("notBack");
-  } catch {
-    /* offline: said in the note */
-    note = t("failed");
-  }
+  });
   busy = false;
   paint();
 }

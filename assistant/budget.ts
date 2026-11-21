@@ -249,6 +249,8 @@ export function createBudget(o: { config: BudgetConfig; stateDir?: string; now?:
       if (used >= cap) {
         skip("cap");
         if (!capSaid.has(`${x.day}:${kind}`)) {
+          // Only today's are needed: an earlier day's go (one a day per kind was added forever).
+          for (const k of capSaid) if (!k.startsWith(`${x.day}:`)) capSaid.delete(k);
           capSaid.add(`${x.day}:${kind}`);
           log(`background budget: no more ${kind} runs today (${used} background runs of Claude so far, ${cap} allowed for this kind): answered without Claude`);
         }

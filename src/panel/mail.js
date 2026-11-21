@@ -7,6 +7,7 @@
 // Its words are English only (the owner's decision).
 
 import { localeFor } from "./i18n.js";
+import { h } from "./dom.js";
 
 const $ = (s, root = document) => root.querySelector(s);
 /** Dates written the way the owner's country writes English (i18n.js localeFor): 5:00 PM in the US, 17:00 elsewhere. */
@@ -30,18 +31,6 @@ const ICON = {
 };
 const TAG = { reply: "reply", decide: "decide", do: "do", read: "read" };
 
-/** An element from a tag, attributes and children; text is always text. */
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === false || v == null) continue;
-    if (k === "class") el.className = v;
-    else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 const icon = (name) => h("i", { "data-lucide": name });
 const paint = () => window.lucide?.createIcons?.({ attrs: { "aria-hidden": "true" } });
 

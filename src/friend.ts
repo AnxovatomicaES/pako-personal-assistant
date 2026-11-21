@@ -6,6 +6,7 @@
 // One key in the store ("friend"): whether the check-in is on, when it last went, and which birthdays were already offered this year.
 
 import { texts, type Lang } from "./i18n.ts";
+import { addDays } from "./day-time.ts";
 import type { Kv } from "./kv.ts";
 import { today } from "./lists.ts";
 import { isBirthdayOn, type Person } from "./people.ts";
@@ -131,10 +132,7 @@ const T = texts(
 export const friendTexts = T;
 
 /** The calendar date `n` days after a date ("YYYY-MM-DD"). */
-const dayAfter = (day: string, n: number): string => {
-  const [y, m, d] = day.split("-").map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
-};
+const dayAfter = (day: string, n: number): string => addDays(day, n);
 
 const relationOf = (p: Person): string => (p.relation ? ` (${p.relation})` : "");
 

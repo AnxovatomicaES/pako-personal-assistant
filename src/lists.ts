@@ -6,12 +6,13 @@
 // be read: a store that does not answer makes the change fail, it never overwrites the real record with an empty one.
 
 import { randomBytes } from "node:crypto";
-import express, { type Express, type Request, type RequestHandler } from "express";
+import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import { locale, texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import { createLog } from "./log.ts";
 import { readJsonRecord } from "./json-record.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const log = createLog("lists");
 
@@ -446,24 +447,12 @@ export interface TasksPanelDeps {
   now?: () => number;
 }
 
-const HEADERS = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" };
 
 export function mountTasksPanel(app: Express, d: TasksPanelDeps): void {
   const now = d.now ?? Date.now;
   const limiter = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: "draft-8", legacyHeaders: false });
   // The same protection as the STOP switch: the strict session cookie, and on a change the x-pako header another site cannot send.
-  const auth = (change: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (change && !d.local) {
-      res.status(404).json({ error: "read only here" });
-      return;
-    }
-    if (!d.signedIn(req) || (change && req.get("x-pako") !== "1")) {
-      res.status(401).json({ error: "sign in" });
-      return;
-    }
-    next();
-  };
+  const auth = panelGuard(d.signedIn, { readOnly: () => !d.local });
   app.get("/panel/api/tasks", auth(false), async (_req, res) => {
     const b = await d.lists.read();
     res.json({ lists: b.lists, tasks: b.tasks, today: today(now(), d.timeZone), edit: d.local });

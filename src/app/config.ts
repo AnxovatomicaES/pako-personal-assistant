@@ -1,7 +1,7 @@
 // The app's settings and the shapes createApp is given: the server's own settings (port, admin key, proxies, the phone line), the admin
 // key's check, local mode's context (src/local.ts and src/server.ts fill it), and the note for the ignored PAKO_LANGUAGE.
 
-import { createHash, timingSafeEqual } from "node:crypto";
+import { sameSecret } from "../panel-guard.ts";
 import type { Request } from "express";
 import type { Kv } from "../kv.ts";
 import type { BridgeHealth, BridgeStatus, LocalChannel, LocalSettings } from "../local.ts";
@@ -68,7 +68,7 @@ export function adminRequest(req: Request, adminKey: string): boolean {
     const decoded = Buffer.from(header.slice(6).trim(), "base64").toString("utf8");
     supplied = decoded.slice(decoded.indexOf(":") + 1);
   }
-  return timingSafeEqual(createHash("sha256").update(supplied).digest(), createHash("sha256").update(adminKey).digest());
+  return sameSecret(supplied, adminKey);
 }
 
 /** Local mode (src/local.ts): what the server needs to run for one person on this computer, with no WhatsApp. */

@@ -187,3 +187,46 @@ test("the chat box cannot be scrolled sideways by its wider glow: overflow: clip
   const clip = css.indexOf(".chat, .chat-head { overflow: clip; }");
   assert.ok(clip > css.indexOf(".chat { position: fixed;") && clip > css.indexOf(".chat-head { position: relative;"), "clip after hidden");
 });
+
+test("panel: Sign out everywhere ends every session made before (this one too); old sessions work until then; a failed save ends none", async () => {
+  const m = new Map<string, string>();
+  let fail = false;
+  const kv = {
+    get: async (k: string) => m.get(k) ?? null,
+    set: async (k: string, v: string) => {
+      if (fail) throw new Error("disk full");
+      m.set(k, v);
+    },
+  };
+  const r = await rig({ kv });
+  const signIn = async () => {
+    const path = new URL(r.panel.link()).pathname;
+    return cookieOf(await fetch(`${r.base}${path}`, { redirect: "manual" }));
+  };
+  const ok = (cookie: string) => fetch(`${r.base}/panel/api/overview`, { headers: { cookie } }).then((x) => x.status);
+  const end = (cookie: string) => fetch(`${r.base}/panel/api/sessions/end`, { method: "POST", headers: { cookie, "x-pako": "1" } });
+  try {
+    await new Promise((res) => setTimeout(res, 20)); // the generation read from the store at start
+    const a = await signIn();
+    const b = await signIn();
+    assert.match(a, /^pako_panel_443=\d+\.[A-Za-z0-9_-]+$/, "generation 0: the session as before (old ones go on)");
+    assert.equal(await ok(a), 200);
+    assert.equal((await fetch(`${r.base}/panel/api/sessions/end`, { method: "POST", headers: { cookie: a } })).status, 401, "x-pako needed");
+    fail = true;
+    assert.equal((await end(a)).status, 503);
+    assert.equal(await ok(b), 200, "a failed save ends nothing");
+    fail = false;
+    const done = await end(a);
+    assert.equal(done.status, 200);
+    assert.match(done.headers.get("set-cookie") ?? "", /^pako_panel_443=;/);
+    assert.equal(await ok(a), 401);
+    assert.equal(await ok(b), 401, "every session made before ends");
+    const c = await signIn();
+    assert.match(c, /^pako_panel_443=\d+\.1\.[A-Za-z0-9_-]+$/);
+    assert.equal(await ok(c), 200, "a new link starts a new one");
+    assert.equal(await ok(c.replace(/\.1\./, ".0.")), 401, "its generation cannot be changed by hand");
+    assert.deepEqual(JSON.parse(m.get("panel-sessions")!), { gen: 1 });
+  } finally {
+    r.close();
+  }
+});

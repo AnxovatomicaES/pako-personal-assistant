@@ -3,7 +3,7 @@
 // here (the strict session cookie and the x-pako header, like STOP). A server's panel only shows them. Without the route the card stays hidden.
 // Everything is put on the page as text, never as HTML. Its words are its own (English, here).
 
-import { localeFor } from "./i18n.js";
+import { h, localeOf } from "./dom.js";
 
 const REFRESH_MS = 60_000;
 
@@ -30,26 +30,12 @@ const WORDS = {
   remove: "Remove “{text}”",
   failed: "Couldn't remove it right now",
 };
-/** Dates written the way the owner's country writes English (i18n.js localeFor). */
-const localeOf = () => localeFor(document.documentElement.dataset.region);
 /** A text of this card, its {placeholders} filled from vars. */
 function t(key, vars) {
   const s = WORDS[key] ?? key;
   return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (Object.hasOwn(vars, k) ? String(vars[k]) : m)) : s;
 }
 
-/** An element from a tag, attributes and children; text is always text. */
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === false || v == null) continue;
-    if (k === "class") el.className = v;
-    else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 const icon = (name) => h("i", { "data-lucide": name });
 
 let data = null;

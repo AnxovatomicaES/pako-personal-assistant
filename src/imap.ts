@@ -605,7 +605,8 @@ export function createImapReader(d: ImapDeps) {
   /** For the panel's row: when the mailbox was last looked at, and how many emails were read on that day (the owner's server's day). */
   let lastLook: number | null = null;
   let today = { day: "", n: 0 };
-  const dayOf = (t: number): string => new Date(t).toISOString().slice(0, 10);
+  // The day in this computer's own zone (it was the UTC day, so "emails read today" started again at UTC midnight: audit finding).
+  const dayOf = (t: number): string => new Intl.DateTimeFormat("sv-SE", { year: "numeric", month: "2-digit", day: "2-digit" }).format(t);
   let timers: { first: ReturnType<typeof setTimeout>; every: ReturnType<typeof setInterval> } | null = null;
 
   /** The password, and the user name with it, out of any text before it is logged (a server may quote what it was sent). */

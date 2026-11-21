@@ -231,3 +231,20 @@ test("the laptop awake: a reminder it sends itself is not fired by the relay too
     relayServer.closeAllConnections();
   }
 });
+
+test("routes: turning the relay off answers ok only once its copy is gone; a store that fails says so (503)", async () => {
+  const kv = memKv().kv;
+  const relay = createRelay({ kv, now: () => T0, send: async () => true });
+  relay.wipe = async () => Promise.reject(new Error("disk full"));
+  const app = express();
+  mountRelay(app, { relay, token: TOKEN });
+  const server: Server = createServer(app);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  try {
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const r = await fetch(`${base}/relay/sync`, { method: "DELETE", headers: { authorization: `Bearer ${TOKEN}` } });
+    assert.equal(r.status, 503);
+  } finally {
+    server.close();
+  }
+});

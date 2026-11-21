@@ -15,6 +15,7 @@
 //   learnt in the demo (lessons, memory, people) reaches the real folder.
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { addDays } from "./day-time.ts";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import express, { type Express, type Request, type RequestHandler } from "express";
@@ -157,7 +158,8 @@ const OWNER_EMAIL = "alex@northwind.example";
  * Names and addresses are invented; every domain is an example domain.
  */
 export function demoWeek(now: number, timeZone: string, ownerName = "Alex"): DemoWeek {
-  const day = (n: number): string => dayOf(now + n * DAY, timeZone);
+  // Whole calendar days from today (now + n * 24 h skipped a day late in the evening before the clocks go forward: audit finding).
+  const day = (n: number): string => addDays(dayOf(now, timeZone), n);
   /** A local time `n` days from today, in the owner's zone (the next minute that exists, around a clock change). */
   const at = (n: number, hm: string): number => localToEpoch(`${day(n)} ${hm}`, timeZone) ?? localToEpoch(`${day(n)} 12:00`, timeZone) ?? now + n * DAY;
   const md = (n: number): string => day(n).slice(5);

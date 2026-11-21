@@ -666,6 +666,10 @@ Every email lands in one of eight places, and only three kinds reach you at once
 
 ## The control panel
 
+Signing in to the panel takes a one-time link (`npm run panel`, or the Mac app opens one for you); a session lasts 30 days. **Settings ›
+Privacy › Sign out everywhere** ends every panel session at once: this browser, and any other browser or computer you once opened it on.
+Paired phones have their own token: **Settings › Paired phones** unpairs them.
+
 <p align="center">
   <img src="assets/panel.svg" alt="The layout of the control panel: header with the orb, four live counters, the day's timeline with a now-line, mail ring and list" width="100%">
 </p>

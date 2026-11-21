@@ -17,7 +17,8 @@ test("loadSlackConfig: off with nothing; each value checked; quiet hours parsed 
   const ok = loadSlackConfig({ SLACK_USER_TOKEN: TOKEN, SLACK_SIGNING_SECRET: SECRET }).config;
   assert.deepEqual(ok?.quiet, { start: 23 * 60, end: 8 * 60 });
   assert.equal(loadSlackConfig({ SLACK_USER_TOKEN: TOKEN, SLACK_SIGNING_SECRET: SECRET, SLACK_QUIET_HOURS: "off" }).config?.quiet, null);
-  assert.equal(loadSlackConfig({ SLACK_USER_TOKEN: TOKEN, SLACK_SIGNING_SECRET: SECRET, SLACK_QUIET_HOURS: "late" }).config, null);
+  // A mistyped quiet-hours value is said and the default used; it no longer turns Slack off (src/day-time.ts quietSetting).
+  assert.deepEqual(loadSlackConfig({ SLACK_USER_TOKEN: TOKEN, SLACK_SIGNING_SECRET: SECRET, SLACK_QUIET_HOURS: "late" }).config?.quiet, { start: 1380, end: 480 });
   assert.equal(ok?.forward, false, "Slack already notifies the owner: no copy unless asked");
   assert.equal(loadSlackConfig({ SLACK_USER_TOKEN: TOKEN, SLACK_SIGNING_SECRET: SECRET, SLACK_FORWARD: "on" }).config?.forward, true);
   assert.equal(loadSlackConfig({ SLACK_USER_TOKEN: TOKEN, SLACK_SIGNING_SECRET: SECRET, SLACK_FORWARD: "maybe" }).config, null);

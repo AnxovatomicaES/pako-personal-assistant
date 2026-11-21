@@ -8,13 +8,14 @@
 // - Read back as the panel's "Quality" card (the last 7 days: nudges sent, Done, Not mine, ignored, 👍/👎, the brief's 👍/👎) and, on a
 //   Monday only, ONE line in the brief when the nudges did poorly ("3 of 7 nudges weren't useful: tell me what to ignore"). Never more than that.
 
-import express, { type Express, type Request, type RequestHandler } from "express";
+import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import type { FollowupsQuality } from "./followups.ts";
 import { texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import { createLog } from "./log.ts";
 import { readJsonRecord } from "./json-record.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const log = createLog("quality");
 
@@ -332,7 +333,6 @@ export function createQuality(d: QualityDeps) {
 
 export type Quality = ReturnType<typeof createQuality>;
 
-const HEADERS = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
 
 /**
  * The panel's side: GET /panel/api/quality (the card's numbers), GET /panel/api/quality/brief?doc= (the brief page's own verdicts), and POST
@@ -345,12 +345,7 @@ export function mountQualityPanel(app: Express, d: {
   briefItem?: (doc: string, kind: "todo" | "update", i: number) => Promise<string | null>;
 }): void {
   const limiter = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: "draft-8", legacyHeaders: false });
-  const auth = (change: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (!d.signedIn(req) || (change && req.get("x-pako") !== "1")) return void res.status(401).json({ error: "sign in" });
-    if (!d.quality) return void res.status(404).json({ error: "off" });
-    next();
-  };
+  const auth = panelGuard(d.signedIn, { off: () => !d.quality });
   app.get("/panel/api/quality", auth(false), limiter, async (_req, res) => {
     try {
       res.json({ stats: await d.quality!.stats() });

@@ -192,7 +192,8 @@ export function createJobs(d: JobsDeps) {
     // A finished row goes KEEP_MS after it ended; one never finished (a reminder held for later, a kind gone) KEEP_MS after it was due.
     const live = rows.filter((r) => !(r.endedAt !== undefined ? t - r.endedAt > KEEP_MS : t - r.dueAt > KEEP_MS));
     // Too many: the oldest finished ones go; pending and running rows always stay.
-    const ended = live.filter((r) => r.endedAt !== undefined).sort((a, b) => a.endedAt! - b.endedAt!);
+    // Never one that ended in the last two days, whatever the count: a sweep that plans it again must find it done (audit finding).
+    const ended = live.filter((r) => r.endedAt !== undefined && t - r.endedAt > 2 * 24 * 3600_000).sort((a, b) => a.endedAt! - b.endedAt!);
     const drop = new Set(ended.slice(0, Math.max(0, live.length - ROWS_MAX)));
     const kept = live.filter((r) => !drop.has(r));
     const text = JSON.stringify({ v: 1, rows: kept });

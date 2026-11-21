@@ -1,6 +1,6 @@
 // The door's limits and timings, and the small helpers several parts of it use.
 
-import { createHash, timingSafeEqual } from "node:crypto";
+import { sameSecret } from "../panel-guard.ts";
 
 /**
  * How a connector card stopped counting: answered; replaced by a newer request for the same friend; annulled by a pause; past its minutes;
@@ -59,11 +59,7 @@ export function stampedNear(doc: unknown, t: number, ms: number): boolean {
   return false;
 }
 
-export const same = (a: string, b: string): boolean => {
-  const x = createHash("sha256").update(a).digest();
-  const y = createHash("sha256").update(b).digest();
-  return timingSafeEqual(x, y);
-};
+export const same = sameSecret;
 
 /** Splits long text for WhatsApp, preferably at a paragraph or line end. */
 export function chunkText(text: string, max = WHATSAPP_TEXT_MAX): string[] {

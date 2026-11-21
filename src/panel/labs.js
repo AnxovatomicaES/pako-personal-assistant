@@ -2,6 +2,8 @@
 // tab says nothing is here). One switch per lab, with why it is in Labs and the same honest note for all. A change restarts Pako (as the
 // demo week does), and the page waits for it and reloads. Everything the server sends is put on the page as text, never as HTML.
 
+import { h, waitForRestart } from "./dom.js";
+
 const WORDS = {
   title: "Labs",
   lead: "Experimental parts of Pako. They work, but each one depends on a service that can change without notice, so they are off for a "
@@ -17,17 +19,6 @@ const WORDS = {
 
 const t = (key) => WORDS[key] ?? key;
 
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === false || v == null) continue;
-    if (k === "class") el.className = v;
-    else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children) if (c != null) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 
 let holder = null;
 /** The server's word: { note, labs: [{ id, name, why, on, source, locked }] }; null until it answered (or on a server). */
@@ -35,26 +26,6 @@ let state = null;
 let busy = false;
 let message = "";
 
-async function waitForRestart() {
-  const start = Date.now();
-  let down = false;
-  while (Date.now() - start < 60_000) {
-    await new Promise((r) => setTimeout(r, 700));
-    let up = false;
-    try {
-      up = (await fetch("/health", { cache: "no-store" })).ok;
-    } catch {
-      /* still restarting: asked again */
-      up = false;
-    }
-    if (!up) down = true;
-    else if (down || Date.now() - start > 8_000) {
-      location.reload();
-      return true;
-    }
-  }
-  return false;
-}
 
 async function change(id, on) {
   if (busy) return;

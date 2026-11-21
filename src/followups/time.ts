@@ -38,7 +38,11 @@ export const offsetAt = (t: number, tz: string): number => {
   return Date.UTC(+p.year!, +p.month! - 1, +p.day!, +p.hour!, +p.minute!, +p.second!) - Math.floor(t / 1000) * 1000;
 };
 
-/** "2026-11-16 05:15" (or "2026-11-16": 18:00) in a zone, as ms; null when it is not a real time. */
+/**
+ * "2026-11-16 05:15" (or "2026-11-16": 18:00) in a zone, as ms; null when it is not a date and time at all. A time the clock skips when it
+ * goes forward (02:30 on that night) is moved on to the same wall time after the jump (03:30): not null (src/door/time.ts localToEpoch
+ * gives null for it, where a reminder must not be set to a time that never comes).
+ */
 export function zonedTime(stamp: unknown, tz: string): number | null {
   const m = typeof stamp === "string" ? /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2}))?$/.exec(stamp.trim()) : null;
   if (!m) return null;

@@ -18,7 +18,7 @@
 // those about the same person or place first. The panel shows them and deletes one (Settings › How Pako acts, "What Pako learned from you").
 
 import { randomBytes } from "node:crypto";
-import express, { type Express, type Request, type RequestHandler } from "express";
+import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import { instructsPako, payloads } from "./brief-support.ts";
 import { sameThing } from "./followups/answer.ts";
@@ -28,6 +28,7 @@ import { fold } from "./lists.ts";
 import { inline } from "./quarantine.ts";
 import { createLog } from "./log.ts";
 import { readJsonRecord } from "./json-record.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const log = createLog("lessons");
 
@@ -427,12 +428,6 @@ export const lessonsSection = (list: string[]): string[] => (list.length ? ["", 
 
 // ---------- the panel ----------
 
-const HEADERS = {
-  "Cache-Control": "no-store",
-  "X-Content-Type-Options": "nosniff",
-  "Referrer-Policy": "no-referrer",
-  "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
-};
 
 /**
  * "What Pako learned from you" (src/panel/acts.js, Settings › How Pako acts). The panel's session, and on a POST the x-pako header another
@@ -441,11 +436,7 @@ const HEADERS = {
  *   POST /panel/api/lessons/delete { id } -> { ok }
  */
 export function mountLessonsPanel(app: Express, d: { signedIn: (req: Request) => boolean; lessons: () => Lessons | null }): void {
-  const auth = (post: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (!d.signedIn(req) || (post && req.get("x-pako") !== "1")) return void res.status(401).json({ error: "sign in" });
-    next();
-  };
+  const auth = panelGuard(d.signedIn);
   const limit = (n: number) =>
     rateLimit({ windowMs: 60_000, limit: n, standardHeaders: "draft-8", legacyHeaders: false, handler: (_req, res) => void res.status(429).json({ error: "too many" }) });
   app.get("/panel/api/lessons", auth(false), limit(120), async (_req, res) => {

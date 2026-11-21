@@ -14,7 +14,7 @@
 //   a draft changed before it was sent), how often it was taught, and a button that deletes one.
 // Saved with the strict session cookie and the x-pako header, like STOP. Everything is put on the page as text, never as HTML.
 
-import { localeFor } from "./i18n.js";
+import { h, localeOf } from "./dom.js";
 
 const WORDS = {
   title: "How Pako acts",
@@ -92,24 +92,10 @@ const WORDS = {
   draftWas: "My draft: {text}", draftSent: "You sent: {text}",
   forget: "Delete this lesson: {text}", forgotten: "Deleted.", forgetFailed: "I couldn't delete it. Try again.",
 };
-/** Dates written the way the owner's country writes English (i18n.js localeFor). */
-const localeOf = () => localeFor(document.documentElement.dataset.region);
 const t = (key, vars = {}) => String(WORDS[key] ?? key).replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
 const str = (v) => (typeof v === "string" ? v : "");
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
-/** An element from a tag, attributes and children; text is always text. */
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === false || v == null) continue;
-    if (k === "class") el.className = v;
-    else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children.flat()) if (c != null && c !== false && c !== "") el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 
 const st = {
   autonomy: null, life: null, lessons: null, gentle: null, beta: null, day: null, dayNote: "", auNote: "", lifeNote: "", lessonsNote: "", gentleNote: "", betaNote: "", betaExport: "", card: null,

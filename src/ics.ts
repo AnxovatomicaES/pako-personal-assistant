@@ -8,6 +8,7 @@
 // ical.js parses the file and expands the repeating events, only inside the window the core needs (yesterday to eight days ahead).
 
 import { createHash } from "node:crypto";
+import { addDays } from "./day-time.ts";
 import ICAL from "ical.js";
 import type { CalEvent, CalendarSource } from "./calendar.ts";
 import { attendeesOf, joinLink } from "./calendar.ts";
@@ -182,10 +183,6 @@ export function dayStart(date: string, tz: string): number {
 }
 
 /** The calendar date `days` after a date ("2026-11-15" + 1 = "2026-11-16"). */
-const addDays = (date: string, days: number): string => {
-  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-};
 
 /**
  * How one property's times become moments: from the zone named by its TZID (an IANA name, a Windows name, the feed's own definition), UTC, or

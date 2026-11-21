@@ -9,6 +9,7 @@ import express from "express";
 import { buildClaudeArgs, childEnv, ClaudeError, createBridge, defaultStateDir, parseEmailVerdict, loadBridgeConfig, parseReply, runClaude, stopRunningClaude, type BridgeConfig } from "../assistant/bridge.ts";
 import { EMAIL_PROMPT, MEETING_PROMPT, SYSTEM_PROMPT } from "../assistant/prompt.ts";
 import { cleanTranscript, transcribeVoiceNote } from "../assistant/voice.ts";
+import { eventually } from "./helpers/wait.ts";
 
 const TOKEN = "t".repeat(48);
 const ENV = { ASSISTANT_SERVER_URL: "https://example.onrender.com/", ASSISTANT_BRIDGE_TOKEN: TOKEN };
@@ -999,7 +1000,7 @@ test("\"One moment…\" never arrives after the note that the answer failed", as
     },
   });
   await bridge.tick(0);
-  await new Promise((r) => setTimeout(r, 400));
+  await eventually(() => said.length >= 2, { then: 50 });
   assert.equal(said.length, 2);
   assert.match(said[0]!, /One moment/);
   assert.match(said[1]!, /couldn't work out an answer/);

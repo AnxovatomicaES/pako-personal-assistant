@@ -18,11 +18,9 @@ import {
   ADVANCED, askApp, cardStates, importedCount, checkField, cleanAppPassword, cleanDiscovery, connectedCount, COUNTED, discoveryChips, inApp, isEmail, nextSuggestion,
   providerOf, resumable, tellApp, accountLine, mailStatus, cleanClients, labHiddenCards,
 } from "./settings-model.js";
-import { localeFor } from "./i18n.js";
+import { h, localeOf } from "./dom.js";
 
 const $ = (s, root = document) => root.querySelector(s);
-/** Dates written the way the owner's country writes English (i18n.js localeFor). */
-const localeOf = () => localeFor(document.documentElement.dataset.region);
 function t(key, vars) {
   const s = WORDS[key] ?? key;
   return vars ? String(s).replace(/\{(\w+)\}/g, (m, k) => (Object.hasOwn(vars, k) ? String(vars[k]) : m)) : String(s);
@@ -31,20 +29,6 @@ const has = (key) => Object.hasOwn(WORDS, key);
 const reduced = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** An element from a tag, attributes and children; text is always text. */
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs ?? {})) {
-    if (v === false || v == null) continue;
-    if (k === "class") el.className = v;
-    // A custom property ("--i") is only set by setProperty: el.style["--i"] = 3 sets nothing.
-    else if (k === "style" && typeof v === "object") for (const [p, x] of Object.entries(v)) p.startsWith("--") ? el.style.setProperty(p, String(x)) : (el.style[p] = x);
-    else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children.flat(Infinity)) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 const icon = (name, cls = "") => h("i", { "data-lucide": name, class: cls || null });
 const paint = () => window.lucide?.createIcons?.({ attrs: { "aria-hidden": "true" } });
 // Any icon put on the page later (a result written into a step after an answer) is drawn too, once per frame.

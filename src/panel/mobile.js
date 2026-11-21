@@ -3,6 +3,8 @@
 // which work once, for 10 minutes; each paired phone is listed with when it was last seen, and can be removed. Away from home, Telegram.
 // Everything the server sends is put on the page as text, never as HTML; the QR code is an image made by the server (an SVG as data:).
 
+import { h } from "./dom.js";
+
 const WORDS = {
   title: "Use on my phone (same Wi-Fi)",
   lead: "Your brief and your follow-ups in your phone's browser, with Done, Snooze and Park, while the phone is on the same Wi-Fi as this computer.",
@@ -34,17 +36,6 @@ const WORDS = {
 };
 const t = (key, vars = {}) => String(WORDS[key] ?? key).replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
 
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === false || v == null) continue;
-    if (k === "class") el.className = v;
-    else if (k === "onclick") el.addEventListener("click", v);
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children.flat()) if (c !== null && c !== undefined && c !== "") el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 
 const when = (at) => {
   if (Date.now() - at < 120_000) return t("now");

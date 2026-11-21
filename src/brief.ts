@@ -12,6 +12,7 @@
 // and the next BRIEF says so once.
 
 import type { Express, Request } from "express";
+import { clock } from "./day-time.ts";
 import { rateLimit } from "express-rate-limit";
 import { clashes, clashText, dayBounds, type CalEvent } from "./calendar.ts";
 import type { Control } from "./control.ts";
@@ -72,7 +73,7 @@ const LEGACY_KEY = "calendar-state";
 const SKIPPED_SAY_MS = 7 * 24 * 3600_000;
 const DAY_MS = 24 * 3600_000;
 
-const hhmm = (minutes: number): string => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+const hhmm = clock;
 
 /** On a computer, until when (minutes after midnight) a brief missed at its hour still comes: 11:00, or three hours for a later hour. */
 export const lateUntil = (at: number): number => (at < 11 * 60 ? 11 * 60 : Math.min(at + 180, 24 * 60));

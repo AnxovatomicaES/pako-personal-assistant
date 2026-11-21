@@ -847,7 +847,8 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
             : await place(config.ownerNumber, "owner", ownerVars);
           logPersonalCaller.info(`call_me ok call_id=${call.call_id} status=${call.call_status} live=${config.live}`);
           // The LiveKit worker may have to wake first: a start that fails there gives the owner's slot back.
-          if (call.done) void call.done.then((why) => { if (why) owner.release(slot.id); });
+          // A wait that fails gives it back too (audit finding: a rejection kept the owner's call slot taken).
+          if (call.done) void call.done.then((why) => { if (why) owner.release(slot.id); }, () => owner.release(slot.id));
           const wait = call.done ? " The voice server may need up to a minute to wake before the phone rings." : "";
           return text(`Call started: call_id=${call.call_id}, status=${call.call_status}.${wait} Use get_call with this call_id after about a minute for the outcome.`);
         } catch (err) {

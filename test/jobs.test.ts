@@ -581,3 +581,14 @@ test("the written brief that does not come in time on an awake morning: the old 
   assert.equal(r.sent.length, 1);
   assert.match(r.sent[0]!.text, /Today is Tuesday 17 November/);
 });
+
+test("jobs: over 400 rows, a slot that ended in the last two days is never dropped for room, so it is not run again", async () => {
+  const clock = { now: Date.parse("2026-11-25T10:00:00Z") };
+  const jobs = createJobs({ kv: null, now: () => clock.now, sleeps: true });
+  let runs = 0;
+  // 450 slots done within an hour: all kept.
+  for (let i = 0; i < 450; i++) await jobs.slot("routine", `r:${i}`, clock.now - 1000, async () => void runs++);
+  assert.equal(runs, 450);
+  await jobs.slot("routine", "r:0", clock.now - 1000, async () => void runs++);
+  assert.equal(runs, 450, "the first one is still known as done, not run again");
+});

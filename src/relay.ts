@@ -14,8 +14,9 @@
 //   RELAY_TELEGRAM_TOKEN    the bot that sends the reminders (the owner's own bot; see docs/relay.md)
 //   RELAY_TELEGRAM_CHAT     the owner's chat id with that bot
 
-import { timingSafeEqual } from "node:crypto";
 import express, { type Express, type Request } from "express";
+import { rateLimit } from "express-rate-limit";
+import { sameSecret } from "./panel-guard.ts";
 import type { Kv } from "./kv.ts";
 import { createLog } from "./log.ts";
 import { readJsonRecord } from "./json-record.ts";
@@ -165,17 +166,23 @@ export const telegramSender = (c: RelayConfig, fetchFn: typeof fetch = fetch) =>
   }
 };
 
-const bearer = (req: Request, token: string): boolean => {
-  const given = Buffer.from((req.get("authorization") ?? "").replace(/^Bearer\s+/i, ""));
-  const want = Buffer.from(token);
-  return given.length === want.length && timingSafeEqual(given, want);
-};
+// Compared hashed, so nothing of the token's length leaks (audit finding: the lengths were compared first).
+const bearer = (req: Request, token: string): boolean => sameSecret((req.get("authorization") ?? "").replace(/^Bearer\s+/i, ""), token);
 
 /** The relay's routes: POST /relay/sync, POST /relay/tick (the outside wake), DELETE /relay/sync (wipe). The token on each. */
 export function mountRelay(app: Express, d: { relay: Relay; token: string }): void {
   const json = express.json({ limit: "256kb" });
-  const auth = (req: Request, res: express.Response, next: express.NextFunction) => (bearer(req, d.token) ? next() : void res.status(401).json({ error: "token" }));
-  app.post("/relay/sync", auth, json, async (req, res) => {
+  // Only refusals are counted (the bridge's way): a guesser is slowed down, the relay's own computer never is.
+  const refused = rateLimit({
+    windowMs: 15 * 60_000, limit: 20, standardHeaders: "draft-8", legacyHeaders: false, skipSuccessfulRequests: true,
+    requestWasSuccessful: (_req, res) => res.statusCode !== 401,
+    handler: (_req, res) => void res.status(429).json({ error: "too many" }),
+  });
+  const auth = (req: Request, res: express.Response, next: express.NextFunction) => {
+    res.set({ "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+    return bearer(req, d.token) ? next() : void res.status(401).json({ error: "token" });
+  };
+  app.post("/relay/sync", refused, auth, json, async (req, res) => {
     const b = isObject(req.body) ? req.body : {};
     const reminders = remindersOf(b.reminders);
     if (!reminders) return void res.status(400).json({ error: "send { reminders: [{ id, version, at, text }], since }" });
@@ -187,7 +194,7 @@ export function mountRelay(app: Express, d: { relay: Relay; token: string }): vo
       res.status(503).json({ error: "store" });
     }
   });
-  app.post("/relay/tick", auth, async (_req, res) => {
+  app.post("/relay/tick", refused, auth, async (_req, res) => {
     try {
       res.json({ sent: await d.relay.tick() });
     } catch (err) {
@@ -195,8 +202,15 @@ export function mountRelay(app: Express, d: { relay: Relay; token: string }): vo
       res.status(503).json({ error: "store" });
     }
   });
-  app.delete("/relay/sync", auth, async (_req, res) => {
-    await d.relay.wipe().catch(() => undefined);
-    res.json({ ok: true });
+  // Turning the relay off: only "ok" once its copy of the reminders is really gone (audit finding: a failed wipe answered ok, and the
+  // relay went on sending them).
+  app.delete("/relay/sync", refused, auth, async (_req, res) => {
+    try {
+      await d.relay.wipe();
+      res.json({ ok: true });
+    } catch (err) {
+      log.warn(`the relay's copy could not be deleted: ${(err as Error).message}`);
+      res.status(503).json({ error: "store" });
+    }
   });
 }

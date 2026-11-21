@@ -138,7 +138,7 @@ test("sqliteKv: add writes only when the key is free or expired; onSave hears ea
   assert.ok(saves.length >= 2 && saves.every(Boolean));
 });
 
-test("sqliteKv: a write that fails is kept as a failing state, told in plain words even to who listens later, and cleared by a good write",
+test("sqliteKv: a write that fails rejects, is kept as a failing state, told in plain words even to who listens later, and cleared by a good write",
   { skip: process.platform === "win32" }, async () => {
     const dir = tmp();
     const kv = sqliteKv(dir);
@@ -146,7 +146,8 @@ test("sqliteKv: a write that fails is kept as a failing state, told in plain wor
     console.error = () => undefined;
     try {
       chmodSync(dir, 0o500); // a folder it can no longer write in: SQLite cannot make its journal
-      await kv.set("a", "1", 0);
+      // The write rejects, as the hosted store's does: the caller knows it was not saved (it resolved before, silently).
+      await assert.rejects(kv.set("a", "1", 0), /could not save: the disk is full, or the Pako folder cannot be written to/);
     } finally {
       chmodSync(dir, 0o700);
       console.error = errors;

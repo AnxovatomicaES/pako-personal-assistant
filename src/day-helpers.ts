@@ -6,11 +6,12 @@
 //   - alerts: a meeting that moved or was called off, told at once (src/calendar-alerts.ts)
 // GET and POST /panel/api/day-helpers ({ wrapUp?, afterMeeting?, alerts? } booleans), with the session and the x-pako header, like STOP.
 
-import express, { type Express, type Request, type RequestHandler } from "express";
+import express, { type Express, type Request } from "express";
 import rateLimit from "express-rate-limit";
 import { readJsonRecord } from "./json-record.ts";
 import type { Kv } from "./kv.ts";
 import { createLog } from "./log.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const log = createLog("day-helpers");
 
@@ -73,17 +74,11 @@ export function createDayHelpers(kv: Kv | null, defaults: HelperState) {
 }
 export type DayHelpers = ReturnType<typeof createDayHelpers>;
 
-const HEADERS = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" };
 
 /** GET and POST /panel/api/day-helpers: the switches, with their words. */
 export function mountDayHelpersPanel(app: Express, d: { signedIn: (req: Request) => boolean; helpers: () => DayHelpers | null }): void {
   const limit = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: "draft-8", legacyHeaders: false });
-  const auth = (change: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (!d.signedIn(req) || (change && req.get("x-pako") !== "1")) return void res.status(401).json({ error: "sign in" });
-    if (!d.helpers()) return void res.status(404).json({ error: "off" });
-    next();
-  };
+  const auth = panelGuard(d.signedIn, { off: () => !d.helpers() });
   const answer = (s: HelperState) => ({ ...s, words: HELPER_WORDS });
   app.get("/panel/api/day-helpers", auth(false), limit, async (_req, res) => {
     try {

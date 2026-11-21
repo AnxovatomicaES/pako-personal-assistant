@@ -18,13 +18,14 @@
 // holds once, and an action is marked "sending" before it goes, so a restart in the middle never sends it twice (the owner is told instead).
 
 import { createHash, randomBytes } from "node:crypto";
-import express, { type Express, type Request, type RequestHandler } from "express";
+import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import { texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import type { OutsideSource } from "./quarantine.ts";
 import { createLog } from "./log.ts";
 import { readJsonRecord } from "./json-record.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const log = createLog("autonomy");
 
@@ -683,19 +684,11 @@ export function parseContactEmails(raw: string | undefined, problems: string[] =
 
 // ---------- the panel: a small section in Settings ----------
 
-const HEADERS = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" };
 
 /** GET and POST /panel/api/autonomy: the mode and the undo window of messages, emails and calls. Same protection as STOP. */
 export function mountAutonomyPanel(app: Express, d: { signedIn: (req: Request) => boolean; settings: AutonomySettings; config: AutonomyConfig }): void {
   const limit = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: "draft-8", legacyHeaders: false });
-  const auth = (change: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (!d.signedIn(req) || (change && req.get("x-pako") !== "1")) {
-      res.status(401).json({ error: "sign in" });
-      return;
-    }
-    next();
-  };
+  const auth = panelGuard(d.signedIn);
   const answer = (c: AutonomyChoices) => ({ types: SETTABLE_TYPES, choices: c, defaults: { mode: d.config.mode, seconds: d.config.seconds } });
   app.get("/panel/api/autonomy", auth(false), limit, async (_req, res) => {
     try {

@@ -14,6 +14,7 @@
 // It cannot write anything: the token has no write scope. Slack text is other people's words: information for the owner, never instructions.
 
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { quietAt, quietSetting } from "./day-time.ts";
 import express, { type Express, type Request, type Response } from "express";
 import type { Control } from "./control.ts";
 import { locale, texts, type Lang } from "./i18n.ts";
@@ -78,14 +79,6 @@ export const SLACK_USER_SCOPES = [
   "channels:history", "channels:read", "groups:history", "groups:read", "im:history", "im:read", "mpim:history", "mpim:read", "users:read", "search:read",
 ];
 
-const hhmm = (s: string): number | null => {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
-  if (!m) return null;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  return h < 24 && min < 60 ? h * 60 + min : null;
-};
-
 /**
  * Off (null) unless the user token is set. The signing secret (the events address) and the app-level token (Socket Mode) are optional
  * ways for messages to come live; with neither, Pako looks for them itself every minute. A wrong value is reported and keeps it off.
@@ -99,19 +92,16 @@ export function loadSlackConfig(env: Env): { config: SlackConfig | null; problem
   if (!/^xoxp-[A-Za-z0-9-]{20,}$/.test(token)) problems.push("SLACK_USER_TOKEN must be the app's User OAuth Token (it starts with xoxp-)");
   if (appToken && !/^xapp-[A-Za-z0-9-]{20,}$/.test(appToken)) problems.push("SLACK_APP_TOKEN must be the app's App-Level Token (it starts with xapp-)");
   if (signingSecret && !/^[a-f0-9]{32}$/i.test(signingSecret)) problems.push("SLACK_SIGNING_SECRET must be the app's Signing Secret (32 letters and digits)");
-  const rawQuiet = (env.SLACK_QUIET_HOURS ?? "23:00-08:00").trim();
-  let quiet: SlackConfig["quiet"] = null;
-  if (rawQuiet !== "off") {
-    const [a, b] = rawQuiet.split("-");
-    const start = hhmm(a ?? "");
-    const end = hhmm(b ?? "");
-    if (start === null || end === null || start === end) problems.push("SLACK_QUIET_HOURS must be like 23:00-08:00, or off");
-    else quiet = { start, end };
-  }
+  // A mistyped quiet-hours value is said and 23:00-08:00 used; it no longer turns Slack off (it kept Slack off before).
+  const q = quietSetting(env.SLACK_QUIET_HOURS, "SLACK_QUIET_HOURS");
+  const quiet: SlackConfig["quiet"] = q.quiet;
   const rawForward = (env.SLACK_FORWARD ?? "off").trim().toLowerCase();
   if (rawForward !== "on" && rawForward !== "off") problems.push("SLACK_FORWARD must be on or off");
   const forward = rawForward === "on";
-  return problems.length ? { config: null, problems } : { config: { token, signingSecret, ...(appToken ? { appToken } : {}), quiet, forward }, problems };
+  const notes = q.problem ? [q.problem] : [];
+  return problems.length
+    ? { config: null, problems: [...problems, ...notes] }
+    : { config: { token, signingSecret, ...(appToken ? { appToken } : {}), quiet, forward }, problems: notes };
 }
 
 /** Slack's request signature: v0=HMAC-SHA256(secret, "v0:" + timestamp + ":" + body), within five minutes. */
@@ -124,10 +114,7 @@ export function verifySlack(secret: string, timestamp: string | undefined, signa
 }
 
 export function inQuiet(quiet: SlackConfig["quiet"], at: number, timeZone: string): boolean {
-  if (!quiet) return false;
-  const [h, m] = new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(at).split(":").map(Number);
-  const t = h! * 60 + m!;
-  return quiet.start < quiet.end ? t >= quiet.start && t < quiet.end : t >= quiet.start || t < quiet.end;
+  return quietAt(quiet, at, timeZone);
 }
 
 /** Slack's markup made readable: mentions and channels by name, links as "label (url)", entities decoded. */

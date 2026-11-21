@@ -6,7 +6,7 @@
 // - The Mac app's own requests (URLSession, not its web view): the bridge token it already reads from ~/.pako/secrets.json, as a Bearer
 //   header, from this computer only (the socket's address, never a header), and never from a browser (no Origin, no Sec-Fetch-Site).
 
-import { createHash, timingSafeEqual } from "node:crypto";
+import { sameSecret } from "./panel-guard.ts";
 import type { Express, Request, RequestHandler } from "express";
 import { rateLimit } from "express-rate-limit";
 import { isLoopback } from "./dashboard.ts";
@@ -25,7 +25,7 @@ export interface RouteAuth {
   appToken?: string;
 }
 
-const same = (a: string, b: string): boolean => timingSafeEqual(createHash("sha256").update(a).digest(), createHash("sha256").update(b).digest());
+const same = sameSecret;
 
 /** The Mac app's own request: its token, from this computer, not from a browser page. */
 export function fromApp(req: Request, token: string | undefined): boolean {

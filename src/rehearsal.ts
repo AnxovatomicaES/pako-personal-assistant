@@ -13,7 +13,7 @@
 // One key in the store (REHEARSAL_KEY): the last run, 7 days.
 
 import { randomBytes } from "node:crypto";
-import express, { type Express, type Request, type RequestHandler } from "express";
+import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import { validateBrief, type BriefDoc, type Gathered } from "./brief-v2.ts";
 import { jobOf, type DryOutcome, type Followups, type Job, type Where } from "./followups.ts";
@@ -24,6 +24,7 @@ import type { SlackAlert } from "./slack.ts";
 import type { Inbound } from "./whatsapp.ts";
 import { createLog } from "./log.ts";
 import { readJsonRecord } from "./json-record.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const log = createLog("rehearsal");
 
@@ -310,17 +311,11 @@ export function createRehearsal(d: RehearsalDeps) {
 
 export type Rehearsal = ReturnType<typeof createRehearsal>;
 
-const HEADERS = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer" };
 
 /** GET /panel/api/rehearsal (the last run) and POST /panel/api/rehearsal (start one; the x-pako header). */
 export function mountRehearsalPanel(app: Express, d: { signedIn: (req: Request) => boolean; rehearsal: Rehearsal | null }): void {
   const limiter = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
-  const auth = (change: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (!d.signedIn(req) || (change && req.get("x-pako") !== "1")) return void res.status(401).json({ error: "sign in" });
-    if (!d.rehearsal) return void res.status(404).json({ error: "off" });
-    next();
-  };
+  const auth = panelGuard(d.signedIn, { off: () => !d.rehearsal });
   app.get("/panel/api/rehearsal", auth(false), limiter, async (_req, res) => {
     try {
       res.json(await d.rehearsal!.view());

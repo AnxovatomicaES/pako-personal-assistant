@@ -5,7 +5,7 @@
 // follow-ups and the written brief off) the cards stay hidden. Everything is put on the page as text, never as HTML.
 
 import { hideWhenEmpty } from "./dashboard-model.js";
-import { localeFor } from "./i18n.js";
+import { h, localeOf } from "./dom.js";
 
 const WORDS = {
   quality: "Quality",
@@ -33,22 +33,10 @@ const WORDS = {
   k_slack: "Slack", k_mail: "Email", k_meeting: "Meeting", k_brief: "Brief",
 };
 
-/** Dates written the way the owner's country writes English (i18n.js localeFor). */
-const localeOf = () => localeFor(document.documentElement.dataset.region);
 const t = (key, vars = {}) => String(WORDS[key] ?? key).replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
 const str = (v) => (typeof v === "string" ? v : "");
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === false || v == null) continue;
-    if (k === "class") el.className = v;
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children) if (c !== null && c !== undefined && c !== "") el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 const pre = (text) => {
   const p = h("p", {}, text);
   p.style.whiteSpace = "pre-line";

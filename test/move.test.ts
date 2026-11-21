@@ -16,6 +16,7 @@ import { DATA_KEYS } from "../src/data.ts";
 import { createLocalChannel, createSettings, loadHome, localEnv } from "../src/local.ts";
 import { sqliteKv } from "../src/sqlite-kv.ts";
 import { MOVE_KEYS, mountMovePanel, readMoveFile } from "../src/move.ts";
+import { eventually } from "./helpers/wait.ts";
 
 async function listen(server: Server): Promise<string> {
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
@@ -145,7 +146,7 @@ test("move, the computer's side: the plan first (nothing written), then the conf
     assert.equal(done.ok, true);
     assert.equal(done.imported, Object.keys(MOVE_KEYS).length - 1, "the one already the same is not written again");
     assert.equal(done.restarting, true);
-    await new Promise((r) => setTimeout(r, 400));
+    await eventually(() => c.restarts() >= 1, { then: 50 });
     assert.equal(c.restarts(), 1, "Pako starts again, so every part reads what came in");
     assert.deepEqual(JSON.parse((await c.kv.get("assistant-reminders"))!), [{ id: "r1", at: 1_900_000_000_000, text: "Llamar a Rohan" }]);
     assert.equal(await c.kv.get("owner-language"), "es", "a text is kept as text");

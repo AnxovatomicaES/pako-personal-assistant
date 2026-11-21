@@ -23,7 +23,9 @@ function memoryKv(): Kv {
   return { get: async (k) => m.get(k) ?? null, set: async (k, v) => void m.set(k, v) };
 }
 
-function rig(o: { book?: (slot: { time: string }) => BookResult; confirmFirst?: boolean; control?: ReturnType<typeof createControl> } = {}) {
+function rig(o: {
+  book?: (slot: { time: string }) => BookResult; confirmFirst?: boolean; control?: ReturnType<typeof createControl>; cancelFails?: boolean;
+} = {}) {
   const calls = { book: [] as string[], cancel: 0, submits: 0, reminders: [] as string[], unreminded: [] as string[] };
   const cart: Cartridge = {
     engine: "CoverManager",
@@ -42,7 +44,11 @@ function rig(o: { book?: (slot: { time: string }) => BookResult; confirmFirst?: 
       return { kind: "confirmed", evidence: { url: "https://barmut.com/gracias-por-su-reserva?date=20-11-2026&time=21:00&pax=2", text: "ok", confirmationId: "CM1X", cancelUrl: "https://www.covermanager.com/cancel/CM1X", said: { date: slot.date, time: slot.time, party: slot.party } } };
     },
     verify: async () => null,
-    cancel: async () => (calls.cancel++, true),
+    cancel: async () => {
+      calls.cancel++;
+      if (o.cancelFails) throw new Error("net::ERR_INTERNET_DISCONNECTED");
+      return true;
+    },
   };
   const pool: PagePool = {
     withPage: (fn) => fn({} as Page),
@@ -193,4 +199,18 @@ test("booking maitre: only the owner's own turn is a direct order; a turn that r
   assert.equal(directOrder(undefined), false, "a held reply the owner pressed Do it on (its turn read outside text)");
   assert.equal(directOrder({ ...own, initiative: true }), false, "Pako's own initiative");
   assert.equal(directOrder({ ...own, ownerUnknown: true, sources: { owner: [], outside: [] } }), false, "an older bridge: the owner's words unknown");
+});
+
+test("booking maitre: an Undo whose cancel could not run says the booking still stands and to try again, never 'can't be undone'", async () => {
+  // The cartridge failing on its page: "I couldn't cancel it from here", with how (as before).
+  const page = rig({ cancelFails: true });
+  const s1 = await seen(await page.booking.start({ what: "Bar Mut, Barcelona", when: WHEN, party: 2 }, { direct: true, owner: OWNER_WORDS }));
+  assert.match(await page.booking.undo(s1.undo!.id), /I couldn't cancel it from here/);
+  // The cancel itself not running (its store did not answer): the booking stands, try again (it said "can't be undone any more").
+  const r = rig();
+  const s = await seen(await r.booking.start({ what: "Bar Mut, Barcelona", when: WHEN, party: 2 }, { direct: true, owner: OWNER_WORDS }));
+  r.maitre.cancel = async () => Promise.reject(new Error("the store did not answer"));
+  const said = await r.booking.undo(s.undo!.id);
+  assert.doesNotMatch(said, /can't be undone from here any more/);
+  assert.match(said, /the booking still stands\. Press Undo again in a moment/);
 });

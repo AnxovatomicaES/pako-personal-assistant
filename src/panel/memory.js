@@ -4,6 +4,8 @@
 // It takes over the card's notes from app.js (which keeps drawing its own copy, hidden: the card still shows notes if this file fails).
 // Everything a note says is put on the page as text, never as HTML.
 
+import { h } from "./dom.js";
+
 const REFRESH_MS = 60_000;
 const CONFIRM_MS = 4_000;
 
@@ -39,19 +41,6 @@ function t(key, vars) {
   return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (Object.hasOwn(vars, k) ? String(vars[k]) : m)) : s;
 }
 
-/** An element from a tag, attributes and children; text is always text. */
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === false || v == null) continue;
-    if (k === "class") el.className = v;
-    else if (k === "style") el.style.cssText = v;
-    else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 /** A text whose **parts** are bold, as nodes: nothing is parsed as HTML. */
 const rich = (text) => text.split(/\*\*(.+?)\*\*/g).map((part, i) => (i % 2 ? h("b", {}, part) : part));
 const icon = (name) => h("i", { "data-lucide": name });

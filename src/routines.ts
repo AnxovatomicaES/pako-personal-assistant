@@ -24,7 +24,7 @@
 // could not be read.
 
 import { createHash, randomBytes } from "node:crypto";
-import express, { type Express, type Request, type RequestHandler } from "express";
+import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import type { Control } from "./control.ts";
 import { texts, type Lang } from "./i18n.ts";
@@ -37,6 +37,7 @@ import { isEvery, repeatText, whenText, type Every } from "./undo.ts";
 import { firstRepeat, localStamp, localToEpoch, repeatAfter } from "./whatsapp.ts";
 import { createLog } from "./log.ts";
 import { readJsonRecord } from "./json-record.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const log = createLog("routines");
 
@@ -740,23 +741,11 @@ export type Routines = ReturnType<typeof createRoutines>;
 
 // ---------- the panel: GET /panel/api/routines; on a computer, POST /panel/api/routines/remove ----------
 
-const HEADERS = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" };
 
 export function mountRoutinesPanel(app: Express, d: { signedIn: (req: Request) => boolean; routines: Routines; local: boolean; timeZone: string }): void {
   const limiter = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: "draft-8", legacyHeaders: false });
   // The same protection as the STOP switch: the strict session cookie, and on a change the x-pako header another site cannot send.
-  const auth = (change: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (change && !d.local) {
-      res.status(404).json({ error: "read only here" });
-      return;
-    }
-    if (!d.signedIn(req) || (change && req.get("x-pako") !== "1")) {
-      res.status(401).json({ error: "sign in" });
-      return;
-    }
-    next();
-  };
+  const auth = panelGuard(d.signedIn, { readOnly: () => !d.local });
   app.get("/panel/api/routines", auth(false), async (_req, res) => {
     const b = await d.routines.read();
     res.json({

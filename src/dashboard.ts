@@ -8,7 +8,8 @@
 // The page is static (src/panel/) with its libraries served from node_modules: GSAP for motion, Three.js for the orb, Lucide icons, Inter.
 // Its words are English (src/panel/i18n.js), like all of Pako's fixed texts; dates follow the owner's country (src/region.ts).
 
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { sameSecret } from "./panel-guard.ts";
 import { readFileSync } from "node:fs";
 import express, { type Express, type Request, type RequestHandler } from "express";
 import { rateLimit } from "express-rate-limit";
@@ -24,11 +25,16 @@ import type { BridgeHealth, BridgeStatus, ChatMessage, LocalSettings } from "./l
 import type { MemoryStore } from "./voice-memory.ts";
 import { readBridgeReport, type BridgeCli, type BridgeUsage, type BridgeVersion } from "./watchdog.ts";
 import { createLog } from "./log.ts";
+import { readJsonRecord } from "./json-record.ts";
+import type { Kv } from "./kv.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const logPanel = createLog("panel");
 
 const COOKIE = "pako_panel";
 const SESSION_MS = 30 * 24 * 3600_000;
+/** The sessions' generation ({ gen }): a session signed for another one is over. */
+export const SIGN_OUT_KEY = "panel-sessions";
 const LINK_MS = 10 * 60_000;
 
 export interface Integration {
@@ -51,6 +57,8 @@ export interface PanelSettings extends LocalSettings {
 export interface PanelDeps {
   /** The secret the session key is derived from (the bridge token). */
   secret: string;
+  /** Where the sessions' generation is kept (SIGN_OUT_KEY): "Sign out everywhere" moves it on, and every session made before ends. */
+  kv?: Kv | null;
   /** The server's public address, for the sign-in link (a function: it may be learnt after start). */
   publicUrl: string | (() => string);
   ownerName: string;
@@ -230,6 +238,7 @@ const VENDOR: Record<string, { file: string; type: string }> = {
 };
 const PAGES: Record<string, string> = { "app.js": "text/javascript", "app.css": "text/css", "orb.js": "text/javascript", "i18n.js": "text/javascript" };
 PAGES["connections.js"] = "text/javascript";
+PAGES["dom.js"] = "text/javascript"; // the helpers every card shares: h(), words(), localeOf, post, waitForRestart (src/panel/dom.js)
 PAGES["pako-figure.js"] = "text/javascript"; // Pako's figure: its states and the page's events (the orb and its twins read it)
 PAGES["figure-twin.js"] = "text/javascript"; // the figure without WebGL, for every other place of a page
 PAGES["figure.css"] = "text/css";
@@ -267,7 +276,10 @@ const MADE: Record<string, { type: string; make: () => string }> = {
 
 /** The panel's own lines in the activity log. */
 const LOG = texts(
-  { opened: "Panel opened in a new browser", stop: "STOP from the panel: everything stopped", resume: "RESUME from the panel: running again" },
+  {
+    opened: "Panel opened in a new browser", stop: "STOP from the panel: everything stopped", resume: "RESUME from the panel: running again",
+    signedOutAll: "Signed out everywhere: every panel session ended",
+  },
 );
 
 /** The page a used link answers with: it goes on to /panel from this origin (a same-site navigation). */
@@ -293,8 +305,6 @@ export function isLoopback(address: string | undefined): boolean {
   return a === "::1" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(a);
 }
 
-/** Two secrets compared in constant time, whatever their lengths. */
-const sameSecret = (a: string, b: string): boolean => timingSafeEqual(createHash("sha256").update(a).digest(), createHash("sha256").update(b).digest());
 
 export function mountDashboard(app: Express, d: PanelDeps) {
   const now = d.now ?? Date.now;
@@ -302,7 +312,26 @@ export function mountDashboard(app: Express, d: PanelDeps) {
   const made = new Map<string, string>();
   const base = (): string => (typeof d.publicUrl === "function" ? d.publicUrl() : d.publicUrl).replace(/\/$/, "");
   const key = createHmac("sha256", d.secret).update("pako-panel-session").digest();
-  const sign = (exp: number) => createHmac("sha256", key).update(String(exp)).digest("base64url");
+  // A session is signed with its expiry and the sessions' generation. Generation 0 is signed as before (expiry alone), so the sessions
+  // made before this change go on until their time; "Sign out everywhere" moves the generation on and every one made before ends (an
+  // independent audit: a session could not be ended before its 30 days, short of changing the bridge token).
+  const sign = (exp: number, g = 0) => createHmac("sha256", key).update(g ? `${exp}.${g}` : String(exp)).digest("base64url");
+  /** The generation now; null until the store answered (no session is taken before that: a moment at start). */
+  let gen: number | null = d.kv ? null : 0;
+  if (d.kv) {
+    void readJsonRecord(d.kv, SIGN_OUT_KEY).then(
+      (r) => {
+        const g = (r as { gen?: unknown } | null)?.gen;
+        gen = typeof g === "number" && Number.isInteger(g) && g >= 0 ? g : 0;
+      },
+      (err: Error) => {
+        // Unreadable: the last generation cannot be known. Taken as 0 so the owner is not locked out; said, so it can be looked at.
+        logPanel.error(`the sessions' generation could not be read (sessions made before a "sign out everywhere" may work): ${err.message}`);
+        gen = 0;
+      },
+    );
+  }
+  const cookieValue = (exp: number): string => (gen ? `${exp}.${gen}.${sign(exp, gen)}` : `${exp}.${sign(exp)}`);
   const links = new Map<string, number>();
   const root = new URL("../node_modules/", import.meta.url);
   const pages = new URL("./panel/", import.meta.url);
@@ -343,10 +372,12 @@ export function mountDashboard(app: Express, d: PanelDeps) {
       .map((c) => c.trim())
       .find((c) => c.startsWith(`${cookieName()}=`))
       ?.slice(cookieName().length + 1);
-    const [exp, mac] = (raw ?? "").split(".");
-    if (!exp || !mac || !/^\d{10,16}$/.test(exp) || Number(exp) < now()) return false;
+    if (gen === null) return false;
+    const parts = (raw ?? "").split(".");
+    const [exp, g, mac] = parts.length === 3 ? [parts[0], Number(parts[1]), parts[2]] : [parts[0], 0, parts[1]];
+    if (!exp || !mac || !/^\d{10,16}$/.test(exp) || Number(exp) < now() || !Number.isInteger(g) || g !== gen) return false;
     const a = Buffer.from(mac);
-    const b = Buffer.from(sign(Number(exp)));
+    const b = Buffer.from(sign(Number(exp), g));
     return a.length === b.length && timingSafeEqual(a, b);
   };
 
@@ -376,7 +407,7 @@ export function mountDashboard(app: Express, d: PanelDeps) {
       return;
     }
     const exp = now() + SESSION_MS;
-    res.cookie(cookieName(), `${exp}.${sign(exp)}`, { httpOnly: true, secure: base().startsWith("https://"), sameSite: "strict", path: "/panel", maxAge: SESSION_MS });
+    res.cookie(cookieName(), cookieValue(exp), { httpOnly: true, secure: base().startsWith("https://"), sameSite: "strict", path: "/panel", maxAge: SESSION_MS });
     d.control.log("panel", LOG(lang())("opened"));
     // Not an HTTP redirect: a browser coming from another site (the WhatsApp link) treats a redirect chain as cross-site and holds back the
     // SameSite=Strict cookie just set. This page moves on by itself, from our own origin, so the cookie goes with it.
@@ -404,6 +435,23 @@ export function mountDashboard(app: Express, d: PanelDeps) {
     }
   });
   // The STOP switch. A custom header and the strict cookie keep another site from pressing it.
+  // "Sign out everywhere" (Settings › Privacy): every session made so far ends, this one too; the next sign-in link starts a new one.
+  const guard = panelGuard(signedIn);
+  app.post("/panel/api/sessions/end", guard(true), async (_req, res) => {
+    if (!d.kv) return void res.status(404).json({ error: "off" });
+    const next = (gen ?? 0) + 1;
+    try {
+      await d.kv.set(SIGN_OUT_KEY, JSON.stringify({ gen: next }), 400 * 24 * 3600);
+    } catch (err) {
+      logPanel.error(`could not end the sessions: ${(err as Error).message}`);
+      return void res.status(503).json({ error: "store" });
+    }
+    gen = next;
+    res.clearCookie(cookieName(), { path: "/panel" });
+    d.control.log("panel", LOG(lang())("signedOutAll"));
+    res.json({ ok: true });
+  });
+
   app.post("/panel/api/pause", express.json({ limit: "1kb" }), async (req, res) => {
     res.set({ ...HEADERS, "Cache-Control": "no-store" });
     if (!signedIn(req) || req.get("x-pako") !== "1") {

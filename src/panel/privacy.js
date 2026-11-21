@@ -3,6 +3,8 @@
 // The facts come from the server (src/data.ts); the card's own words are here. Everything is put on the page as
 // text, never as HTML.
 
+import { h, post } from "./dom.js";
+
 const $ = (s, root = document) => root.querySelector(s);
 
 const WORDS = {
@@ -31,6 +33,11 @@ const WORDS = {
   done: "Deleted.",
   notBack: "Pako hasn't come back. Look at its terminal, or start it again with npm start.",
   kept: "What stays:",
+  signOutTitle: "Sign out everywhere",
+  signOutLead: "Ends every panel session: this browser, and any other browser or computer you once opened the panel on. You sign in "
+    + "again with a new link (npm run panel, or the Mac app opens it for you). Paired phones are separate: unpair them under Paired phones.",
+  signOutButton: "Sign out everywhere",
+  signOutFailed: "I couldn't sign out everywhere. Try again.",
 };
 
 function t(key, vars) {
@@ -38,18 +45,6 @@ function t(key, vars) {
   return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (Object.hasOwn(vars, k) ? String(vars[k]) : m)) : s;
 }
 
-/** An element from a tag, attributes and children; text is always text. */
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === false || v == null) continue;
-    if (k === "class") el.className = v;
-    else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 const icon = (name) => h("i", { "data-lucide": name });
 const paintIcons = () => window.lucide?.createIcons?.({ attrs: { "aria-hidden": "true" } });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -117,6 +112,23 @@ async function waitForRestart() {
   st.restarting = false;
   st.error = t("notBack");
   render();
+}
+
+/** Every panel session ends, this one too: the page then shows the sign-in. */
+async function signOutAll() {
+  st.busy = "signout";
+  st.error = "";
+  render();
+  try {
+    const r = await post("/panel/api/sessions/end", {});
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    location.reload();
+  } catch {
+    /* offline or refused: said under the button */
+    st.busy = "";
+    st.error = t("signOutFailed");
+    render();
+  }
 }
 
 async function deleteAll() {
@@ -205,6 +217,11 @@ function render() {
     h("div", { class: "tg-form" },
       h("button", { type: "button", class: "btn primary", disabled: busy, onclick: () => void exportAll() },
         st.busy === "export" ? h("span", { class: "spinner", "aria-hidden": "true" }) : icon("download"), st.busy === "export" ? t("exporting") : t("export"))),
+    h("h3", { class: "mini-h" }, icon("log-out"), t("signOutTitle")),
+    h("p", { class: "muted" }, t("signOutLead")),
+    h("div", { class: "tg-form" },
+      h("button", { type: "button", class: "btn", disabled: busy, onclick: () => void signOutAll() },
+        st.busy === "signout" ? h("span", { class: "spinner", "aria-hidden": "true" }) : icon("log-out"), t("signOutButton"))),
     h("h3", { class: "mini-h" }, icon("trash-2"), t("deleteTitle")),
     h("p", { id: "privacy-delete-lead" }, t("deleteLead")),
     h("form", { class: "tg-form", onsubmit: (e) => (e.preventDefault(), void deleteAll()) },

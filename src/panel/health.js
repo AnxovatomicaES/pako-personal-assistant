@@ -3,8 +3,8 @@
 // or when it last worked, and the version the assistant's computer runs. Read only. Everything the server sends is put on the page as text,
 // never as HTML. Its words are its own (English, here).
 
-import { localeFor } from "./i18n.js";
 import { healthSummary } from "./dashboard-model.js";
+import { h, localeOf } from "./dom.js";
 
 const WORDS = {
   title: "Health",
@@ -46,22 +46,10 @@ const ICONS = {
   imap: "mail", slack: "hash", slackEvents: "hash", zoom: "video", update: "git-branch",
 };
 
-/** Dates written the way the owner's country writes English (i18n.js localeFor). */
-const localeOf = () => localeFor(document.documentElement.dataset.region);
 const t = (key, vars = {}) => (WORDS[key] ?? key).replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
 const str = (v) => (typeof v === "string" ? v : "");
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === false || v == null) continue;
-    if (k === "class") el.className = v;
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 
 const locale = () => localeOf();
 const when = (at) => {

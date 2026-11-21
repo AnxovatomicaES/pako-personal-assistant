@@ -5,9 +5,11 @@
 import { startOrb } from "./orb.js";
 import { pageFigure, tell } from "./pako-figure.js";
 import { mountTwins } from "./figure-twin.js";
-import { CHAT_WORDS, localeFor, WORDS } from "./i18n.js";
+import { CHAT_WORDS, WORDS } from "./i18n.js";
 import { allEmpty, briefTop, cardHasContent, catchUpLine, eventTag, freshnessLine, hideWhenEmpty, kpiTiles, WORDS as DASH } from "./dashboard-model.js";
 import { setMail } from "./mail.js";
+import { switchDemo } from "./demo.js";
+import { h, localeOf } from "./dom.js";
 
 const REFRESH_MS = 60_000;
 const $ = (s, root = document) => root.querySelector(s);
@@ -28,26 +30,12 @@ const nowMs = () => Date.now() + skew;
 
 // ---------- small helpers ----------
 
-/** An element from a tag, attributes and children; text is always text. */
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === false || v == null) continue;
-    if (k === "class") el.className = v;
-    else if (k === "style") el.style.cssText = v;
-    else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 const icon = (name) => h("i", { "data-lucide": name });
 const paintIcons = () => window.lucide?.createIcons?.({ attrs: { "aria-hidden": "true" } });
 
 // ---------- words ----------
 
 /** Dates in English, written the way the owner's country writes them (i18n.js localeFor). */
-const localeOf = () => localeFor(document.documentElement.dataset.region);
 
 /**
  * Whether this panel has the chat in it (a person's computer): the server marks the page, so the first paint already knows. A server's panel
@@ -1544,51 +1532,14 @@ function renderDemo() {
   document.body.classList.toggle("demo", !!d?.on);
 }
 
-/** Waits for Pako to stop and come back (the demo's start or end restarts it), then reloads. False when it did not come back in a minute. */
-async function waitForRestart() {
-  const start = Date.now();
-  let down = false;
-  while (Date.now() - start < 60_000) {
-    await new Promise((r) => setTimeout(r, 700));
-    let up = false;
-    try {
-      up = (await fetch("/health", { cache: "no-store" })).ok;
-    } catch {
-      /* still restarting: asked again */
-      up = false;
-    }
-    if (!up) down = true;
-    else if (down || Date.now() - start > 8_000) {
-      location.reload();
-      return true;
-    }
-  }
-  return false;
-}
 
-/** Starts the demo week ("start") or leaves it ("leave"): Pako starts again on the other folder, and the page reloads. */
-async function demoSwitch(kind, say) {
-  try {
-    const r = await fetch(`/panel/api/demo/${kind}`, { method: "POST", credentials: "same-origin", headers: { "x-pako": "1" } });
-    if (r.status === 401) return void location.reload();
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    const j = await r.json();
-    say(t(kind === "start" ? "demo.starting" : "demo.leaving"));
-    tellApp({ demo: kind === "start" });
-    if (!j.restarting) return void location.reload();
-    if (!(await waitForRestart())) say(t("demo.notBack"));
-  } catch (err) {
-    console.warn("demo", err);
-    say(t("demo.failed"));
-  }
-}
 
 /** "Try with a demo week" in the welcome (and from the Mac app's Connect window, window.pakoTryDemo). */
 async function tryDemo() {
   const b = $("#w-demo");
   if (b.getAttribute("aria-disabled") === "true") return;
   for (const x of [b, $("#w-own")]) x.setAttribute("aria-disabled", "true");
-  await demoSwitch("start", (text) => (welcome.open ? ($("#w-start-note").textContent = text) : toast(text)));
+  await switchDemo("start", (text) => (welcome.open ? ($("#w-start-note").textContent = text) : toast(text)));
   for (const x of [b, $("#w-own")]) x.removeAttribute("aria-disabled");
 }
 window.pakoTryDemo = () => void tryDemo();
@@ -1598,7 +1549,7 @@ function wireDemo() {
     const b = e.currentTarget;
     if (b.disabled) return;
     b.disabled = true;
-    void demoSwitch("leave", (text) => toast(text)).finally(() => (b.disabled = false));
+    void switchDemo("leave", (text) => toast(text)).finally(() => (b.disabled = false));
   });
 }
 

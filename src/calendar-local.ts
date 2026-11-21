@@ -15,6 +15,7 @@
 // src/region.ts), its end being the day after the last one, as EventKit and iCalendar say it.
 
 import express, { type Express } from "express";
+import { addDays } from "./day-time.ts";
 import { attendeesOf, type CalEvent, type CalendarSource, dayBounds, joinLink } from "./calendar.ts";
 import { guard, isObject, limit, line, localOnly, type RouteAuth } from "./connect-routes.ts";
 import type { Control } from "./control.ts";
@@ -64,10 +65,7 @@ const dayOf = (v: unknown): { date: string; midnight: boolean } | null => {
   const m = typeof v === "string" ? /^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?))?/.exec(v.trim()) : null;
   return m ? { date: m[1]!, midnight: !m[2] || /^00:00(?::00(?:\.0+)?)?$/.test(m[2]) } : null;
 };
-const nextDate = (date: string): string => {
-  const [y, mo, d] = date.split("-").map(Number) as [number, number, number];
-  return new Date(Date.UTC(y, mo - 1, d + 1)).toISOString().slice(0, 10);
-};
+const nextDate = (date: string): string => addDays(date, 1);
 
 /** What the app pushed, read field by field; the events outside the window or of a calendar not picked are dropped. Null when it is not one. */
 export function pushOf(raw: unknown, o: { now: number; timeZone: string; titles?: Map<string, string> }): Kept | null {

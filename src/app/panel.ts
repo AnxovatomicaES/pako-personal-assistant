@@ -78,6 +78,7 @@ export function wirePanel(ctx: AfterDoor) {
   const claudeLive = (): boolean => !!local && local.bridge.status().claude === "ok";
   const panel = mountDashboard(app, {
     secret: wa.config.bridgeToken,
+    kv: ctx.kv,
     publicUrl,
     ...(local ? { demo: { on: !!demo, live: claudeLive } } : {}),
     get ownerName() {

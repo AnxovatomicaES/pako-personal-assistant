@@ -83,9 +83,6 @@ export function shouldNotify(r: { category?: MailCategory | undefined; security?
 
 // ---------- records kept before categories ----------
 
-/** The verdicts the store kept before categories: told (aviso), kept (guardado), mass mail (masivo), waiting for the computer (pendiente). */
-export type OldKind = "masivo" | "pendiente" | "aviso" | "guardado";
-
 /** A summary that asks something of the owner: a question, or the words of an ask or a deadline (English and Spanish, as they were written). */
 const ASK_WORDS = [
   "asks?", "asked", "asking", "needs? (?:you|your)", "please", "reply", "respond", "answer", "confirm", "approve", "sign", "decide", "deadline", "due",

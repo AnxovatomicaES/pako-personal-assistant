@@ -13,7 +13,8 @@
 // The follow-ups engine (src/followups/nudges.ts) asks gentle() before each round: null when gentle mode is off, and everything is as before.
 
 import { randomBytes } from "node:crypto";
-import express, { type Express, type Request, type RequestHandler } from "express";
+import { quietAt } from "./day-time.ts";
+import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import { instructsPako, unsupported } from "./brief-support.ts";
 import type { CalEvent } from "./calendar.ts";
@@ -26,6 +27,7 @@ import { inline } from "./quarantine.ts";
 import type { Inbound } from "./whatsapp.ts";
 import { createLog } from "./log.ts";
 import { readJsonRecord } from "./json-record.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const log = createLog("gentle");
 
@@ -322,13 +324,8 @@ export function learnedMinutes(title: string, history: readonly Duration[]): num
   return Math.max(5, Math.round(mid / 5) * 5);
 }
 
-/** Whether minutes-of-day `x` falls in quiet hours [start, end) (crossing midnight when start > end). */
-const within = (q: { start: number; end: number }, x: number): boolean => (q.start < q.end ? x >= q.start && x < q.end : x >= q.start || x < q.end);
-const minutesOf = (t: number, tz: string): number => {
-  const [h, m] = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(t).split(":").map(Number);
-  return h! * 60 + m!;
-};
-export const quietAt = (q: { start: number; end: number } | null, t: number, tz: string): boolean => !!q && within(q, minutesOf(t, tz));
+// The quiet hours' test lives in src/day-time.ts; exported here too, as the modules that import it from gentle mode always did.
+export { quietAt };
 
 export interface Anchor {
   /** The event's key (its id and start): one of each kind per meeting. */
@@ -685,7 +682,6 @@ export type FirstSteps = ReturnType<typeof createFirstSteps>;
 
 // ---------- the panel ----------
 
-const HEADERS = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" };
 
 /** GET and POST /panel/api/gentle (the settings and the Parked list), POST /panel/api/gentle/unpark. Same protection as the autonomy's. */
 export function mountGentlePanel(app: Express, d: {
@@ -698,14 +694,7 @@ export function mountGentlePanel(app: Express, d: {
   standardMax: number;
 }): void {
   const limit = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: "draft-8", legacyHeaders: false });
-  const auth = (change: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (!d.signedIn(req) || (change && req.get("x-pako") !== "1")) {
-      res.status(401).json({ error: "sign in" });
-      return;
-    }
-    next();
-  };
+  const auth = panelGuard(d.signedIn);
   const answer = async (g: GentleConfig) => ({
     settings: {
       on: g.on, maxPerDay: g.maxPerDay, leadOnlineMin: g.leadOnlineMin, leadPlaceMin: g.leadPlaceMin, checkinMin: g.checkinMin,

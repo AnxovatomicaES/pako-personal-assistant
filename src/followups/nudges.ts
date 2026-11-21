@@ -1,6 +1,7 @@
 // Nudges and their timing: the quiet hours, when a loop is looked at again, and the tick that turns due batches into jobs and checks due
 // loops, closing them silently or nudging the owner within the day's budget.
 
+import { quietAt } from "../day-time.ts";
 import { today } from "../lists.ts";
 import type { Base, Engine, Nudges } from "./parts.ts";
 import { CLAIM_MS, ESCALATE_BEFORE_MS, JOB_HOLD_MS, RECHECK_FOR_MS, RECHECK_MS } from "./limits.ts";
@@ -20,13 +21,7 @@ export function mountNudges(
     "mutate" | "read" | "flushBatch" | "flushMailDue" | "runCheck" | "nudgeText" | "dueText" | "sourceText"
   >,
 ): Nudges {
-  const quietNow = (t: number): boolean => {
-    const q = config.quiet;
-    if (!q) return false;
-    const [h, m] = new Intl.DateTimeFormat("en-GB", { timeZone: d.timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(t).split(":").map(Number);
-    const x = h! * 60 + m!;
-    return q.start < q.end ? x >= q.start && x < q.end : x >= q.start || x < q.end;
-  };
+  const quietNow = (t: number): boolean => quietAt(config.quiet, t, d.timeZone);
 
   /**
    * When a loop is looked at again after a check that did not close it. With a time: an hour before it (the one nudge near the deadline), then

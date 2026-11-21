@@ -156,6 +156,7 @@ also capped, as said.
 | `calendar-local` | The events of the calendars on this Mac you picked, from 2 days ago to 14 ahead: title, times, place and the video call's link (never the notes or the attendees). Forgotten with the discovery | 30 days |
 | `reminders-mirror` | Apple Reminders (off until you turn it on in Pako for Mac): whether it is on, whether "Pako: waiting on" is too, and for each follow-up its reminder's id and the title and time both sides last agreed on (never the reminder's notes). Forgotten with the discovery | 400 days |
 | `after-meeting` | The questions asked after a meeting (its title and time; 14 days) and the meeting titles you said not to ask after again (100 at most) | 400 days |
+| `panel-sessions` | One number: the panel sessions' generation, moved on by **Sign out everywhere** (a session made before it no longer works) | 400 days after the last change |
 | `day-helpers` | Around your day: your switches for the evening wrap-up, the question after a meeting and the calendar alerts (on or off) | 400 days after your last change |
 | `shutdown` | The evening wrap-up: the day each one was sent and the follow-ups it listed (their id and title, three at most), for its Plan and Done buttons; the last 14 days | 30 days |
 | `time-to-do` | Time to do it: the focus blocks offered (which follow-up, the proposed time, and whether you blocked it, asked for another or said not needed; the last 100) and today's count of those cards | 15 days |

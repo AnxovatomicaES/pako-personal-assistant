@@ -23,6 +23,7 @@ import { SLACK_USER_SCOPES } from "../src/slack.ts";
 import { ZOOM_USER_SCOPES } from "../src/zoom.ts";
 import { auth, PANEL } from "./helpers/connect-rig.ts";
 import { runInNewContext } from "node:vm";
+import { eventually } from "./helpers/wait.ts";
 
 /** The forwarding function of the site's Slack page (site/connect/slack/callback.html), run as the page runs it. */
 const SLACK_PAGE = readFileSync(join(import.meta.dirname, "../site/connect/slack/callback.html"), "utf8");
@@ -250,7 +251,7 @@ test("Slack: Connect, Allow, and Pako keeps the user token by itself; the card s
     assert.equal(v.seen.slackExchange?.has("client_secret"), false, "no secret anywhere");
     assert.ok(v.seen.slackExchange?.get("code_verifier"), "the verifier, which only Pako had");
     assert.deepEqual(readStored(p.dir), { SLACK_USER_TOKEN: XOXP, SLACK_CLIENT_ID: SLACK_CLIENT }, "kept in the panel's store");
-    await new Promise((r) => setTimeout(r, 300));
+    await eventually(() => p.restarts.length >= 1, { then: 50 });
     assert.equal(p.restarts.length, 1, "Pako restarts so Slack reads the token");
     assert.deepEqual((await p.get("/panel/api/slack/account")).body, { state: "connected", account: { user: "Ana Ruiz", team: "Acme" } });
 

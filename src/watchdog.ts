@@ -15,6 +15,7 @@
 // once when that computer has been more than a day behind. The panel's Health card (src/panel/health.js) shows every part's state.
 
 import { execFileSync } from "node:child_process";
+import { quietSetting } from "./day-time.ts";
 import { createHash, timingSafeEqual } from "node:crypto";
 import express, { type Express, type Request, type RequestHandler } from "express";
 import { rateLimit } from "express-rate-limit";
@@ -68,29 +69,14 @@ export interface WatchdogConfig {
   quiet: { start: number; end: number } | null;
 }
 
-const hhmm = (s: string): number | null => {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
-  if (!m) return null;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  return h < 24 && min < 60 ? h * 60 + min : null;
-};
-
 /** WATCHDOG (on unless off) and its quiet hours: WATCHDOG_QUIET_HOURS, else SLACK_QUIET_HOURS, else 23:00-08:00 (off: none). */
 export function loadWatchdogConfig(env: Env): { config: WatchdogConfig; problems: string[] } {
   const problems: string[] = [];
   const raw = (env.WATCHDOG ?? "on").trim().toLowerCase() || "on";
   if (raw !== "on" && raw !== "off") problems.push("WATCHDOG must be on or off (on is used)");
-  const rawQuiet = (env.WATCHDOG_QUIET_HOURS ?? env.SLACK_QUIET_HOURS ?? "23:00-08:00").trim().toLowerCase();
-  let quiet: WatchdogConfig["quiet"] = { start: 23 * 60, end: 8 * 60 };
-  if (rawQuiet === "off") quiet = null;
-  else {
-    const [a, b] = rawQuiet.split("-");
-    const start = hhmm(a ?? "");
-    const end = hhmm(b ?? "");
-    if (start === null || end === null || start === end) problems.push("WATCHDOG_QUIET_HOURS must be like 23:00-08:00, or off (23:00-08:00 is used)");
-    else quiet = { start, end };
-  }
+  const q = quietSetting(env.WATCHDOG_QUIET_HOURS ?? env.SLACK_QUIET_HOURS, "WATCHDOG_QUIET_HOURS");
+  if (q.problem) problems.push(q.problem);
+  const quiet: WatchdogConfig["quiet"] = q.quiet;
   return { config: { on: raw !== "off", quiet }, problems };
 }
 

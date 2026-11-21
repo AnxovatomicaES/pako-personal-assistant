@@ -12,7 +12,7 @@ import { createLessons } from "../lessons.ts";
 import { createLog } from "../log.ts";
 import { createMailFollowups } from "../mail-followups.ts";
 import type { PersonContext } from "../person-context.ts";
-import { type LifeDoor, loadProactiveConfig, type Proactive } from "../proactive.ts";
+import { forgetHealthStored, type LifeDoor, loadProactiveConfig, type Proactive } from "../proactive.ts";
 import { createQuality, type Quality } from "../quality.ts";
 import type { Rehearsal } from "../rehearsal.ts";
 import type { AfterMeeting } from "../after-meeting.ts";
@@ -75,7 +75,7 @@ export function wireEngines(ctx: AfterSources) {
     words: (text) => (lifeRef.engine ? lifeRef.engine.words(text) : Promise.resolve(null)),
     context: () => (lifeRef.engine ? lifeRef.engine.context() : Promise.resolve({ life: [], emergency: "" })),
     result: (id, raw) => (lifeRef.engine ? lifeRef.engine.result(id, raw) : Promise.resolve({ ok: false })),
-    forgetHealth: () => (lifeRef.engine ? lifeRef.engine.forgetHealth() : Promise.resolve()),
+    forgetHealth: () => (lifeRef.engine ? lifeRef.engine.forgetHealth() : forgetHealthStored(kv)),
     health: () => (lifeRef.engine ? lifeRef.engine.health() : Promise.resolve([])),
   };
   // Quality (src/quality.ts): the 👍/👎 on the nudges and the brief, the panel's "Calidad" card, the Monday line. With either of them on.

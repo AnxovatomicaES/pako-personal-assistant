@@ -119,6 +119,7 @@ const KEY_LIST = [
   { key: "time-to-do", keep: 15 * DAY }, // time-to-do.ts
   { key: "shutdown", keep: 30 * DAY }, // shutdown.ts
   { key: "day-helpers", keep: 400 * DAY }, // day-helpers.ts
+  { key: "panel-sessions", keep: 400 * DAY }, // dashboard.ts SIGN_OUT_KEY
   { key: "after-meeting", keep: 400 * DAY }, // after-meeting.ts
   { key: "relay-state", keep: 31 * DAY }, // relay.ts (only on a host running as the relay)
   { key: "assistant-contacts", keep: 400 * DAY }, // contacts.ts
@@ -224,6 +225,7 @@ const ABOUT = texts<AboutKey | "unknown">(
     "calendar-writes": "The calendar changes you said yes to (move, add, delete: title and times), and what was there before, for Undo (a week)",
     "reminders-mirror": "Apple Reminders: whether it is on, \"waiting on\" too, and per follow-up its reminder's id and the title and time both sides last agreed on",
     "after-meeting": "The questions asked after meetings (the meeting's title and time, 14 days) and the titles you said not to ask after",
+    "panel-sessions": "One number: how many times you signed out everywhere (sessions made before it no longer work)",
     "day-helpers": "Around your day: whether the evening wrap-up, the question after a meeting and the calendar alerts are on (your switches)",
     "shutdown": "The evening wrap-up: the day each was sent and the follow-ups it listed (id and title, three at most), for its buttons (14 days)",
     "time-to-do": "Time to do it: the focus blocks offered (which follow-up, the proposed time, and whether you blocked it, asked for "

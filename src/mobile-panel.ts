@@ -8,18 +8,13 @@
 //
 // The panel's own protection: its signed-in session, and on a POST the x-pako header another site cannot send.
 
-import express, { type Express, type Request, type RequestHandler } from "express";
+import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import { renderSVG } from "uqr";
 import type { Control } from "./control.ts";
 import { showCode, type MobileAccess, type MobileListener } from "./mobile-access.ts";
+import { panelGuard } from "./panel-guard.ts";
 
-const HEADERS = {
-  "Cache-Control": "no-store",
-  "X-Content-Type-Options": "nosniff",
-  "Referrer-Policy": "no-referrer",
-  "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
-};
 
 export interface MobilePanelDeps {
   signedIn: (req: Request) => boolean;
@@ -38,11 +33,7 @@ export const phoneUrl = (listener: Pick<MobileListener, "listening">, port: numb
 };
 
 export function mountMobilePanel(app: Express, d: MobilePanelDeps): void {
-  const auth = (post: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (!d.signedIn(req) || (post && req.get("x-pako") !== "1")) return void res.status(401).json({ error: "sign in" });
-    next();
-  };
+  const auth = panelGuard(d.signedIn);
   const limit = (n: number) =>
     rateLimit({ windowMs: 60_000, limit: n, standardHeaders: "draft-8", legacyHeaders: false, handler: (_req, res) => void res.status(429).json({ error: "too many" }) });
   const json = express.json({ limit: "1kb" });

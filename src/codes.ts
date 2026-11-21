@@ -27,8 +27,6 @@ export const CODE_MARK = codeMark();
 export const OLD_CODE_MARK = "[c\u00f3digo oculto \u00b7 escribe C\u00d3DIGO]";
 /** Every mark a kept text may carry. */
 const MARKS = [CODE_MARK, OLD_CODE_MARK];
-/** A kept text with each mark, old or new, as `to`. */
-export const replaceMarks = (text: string, to: string): string => MARKS.reduce((s, mark) => s.split(mark).join(to), text);
 
 /** How far (in characters, in the same sentence) a code may be from the words that name it. */
 const NEAR = 60;

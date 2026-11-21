@@ -165,18 +165,6 @@ export function wireBrief(ctx: AfterCalendar) {
       }, 5000);
       live.unref?.();
     }
-    // Gentle mode's time anchors (src/gentle.ts): "leave now" or "wrap up" before a meeting, and "your call starts in 5" when nothing shows
-    // the owner saw it. A look every minute; nothing at all while gentle mode is off.
-    gentleRef.anchors = createTimeAnchors({
-      kv, timeZone, settings: () => gentleSettings.view(),
-      events: () => (calRef.reader ? calRef.reader.load() : Promise.reject(new Error("the calendar is not ready"))),
-      quiet: followupsCfg.config?.quiet ?? null,
-      lastOwner: () => door.lastOwner(),
-      card: (body, buttons) => door.sendCard(body, buttons),
-      log: (text) => control.log("followup", text),
-    });
-    const anchors = gentleRef.anchors;
-    setInterval(() => void anchors.tick(), 60_000).unref?.();
     // A meeting's prep by itself, about 40 minutes before it (src/meeting-prep.ts): the meeting, what is open with its people, what
     // Pako knows of them. MEETING_PREP=off turns it off.
     if (calOn && loadMeetingPrepConfig(env).on) {
@@ -195,5 +183,18 @@ export function wireBrief(ctx: AfterCalendar) {
       setInterval(() => void prep.tick().catch((err: Error) => logCalendar.error(`meeting prep: ${err.message}`)), 5 * 60_000).unref?.();
     }
   }
+  // Gentle mode's time anchors (src/gentle.ts): "leave now" or "wrap up" before a meeting, and "your call starts in 5" when nothing shows
+  // the owner saw it. A look every minute; nothing at all while gentle mode is off. Not tied to the written brief: with BRIEF_SMART=off
+  // they were never built, and gentle mode lost them in silence (audit finding).
+  gentleRef.anchors = createTimeAnchors({
+    kv, timeZone, settings: () => gentleSettings.view(),
+    events: () => (calRef.reader ? calRef.reader.load() : Promise.reject(new Error("the calendar is not ready"))),
+    quiet: followupsCfg.config?.quiet ?? null,
+    lastOwner: () => door.lastOwner(),
+    card: (body, buttons) => door.sendCard(body, buttons),
+    log: (text) => control.log("followup", text),
+  });
+  const anchors = gentleRef.anchors;
+  setInterval(() => void anchors.tick(), 60_000).unref?.();
   return { briefReader };
 }

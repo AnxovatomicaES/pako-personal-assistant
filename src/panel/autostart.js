@@ -2,6 +2,8 @@
 // and the card never shows). One button turns it on or off; the server's sentence says what changed. On here means from the next login:
 // the Pako running now goes on as it is. Everything the server sends is put on the page as text, never as HTML.
 
+import { h } from "./dom.js";
+
 const WORDS = {
   title: "Start with this computer",
   lead: "Pako starts by itself every time you log in, with no terminal left open.",
@@ -16,16 +18,6 @@ const WORDS = {
 
 const t = (key) => WORDS[key] ?? key;
 
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === false || v == null) continue;
-    if (k === "class") el.className = v;
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 
 let card = null;
 /** The server's last word: { enabled, current }. */

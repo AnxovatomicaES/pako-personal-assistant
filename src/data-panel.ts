@@ -8,13 +8,14 @@
 // (it is everything about the person: the page fetches it and saves it, a plain link could not). Deleting asks for one more thing: the phrase.
 // A server's panel has none of this (every route answers 404): there the data lives in its Key Value store, managed where it is hosted.
 
-import express, { type Express, type RequestHandler, type Response } from "express";
+import express, { type Express, type Response } from "express";
 import { rateLimit } from "express-rate-limit";
 import type { Control } from "./control.ts";
 import { CONFIRM, confirmed, deleteEverything, exportData, privacy, restartLine, type DataStore } from "./data.ts";
 import { texts, type Lang } from "./i18n.ts";
 import { pakoHome } from "./local.ts";
 import { createLog } from "./log.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const log = createLog("data");
 
@@ -76,14 +77,7 @@ export function mountDataPanel(app: Express, d: DataPanelDeps | null): void {
   let deleting = false;
 
   // Not signed in is answered before anything is counted: only the owner's own requests use up the allowance.
-  const auth = (header: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (!d.signedIn(req) || (header && req.get("x-pako") !== "1")) {
-      res.status(401).json({ error: "sign in" });
-      return;
-    }
-    next();
-  };
+  const auth = panelGuard(d.signedIn);
   const limit = (n: number) =>
     rateLimit({ windowMs: 60_000, limit: n, standardHeaders: "draft-8", legacyHeaders: false, handler: (_req, res) => void res.status(429).json({ error: "too many" }) });
 

@@ -17,7 +17,7 @@
 
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import express, { type Express, type RequestHandler } from "express";
+import express, { type Express } from "express";
 import { rateLimit } from "express-rate-limit";
 import { KEYS as CONNECTION_KEYS, readStored, writeStored } from "./connections.ts";
 import type { Control } from "./control.ts";
@@ -25,6 +25,7 @@ import { aboutKey, exportData, factFor, type DataStore } from "./data.ts";
 import { ownerTimeZone } from "./region.ts";
 import { texts, type Lang } from "./i18n.ts";
 import { createLog } from "./log.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const logMove = createLog("move");
 
@@ -183,12 +184,6 @@ export interface MoveDeps {
   now?: () => number;
 }
 
-const HEADERS = {
-  "Cache-Control": "no-store",
-  "X-Content-Type-Options": "nosniff",
-  "Referrer-Policy": "no-referrer",
-  "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
-};
 
 /** What the import would do, written nowhere. */
 async function plan(d: MoveDeps, file: MoveFile, l: Lang): Promise<MovePlan> {
@@ -218,14 +213,7 @@ async function plan(d: MoveDeps, file: MoveFile, l: Lang): Promise<MovePlan> {
 /** The panel's move routes. */
 export function mountMovePanel(app: Express, d: MoveDeps): void {
   const now = d.now ?? Date.now;
-  const auth = (header: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (!d.signedIn(req) || (header && req.get("x-pako") !== "1")) {
-      res.status(401).json({ error: "sign in" });
-      return;
-    }
-    next();
-  };
+  const auth = panelGuard(d.signedIn);
   const limit = (n: number) =>
     rateLimit({ windowMs: 60_000, limit: n, standardHeaders: "draft-8", legacyHeaders: false, handler: (_req, res) => void res.status(429).json({ error: "too many" }) });
 

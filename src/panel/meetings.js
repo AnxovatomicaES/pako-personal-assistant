@@ -3,6 +3,8 @@
 // others promised, the decisions, the meetings agreed and the open questions. Read only. Everything the server sends is put on the page as
 // text, never as HTML.
 
+import { h } from "./dom.js";
+
 const WORDS = {
   title: "Meetings",
   lead: "What each Zoom meeting left. I only message you your to-dos; the rest is here.",
@@ -22,16 +24,6 @@ const WORDS = {
 const t = (key, vars = {}) => (WORDS[key] ?? key).replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
 const str = (v) => (typeof v === "string" ? v : "");
 
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === false || v == null) continue;
-    if (k === "class") el.className = v;
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 
 /** The summary keeps its lines (set through the style object: the page's CSP allows no style attribute). */
 function pre(text) {

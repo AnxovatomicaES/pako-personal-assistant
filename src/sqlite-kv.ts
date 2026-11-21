@@ -345,8 +345,11 @@ export function sqliteKv(dir: string, now: () => number = Date.now): FileKv {
       }
       return String(r.v);
     },
+    // A write the disk refused rejects, as the hosted store's does (audit finding: it resolved, so a reminder said "saved" lived only in
+    // memory and was gone at the next start). After delete-everything (sealed) or at exit (closed) nothing is written, on purpose: no error.
     set: async (k, v, ttlSeconds) => {
-      write(() => q.put.run(k, v, ttl(ttlSeconds)));
+      if (sealed || closed) return;
+      if (!write(() => q.put.run(k, v, ttl(ttlSeconds)))) throw new Error(`could not save: ${failing?.detail ?? "a disk error"}`);
     },
     // One process holds this folder (the home's lock), and the read and the write run with no await between them: atomic here.
     add: async (k, v, ttlSeconds) => {

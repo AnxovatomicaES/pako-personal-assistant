@@ -16,7 +16,7 @@
 //   (auditCounts): the only part the report, its export and the pooling ever read.
 
 import { randomBytes } from "node:crypto";
-import express, { type Express, type Request, type RequestHandler } from "express";
+import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import type { Job, Loop, SourceKind } from "./followups.ts";
 import { quietAt, UNANSWERED_STOP } from "./gentle.ts";
@@ -27,6 +27,7 @@ import { readJsonRecord } from "./json-record.ts";
 import { inline } from "./quarantine.ts";
 import { IGNORED_AFTER_MS } from "./quality.ts";
 import { AUDIT_KINDS, AUDIT_SOURCES, type AuditKind, type AuditSource, type Stratum } from "./beta-measure.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const log = createLog("beta");
 
@@ -557,7 +558,6 @@ export type BetaAudit = ReturnType<typeof createBetaAudit>;
 
 // ---------- the panel ----------
 
-const HEADERS = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" };
 
 /** The opt-in's description on the settings card. */
 export const AUDIT_DESCRIPTION = "Once a week, up to 12 one-tap questions about a random few of the conversations Pako read, so the beta can measure "
@@ -566,12 +566,7 @@ export const AUDIT_DESCRIPTION = "Once a week, up to 12 one-tap questions about 
 /** GET and POST /panel/api/beta-audit ({ on }): the opt-in and this week's numbers. Same protection as the gentle mode's. */
 export function mountBetaAuditPanel(app: Express, d: { signedIn: (req: Request) => boolean; audit: () => BetaAudit | null }): void {
   const limit = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: "draft-8", legacyHeaders: false });
-  const auth = (change: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (!d.signedIn(req) || (change && req.get("x-pako") !== "1")) return void res.status(401).json({ error: "sign in" });
-    if (!d.audit()) return void res.status(404).json({ error: "off" });
-    next();
-  };
+  const auth = panelGuard(d.signedIn, { off: () => !d.audit() });
   app.get("/panel/api/beta-audit", auth(false), limit, async (_req, res) => {
     try {
       res.json({ ...(await d.audit()!.view()), description: AUDIT_DESCRIPTION });

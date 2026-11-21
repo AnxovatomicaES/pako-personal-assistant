@@ -13,7 +13,7 @@
 // The same protection as the STOP switch: the panel's signed-in session, and on a POST the x-pako header that another site cannot send. A
 // server's panel has none of this (every route answers 404): its settings are its environment, and the panel never writes them.
 
-import express, { type Express, type Request, type RequestHandler } from "express";
+import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import type { Control } from "./control.ts";
 import { appliedAtStart, connectionStates, findConnection, type ConnectionId, icsLink, readStored, WORDS, writeStored } from "./connections.ts";
@@ -21,6 +21,7 @@ import { texts, type Lang } from "./i18n.ts";
 import { checkResendKey } from "./resend.ts";
 import { pakoHome } from "./local.ts";
 import { createLog } from "./log.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const log = createLog("connections");
 
@@ -127,14 +128,7 @@ export function mountConnectionsPanel(app: Express, d: ConnectionsPanelDeps | nu
   let changing: Promise<unknown> = Promise.resolve();
 
   // Not signed in is answered before anything is counted: only the owner's own requests use up the allowance.
-  const auth = (post: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (!d.signedIn(req) || (post && req.get("x-pako") !== "1")) {
-      res.status(401).json({ error: "sign in" });
-      return;
-    }
-    next();
-  };
+  const auth = panelGuard(d.signedIn);
   const limit = (n: number) =>
     rateLimit({ windowMs: 60_000, limit: n, standardHeaders: "draft-8", legacyHeaders: false, handler: (_req, res) => void res.status(429).json({ error: "too many" }) });
   const reads = limit(60);

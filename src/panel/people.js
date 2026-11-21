@@ -6,7 +6,7 @@
 // is put on the page as text, never as HTML. Its words are English, like all of Pako's fixed texts.
 
 import { hideWhenEmpty } from "./dashboard-model.js";
-import { localeFor } from "./i18n.js";
+import { h, localeOf } from "./dom.js";
 
 const REFRESH_MS = 60_000;
 const CONFIRM_MS = 4000;
@@ -65,26 +65,11 @@ const EN = {
   failed: "Couldn't change it right now.",
   readOnly: "To change someone, write it in the chat: PERSON Ana: relation my cousin.",
 };
-/** Dates written the way the owner's country writes English (i18n.js localeFor). */
-const localeOf = () => localeFor(document.documentElement.dataset.region);
 function t(key, vars) {
   const s = EN[key] ?? key;
   return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (Object.hasOwn(vars, k) ? String(vars[k]) : m)) : s;
 }
 
-/** An element from a tag, attributes and children; text is always text. */
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === false || v == null) continue;
-    if (k === "class") el.className = v;
-    else if (k === "style") el.style.cssText = v;
-    else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 const icon = (name) => h("i", { "data-lucide": name });
 
 const state = {

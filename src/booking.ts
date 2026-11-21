@@ -245,6 +245,7 @@ const T = texts(
     undone: "↩️ Cancelled the booking at {name} ({when}).",
     undoFailed: "I couldn't cancel it from here.{how}",
     undoGone: "That booking can't be undone from here any more.",
+    undoRetry: "I couldn't reach the booking page just now, so the booking still stands. Press Undo again in a moment.",
     logBooked: "Booked {name} ({when}, {party}) on {engine}",
     logCancelled: "Cancelled the booking at {name} ({when})",
     confirmed: "confirmed, with proof",
@@ -334,13 +335,8 @@ export function createBooking(d: BookingDeps) {
   /** The saved list. A store that cannot be read THROWS (and is not cached as empty): the next write must never overwrite what was not read. */
   const load = async (): Promise<SavedBooking[]> => {
     const raw = d.kv ? await readJsonRecord(d.kv, KEY) : null;
-    if (!raw) return [];
-    try {
-      const list = raw as unknown;
-      return Array.isArray(list) ? list.filter(isSaved) : [];
-    } catch { // garbage in the store: nothing to protect
-      return [];
-    }
+    // Already parsed (readJsonRecord); anything that is not a saved booking is left out, one by one.
+    return Array.isArray(raw) ? raw.filter(isSaved) : [];
   };
   let memory: SavedBooking[] | null = null;
   const strict = async (): Promise<SavedBooking[]> => (memory ??= await load());
@@ -353,7 +349,15 @@ export function createBooking(d: BookingDeps) {
       return memory ?? [];
     }
   };
-  const save = async (b: SavedBooking): Promise<void> => {
+  // One change at a time (audit finding: two overlapping saves, or a save and Undo's status, started from the same list and the last
+  // write won, losing a booking or its cancellation).
+  let chain: Promise<unknown> = Promise.resolve();
+  const serial = <R>(fn: () => Promise<R>): Promise<R> => {
+    const run = chain.then(fn, fn);
+    chain = run.catch(() => undefined);
+    return run;
+  };
+  const save = (b: SavedBooking): Promise<void> => serial(async () => {
     let base: SavedBooking[];
     try {
       base = await strict();
@@ -368,10 +372,10 @@ export function createBooking(d: BookingDeps) {
     } catch (err) {
       log.error(`could not keep the booking: ${(err as Error).message}`);
     }
-  };
+  });
 
   /** Changes one saved booking's status (Undo). */
-  const setStatus = async (id: string, status: SavedBooking["status"]): Promise<void> => {
+  const setStatus = (id: string, status: SavedBooking["status"]): Promise<void> => serial(async () => {
     let base: SavedBooking[];
     try {
       base = await strict();
@@ -381,8 +385,8 @@ export function createBooking(d: BookingDeps) {
     }
     const list = base.map((b) => (b.id === id ? { ...b, status } : b));
     memory = list;
-    await d.kv?.set(KEY, JSON.stringify(list), KEEP_SECONDS).catch(() => undefined);
-  };
+    await d.kv?.set(KEY, JSON.stringify(list), KEEP_SECONDS).catch((err: Error) => log.error(`could not keep a booking's status: ${err.message}`));
+  });
 
   // What went out by email in the last day, to keep both limits.
   type Sent = { at: number; placeId: string };
@@ -391,15 +395,8 @@ export function createBooking(d: BookingDeps) {
   const sentList = async (): Promise<Sent[]> => {
     if (!sent) {
       const raw = d.kv ? await readJsonRecord(d.kv, SENT_KEY) : null;
-      let list: Sent[] = [];
-      try {
-        const parsed = raw ? (raw as unknown) : [];
-        if (Array.isArray(parsed)) list = parsed.filter((e): e is Sent => !!e && typeof (e as Sent).at === "number" && typeof (e as Sent).placeId === "string");
-      } catch {
-        /* not JSON: no sends remembered */
-        list = [];
-      }
-      sent = list;
+      // Already parsed (readJsonRecord); each entry checked.
+      sent = Array.isArray(raw) ? raw.filter((e): e is Sent => !!e && typeof (e as Sent).at === "number" && typeof (e as Sent).placeId === "string") : [];
     }
     // In place: callers share this one array, so an entry pushed by one is seen by the next.
     for (let i = sent.length - 1; i >= 0; i--) if (now() - sent[i]!.at >= DAY_MS) sent.splice(i, 1);
@@ -676,7 +673,15 @@ export function createBooking(d: BookingDeps) {
     const l = lang();
     const t = T(l);
     if (!d.maitre) return t("undoGone");
-    const r = await d.maitre.cancel(ledgerId).catch(() => ({ ok: false as const }));
+    // A cancel that could not run (the network, the engine) is said as such: the booking still stands and Undo can be tried again
+    // (audit finding: it was answered "can't be undone any more", with nothing logged).
+    let r: Awaited<ReturnType<NonNullable<typeof d.maitre>["cancel"]>>;
+    try {
+      r = await d.maitre.cancel(ledgerId);
+    } catch (err) {
+      log.error(`a booking's cancel could not run: ${(err as Error).message}`);
+      return t("undoRetry");
+    }
     const saved = (await bookings()).find((b) => b.ledgerId === ledgerId);
     if (!r.ok) {
       // Already cancelled, or never confirmed: nothing to undo.

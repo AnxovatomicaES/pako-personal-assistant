@@ -50,9 +50,6 @@ const DCS: Record<string, { accounts: string; calendar: string }> = {
   uk: { accounts: "https://accounts.zoho.uk", calendar: "https://calendar.zoho.uk" },
 };
 
-/** The read scopes the Self Client's grant code must ask for. */
-export const ZOHO_SCOPES = "ZohoCalendar.calendar.READ,ZohoCalendar.event.READ";
-
 /** When the owner is told, whatever the source: CALENDAR_REMIND_MINUTES (MORNING_BRIEF is src/brief.ts's). */
 export interface CalendarTiming {
   /** Minutes before a timed event to tell the owner; 0 = never. */
@@ -602,12 +599,8 @@ export function createCalendarCore(d: CalendarCoreDeps) {
     if (state) return state;
     const raw = d.kv ? await readJsonRecord(d.kv, STATE_KEY) : null;
     if (state) return state;
-    let p: Partial<{ reminded: string[]; briefDay: string }> = {};
-    try {
-      p = raw ? (raw as typeof p) : {};
-    } catch {
-      logCalendar.error("the stored state could not be used: starting again");
-    }
+    // Already parsed and checked as a record (readJsonRecord): its fields are checked one by one below.
+    const p: Partial<{ reminded: unknown; briefDay: unknown }> = raw ?? {};
     state = { reminded: Array.isArray(p.reminded) ? p.reminded.filter((x) => typeof x === "string") : [], ...(typeof p.briefDay === "string" ? { briefDay: p.briefDay } : {}) };
     return state;
   };

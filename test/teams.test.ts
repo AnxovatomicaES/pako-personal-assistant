@@ -28,6 +28,7 @@ import {
 } from "../src/teams.ts";
 import { adminRequest, mountTeamsConnect, needsAdmin } from "../src/teams-connect.ts";
 import { memoryKv, PANEL, auth } from "./helpers/connect-rig.ts";
+import { eventually } from "./helpers/wait.ts";
 
 const MS_ID = "11111111-2222-3333-4444-555555555555";
 const ME = "aaaaaaaa-0000-0000-0000-000000000001";
@@ -264,7 +265,7 @@ test("connect: Microsoft mail already connected -> only Teams' permissions, the 
     const acc = await p.get("/panel/api/teams/account");
     assert.deepEqual(acc.body, { state: "connected", account: { user: "ana.owner@contoso.example", team: "Contoso" } });
     assert.ok(!acc.raw.includes(REFRESH) && !page.includes(REFRESH) && !page.includes("access-FIRST"), "no token on the page or in the answer");
-    await new Promise((r) => setTimeout(r, 300));
+    await eventually(() => p.restarts.length >= 1, { then: 50 });
     assert.equal(p.restarts.length, 1);
 
     // "Add what my admin approved": the admin's permissions, asked only now.

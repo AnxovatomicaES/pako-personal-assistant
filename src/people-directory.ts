@@ -25,7 +25,7 @@
 //   POST /panel/api/people/prep    { key }        -> { task }  (the brief's "Prepare me" run, given this person's facts)
 //   GET  /panel/api/people/prep?id=               -> { task }
 
-import express, { type Express, type Request, type RequestHandler } from "express";
+import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import type { CalEvent } from "./calendar.ts";
 import { phoneOf, type Contact } from "./contacts.ts";
@@ -38,6 +38,7 @@ import { findIn, identityValue, splitAddress, type GraphPerson } from "./people-
 import type { Person } from "./people.ts";
 import { createLog } from "./log.ts";
 import { readJsonRecord } from "./json-record.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const log = createLog("people");
 
@@ -635,7 +636,6 @@ export interface PeopleDirectoryDeps {
   now?: () => number;
 }
 
-const HEADERS = { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" };
 
 /** Every source read at once; one that fails is left out of this answer (and logged), never guessed. */
 export async function readSources(d: Pick<PeopleDirectoryDeps, "sources">): Promise<DirectorySources> {
@@ -659,12 +659,7 @@ export function mountPeopleDirectory(app: Express, d: PeopleDirectoryDeps): void
   const reads = rateLimit({ windowMs: 60_000, limit: 120, standardHeaders: "draft-8", legacyHeaders: false });
   const writes = rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: "draft-8", legacyHeaders: false });
   // As the people's other routes: the strict session cookie, and for a change the x-pako header another site cannot send.
-  const auth = (change: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (change && !d.local) return void res.status(404).json({ error: "read only here" });
-    if (!d.signedIn(req) || (change && req.get("x-pako") !== "1")) return void res.status(401).json({ error: "sign in" });
-    next();
-  };
+  const auth = panelGuard(d.signedIn, { readOnly: () => !d.local });
   const build = async (): Promise<Directory> => buildDirectory(await readSources(d), { now: now(), hidden: await d.hidden.read() });
 
   app.get("/panel/api/people/directory", auth(false), reads, async (req, res) => {

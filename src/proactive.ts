@@ -22,7 +22,8 @@
 // - An older bridge lets the job go unread (its text is empty): nothing is said.
 
 import { randomBytes } from "node:crypto";
-import express, { type Express, type Request, type RequestHandler } from "express";
+import { hhmm, minutesOfDay, quietSetting, windowOf, within } from "./day-time.ts";
+import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import type { Control } from "./control.ts";
 import { clean, type CardFeedback, type FollowupsQuality, zonedTime } from "./followups.ts";
@@ -36,6 +37,7 @@ import { inline } from "./quarantine.ts";
 import type { Inbound } from "./whatsapp.ts";
 import { createLog } from "./log.ts";
 import { readJsonRecord } from "./json-record.ts";
+import { panelGuard } from "./panel-guard.ts";
 
 const logProactive = createLog("proactive");
 const logPanel = createLog("panel");
@@ -44,6 +46,20 @@ type Env = Record<string, string | undefined>;
 
 export const LIFE_KEY = "life";
 export const HEALTH_KEY = "life-health";
+
+/**
+ * FORGET MY HEALTH with PROACTIVE=off (no engine): what an earlier run with it on kept goes all the same, the health facts and the health
+ * nudges' entries in the suggestions sent (audit finding: it did nothing, and the health data stayed on disk).
+ */
+export async function forgetHealthStored(kv: Kv | null): Promise<void> {
+  if (!kv) return;
+  await kv.set(HEALTH_KEY, "[]", 60);
+  const raw = await readJsonRecord(kv, LIFE_KEY);
+  if (!raw) return;
+  const s = lifeStateOf(raw);
+  s.sent = s.sent.filter((x) => !x.why.startsWith("health:"));
+  await kv.set(LIFE_KEY, JSON.stringify(s), TTL_SECONDS);
+}
 const TTL_SECONDS = 400 * 24 * 3600;
 export const TOPICS = ["trabajo", "comida", "viajes", "ocio", "deporte", "aficiones", "bienestar", "aprendizaje", "amigos"] as const;
 export type Topic = (typeof TOPICS)[number];
@@ -126,19 +142,6 @@ export interface ProactiveConfig {
   emergency: string;
 }
 
-const hhmm = (s: string): number | null => {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(s.trim());
-  if (!m) return null;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  return h < 24 && min < 60 ? h * 60 + min : null;
-};
-const span = (raw: string): { start: number; end: number } | null => {
-  const [a, b] = raw.split("-");
-  const start = hhmm(a ?? "");
-  const end = hhmm(b ?? "");
-  return start === null || end === null || start === end ? null : { start, end };
-};
 
 /** The emergency number of a country (two letters): one table for the whole server (src/health.ts), null where Pako does not know it. */
 export const emergencyOf = emergencyNumber;
@@ -162,13 +165,13 @@ export function loadProactiveConfig(env: Env): { config: ProactiveConfig | null;
     return fallback;
   };
   const rawActive = (env.PROACTIVE_HOURS ?? "").trim() || "09:00-21:00";
-  let active = span(rawActive);
+  let active = windowOf(rawActive);
   if (!active) {
     problems.push("PROACTIVE_HOURS must be like 09:00-21:00 (09:00-21:00 is used)");
     active = { start: 9 * 60, end: 21 * 60 };
   }
-  const rawQuiet = (env.FOLLOWUP_QUIET_HOURS ?? env.SLACK_QUIET_HOURS ?? "23:00-08:00").trim();
-  const quiet = rawQuiet === "off" ? null : (span(rawQuiet) ?? { start: 23 * 60, end: 8 * 60 });
+  // The follow-ups' quiet hours, read the same way (their problem, if any, is said by the follow-ups).
+  const quiet = quietSetting(env.FOLLOWUP_QUIET_HOURS ?? env.SLACK_QUIET_HOURS, "FOLLOWUP_QUIET_HOURS").quiet;
   const rawTopics = (env.PROACTIVE_TOPICS ?? "").trim();
   let topics: Topic[] = [...TOPICS];
   if (rawTopics) {
@@ -443,6 +446,14 @@ export function createProactive(d: ProactiveDeps) {
   let health: Fact[] = [];
   let healthLoaded = false;
   let chain: Promise<unknown> = Promise.resolve();
+  // The health diary's own lock (audit finding): two answers learned at once each read the same diary and the second write dropped the
+  // first's fact; a learn in flight when FORGET MY HEALTH ran wrote the forgotten facts back.
+  let healthChain: Promise<unknown> = Promise.resolve();
+  const healthSerial = <R>(fn: () => Promise<R>): Promise<R> => {
+    const run = healthChain.then(fn, fn);
+    healthChain = run.catch(() => undefined);
+    return run;
+  };
 
   const readStrict = async (): Promise<LifeState> => {
     if (!d.kv) return structuredClone(memory);
@@ -493,15 +504,7 @@ export function createProactive(d: ProactiveDeps) {
     if (d.local && d.kv) await d.kv.set(HEALTH_KEY, JSON.stringify(health), health.length ? TTL_SECONDS : 60);
   };
 
-  const minutesOfDay = (t: number): number => {
-    const [h, m] = new Intl.DateTimeFormat("en-GB", { timeZone: d.timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
-      .format(t).split(":").map(Number);
-    return h! * 60 + m!;
-  };
-  const within = (q: { start: number; end: number }, t: number): boolean => {
-    const x = minutesOfDay(t);
-    return q.start < q.end ? x >= q.start && x < q.end : x >= q.start || x < q.end;
-  };
+  const inWindow = (q: { start: number; end: number }, t: number): boolean => within(q, minutesOfDay(t, d.timeZone));
   const topicOn = (s: LifeState, t: Topic): boolean => s.topics[t] ?? config.topics.includes(t);
   const topicsOn = (s: LifeState): Topic[] => TOPICS.filter((t) => topicOn(s, t));
   const stamp = (t: number): string => {
@@ -518,8 +521,8 @@ export function createProactive(d: ProactiveDeps) {
   /** Why it may not speak now, or null when it may. The same gates for the question and for the answer. */
   const gate = async (s: LifeState, t: number): Promise<Exclude<TickOutcome, "pending" | "bridge" | "asked" | "offered" | "failed"> | null> => {
     if (!topicsOn(s).length) return "topics";
-    if (!within(config.active, t)) return "hours";
-    if (config.quiet && within(config.quiet, t)) return "quiet";
+    if (!inWindow(config.active, t)) return "hours";
+    if (config.quiet && inWindow(config.quiet, t)) return "quiet";
     const last = d.lastOwner();
     if (last > 0 && t - last < config.idleMs) return "busy";
     if (d.calendar) {
@@ -898,14 +901,16 @@ export function createProactive(d: ProactiveDeps) {
     const healthy = facts.filter((f) => HEALTH_KINDS.includes(f.kind));
     const rest = facts.filter((f) => !HEALTH_KINDS.includes(f.kind));
     if (healthy.length) {
-      const before = await loadHealth().catch((err: Error) => {
-        logProactive.warn(`the health diary could not be read, so nothing new was kept in it: ${err.message}`);
-        return null;
+      await healthSerial(async () => {
+        const before = await loadHealth().catch((err: Error) => {
+          logProactive.warn(`the health diary could not be read, so nothing new was kept in it: ${err.message}`);
+          return null;
+        });
+        if (before) {
+          await writeHealth([...before.filter((f) => !healthy.some((h) => h.kind === f.kind && h.key === f.key)), ...healthy]);
+          log(T(l)("logLearnedHealth"));
+        }
       });
-      if (before) {
-        await writeHealth([...before.filter((f) => !healthy.some((h) => h.kind === f.kind && h.key === f.key)), ...healthy]);
-        log(T(l)("logLearnedHealth"));
-      }
     }
     if (rest.length) {
       await mutate((s) => {
@@ -983,8 +988,10 @@ export function createProactive(d: ProactiveDeps) {
    * which is asked twice and forgets both stores: one way to say it, one confirmation.
    */
   const forgetHealth = async (): Promise<void> => {
-    await writeHealth([]);
-    if (d.local && d.kv) await d.kv.set(HEALTH_KEY, "[]", 60);
+    await healthSerial(async () => {
+      await writeHealth([]);
+      if (d.local && d.kv) await d.kv.set(HEALTH_KEY, "[]", 60);
+    });
     // The health nudges sent go too (only their key and a neutral line were kept, but even that they were sent is health data).
     await mutate((s) => {
       s.sent = s.sent.filter((x) => !x.why.startsWith("health:"));
@@ -1051,12 +1058,6 @@ export interface LifeDoor {
 
 // ---------- the panel's card ----------
 
-const HEADERS = {
-  "Cache-Control": "no-store",
-  "X-Content-Type-Options": "nosniff",
-  "Referrer-Policy": "no-referrer",
-  "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
-};
 
 /**
  * The panel's "How Pako acts" card, its "On its own" part (src/panel/acts.js): the topics on and off, what Pako learnt (never health: only how many such things it
@@ -1066,14 +1067,7 @@ const HEADERS = {
  * Without the engine (PROACTIVE=off) the GET says { on: false } and the card says how to turn it on.
  */
 export function mountProactivePanel(app: Express, d: { signedIn: (req: Request) => boolean; life: () => Proactive | null }): void {
-  const auth = (post: boolean): RequestHandler => (req, res, next) => {
-    res.set(HEADERS);
-    if (!d.signedIn(req) || (post && req.get("x-pako") !== "1")) {
-      res.status(401).json({ error: "sign in" });
-      return;
-    }
-    next();
-  };
+  const auth = panelGuard(d.signedIn);
   const limit = (n: number) =>
     rateLimit({ windowMs: 60_000, limit: n, standardHeaders: "draft-8", legacyHeaders: false, handler: (_req, res) => void res.status(429).json({ error: "too many" }) });
   app.get("/panel/api/proactive", auth(false), limit(120), async (_req, res) => {

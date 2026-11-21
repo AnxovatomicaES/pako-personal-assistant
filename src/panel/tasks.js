@@ -3,7 +3,7 @@
 // session cookie and the x-pako header, like STOP). A server's panel only shows them. Without the route (no WhatsApp door) the card stays hidden.
 // Everything is put on the page as text, never as HTML. Its words are its own (English, here).
 
-import { localeFor } from "./i18n.js";
+import { h, localeOf } from "./dom.js";
 
 const REFRESH_MS = 60_000;
 
@@ -22,28 +22,12 @@ const WORDS = {
   done: "Done this week",
   failed: "Couldn't change it right now",
 };
-/** Dates written the way the owner's country writes English (i18n.js localeFor). */
-const localeOf = () => localeFor(document.documentElement.dataset.region);
 /** A text of this card, its {placeholders} filled from vars (the page's own t(), for this card's words). */
 function t(key, vars) {
   const s = WORDS[key] ?? key;
   return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (Object.hasOwn(vars, k) ? String(vars[k]) : m)) : s;
 }
 
-/** An element from a tag, attributes and children; text is always text. */
-function h(tag, attrs = {}, ...children) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v === false || v == null) continue;
-    if (k === "class") el.className = v;
-    // Through the CSSOM: the panel's policy (style-src 'self') blocks a style attribute, not this.
-    else if (k === "style") el.style.cssText = v;
-    else if (k.startsWith("on") && typeof v === "function") el.addEventListener(k.slice(2), v);
-    else el.setAttribute(k, v === true ? "" : String(v));
-  }
-  for (const c of children.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
-  return el;
-}
 const icon = (name) => h("i", { "data-lucide": name });
 
 let data = null;
