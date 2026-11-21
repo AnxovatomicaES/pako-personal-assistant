@@ -4,6 +4,7 @@
 import { today } from "../lists.ts";
 import type { Base, Engine, Nudges } from "./parts.ts";
 import { CLAIM_MS, ESCALATE_BEFORE_MS, JOB_HOLD_MS, RECHECK_FOR_MS, RECHECK_MS } from "./limits.ts";
+import { agedDays, agingAt, AGING_DAYS, owedUndated } from "./aging.ts";
 import { isOpen, newId } from "./record.ts";
 import { T } from "./texts.ts";
 import type { Batch, CardFeedback, GentleRound, Loop } from "./types.ts";
@@ -74,7 +75,16 @@ export function mountNudges(
       const asking = (l: Loop): boolean =>
         (!!l.where.channel && held.some((j) => j.source === "slack" && j.where.channel === l.where.channel && j.where.thread === l.where.thread))
         || (!!l.where.mailThread && held.some((j) => j.source === "mail" && j.where.mailThread === l.where.mailThread));
-      const ready = st.loops.filter((l) => isOpen(l) && l.nextCheckAt > 0 && l.nextCheckAt <= t && !asking(l));
+      // What the owner owes with no date and nothing to check (src/followups/aging.ts): due when it has aged two, then five working days.
+      const w = config.work;
+      const aging = (l: Loop): boolean => {
+        if (l.nextCheckAt !== 0 || !owedUndated(l)) return false;
+        const days = AGING_DAYS[l.nudges];
+        if (days === undefined || t - l.whenSaid < days * ((w?.end ?? 18 * 60) - (w?.start ?? 9 * 60)) * 60_000) return false;
+        const at = agingAt(l, d.timeZone, config.quiet, w);
+        return at > 0 && at <= t;
+      };
+      const ready = st.loops.filter((l) => isOpen(l) && ((l.nextCheckAt > 0 && l.nextCheckAt <= t) || aging(l)) && !asking(l));
       for (const l of ready) {
         // Claimed first, in the store: another process (a deploy's overlap) that read the same loop finds it moved on and leaves it.
         const unchanged = (x: Loop | undefined): x is Loop => !!x && x.status === l.status && x.nudges === l.nudges;
@@ -121,7 +131,8 @@ export function mountNudges(
           continue;
         }
         const soon = !after && !!l.dueAt && !l.escalated && t >= l.dueAt - ESCALATE_BEFORE_MS && (l.nudges > 0 || !!seen.replied);
-        const wanted = after || l.status === "snoozed" || soon || (l.nudges === 0 && !seen.replied);
+        const aged = l.nextCheckAt === 0 && owedUndated(l);
+        const wanted = after || l.status === "snoozed" || soon || aged || (l.nudges === 0 && !seen.replied);
         const variant = g ? pickVariant(VARIANTS[l.kind].length, l.variant, l.id) : undefined;
         // The budget is taken in the same write that records the nudge: two ticks can never both spend the last one.
         const others = wanted ? await (d.othersToday?.() ?? Promise.resolve(0)).catch(() => 0) : 0;
@@ -137,6 +148,8 @@ export function mountNudges(
             }
             s.budget.n++;
             x.nudges++;
+            // Any nudge of an owed one with no date is an aging nudge (one sent by the ordinary path after a day whose cap was spent too).
+            if (owedUndated(x)) x.agedAt = now();
             // The nudge near the deadline is this one, or it would come too soon after it.
             if (soon || (x.dueAt && x.dueAt - ESCALATE_BEFORE_MS <= now() + 15 * 60_000)) x.escalated = true;
             x.status = "open";
@@ -159,6 +172,8 @@ export function mountNudges(
         // Someone else's promise is theirs to keep: a draft is offered only for what the owner has to do or answer.
         const draftable = !!d.drafts && l.kind !== "other_promise";
         const tl = T(lg);
+        // An owed one with no date: how long it has waited, and Done for the reply already sent where Pako cannot see it.
+        const age = owedUndated(l) ? `\n${tl("aging", { days: String(agedDays(l, t)) })}` : "";
         let body: string;
         let buttons: { id: string; title: string }[];
         let more: CardFeedback | undefined;
@@ -168,12 +183,12 @@ export function mountNudges(
           body = gentleNudgeText(l, {
             variant: variant ?? 0, due: dueText(l, lg), checked: seen.said, source: sourceText(l.sources[0], lg),
             ...(l.step && isStuck(l, t) ? { step: l.step } : {}), usually,
-          }) + (draftable ? `\n${tl("draftHint")}` : "");
+          }) + age + (draftable ? `\n${tl("draftHint")}` : "");
           buttons = [{ id: `f1:${l.id}`, title: GT()("btnDone") }, { id: `f4:${l.id}`, title: GT()("btnSnooze") }, { id: `f7:${l.id}`, title: GT()("btnPark") }];
           // A stuck one is offered a check-in too: "Check on me in 30 min" (src/gentle-checkins.ts).
           if (isStuck(l, t) && g.checkin) more = await g.checkin(l.id).catch(() => undefined);
         } else {
-          body = nudgeText(l, seen.said, soon, lg) + (draftable ? `\n${tl("draftHint")}` : "");
+          body = nudgeText(l, seen.said, soon, lg) + age + (draftable ? `\n${tl("draftHint")}` : "");
           buttons = [
             { id: `f1:${l.id}`, title: tl("btnDone") }, { id: `f2:${l.id}`, title: tl("btnSnooze") }, { id: `f3:${l.id}`, title: tl("btnNotMine") },
           ];

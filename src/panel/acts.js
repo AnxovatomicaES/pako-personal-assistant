@@ -7,6 +7,8 @@
 //   things it keeps), and the week's suggestions with what became of them. Off (PROACTIVE=off): the card says so.
 // - Gentle mode (src/gentle.ts, /panel/api/gentle): opt-in, with its not-medical line; the day's nudge cap, the time anchors' lead times, and
 //   the Parked list, each with a button that brings it back.
+// - Around your day (src/day-helpers.ts, /panel/api/day-helpers): the evening wrap-up, the question after a meeting and the calendar alerts,
+//   each a switch with the server's own words for it.
 // - Beta: help measure Pako (src/beta-audit.ts, /panel/api/beta-audit): opt-in; this week's questions as numbers, never what they were about.
 // - What Pako learned from you (src/lessons.ts, /panel/api/lessons): each correction kept as a short dated lesson (Not mine, an undo, a 👎,
 //   a draft changed before it was sent), how often it was taught, and a button that deletes one.
@@ -43,6 +45,8 @@ const WORDS = {
   st_sent: "", st_accepted: "accepted", st_declined: "no, thanks", st_less: "topic off",
   trabajo: "Work", comida: "Food", viajes: "Travel", ocio: "Fun", deporte: "Sport", aficiones: "Hobbies", bienestar: "Wellbeing",
   aprendizaje: "Learning", amigos: "Friends", topicFailed: "I couldn't change it. Try again.",
+  dayTitle: "Around your day",
+  dayLead: "What Pako tells you on its own around your working day. Each one speaks to you only, never to anyone else.",
   betaTitle: "Beta: help measure Pako",
   betaOn: "Ask me a few questions a week",
   betaWeek: "This week: {asked} of {n} questions asked, {answered} answered.",
@@ -108,7 +112,7 @@ function h(tag, attrs = {}, ...children) {
 }
 
 const st = {
-  autonomy: null, life: null, lessons: null, gentle: null, beta: null, auNote: "", lifeNote: "", lessonsNote: "", gentleNote: "", betaNote: "", betaExport: "", card: null,
+  autonomy: null, life: null, lessons: null, gentle: null, beta: null, day: null, dayNote: "", auNote: "", lifeNote: "", lessonsNote: "", gentleNote: "", betaNote: "", betaExport: "", card: null,
 };
 
 async function showBetaReport() {
@@ -122,6 +126,52 @@ async function showBetaReport() {
     st.betaNote = t("betaShowFailed");
   }
   paint();
+}
+
+async function saveDay(change) {
+  try {
+    const r = await fetch("/panel/api/day-helpers", {
+      method: "POST", credentials: "same-origin", headers: { "content-type": "application/json", "x-pako": "1" }, body: JSON.stringify(change),
+    });
+    if (!r.ok) throw new Error(String(r.status));
+    st.day = await r.json();
+    st.dayNote = t("saved");
+  } catch {
+    /* offline or refused: said in the note */
+    st.dayNote = t("failed");
+  }
+  paint();
+}
+
+async function loadDay() {
+  try {
+    const r = await fetch("/panel/api/day-helpers", { credentials: "same-origin", cache: "no-store" });
+    if (r.ok) st.day = await r.json();
+  } catch {
+    /* the server is restarting: the next load asks again */
+  }
+  paint();
+}
+
+function dayPart() {
+  if (!st.day) return [];
+  const words = st.day.words && typeof st.day.words === "object" ? st.day.words : {};
+  const row = (k) => {
+    const w = words[k] && typeof words[k] === "object" ? words[k] : {};
+    return h("div", { class: "tg-form" },
+      h("label", { for: `day-${k}` }, str(w.label)),
+      h("input", {
+        id: `day-${k}`, type: "checkbox", role: "switch", checked: !!st.day[k], "aria-describedby": `day-${k}-desc`,
+        onchange: (e) => void saveDay({ [k]: !!e.target.checked }),
+      }),
+      h("p", { class: "muted small", id: `day-${k}-desc` }, str(w.description)));
+  };
+  return [
+    h("h3", { id: "h-acts-day" }, t("dayTitle")),
+    h("p", { class: "tg-lead" }, t("dayLead")),
+    ...["wrapUp", "afterMeeting", "alerts"].map(row),
+    st.dayNote ? h("p", { class: "hint", role: "status" }, st.dayNote) : "",
+  ];
 }
 
 async function saveBeta(on) {
@@ -392,7 +442,7 @@ function lessonsPart() {
 }
 
 function paint() {
-  if (!st.card || (!st.autonomy && !st.life && !st.lessons && !st.gentle && !st.beta)) return;
+  if (!st.card || (!st.autonomy && !st.life && !st.lessons && !st.gentle && !st.beta && !st.day)) return;
   st.card.hidden = false;
   st.card.replaceChildren(
     h("div", { class: "card-head" }, h("h2", { id: "h-acts" }, h("i", { "data-lucide": "sparkles" }), h("span", {}, t("title")))),
@@ -400,6 +450,7 @@ function paint() {
       st.autonomy ? h("div", { class: "part" }, ...autonomyPart()) : "",
       st.gentle ? h("div", { class: "part", id: "acts-gentle" }, ...gentlePart()) : "",
       st.life ? h("div", { class: "part" }, ...lifePart()) : "",
+      st.day ? h("div", { class: "part", id: "acts-day" }, ...dayPart()) : "",
       st.beta ? h("div", { class: "part", id: "acts-beta" }, ...betaPart()) : "",
       st.lessons ? h("div", { class: "part" }, ...lessonsPart()) : ""),
   );
@@ -467,6 +518,7 @@ function mount() {
   void loadLife();
   void loadLessons();
   void loadBeta();
+  void loadDay();
   setInterval(() => void loadLife(), 5 * 60_000);
 }
 

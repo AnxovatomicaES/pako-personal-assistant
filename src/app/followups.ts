@@ -15,8 +15,8 @@ const logFollowups = createLog("followups");
 export function wireFollowups(ctx: AfterMeetings) {
   const {
     local, uiLang, kv, control, jobs, timeZone, givenName, slack, slackRef, zoom, zoomRef, teamsCfg, teamsRef, imessageCfg, imessageRef, calOn, calRef,
-    smartCfg, smartRef, followupsCfg, followupsRef, personRef, gentleSettings, gentleRef, lifeRef, lessons, quality, door, betaRef, timeRef,
-    box,
+    smartCfg, smartRef, followupsCfg, followupsRef, personRef, gentleSettings, gentleRef, lessons, quality, door, betaRef,
+    box, budget,
   } = ctx;
   if (followupsCfg.config) {
     // Looks only at what this server already reads (each part looked up when a check runs, so one set up later counts).
@@ -43,8 +43,7 @@ export function wireFollowups(ctx: AfterMeetings) {
       // The day's budget is shared with proactive Pako's suggestions.
       // And with the check-ins' first asks (src/gentle-checkins.ts).
       // And with the at-risk cards of time to do it (src/time-to-do.ts).
-      othersToday: async () => ((await lifeRef.engine?.spentToday()) ?? 0) + ((await gentleRef.checkins?.spentToday()) ?? 0)
-        + ((await timeRef.t?.spentToday()) ?? 0),
+      othersToday: () => budget.others("followups"),
       ...(zoom.config ? { zoom: () => (zoomRef.reader ? zoomRef.reader.scheduled() : Promise.reject(new Error("Zoom is not ready"))) } : {}),
       ...(calOn && !teamsCfg.config ? { calendar: () => (calRef.reader ? calRef.reader.readAll() : Promise.reject(new Error("the calendar is not ready"))) } : {}),
       // With Teams, its calendar's Teams meetings count as "it happened" too (src/teams.ts events).

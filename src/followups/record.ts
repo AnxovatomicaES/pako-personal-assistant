@@ -100,6 +100,7 @@ export function loopOf(v: unknown): Loop | null {
     ...(num(v.variant) !== undefined ? { variant: Math.max(0, Math.min(20, Math.floor(num(v.variant)!))) } : {}),
     ...(v.folded === true ? { folded: true } : {}),
     ...(v.afterAsked === true ? { afterAsked: true } : {}),
+    ...(num(v.agedAt) ? { agedAt: num(v.agedAt)! } : {}),
     ...(typeof v.step === "string" && v.step.trim() ? { step: v.step.slice(0, 160) } : {}),
     // Its chases (src/followups/chase.ts): when, the drafts and where they go.
     ...(chaseOf(v.chase) ? { chase: chaseOf(v.chase)! } : {}),

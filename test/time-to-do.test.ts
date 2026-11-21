@@ -192,7 +192,7 @@ test("words: the card says why and proposes the block, as the owner reads it", (
 
 test("buttons: tb, ta and tn are their own; no other card's button is taken for one", () => {
   assert.deepEqual(TIME_BUTTON.exec("tb:a1b2c3d4e5")?.slice(1), ["b", "a1b2c3d4e5"]);
-  for (const id of ["tb:a1b2c3d4e5", "ta:a1b2c3d4e5", "tn:a1b2c3d4e5"]) {
+  for (const id of ["tb:a1b2c3d4e5", "ta:a1b2c3d4e5", "tn:a1b2c3d4e5", "tf:a1b2c3d4e5"]) {
     for (const other of [FOLLOWUP_BUTTON, CALENDAR_BUTTON, CHECKIN_BUTTON, CHECKIN_LOOP_BUTTON, RESET_BUTTON, PROACTIVE_BUTTON]) assert.equal(other.test(id), false);
   }
   assert.equal(TIME_BUTTON.test("tx:a1b2c3d4e5"), false);

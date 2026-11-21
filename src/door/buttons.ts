@@ -10,6 +10,8 @@ import type { PressButton } from "../followups/types.ts";
 import { CHECKIN_BUTTON, CHECKIN_LOOP_BUTTON } from "../gentle-checkins.ts";
 import { RESET_BUTTON } from "../gentle-reset.ts";
 import { PROACTIVE_BUTTON } from "../proactive.ts";
+import { AFTER_BUTTON } from "../after-meeting.ts";
+import { SHUTDOWN_BUTTON } from "../shutdown.ts";
 import { TIME_BUTTON } from "../time-to-do.ts";
 import { PENDING_CALL_MS } from "./shared.ts";
 import { CALENDAR_BUTTON } from "./calendar-cards.ts";
@@ -64,8 +66,24 @@ export function mountButtons(door: Door): Pick<Door, "pressed" | "NO" | "SEND_YE
     // Time to do it (src/time-to-do.ts): Block (the owner's yes to the focus block), Another time, Not needed.
     const ttd = TIME_BUTTON.exec(buttonId);
     if (ttd) {
-      const say = d.timeToDo ? await d.timeToDo.pressed(ttd[1] as "b" | "a" | "n", ttd[2]!) : tx("expired");
+      const say = !d.timeToDo ? tx("expired")
+        : ttd[1] === "f" ? (d.timeToDo.findTimeFor ? await d.timeToDo.findTimeFor(ttd[2]!) : tx("expired"))
+        : await d.timeToDo.pressed(ttd[1] as "b" | "a" | "n", ttd[2]!);
       if (say) await sendText(say);
+      return;
+    }
+    // The evening wrap-up (src/shutdown.ts): Plan <n> (time-to-do's own card, whose Block is the yes) and Done <n>.
+    const sd = SHUTDOWN_BUTTON.exec(buttonId);
+    if (sd) {
+      const say = d.shutdown ? await d.shutdown.pressed(sd[1] as "p" | "d", Number(sd[2]), sd[3]!) : tx("expired");
+      if (say) await sendText(say);
+      return;
+    }
+    // The question after a meeting (src/after-meeting.ts): Nothing, or Not for these.
+    const am = AFTER_BUTTON.exec(buttonId);
+    if (am) {
+      const say = d.afterMeeting ? await d.afterMeeting.pressed(am[1] as "n" | "m", am[2]!) : "";
+      await sendText(say || tx("expired"));
       return;
     }
     // A chase for what someone owes the owner (src/followups/chase.ts): the press is the yes. An email reply goes through the held path

@@ -88,6 +88,8 @@ export interface Loop {
   folded?: boolean;
   /** Gentle mode: its one "did it happen?" after its time was asked. */
   afterAsked?: boolean;
+  /** Owed with no date (src/followups/aging.ts): when its last aging nudge was sent, the next one's gap is counted from it. */
+  agedAt?: number;
   /** Gentle mode: its first tiny step (two minutes or less), written from its own facts and checked (src/gentle.ts parseStep). */
   step?: string;
   /** Someone else's promise, overdue: the reminders Pako wrote for the owner to send them, and when (src/followups/chase.ts). */

@@ -3,6 +3,7 @@
 
 import { mountAutonomyPanel } from "../autonomy.ts";
 import { mountBetaAuditPanel } from "../beta-audit.ts";
+import { mountDayHelpersPanel } from "../day-helpers.ts";
 import { mountBetaExport } from "../beta-report.ts";
 import { type CalendarFreshness, mountDashboard } from "../dashboard.ts";
 import { demoTimes, recordedAnswer } from "../demo.ts";
@@ -27,7 +28,7 @@ export function wirePanel(ctx: AfterDoor) {
   const {
     app, config, env, local, uiLang, demo, dog, control, personal, wa, timeZone, givenName, ownerName, box, mailAddress, slack, slackRef, fakeSlack,
     zoom, reviewCfg, reviewRef, macCal, cal, calOn, calLabel, calRef, icsRef, invites, backfillRef, followupsCfg, followupsRef, gentleSettings,
-    gentleRef, followupsDoor, panelRef, booking, betaRef, fromWindow, tgRef, publicUrl, autonomyConfig, autonomySettings, claudeDoor, claudeKeeper, door,
+    gentleRef, followupsDoor, panelRef, booking, betaRef, fromWindow, tgRef, publicUrl, autonomyConfig, autonomySettings, claudeDoor, claudeKeeper, door, dayHelpers,
   } = ctx;
   // The owner's panel (src/dashboard.ts): PANEL on WhatsApp gives a one-time sign-in link.
   const telegramLine = () => {
@@ -180,6 +181,8 @@ export function wirePanel(ctx: AfterDoor) {
   // Gentle mode's card in How Pako acts (src/panel/acts.js): the switch, the day's cap, the lead times and the Parked list.
   // The beta's audit opt-in (src/beta-audit.ts): its card in How Pako acts; built with the jobs' clock, so looked up when asked.
   mountBetaAuditPanel(app, { signedIn: panel.signedIn, audit: () => betaRef.audit });
+  // "Around your day" (src/day-helpers.ts): the wrap-up, the after-meeting question and the calendar alerts, each on or off; with follow-ups.
+  mountDayHelpersPanel(app, { signedIn: panel.signedIn, helpers: () => (followupsCfg.config ? dayHelpers : null) });
   // The beta report as a file, for a tester with no terminal (the Mac app): counts only, saved by the tester, never sent by Pako.
   mountBetaExport(app, { signedIn: panel.signedIn, kv: () => ctx.kv });
   mountGentlePanel(app, {

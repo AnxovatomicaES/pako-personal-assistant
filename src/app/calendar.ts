@@ -1,6 +1,7 @@
 // Wires the calendar's reader from its sources (Zoho, ICS links, this Mac, Google, the demo's), its changes every ten minutes, and the
 // people graph fed from the mail and the calendar.
 
+import { createCalendarAlerts } from "../calendar-alerts.ts";
 import { createCalendarChanges } from "../calendar-changes.ts";
 import { calendarLog, createCalendarCore, createZohoSource } from "../calendar.ts";
 import { createGoogleCalendarSource } from "../google-calendar.ts";
@@ -13,7 +14,10 @@ const logCalendar = createLog("calendar");
 const logPeopleGraph = createLog("people-graph");
 
 export function wireCalendar(ctx: AfterConnect) {
-  const { local, uiLang, dog, kv, control, timeZone, box, timing, cal, calOn, calLabel, calRef, calChangesRef, icsRef, myAddresses, followupsDoor, door } = ctx;
+  const {
+    local, uiLang, dog, kv, control, timeZone, box, timing, cal, calOn, calLabel, calRef, calChangesRef, icsRef, myAddresses, followupsDoor, door,
+    followupsRef, followupsCfg, gentleSettings, timeRef, budget, dayHelpers,
+  } = ctx;
   const calTiming = cal.zoho ?? timing.timing;
   if (calOn && calTiming) {
     // A meeting about to start is urgent: it always reaches the phone.
@@ -33,7 +37,29 @@ export function wireCalendar(ctx: AfterConnect) {
     // What changed on the calendar (src/calendar-changes.ts), every ten minutes: the follow-ups follow a meeting that moved or was called off,
     // and the brief says what changed since the last one.
     const reader = calRef.reader;
-    calChangesRef.c = createCalendarChanges({ kv, read: () => reader.readAll(), onChange: (c) => followupsDoor.calendarChanged?.(c) ?? Promise.resolve(0) });
+    // Told first (src/calendar-alerts.ts), from the follow-ups as they were: a meeting that moved earlier or was called off, with something the
+    // owner owes at it, is said at once, not only in the next brief.
+    const alerts = (timeRef.alerts = followupsCfg.config
+      ? createCalendarAlerts({
+        timeZone, quiet: followupsCfg.config.quiet ?? null,
+        loops: async () => (followupsRef.engine ? followupsRef.engine.open() : []),
+        card: (body, buttons) => door.sendCard(body, buttons),
+        // A line with no button: only when the owner can be written to now, never held to arrive another day with "moved to 15:00".
+        notify: async (text) => {
+          if (!(await door.writable())) throw new Error("the chat cannot be written to now");
+          if ((await door.notifyOwner(text)) !== "sent") throw new Error("held");
+        },
+        cap: async () => (await gentleSettings.view())?.maxPerDay ?? followupsCfg.config!.maxPerDay,
+        others: () => budget.others("alerts"),
+        enabled: () => dayHelpers.on("alerts"),
+        log: (text) => control.log("followup", text),
+      })
+      : null);
+    const onChange = async (c: Parameters<NonNullable<typeof followupsDoor.calendarChanged>>[0]): Promise<number> => {
+      if (alerts) await alerts.tell(c);
+      return (await followupsDoor.calendarChanged?.(c)) ?? 0;
+    };
+    calChangesRef.c = createCalendarChanges({ kv, read: () => reader.readAll(), onChange });
     const cc = calChangesRef.c;
     setTimeout(() => void cc.tick(), 60_000).unref?.();
     setInterval(() => void cc.tick(), 10 * 60_000).unref?.();

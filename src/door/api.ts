@@ -65,6 +65,8 @@ export function doorApi(door: Door) {
     },
     /** Whether the chat now has room for more than three buttons (the panel's chat, Telegram): the weekly reset's per-item Park. */
     roomy,
+    /** Whether the owner can be written to now (as a card can: the panel's chat, Telegram, WhatsApp's 24-hour window). */
+    writable: async (): Promise<boolean> => !!d.local || (await reachable(now())),
     lastPoll: () => door.lastPollAt,
     /** When the owner last wrote (ms; 0: not since this start): proactive Pako speaks only when they have been quiet a while. */
     lastOwner: () => Math.max(door.lastHeardAt, door.lastOwnerAt),

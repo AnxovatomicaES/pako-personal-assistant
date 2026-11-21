@@ -130,6 +130,13 @@ export function wireDoor(ctx: AfterChat) {
           timeToDo: {
             pressed: (b: "b" | "a" | "n", id: string) => (timeRef.t ? timeRef.t.pressed(b, id) : Promise.resolve("")),
             findTime: (words: string) => (timeRef.t ? timeRef.t.findTime(words) : Promise.resolve("")),
+            findTimeFor: (id: string) => (timeRef.t ? timeRef.t.findTimeFor(id) : Promise.resolve("")),
+          },
+          afterMeeting: {
+            pressed: (what: "n" | "m", id: string) => (timeRef.after ? timeRef.after.pressed(what, id) : Promise.resolve("")),
+          },
+          shutdown: {
+            pressed: (what: "p" | "d", n: number, id: string) => (timeRef.shutdown ? timeRef.shutdown.pressed(what, n, id) : Promise.resolve("")),
           },
         }
       : {}),

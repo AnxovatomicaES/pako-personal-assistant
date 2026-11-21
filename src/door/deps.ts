@@ -148,7 +148,16 @@ export interface WhatsappDeps {
    * Time to do it (src/time-to-do.ts): a press on its card (Block, Another time, Not needed) and "find time for <words>"; what to say ("" when a
    * card of its own said it). Absent without follow-ups.
    */
-  timeToDo?: { pressed: (b: "b" | "a" | "n", loopId: string) => Promise<string>; findTime: (words: string) => Promise<string> };
+  timeToDo?: {
+    pressed: (b: "b" | "a" | "n", loopId: string) => Promise<string>;
+    findTime: (words: string) => Promise<string>;
+    /** "Plan it" on another card (tf:<loop>, src/calendar-alerts.ts): the block card for that follow-up. */
+    findTimeFor?: (loopId: string) => Promise<string>;
+  };
+  /** The evening wrap-up's Plan <n> and Done <n> (src/shutdown.ts): what to tell the owner ("" when a card of its own says it). */
+  shutdown?: { pressed: (what: "p" | "d", n: number, id: string) => Promise<string> };
+  /** The question after a meeting (src/after-meeting.ts): Nothing (n) or Not for these (m). */
+  afterMeeting?: { pressed: (what: "n" | "m", id: string) => Promise<string> };
   draftFor?: (o: {
     title: string; facts: { label: string; text: string; at?: number }[]; mailRef?: string; about?: { who?: string; where?: string; channel?: string };
     allow?: string[];

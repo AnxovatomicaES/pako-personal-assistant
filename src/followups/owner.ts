@@ -1,5 +1,6 @@
 // The owner's side: the nudge's buttons, PENDING, and the open loops in the assistant's context.
 
+import { dueAtMeeting } from "./calendar-match.ts";
 import type { Base, Engine, Owner } from "./parts.ts";
 import { LATER_TODAY_MS, NONE_BEFORE_MS, PAST_HIDE_MS, REOPEN_MS, RULES_MAX, SNOOZE_MS } from "./limits.ts";
 import { loopsOf } from "./record.ts";
@@ -221,15 +222,8 @@ export function mountOwner(
     const n = await mutate((s) => {
       let changed = 0;
       for (const c of hit) {
-        const old = c.kind === "moved" ? (c.was ?? c.start) : c.start;
-        const title = fold(c.title);
-        const words = title.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4);
         for (const l of s.loops) {
-          if ((l.status !== "open" && l.status !== "snoozed") || !l.dueAt || Math.abs(l.dueAt - old) > 5 * 60_000) continue;
-          const hints = "zoomMeeting" in l.check ? l.check.zoomMeeting.attendeesHints : "calendarEvent" in l.check ? l.check.calendarEvent.hints : [];
-          const mine = fold(`${l.title} ${l.detail} ${hints.join(" ")}`);
-          const first = fold(l.who).split(" ")[0] ?? "";
-          if (!words.some((w) => mine.includes(w)) && !(first.length >= 3 && title.includes(first))) continue;
+          if (!dueAtMeeting(l, c)) continue;
           changed++;
           if (c.kind === "moved") {
             l.dueAt = c.start;

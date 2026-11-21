@@ -276,6 +276,10 @@ commitment you may be missing, a contradiction, a deadline, or the result of a c
   (`FOLLOWUP_DELAY_MIN`, 10 minutes by default) and then checks. If it sees the thing done, it says nothing. If not, you get ONE message
   saying who asked what, when and where, what Pako checked, and the time in both zones ("5:15 AM ET (10:15 London)"), with three buttons:
   **Done**, **In 1 h** and **Not mine**. Near the deadline it checks once more.
+- **What you owe with no date.** An email asking you for something, with no day and nothing Pako can check, used to wait silently in the
+  brief until it was let go after two weeks. Now it is said again after two working days and after five (your `WORK_HOURS` and
+  `WORK_DAYS`; never on a weekend off), with how long it has waited: *"Waiting on you for 2 days. Already answered it? Press Done."* Within
+  the day's cap and outside the quiet hours. Never for what someone else owes you: that is chased instead.
 - **Quality you can see.** Every reminder has a quiet 👍/👎 (two more buttons on Telegram and the panel's chat; on WhatsApp, which allows
   three, a "Useful? Reply yes or no." line that a yes or a no typed right after answers). The brief ends with the same question, and its page
   has 👍/👎 on each to-do and update. The panel's **Quality** card shows the last 7 days: reminders sent, marked Done, Not mine, left
@@ -331,6 +335,45 @@ and looks at your calendar for free working time before then.
   within the day's nudge cap shared with the reminders, check-ins and Pako's own suggestions. In gentle mode: its own cap, no card for an
   item it stopped nudging, and none after two of these cards went unanswered (the brief still lists them).
 - A follow-up that is itself a meeting to set up is left out: a block named after it could pass for that meeting.
+
+### After a meeting: "did you promise anything?"
+
+Promises made in a room, on Google Meet or on Teams are the ones most often lost: Pako reads what is written, and a conversation isn't.
+About ten minutes after a meeting with other people ends, you get one question while it is fresh:
+
+> 🤝 “Bluefin review” just ended. Did you promise anything, or were you asked for something? Tell me in a line (“I'll send Ana the deck
+> Friday”) and I'll keep track.
+
+- **Answer in your own words**, in the chat: the assistant keeps each promise as a follow-up, as it does for anything you tell it. **Nothing**
+  ends it; **Not for these** never asks after a meeting with that title again (a weekly standup).
+- **Only when it helps.** In working hours, never in the quiet hours or while you are in your next meeting (it waits up to an hour), not
+  after a focus block, a meeting under 15 minutes, one you declined or one with nobody else on it, and not after a Zoom call when the Zoom
+  review is on (that call is read from its summary). Two a day at most, within the day's nudge cap. Its switch is in **Settings › How Pako acts › Around your day** (`AFTER_MEETING=off` is its starting point).
+
+### The evening wrap-up
+
+At the end of your working day (`WORK_HOURS`, or `SHUTDOWN=18:30`), on working days, one message closes the day: what you got done, what
+is still open from a time already passed, what is due on your next working day, and whether that day adds up against your calendar.
+
+> 🌇 Wrapping up Thursday. Done today: 3.
+>
+> Due tomorrow:
+> 1. Send Ana the Q4 deck (for Ana) · 12:00
+> 2. Reply to Omar about the SOW (for Omar) · 17:00
+>
+> ⚠️ Tomorrow doesn't fit: about 1 h 15 min of work due and 45 min free. Plan the first, or ask for more time.
+
+- **Plan 1** gives Time to do it's own card for that follow-up (its **Block** is what writes the focus block; nothing is written before it),
+  and **Done 1** closes it. On a chat with three buttons at most (WhatsApp), the first item's buttons only.
+- **Tomorrow's calendar, while it can still be fixed:** two meetings that overlap (*"📅 Tomorrow: “Bluefin review” 10:00 overlaps “Sales
+  sync” 10:30."*) and invitations you haven't answered (*"✉️ Not answered yet for tomorrow: “Offsite planning” 14:00."*). A declined
+  meeting doesn't count.
+- **On the last working day of the week**, the same message wraps up the week: what you got done in the last seven days, what others
+  promised you that is now late (*"Waiting on others: • Nadia: Send the contract (due Wed)"*; chasing it is its own card), and what is due
+  later next week (*"Later next week: 2 more due, the first “Review the SOW” on Wed."*). No second message.
+- **Only when there is something to say.** Nothing due next and nothing still open: no message. Nothing on a day you don't work.
+- **Never in your way.** Not in the quiet hours, not during a meeting (it waits for the end, up to three hours), never twice a day, and not
+  in gentle mode, whose weekly reset does this more softly. It speaks to you only: nobody else ever hears of it. **Settings › How Pako acts › Around your day** turns it off or on (`SHUTDOWN=off` is its starting point).
 
 ### Mail on this Mac, with no password
 
@@ -414,6 +457,13 @@ the last brief: a meeting that is new, one that moved (from when to when) and on
 citing the change. A follow-up due at a meeting that moved follows the new time; an agreed meeting that was called off closes; anything
 else that was due at a meeting that is gone stays open and its reminder says why. A calendar that fails to load, or comes back empty, is
 never taken for a wave of cancellations.
+
+**Told at once when it touches what you owe.** When a meeting in the next three days moves or is called off and you owe something at it
+(the deck for the review, the reply due at the call), you hear it then, not only in tomorrow's brief: moved earlier, *"“Bluefin review”
+moved earlier: Thu 15:00 → Thu 11:00. “Send the deck” is now due then."* with **Plan it** (Time to do it's card: its Block is the only
+write) and **Done**; called off, *"You still owe “Send the deck”: keep it, or close it?"* with **Done** and **Park**; moved later, one line
+saying you have more time. Not in the quiet hours (the brief says it then), three a day at most and within the day's nudge cap, and never for what
+someone else owes you. Its switch is in **Settings › How Pako acts › Around your day** (`CALENDAR_ALERTS=off` is its starting point).
 
 **A draft to send.** A reminder about something that is yours to do ends with "Reply DRAFT". Pako then writes the message that closes it,
 from what was said and what you told it about that person, says where it goes (that Slack conversation, that email), and leaves a [blank]

@@ -19,6 +19,7 @@ export const T = texts(
     soon: "⏰ Not long now. ",
     nudge: "🔔 {lead}{due}. {checked}\n({source})",
     draftHint: "✍️ Reply DRAFT and I'll write it for you to send.",
+    aging: "⏳ Waiting on you for {days} days. Already answered it? Press Done.",
     draftFact: "{kind}: {title} · person: {who} · where it was said: {where} · when it is for: {due} · what was said: {detail} · what Pako checked: {checked}",
     draft_request_to_owner: "They asked the owner",
     draft_owner_promise: "The owner promised",

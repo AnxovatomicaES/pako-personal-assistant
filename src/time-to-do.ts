@@ -40,7 +40,7 @@ const QUARTER = 15 * MIN;
 
 export const TIME_TO_DO_KEY = "time-to-do";
 /** tb Block, ta Another time, tn Not needed: tb:<follow-up id>. */
-export const TIME_BUTTON = /^t([ban]):([0-9a-f]{10})$/;
+export const TIME_BUTTON = /^t([banf]):([0-9a-f]{10})$/;
 /** What the owner owes: their own promise, a request to them, a deadline of theirs. */
 export const OWED_KINDS: readonly LoopKind[] = ["owner_promise", "request_to_owner", "deadline"];
 /** Looked at when due within this many working days (today counts while its working hours last). */
@@ -709,7 +709,17 @@ export function createTimeToDo(d: TimeToDoDeps) {
     });
     if (!hits.length) return TW()("findNone");
     if (hits.length > 1) return TW()("findMany", { list: hits.slice(0, 4).map((l) => `“${l.title}”`).join(", ") });
-    const l = hits[0]!;
+    return offerTime(hits[0]!, t);
+  });
+
+  /** The same for one follow-up by its id (the evening shutdown's Plan, src/shutdown.ts): open and the owner's to do, or "none found". */
+  const findTimeFor = (loopId: string): Promise<string> => serial(async () => {
+    const l = await loopOf(loopId);
+    return l && OWED_KINDS.includes(l.kind) ? offerTime(l, now()) : TW()("findNone");
+  });
+
+  /** The block for one follow-up, as a card (its Block, Another time, Not needed): "" when the card says it, else why there is none. */
+  const offerTime = async (l: Loop, t: number): Promise<string> => {
     if (!d.events) return TW()("noCalendar");
     const events = await d.events().catch(() => null);
     if (!events) return TW()("noCalendar");
@@ -729,7 +739,7 @@ export function createTimeToDo(d: TimeToDoDeps) {
     await save(s);
     await cardFor(r, await canWrite());
     return "";
-  });
+  };
 
   /** At-risk cards sent today: counted in the shared cap by the follow-ups, the check-ins and proactive Pako. */
   const spentToday = async (): Promise<number> => {
@@ -737,6 +747,6 @@ export function createTimeToDo(d: TimeToDoDeps) {
     return s.day === today(now(), tz) ? s.n : 0;
   };
 
-  return { sweep, briefLine, pressed, findTime, spentToday, offers: async () => (await peek()).offers };
+  return { sweep, briefLine, pressed, findTime, findTimeFor, spentToday, offers: async () => (await peek()).offers };
 }
 export type TimeToDo = ReturnType<typeof createTimeToDo>;

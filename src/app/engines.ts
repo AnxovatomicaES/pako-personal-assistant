@@ -15,6 +15,11 @@ import type { PersonContext } from "../person-context.ts";
 import { type LifeDoor, loadProactiveConfig, type Proactive } from "../proactive.ts";
 import { createQuality, type Quality } from "../quality.ts";
 import type { Rehearsal } from "../rehearsal.ts";
+import type { AfterMeeting } from "../after-meeting.ts";
+import type { CalendarAlerts } from "../calendar-alerts.ts";
+import type { Shutdown } from "../shutdown.ts";
+import { createBudget } from "./budget.ts";
+import { createDayHelpers } from "../day-helpers.ts";
 import { loadWorkHours, type TimeToDo } from "../time-to-do.ts";
 import { ownerRegion } from "../region.ts";
 import type { AfterSources } from "./context.ts";
@@ -104,9 +109,25 @@ export function wireEngines(ctx: AfterSources) {
   // The beta's measuring audit (src/beta-audit.ts): opt-in in the panel; built with the jobs' clock (src/app/schedule.ts), with follow-ups on.
   const betaRef: { audit: BetaAudit | null } = { audit: null };
   // Time to do it (src/time-to-do.ts): the follow-ups at risk for want of free time, with a focus block; built with the jobs' clock.
-  const timeRef: { t: TimeToDo | null } = { t: null };
+  // The evening wrap-up (src/shutdown.ts) rides with it: built on the same clock, from the same working hours.
+  // And the question after a meeting Pako could not hear (src/after-meeting.ts), on the same clock and working hours.
+  const timeRef: { t: TimeToDo | null; shutdown: Shutdown | null; alerts: CalendarAlerts | null; after: AfterMeeting | null } = {
+    t: null, shutdown: null, alerts: null, after: null,
+  };
+  // "Around your day" (src/day-helpers.ts): the panel's switches for the wrap-up, the after-meeting question and the calendar alerts, each
+  // starting from its setting.
+  const off = (v: string | undefined): boolean => ["off", "0", "false", "no"].includes((v ?? "").trim().toLowerCase());
+  const dayHelpers = createDayHelpers(kv, { wrapUp: !off(env.SHUTDOWN), afterMeeting: !off(env.AFTER_MEETING), alerts: !off(env.CALENDAR_ALERTS) });
+  // The day's shared cap (src/app/budget.ts): each part that speaks on its own, counted by all the others.
+  const budget = createBudget();
+  budget.add("followups", () => followupsRef.engine?.spentToday?.());
+  budget.add("life", () => lifeRef.engine?.spentToday());
+  budget.add("checkins", () => gentleRef.checkins?.spentToday());
+  budget.add("time", () => timeRef.t?.spentToday());
+  budget.add("alerts", () => timeRef.alerts?.spentToday());
+  budget.add("after", () => timeRef.after?.spentToday());
   return {
     briefCfg, briefRef, briefNow, smartCfg, smartRef, followupsCfg, followupsRef, personRef, gentleSettings, gentleRef, followupsDoor, mailFollowups,
-    proactiveCfg, lifeRef, lifeDoor, lessons, quality, rehearsalRef, judged, panelRef, betaRef, timeRef,
+    proactiveCfg, lifeRef, lifeDoor, lessons, quality, rehearsalRef, judged, panelRef, betaRef, timeRef, budget, dayHelpers,
   };
 }

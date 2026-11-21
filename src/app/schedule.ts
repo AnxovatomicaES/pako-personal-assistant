@@ -9,6 +9,8 @@ import { createWeeklyReset } from "../gentle-reset.ts";
 import { createLog } from "../log.ts";
 import { pausedText } from "../control.ts";
 import { ownerRegion } from "../region.ts";
+import { createAfterMeeting } from "../after-meeting.ts";
+import { createShutdown, loadShutdownConfig } from "../shutdown.ts";
 import { createTimeToDo, loadWorkHours } from "../time-to-do.ts";
 import type { AfterBrief } from "./context.ts";
 
@@ -17,7 +19,7 @@ const logBrief = createLog("brief");
 export function wireSchedule(ctx: AfterBrief) {
   const {
     app, env, local, uiLang, kv, control, jobs, timeZone, calOn, calRef, briefCfg, briefNow, smartRef, followupsCfg, followupsRef, gentleSettings,
-    gentleRef, followupsDoor, lifeRef, door, panel, briefReader, betaRef, quality, timeRef,
+    gentleRef, followupsDoor, door, panel, briefReader, betaRef, quality, timeRef, budget, dayHelpers, myAddresses,
   } = ctx;
   // On the jobs' clock: due reminders, then routines and watches (one look each, as before), and the brief's daily slot.
   jobs.define({ kind: "reminders", sweep: () => door.runReminders() });
@@ -27,8 +29,7 @@ export function wireSchedule(ctx: AfterBrief) {
   const meetings = calOn ? () => (calRef.reader ? calRef.reader.load() : Promise.reject(new Error("the calendar is not ready"))) : undefined;
   gentleRef.checkins = createCheckIns({
     kv, timeZone, settings: () => gentleSettings.read(), standardMax: followupsCfg.config?.maxPerDay ?? 6,
-    others: async () => ((await followupsRef.engine?.spentToday?.()) ?? 0) + ((await lifeRef.engine?.spentToday()) ?? 0)
-      + ((await timeRef.t?.spentToday()) ?? 0),
+    others: () => budget.others("checkins"),
     quiet: followupsCfg.config?.quiet ?? null,
     ...(meetings ? { events: meetings } : {}),
     jobs,
@@ -88,8 +89,7 @@ export function wireSchedule(ctx: AfterBrief) {
         return g ? { maxPerDay: g.maxPerDay } : null;
       },
       usually: (title) => (gentleRef.anchors ? gentleRef.anchors.usually(title) : Promise.resolve(null)),
-      others: async () => ((await followupsRef.engine?.spentToday?.()) ?? 0) + ((await lifeRef.engine?.spentToday()) ?? 0)
-        + ((await gentleRef.checkins?.spentToday()) ?? 0),
+      others: () => budget.others("time"),
       writes: () => door.calendarWrites(),
       paused: async () => {
         const p = await control.state();
@@ -102,6 +102,44 @@ export function wireSchedule(ctx: AfterBrief) {
     });
     const timeToDo = timeRef.t;
     jobs.define({ kind: "time-to-do", sweep: () => timeToDo.sweep() });
+    // The evening wrap-up (src/shutdown.ts): at the end of the working day (SHUTDOWN), what is due next and whether it fits, with Plan
+    // (time-to-do's card above: nothing is written without its Block) and Done. To the owner only; not in gentle mode.
+    const shutdownCfg = loadShutdownConfig(env, work.hours);
+    if (shutdownCfg.problems.length) logBrief.error(`${shutdownCfg.problems.join("; ")}`);
+    timeRef.shutdown = createShutdown({
+      kv, timeZone, config: shutdownCfg, hours: work.hours, quiet: followupsCfg.config.quiet ?? null,
+      loops: async () => (followupsRef.engine ? (await followupsRef.engine.read()).loops : []),
+      ...(meetings ? { events: meetings } : {}),
+      gentle: async () => !!(await gentleSettings.view()),
+      enabled: () => dayHelpers.on("wrapUp"),
+      jobs,
+      roomy: () => door.roomy(),
+      card: (body, buttons, roomy) => (roomy ? door.sendButtons(body, buttons) : door.sendCard(body, buttons)),
+      // As a card: only when the chat can be written to now. A held text would arrive another day saying "tomorrow" (review finding).
+      notify: async (text) => {
+        if (!(await door.writable())) return false;
+        return (await door.notifyOwner(text)) === "sent";
+      },
+      plan: (id) => timeToDo.findTimeFor(id),
+      done: (id) => followupsDoor.press("1", id),
+      log: (text) => control.log("followup", text),
+    });
+    const shutdown = timeRef.shutdown;
+    jobs.define({ kind: "shutdown", sweep: () => shutdown.sweep() });
+    // After a meeting Pako could not hear (src/after-meeting.ts): "did you promise anything?", within the day's shared cap. The answer is a
+    // chat message like any other, kept as a follow-up by the assistant.
+    if (meetings) {
+      timeRef.after = createAfterMeeting({
+        kv, timeZone, on: (env.AFTER_MEETING ?? "").trim().toLowerCase() !== "off", hours: work.hours, quiet: followupsCfg.config.quiet ?? null,
+        events: meetings, zoomReview: !!(ctx.zoom.config && ctx.reviewCfg.config), enabled: () => dayHelpers.on("afterMeeting"), self: () => myAddresses(),
+        cap: async () => (await gentleSettings.view())?.maxPerDay ?? followupsCfg.config!.maxPerDay,
+        others: () => budget.others("after"),
+        card: (body, buttons) => door.sendCard(body, buttons),
+        log: (text) => control.log("followup", text),
+      });
+      const after = timeRef.after;
+      jobs.define({ kind: "after-meeting", sweep: () => after.sweep() });
+    }
   }
   briefReader.start(jobs);
   jobs.start();
