@@ -42,7 +42,9 @@ before(async () => {
   if (!exe) return;
   srv = await startFixtureServer();
   profile = mkdtempSync(join(tmpdir(), "pako-maitre-profile-"));
-  pool = new BrowserPool({ executable: exe, profileDir: profile, idleMs: 60_000, timeoutMs: 15_000 });
+  // A shared CI runner can take more than the product's 20 s to start Chrome (seen on GitHub, 2026-11-21: "did not open its debugging port
+  // in time"); the browser's start is not what these tests check, so they give it a minute.
+  pool = new BrowserPool({ executable: exe, profileDir: profile, idleMs: 60_000, timeoutMs: 15_000, launchTimeoutMs: 60_000 });
 });
 
 after(async () => {
