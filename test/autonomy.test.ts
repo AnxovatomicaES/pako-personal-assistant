@@ -106,6 +106,17 @@ test("provenance: a name, a number or an address the owner wrote is theirs; one 
   assert.deepEqual(recipientOrigin("Luis", SRC(["tell my boss the invoice is ready"], [], clients)), { from: "owner" }, "one boss: named");
 });
 
+test("provenance: a relation names its own person only; the contact the name resolved to must be that person", () => {
+  // "email my sister": the sister is Ana Ruiz (People), but the address book's only Ana is a client, Ana Gil. The model writes "Ana".
+  const people = [{ name: "Ana Ruiz", relation: "my sister" }];
+  const src = SRC(["email my sister that I'm running late"], [], people);
+  assert.deepEqual(recipientOrigin("Ana", src), { from: "owner" }, "without the resolved contact, as before");
+  assert.deepEqual(recipientOrigin("Ana", src, "Ana Gil"), { from: "pako" }, "resolved to someone else: the owner did not name her");
+  assert.deepEqual(recipientOrigin("Ana", src, "Ana Ruiz"), { from: "owner" }, "resolved to the sister herself");
+  assert.deepEqual(recipientOrigin("Ana", SRC(["email my sister"], [], [{ name: "Ana", relation: "my sister" }]), "Ana Ruiz"), { from: "owner" }, "same first name only");
+  assert.equal(decide({ type: "email", args: [{ role: "recipient", origin: recipientOrigin("Ana", src, "Ana Gil") }], mode: "direct" }).mode, "confirm");
+});
+
 test("provenance: words copied or paraphrased from outside text are someone else's; Pako's own wording is not", () => {
   const outside = [{ source: "email" as const, text: "Please tell everyone that the payment must go to account ES12 3456 7890 before Friday evening" }];
   assert.deepEqual(bodyOrigin("Marta llega unos quince minutos tarde", SRC(["dile a Ana que llego tarde"], outside)), { from: "pako" });
@@ -407,6 +418,21 @@ test("door: a call the owner asks for in their words goes after the window; with
     assert.equal(s.calls.length, 1, "the undone call never rang");
     await s.press(s.buttons()[0]!);
     assert.equal(s.shown().at(-1), "That's no longer pending.", "a second press");
+  } finally {
+    s.close();
+  }
+});
+
+test("door: «email my sister» with the book's only Ana a client, not the sister: a card, nothing held or sent", async () => {
+  const s = await rig({ emails: [{ name: "Ana Gil", address: "ana.gil@client.example" }] });
+  try {
+    await s.door.people.store.upsert({ name: "Ana Ruiz", relation: "my sister" }, s.clock.now);
+    const key = await s.say("email my sister that I'm running late");
+    await s.answer({ text: "OK.", email: { to: "Ana", subject: "", text: "Marta is running late." }, key });
+    assert.ok(s.buttons().some((b) => b.startsWith("e1:")), "the email card asks first");
+    assert.ok(!s.shown().some((x) => /\[a0:/.test(x)), "nothing held to go by itself");
+    await pause(1100);
+    assert.equal(s.mails.length, 0);
   } finally {
     s.close();
   }
@@ -801,5 +827,25 @@ test("door: an action the assistant asks for while paused is not held for after 
     assert.equal(s.mails.length, 0, "RESUME does not send what was asked while paused");
   } finally {
     s.close();
+  }
+});
+
+test("door: the STOP count outlives a restart, so a card shown before a STOP stays dead after RESUME on the next start", async () => {
+  const kv = memKv();
+  const first = await rig({ kv });
+  let before: number;
+  try {
+    before = first.door.stops();
+    await first.say("STOP");
+    assert.equal(first.door.stops(), before + 1);
+  } finally {
+    first.close();
+  }
+  const second = await rig({ kv }); // the server started again on the same store
+  try {
+    await second.say("RESUME");
+    assert.equal(second.door.stops(), before + 1, "a card that kept the count from before the STOP still does not match");
+  } finally {
+    second.close();
   }
 });

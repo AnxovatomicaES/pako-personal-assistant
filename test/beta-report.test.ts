@@ -185,3 +185,33 @@ test("beta combine: pools testers' strata side by side and sums their counts; th
   assert.match(text, /\| Slack \| 71% /);
   assert.match(text, /\| Mail \| 100% /);
 });
+
+// The panel's beta report (mountBetaExport): a tester with only the Mac app sees and saves the same export as npm run beta:report --export.
+import express from "express";
+import type { AddressInfo } from "node:net";
+import { mountBetaExport } from "../src/beta-report.ts";
+
+test("beta report in the panel: signed in only, counts only, and a file when asked", async () => {
+  const store = new Map<string, string>([["feedback", JSON.stringify({ verdicts: [] })]]);
+  const kv = { get: async (k: string) => store.get(k) ?? null, set: async () => {}, add: async () => true, del: async () => {} };
+  let signed = false;
+  const app = express();
+  mountBetaExport(app, { signedIn: () => signed, kv: () => kv as never, now: () => Date.parse("2026-11-21T10:00:00Z") });
+  const server = app.listen(0);
+  try {
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    assert.equal((await fetch(`${base}/panel/api/beta-export`)).status, 401, "not signed in");
+    signed = true;
+    const r = await fetch(`${base}/panel/api/beta-export?days=14`);
+    assert.equal(r.status, 200);
+    const e = exportOf(JSON.parse(await r.text()));
+    assert.ok(e, "a valid export");
+    assert.equal(e!.days, 14);
+    assert.equal(e!.day, "2026-11-21");
+    assert.equal(r.headers.get("cache-control"), "no-store");
+    const f = await fetch(`${base}/panel/api/beta-export?days=14&download=1`);
+    assert.match(f.headers.get("content-disposition") ?? "", /attachment; filename="?pako-beta-2026-11-21\.json"?/);
+  } finally {
+    server.close();
+  }
+});

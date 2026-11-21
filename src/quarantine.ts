@@ -13,8 +13,9 @@
 //   the calendar (titles and places; ICS descriptions are never passed on, only a join link is taken from them), Zoom (coming meetings and
 //   the summaries made by the isolated meeting run), Slack alerts, table bookings (restaurant names), call events: `inline`, inside the
 //   bracketed context note that names the source and says it is other people's text. A line the owner's last turn did not have in front of
-//   it marks the turn by halves (`context` on /assistant/reply): what deletes or stands (forget, unremind, a list removal, done, person,
-//   routine, watch) waits for a press, and words Pako wrote to someone ask first (src/autonomy.ts); the owner's plain asks act. A line seen
+//   it marks the turn by halves (`context` on /assistant/reply): what deletes, stands or is kept (forget, unremind, a list change, done,
+//   person, routine, watch, and a note, reminder, task, promise or fact it adds, which would later read as the owner's own words) waits for a
+//   press, and words Pako wrote to someone ask first (src/autonomy.ts). A line seen
 //   before marks nothing (every turn carries them, so every tag would wait). A routine's own run is always marked so;
 // - a forwarded message the owner sends on (WhatsApp's or Telegram's forwarded flag): `wrap`, and the turn is marked;
 // - what the main run read on the web with its own WebSearch or WebFetch (seen in the run's result as more than one turn): the turn is marked;
@@ -158,11 +159,20 @@ export interface HeldActs {
   forget: string[];
   /** People the reply's <person> tags describe (src/people.ts): what someone else's text says about anyone is never kept without a press. */
   people?: PersonInput[];
+  /**
+   * What a turn with new outside text in its context would keep as the owner's own words, read back in every later turn as theirs: its
+   * <fact> tags (src/proactive.ts), its <know> tags (src/memory-facts.ts), and its diary, goals and cards (src/companion.ts). Held, never kept
+   * silently. Absent from an older bridge: none.
+   */
+  facts?: { kind?: unknown; text?: unknown }[];
+  know?: { who: string; key: string; value: string; since: string }[];
+  role?: { health?: { kind: string; text: string }[]; goals?: string[]; cards?: { goal: string; q: string; a: string }[] };
 }
 
 export const hasActs = (a: HeldActs): boolean =>
   !!(a.call || a.message || a.send || a.email || a.book || a.remind.length || a.unremind.length || a.lists.length || a.tasks.length || a.done.length
-    || a.closed?.length || a.promises?.length || a.remember.length || a.forget.length || a.people?.length);
+    || a.closed?.length || a.promises?.length || a.remember.length || a.forget.length || a.people?.length || a.facts?.length || a.know?.length
+    || a.role?.health?.length || a.role?.goals?.length || a.role?.cards?.length);
 
 const T = texts(
   {
@@ -210,6 +220,10 @@ const T = texts(
     remember: "Keep the note: “{text}”",
     forget: "Delete the notes with “{text}”",
     person: "Keep {name}: {what}",
+    fact: "Keep the fact: {text}",
+    health: "Keep in the health diary: “{text}”",
+    goal: "Keep the learning goal: “{text}”",
+    cardQ: "Keep the study card: “{text}”",
   },
 );
 
@@ -246,6 +260,11 @@ export function heldLines(a: HeldActs, l: Lang): string[] {
     const what = [p.relation, p.birthday, ...(p.likes ?? []), ...(p.notes ?? [])].filter((x): x is string => !!x).join("; ");
     out.push(t("person", { name: shown(p.name, 40), what: shown(what) }));
   }
+  for (const f of a.facts ?? []) out.push(t("fact", { text: shown(`${typeof f.kind === "string" ? `${f.kind}: ` : ""}${typeof f.text === "string" ? f.text : ""}`) }));
+  for (const k of a.know ?? []) out.push(t("fact", { text: shown(`${k.who ? `${k.who}, ` : ""}${k.key}: ${k.value}`) }));
+  for (const h of a.role?.health ?? []) out.push(t("health", { text: shown(h.text) }));
+  for (const g of a.role?.goals ?? []) out.push(t("goal", { text: shown(g, 80) }));
+  for (const c of a.role?.cards ?? []) out.push(t("cardQ", { text: shown(c.q) }));
   return out;
 }
 

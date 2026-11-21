@@ -4,6 +4,10 @@ import type { Handler } from "./incoming.ts";
 import type { Door } from "./door.ts";
 import { createLog } from "../log.ts";
 
+/** The STOPs so far, kept in the store: a card shown before a STOP stays dead after a restart and a RESUME. */
+export const STOPS_KEY = "assistant-stops";
+const STOPS_KEEP_S = 400 * 24 * 3600;
+
 const log = createLog("autonomy");
 
 const squeezedOf = (command: string): string => (command.length <= 14 ? command.replace(/ /g, "") : command);
@@ -30,7 +34,9 @@ export async function stopEverything(door: Door, at: number, line?: string): Pro
   choices.clear();
   emailCards.clear();
   await heldQueue.cancelAll().catch((err: Error) => log.error(`STOP could not undo the held actions: ${err.message}`));
+  await door.stopsLoaded;
   door.stops++;
+  await d.kv?.set(STOPS_KEY, String(door.stops), STOPS_KEEP_S).catch((err: Error) => log.error(`the STOP count could not be kept: ${err.message}`));
   sweepCards();
   const annulled = [...connectorCards.values()].map((c) => c.ask.name);
   for (const [id, c] of connectorCards) {

@@ -96,11 +96,21 @@ test("loadBriefConfig: 08:00 by default, off, another hour; a wrong value is nam
   assert.match(loadBriefConfig({ MORNING_BRIEF: "24:00" }).problems.join(), /MORNING_BRIEF/);
 });
 
-test("nothing connected and nothing due: two lines, not silence, in English, with the name when there is one", async () => {
+const CONNECT = "Nothing is connected yet, so there is little to tell. Connect your calendar and mail in Pako's Settings (Your connections), and "
+  + "tomorrow's brief will have your day in it.";
+
+test("nothing connected at all: the brief says how to connect, not only a greeting, with the name when there is one", async () => {
   const named = rig({ name: () => "Marta" });
-  assert.equal(await named.brief.compose(EIGHT), "☀️ Good morning, Marta. Today is Sunday 15 November.\nAnything you'd like me to look into or help with today? Just ask.");
+  assert.equal(await named.brief.compose(EIGHT),
+    `☀️ Good morning, Marta. Today is Sunday 15 November.\n\n${CONNECT}\n\nAnything you'd like me to look into or help with today? Just ask.`);
   const en = rig({ name: () => "" });
-  assert.equal(await en.brief.compose(EIGHT), "☀️ Good morning. Today is Sunday 15 November.\nAnything you'd like me to look into or help with today? Just ask.");
+  assert.equal(await en.brief.compose(EIGHT),
+    `☀️ Good morning. Today is Sunday 15 November.\n\n${CONNECT}\n\nAnything you'd like me to look into or help with today? Just ask.`);
+});
+
+test("connected but nothing due: two lines, not silence, and no connect line", async () => {
+  const named = rig({ name: () => "Marta", calendars: [async () => []] });
+  assert.doesNotMatch(await named.brief.compose(EIGHT), /Nothing is connected/);
   // Reminders on, none today (one tomorrow, one held from yesterday), mail and Slack on with nothing: still the two lines.
   const empty = rig({
     reminders: async () => [{ at: at("2026-11-16T09:00:00Z"), text: "mañana", held: false }, { at: EIGHT - 20 * HOUR, text: "ayer", held: true }],
@@ -192,7 +202,8 @@ test("a calendar that cannot be read is said; one of two unread says something m
   assert.match(full, /\n…and 5 more\n/);
   // Reminders that cannot be read: the rest of the brief still comes.
   const noRem = await quiet(() => rig({ reminders: async () => Promise.reject(new Error("store down")) }).brief.compose(EIGHT));
-  assert.equal(noRem.split("\n").length, 2);
+  assert.doesNotMatch(noRem, /I couldn't/);
+  assert.match(noRem, /^☀️ Good morning\. [\s\S]*Just ask\.$/);
 });
 
 test("when: from the hour, once a day; a restart does not repeat it; asleep at 08:00 it catches up until noon; the next day it comes again", async () => {
@@ -394,7 +405,7 @@ test("STOP does not hold it, it reaches the phone: WhatsApp inside the window, t
   const rt = rig({ notify: (x) => t.d.notifyOwner(x, { urgent: true }) });
   assert.equal(await rt.brief.tick(), true);
   assert.equal(t.sent.at(-1)?.type, "template");
-  assert.match(JSON.stringify(t.sent.at(-1)), /Good morning\. Today is Sunday 15 November\. Anything you'd like me to look into/);
+  assert.match(JSON.stringify(t.sent.at(-1)), /Good morning\. Today is Sunday 15 November\. .*Anything you'd like me to look into/);
 
   // Telegram paired and reachable: there.
   const tg: Record<string, any>[] = [];

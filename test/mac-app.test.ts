@@ -1059,7 +1059,11 @@ test("mac app: Connect Claude explains failures in plain words, and only Anthrop
   for (const [tail, kind] of [["Invalid code. Please make sure the full code was copied.", "invalidCode"], ["10 min", "timeout"],
     ["installer output\n(15 min)", "timeout"], ["https://claude.ai/install.sh: The Internet connection appears to be offline.", "network"],
     ["curl: (6) Could not resolve host: downloads.claude.ai", "network"], ["Claude Code at /x/claude is older than 2.1.268: update it (claude update), then try again.", "oldVersion"],
-    ["claude not found after installing", "notFound"], ["notAnthropic", "notAnthropic"], ["exit 3", "other"]] as const) {
+    ["claude not found after installing", "notFound"], ["notAnthropic", "notAnthropic"], ["exit 3", "other"],
+    // No DNS, a server that refuses, a Wi-Fi login page in place of the installer: each is the network, with its plain way out.
+    ["https://claude.ai/install.sh: A server with the specified hostname could not be found.", "network"],
+    ["https://claude.ai/install.sh: Could not connect to the server.", "network"],
+    ["https://claude.ai/install.sh: HTTP 200, not the installer", "network"], ["https://claude.ai/install.sh: ?, not the installer", "network"]] as const) {
     assert.equal(swift("failure", tail), kind, tail);
   }
   assert.equal(swift("macho", process.execPath), true);

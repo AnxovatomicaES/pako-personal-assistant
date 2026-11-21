@@ -83,7 +83,7 @@ test("catalogue: Claude, calendar, mail, Slack, Zoom, Teams, Messages, tables an
     assert.equal(all.find((c) => c.id === "whatsapp")?.card, "whatsapp");
   }
   const en = connectionStates({ env: {}, stored: {}, fromStore: new Set(), lang: "en" });
-  assert.match(en.find((c) => c.id === "claude")!.how, /Pro or Max/);
+  assert.match(en.find((c) => c.id === "claude")!.how, /Pro, Max, Team or Enterprise/);
   assert.doesNotMatch(JSON.stringify(en), /[áéíóúñ¿¡]/, "no Spanish");
 });
 

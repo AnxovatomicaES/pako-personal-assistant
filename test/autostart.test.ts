@@ -4,6 +4,7 @@
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import * as fs from "node:fs";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -13,7 +14,7 @@ import { test } from "node:test";
 import express from "express";
 import { createApp, loadAppConfig, type LocalContext } from "../src/app.ts";
 import {
-  autostartFor, createAutostart, LASTING_EXIT, lastingExitCode, runAutostartCli, runsInMacApp, stableNode, type Autostart, type AutostartDeps,
+  autostartFor, capLogs, createAutostart, LASTING_EXIT, LOG_CAP_BYTES, lastingExitCode, runAutostartCli, runsInMacApp, stableNode, type Autostart, type AutostartDeps,
   type AutostartFs, type AutostartResult,
 } from "../src/autostart.ts";
 import { mountAutostartPanel } from "../src/autostart-panel.ts";
@@ -777,4 +778,22 @@ test("install.sh: running it again updates; a folder that is not Pako, an old No
   assert.equal(r.code, 1);
   assert.match(r.out, /Don't run this as root or with sudo/);
   assert.equal(existsSync(join(home, "x")) || existsSync(join(home, "y")) || existsSync(join(home, "z")), false);
+});
+
+test("the background Pako's logs are capped: past 5 MB the file is kept once as .old and starts again, its writer's next line at the top", () => {
+  const logs = mkdtempSync(join(tmpdir(), "pako-logs-"));
+  const big = join(logs, "pako.log");
+  const small = join(logs, "pako.err.log");
+  fs.writeFileSync(big, "x".repeat(LOG_CAP_BYTES + 10));
+  fs.writeFileSync(small, "a line\n");
+  fs.writeFileSync(`${big}.old`, "an older copy");
+  // Launchd and systemd keep the file open for appending, as here.
+  const fd = fs.openSync(big, "a");
+  assert.deepEqual(capLogs(logs), ["pako.log"]);
+  fs.writeSync(fd, "after\n");
+  fs.closeSync(fd);
+  assert.equal(fs.readFileSync(big, "utf8"), "after\n", "the next line at the top, no hole before it");
+  assert.equal(fs.statSync(`${big}.old`).size, LOG_CAP_BYTES + 10, "one old copy, the newest");
+  assert.equal(fs.readFileSync(small, "utf8"), "a line\n", "a small log is left alone");
+  assert.deepEqual(capLogs(join(logs, "missing")), [], "no folder: nothing, no error");
 });

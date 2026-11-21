@@ -99,7 +99,7 @@ interface Sent {
 
 let n = 0; // message ids are unique across rigs, so a restart in a test does not look like a repeated delivery
 
-async function rig(o: { beforeSend?: (body: Record<string, any>) => Promise<unknown>; place?: () => { ok: boolean; text: string; unknown?: boolean }; panelLink?: () => string; calendar?: WhatsappDeps["calendar"]; zoom?: WhatsappDeps["zoom"]; slack?: WhatsappDeps["slack"]; mail?: WhatsappDeps["mail"]; control?: Control; kv?: Kv | null; env?: Record<string, string>; failPhone?: boolean; booking?: Booking; lookups?: string[]; refuse?: (body: Record<string, any>) => number | null; friends?: boolean; media?: "evil" | "big" | "down" } = {}) {
+async function rig(o: { beforeSend?: (body: Record<string, any>) => Promise<unknown>; place?: () => { ok: boolean; text: string; unknown?: boolean }; panelLink?: () => string; calendar?: WhatsappDeps["calendar"]; zoom?: WhatsappDeps["zoom"]; slack?: WhatsappDeps["slack"]; mail?: WhatsappDeps["mail"]; control?: Control; kv?: Kv | null; env?: Record<string, string>; failPhone?: boolean; booking?: Booking; lookups?: string[]; refuse?: (body: Record<string, any>) => number | null; noAnswer?: (body: Record<string, any>) => boolean; friends?: boolean; media?: "evil" | "big" | "down" } = {}) {
   const media: { url: string; auth: string }[] = [];
   const sent: Sent[] = [];
   const calls: { name: string; message: string; language: string; direct: boolean }[] = [];
@@ -132,6 +132,10 @@ async function rig(o: { beforeSend?: (body: Record<string, any>) => Promise<unkn
     }
     const body = JSON.parse(String(init?.body));
     await o.beforeSend?.(body);
+    if (o.noAnswer?.(body)) {
+      sent.push({ url: String(url), auth: String((init?.headers as Record<string, string>)?.authorization), body, status: 0 });
+      throw new Error("the connection was reset");
+    }
     const refused = o.refuse?.(body) ?? null;
     const status = refused ? 400 : o.failPhone && "to" in body ? 400 : 200;
     sent.push({ url: String(url), auth: String((init?.headers as Record<string, string>)?.authorization), body, status });
@@ -832,6 +836,26 @@ test("an answer from a friend the assistant wrote to is passed on to the owner (
     r.clock.now += 49 * 3600_000;
     await r.hook(r.payload([r.text("¿sigues ahí?", ANA_WA)]));
     assert.ok(!mine().some((t) => /sigues ahí/.test(t)), "two days later the window is closed");
+  } finally {
+    r.close();
+  }
+});
+
+test("a message to a friend that WhatsApp never answered counts as sent: the day's limit for that number, and the friend's reply is passed on", async () => {
+  const r = await rig({ noAnswer: (b) => b.to === ANA_WA });
+  try {
+    for (let i = 0; i < 3; i++) {
+      await r.post("/assistant/reply", { send: { to: "Ana", text: `uno ${i}` } });
+      const c = r.sent.filter((s) => s.body.type === "interactive").at(-1)!;
+      await r.hook(r.payload([r.press(c.body.interactive.action.buttons[0].reply.id)]));
+      assert.match(r.texts().at(-1)!, /WhatsApp didn't answer: I don't know whether the message to Ana went out/);
+    }
+    assert.equal(r.sent.filter((s) => s.body.to === ANA_WA).length, 3);
+    await r.post("/assistant/reply", { send: { to: "Ana", text: "otro más" } });
+    assert.match(r.texts().at(-1)!, /I've already written to that number 3 times today/, "they may all have arrived: the limit counts them");
+    await r.hook(r.payload([r.text("¡Recibido!", ANA_WA)]));
+    const mine = r.sent.filter((s) => s.body.to === OWNER_WA && s.body.type === "text").map((s) => s.body.text.body as string);
+    assert.ok(mine.includes("Ana replies:\n“¡Recibido!”"), "her answer reaches the owner");
   } finally {
     r.close();
   }
@@ -1553,6 +1577,27 @@ test("an answer sent again with the same key does what it asks once (one call ca
     const other = await r.post("/assistant/reply", { text: "Otra.", call: { name: "Luis", message: "hola" }, key: "msg-2" });
     assert.equal(other.status, 200);
     assert.equal(r.sent.filter((s) => s.body.type === "interactive").length, 2, "another key is another answer");
+  } finally {
+    r.close();
+  }
+});
+
+test("a refused reminder is tried again after its own wait, not after a clock put back meanwhile too", async () => {
+  let refuse = true;
+  const r = await rig({ refuse: (body) => (refuse && body.type === "interactive" && String(body.interactive.body.text).startsWith("Reminder") ? 131047 : null) });
+  const delivered = (): number => r.sent.filter((s) => s.status === 200 && s.body.type === "interactive"
+    && String(s.body.interactive.body.text).startsWith("Reminder")).length;
+  try {
+    await r.hook(r.payload([r.text("hola")]));
+    await r.post("/assistant/reply", { text: "Vale.", remind: [{ at: "2026-11-14 13:05", text: "llamar" }] });
+    r.clock.now += 2 * 3600_000; // due a while ago (the computer was off)
+    await r.wa.runReminders(); // refused: tried again in 30 s
+    assert.equal(delivered(), 0);
+    refuse = false;
+    r.clock.now -= 3600_000; // the computer's clock is corrected back an hour
+    r.clock.now += 40_000;
+    await r.wa.runReminders();
+    assert.equal(delivered(), 1, "sent after its 30 seconds, not an hour later");
   } finally {
     r.close();
   }

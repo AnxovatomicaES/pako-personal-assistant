@@ -17,6 +17,7 @@ import { localToEpoch } from "./whatsapp.ts";
 import type { HealthReport } from "./watchdog.ts";
 import { createLog } from "./log.ts";
 import { readJsonRecord } from "./json-record.ts";
+import { waitLeft } from "./clock.ts";
 
 const logCalendar = createLog("calendar");
 
@@ -260,11 +261,12 @@ export function createZohoSource(d: ZohoSourceDeps): CalendarSource {
   };
   // After a refused or failed token request nothing asks Zoho again for ten minutes: its limit is 10 requests in 10 minutes,
   // and retrying every minute would keep the block going for ever.
+  const BLOCKED_MS = 10 * 60_000;
   let blockedUntil = 0;
   let blockedWhy = "";
   let refreshUnsaved = false;
   const blocked = (why: string): never => {
-    blockedUntil = now() + 10 * 60_000;
+    blockedUntil = now() + BLOCKED_MS;
     blockedWhy = why;
     throw new Error(why);
   };
@@ -283,7 +285,7 @@ export function createZohoSource(d: ZohoSourceDeps): CalendarSource {
       if (refreshUnsaved) await saveRefresh();
       return refresh;
     }
-    if (now() < blockedUntil) throw new Error(blockedWhy);
+    if (waitLeft(blockedUntil, BLOCKED_MS, now())) throw new Error(blockedWhy);
     const kept = d.kv ? await d.kv.get(REFRESH_KEY).catch(() => null) : null;
     if (kept) return (refresh = kept);
     if (!config.grantCode) return blocked("no access yet: put a new ZOHO_GRANT_CODE in Render (assistant/README.md, Calendar)");
@@ -302,7 +304,7 @@ export function createZohoSource(d: ZohoSourceDeps): CalendarSource {
     if (access && access.until > now()) return access.value;
     const rt = await getRefresh();
     if (access && access.until > now()) return access.value;
-    if (now() < blockedUntil) throw new Error(blockedWhy);
+    if (waitLeft(blockedUntil, BLOCKED_MS, now())) throw new Error(blockedWhy);
     let j: Record<string, unknown>;
     try {
       j = await token({ grant_type: "refresh_token", client_id: config.clientId, client_secret: config.clientSecret, refresh_token: rt });

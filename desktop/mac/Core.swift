@@ -240,7 +240,7 @@ func hasAuthCommands(_ versionOut: String) -> Bool {
 
 /// How Claude is for Pako, as the window and the menu say it.
 enum ClaudeState: String {
-    /// needsPlan: signed in on the free plan, which cannot run Claude Code (it needs Pro, Max or Team).
+    /// needsPlan: signed in on the free plan, which cannot run Claude Code (it needs Pro, Max, Team or Enterprise).
     case notInstalled, notSignedIn, needsPlan, plan, apiKey, limit, unknown
     /// Ready: nothing to ask of the person (a key is their choice; the window still warns that it wins over the plan).
     var ready: Bool { self == .plan || self == .apiKey || self == .limit }
@@ -672,7 +672,11 @@ func connectFailure(_ tail: String) -> ConnectFailure {
     // Claude Code 2.1.327 says this when the person cancels (or closes) Claude's page: a calm retry, not an error.
     if t.contains("no authorization code") { return .cancelled }
     if t.contains("not found") { return .notFound }
-    for word in ["could not resolve", "no answer", "offline", "network", "internet", "connection", "curl: (6)", "curl: (7)", "ssl"] where t.contains(word) {
+    // macOS's own words for no DNS ("hostname could not be found") and a refused server ("could not connect"); "not the installer": what came
+    // back was some other page (a café's Wi-Fi sign-in, a proxy), not Anthropic's installer.
+    let words = ["could not resolve", "hostname could not be found", "could not connect", "not the installer", "no answer", "offline", "network",
+                 "internet", "connection", "curl: (6)", "curl: (7)", "ssl"]
+    for word in words where t.contains(word) {
         return .network
     }
     return .other

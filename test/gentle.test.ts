@@ -275,6 +275,16 @@ test("snooze: Snooze asks when; Later today is three hours on, Tomorrow is 09:00
   assert.match(await r.engine.press("5", l.id), /tomorrow around 09:00/);
 });
 
+test("snooze: Tomorrow pressed late on the evening before the clocks go forward is the next morning, not the one after", async () => {
+  const r = rig();
+  // Saturday 28 March 2026, 23:30 in London; the clocks go forward that night (01:00 -> 02:00), so Sunday has 23 hours.
+  r.clock.now = Date.parse("2026-03-28T23:30:00Z");
+  const l = (await r.engine.fromChat({ title: "Book the venue", who: "Omar" }))!;
+  assert.match(await r.engine.press("6", l.id), /tomorrow around 09:00/);
+  const x = (await r.engine.read()).loops[0]!;
+  assert.equal(x.nextCheckAt, Date.parse("2026-03-29T08:00:00Z"), "Sunday 09:00 BST");
+});
+
 test("park: Park sets it aside, out of nudges, OPEN and the assistant's context; it is in the Parked list and comes back by its words", async () => {
   const r = rig();
   const l = (await r.engine.fromChat({ title: "Renew the passport", who: "" }))!;
@@ -400,6 +410,34 @@ test("anchors' clock: off sends nothing; on, one card per anchor with On it; pre
   await a.pressed(cards[0]!.buttons[0]!.id.slice(3));
   clock.now = start - 5 * MIN;
   assert.equal((await a.tick()).length, 0, "On it: no in-5");
+});
+
+test("anchors' clock: On it pressed while another anchor's card is still going is kept, and no “in 5” follows it", async () => {
+  const { kv } = memKv();
+  const start = Date.parse("2026-11-18T15:00:00Z");
+  const clock = { now: start - 10 * MIN };
+  const cards: { body: string; buttons: { id: string }[] }[] = [];
+  let release: () => void = () => undefined;
+  const slow = new Promise<void>((r) => (release = r));
+  const a = createTimeAnchors({
+    kv, timeZone: "Europe/London", now: () => clock.now, settings: async () => ON, quiet: null, lastOwner: () => 0,
+    events: async () => [ev({ id: "a", title: "Design sync", start, join: "https://zoom.us/j/1" }),
+      ev({ id: "b", title: "Budget call", start, join: "https://zoom.us/j/2" })],
+    card: async (body, buttons) => {
+      cards.push({ body, buttons });
+      if (cards.length === 2) await slow; // the second card is slow to go (a network that hangs)
+      return true;
+    },
+  });
+  const ticking = a.tick();
+  while (cards.length < 2) await new Promise((r) => setImmediate(r));
+  // The first anchor is there: the owner presses On it on it while the second card is still going.
+  await a.pressed(cards[0]!.buttons[0]!.id.slice(3));
+  release();
+  assert.equal((await ticking).length, 2);
+  clock.now = start - 5 * MIN;
+  const went = await a.tick();
+  assert.deepEqual(went.map((x) => x.event.title), ["Budget call"], "the “in 5” only for the meeting not pressed");
 });
 
 test("learned durations: nothing below three of a kind; the median, to five minutes, from three or more", () => {

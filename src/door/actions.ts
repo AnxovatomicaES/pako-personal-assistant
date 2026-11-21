@@ -58,7 +58,7 @@ export function mountActions(door: Door): Pick<Door, "choices" | "emailCards" | 
     const eff = await effective("call");
     const dec = decide({
       type: "call",
-      args: [{ role: "recipient", origin: originOf(call.name, turn) }, { role: "body", origin: bodyOrigin(call.message, turn.sources) }],
+      args: [{ role: "recipient", origin: originOf(call.name, turn, name) }, { role: "body", origin: bodyOrigin(call.message, turn.sources) }],
       initiative: turn.initiative, ownerUnknown: turn.ownerUnknown, mode: eff.mode, context: turn.context,
     });
     if (dec.mode === "confirm") {
@@ -96,7 +96,7 @@ export function mountActions(door: Door): Pick<Door, "choices" | "emailCards" | 
     const eff = await effective("message");
     const dec = decide({
       type: "message",
-      args: [{ role: isNumber(s.to) ? "number" : "recipient", origin: originOf(s.to, turn) }, { role: "body", origin: bodyOrigin(s.text, turn.sources) }],
+      args: [{ role: isNumber(s.to) ? "number" : "recipient", origin: originOf(s.to, turn, isNumber(s.to) ? undefined : to) }, { role: "body", origin: bodyOrigin(s.text, turn.sources) }],
       initiative: turn.initiative, ownerUnknown: turn.ownerUnknown, mode: eff.mode, context: turn.context,
     });
     if (dec.mode === "confirm") {
@@ -144,7 +144,7 @@ export function mountActions(door: Door): Pick<Door, "choices" | "emailCards" | 
     const dec = decide({
       type: "email",
       args: [
-        { role: typed ? "address" : "recipient", origin: originOf(e.to, turn) },
+        { role: typed ? "address" : "recipient", origin: originOf(e.to, turn, typed ? undefined : label) },
         { role: "body", origin: bodyOrigin(`${e.subject} ${e.text}`, turn.sources) },
       ],
       initiative: turn.initiative, ownerUnknown: turn.ownerUnknown, mode: eff.mode, context: turn.context,

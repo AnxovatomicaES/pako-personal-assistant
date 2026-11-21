@@ -53,6 +53,12 @@ answers a week are enough to see where Pako stands, and the error bars say how s
 
 ## Sending your numbers
 
+**With the Mac app (no terminal):** in the panel, Settings → *How Pako acts* → **Beta: help measure Pako** → **Show my beta report**.
+It shows everything the file holds; **Save it as a file** puts `pako-beta-<date>.json` in your Downloads. That is the same file as the
+command below.
+
+**From a terminal:**
+
 ```bash
 npm run beta:report -- --days 14
 ```

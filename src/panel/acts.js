@@ -48,7 +48,10 @@ const WORDS = {
   betaWeek: "This week: {asked} of {n} questions asked, {answered} answered.",
   betaStopped: "Two went unanswered, so no more this week.",
   betaNone: "No questions yet this week.",
-  betaReport: "To see the numbers: npm run beta:report. Only an export you choose to send leaves this computer.",
+  betaReport: "Your beta report holds counts only: no names, messages or titles. Nothing leaves this computer unless you send the file.",
+  betaShow: "Show my beta report",
+  betaSave: "Save it as a file",
+  betaShowFailed: "The report could not be made. Try again in a minute.",
   gentleTitle: "Gentle mode",
   gentleOn: "Gentle mode",
   gentleCap: "Nudges a day at most",
@@ -105,8 +108,21 @@ function h(tag, attrs = {}, ...children) {
 }
 
 const st = {
-  autonomy: null, life: null, lessons: null, gentle: null, beta: null, auNote: "", lifeNote: "", lessonsNote: "", gentleNote: "", betaNote: "", card: null,
+  autonomy: null, life: null, lessons: null, gentle: null, beta: null, auNote: "", lifeNote: "", lessonsNote: "", gentleNote: "", betaNote: "", betaExport: "", card: null,
 };
+
+async function showBetaReport() {
+  try {
+    const r = await fetch("/panel/api/beta-export?days=14", { credentials: "same-origin" });
+    if (!r.ok) throw new Error(String(r.status));
+    st.betaExport = await r.text();
+    st.betaNote = "";
+  } catch {
+    /* offline or refused: said in the note */
+    st.betaNote = t("betaShowFailed");
+  }
+  paint();
+}
 
 async function saveBeta(on) {
   try {
@@ -347,6 +363,10 @@ function betaPart() {
       : "",
     st.beta.on && w?.stopped ? h("p", { class: "muted small" }, t("betaStopped")) : "",
     h("p", { class: "muted small" }, t("betaReport")),
+    h("div", { class: "tg-form" },
+      h("button", { type: "button", id: "beta-show", onclick: () => void showBetaReport() }, t("betaShow")),
+      st.betaExport ? h("a", { href: "/panel/api/beta-export?days=14&download=1", download: "" }, t("betaSave")) : ""),
+    st.betaExport ? h("pre", { class: "small", id: "beta-export" }, st.betaExport) : "",
     st.betaNote ? h("p", { class: "hint", role: "status" }, st.betaNote) : "",
   ];
 }

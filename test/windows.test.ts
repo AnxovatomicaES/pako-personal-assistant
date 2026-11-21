@@ -278,11 +278,12 @@ test("install.ps1: ASCII only, all inside a function, the promised steps, and no
     "pull --ff-only", "ci --omit=dev --ignore-scripts", "'npm.cmd'", "irm https://claude.ai/install.ps1 | iex", "$autostart enable", "$autostart start",
     "bin\\panel.cjs", "$env:PAKO_AUTOSTART", "$env:PAKO_DIR", "$env:PAKO_REPO", "Join-Path $HOME 'pako'",
   ]) assert.ok(s.includes(step), step);
-  // Every Say and T has its Spanish and its English.
+  // English only, like all of Pako's own words, whatever language Windows is in: one sentence per Say, no Spanish left, no language switch.
   const str = `('(?:''|[^'])*'|"(?:\`.|[^"\`])*")`; // PowerShell's strings: '' and a backtick escape inside them
-  const pairs = [...s.matchAll(new RegExp(`\\b(?:Say|T) ${str}[ \\t]*${str}?`, "g"))];
-  assert.ok(pairs.length > 15);
-  for (const m of pairs) assert.ok(m[2], `missing English: ${m[0]}`);
+  const says = [...s.matchAll(new RegExp(`\\bSay ${str}[ \\t]*${str}?`, "g"))];
+  assert.ok(says.length > 15);
+  for (const m of says) assert.ok(!m[2], `one English sentence only: ${m[0]}`);
+  assert.doesNotMatch(s, /Get-UICulture|\$spanish|\^[aeioun?!]\w|Instalando|Descargando|necesita|\[S\/n\]/, "no Spanish left");
 });
 
 

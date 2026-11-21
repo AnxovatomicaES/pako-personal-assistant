@@ -24,6 +24,7 @@ import type { Inbound } from "./whatsapp.ts";
 import type { HealthReport } from "./watchdog.ts";
 import { createLog } from "./log.ts";
 import { readJsonRecord } from "./json-record.ts";
+import { waitLeft } from "./clock.ts";
 
 const log = createLog("zoom");
 
@@ -361,7 +362,7 @@ export function createZoom(d: ZoomDeps) {
   const giveUp = new Map<string, number>();
   /** Zoom's own summaries of the last two days that are new: told to the owner as they are. */
   const pollSummaries = async (first: boolean): Promise<number> => {
-    if (now() < summariesOffUntil) return 0;
+    if (waitLeft(summariesOffUntil, 3600_000, now())) return 0;
     const t = now();
     const from = new Date(lookBack(t, (await load()).polledAt)).toISOString().replace(/\.\d{3}Z$/, "Z");
     const to = new Date(t).toISOString().replace(/\.\d{3}Z$/, "Z");

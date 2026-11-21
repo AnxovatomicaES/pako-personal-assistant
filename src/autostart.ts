@@ -18,7 +18,7 @@
 // answering it may be the very one launchd or systemd runs.
 
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -209,6 +209,36 @@ export interface ServiceSpec {
   repo: string;
   logs: string;
   env: Record<string, string>;
+}
+
+/** The background Pako's logs are kept under this size, as the Mac app's app.log is. */
+export const LOG_CAP_BYTES = 5 * 1024 * 1024;
+/** The logs launchd, systemd and Windows write Pako's output to (Windows also keeps the previous start's as .old). */
+const CAPPED_LOGS = ["pako.log", "pako.err.log"];
+
+/**
+ * Caps the background Pako's logs (at start, then every hour): one past LOG_CAP_BYTES is copied to <name>.old (one old copy, the newest) and
+ * emptied in place. Not renamed: launchd and systemd keep the file open for appending, so their next line lands at its top. The ones capped.
+ */
+export function capLogs(logsDir: string, max = LOG_CAP_BYTES): string[] {
+  const out: string[] = [];
+  for (const name of CAPPED_LOGS) {
+    const path = join(logsDir, name);
+    try {
+      if ((statSync(path, { throwIfNoEntry: false })?.size ?? 0) <= max) continue;
+      try {
+        copyFileSync(path, `${path}.old`);
+      } catch {
+        /* no room for the copy (a full disk): the log is emptied all the same, a full disk stops Pako saving anything */
+        rmSync(`${path}.old`, { force: true });
+      }
+      truncateSync(path, 0);
+      out.push(name);
+    } catch {
+      /* a log that cannot be emptied now (another program holds it): tried again at the next look */
+    }
+  }
+  return out;
 }
 
 /** The LaunchAgent: started at login, again only after a crash, at most every 30 seconds, its output in ~/.pako/logs. */

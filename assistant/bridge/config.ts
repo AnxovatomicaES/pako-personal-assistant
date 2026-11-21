@@ -17,7 +17,7 @@ export interface BridgeConfig {
    */
   writingModel?: string;
   stateDir: string;
-  /** Claude's built-in tools: "WebSearch" by default; empty for none. */
+  /** Claude's built-in tools: "WebSearch" by default; empty for none. WebFetch can carry the notes out (WEBFETCH_WARNING). */
   tools: string[];
   /** Ask claude for `--no-bare` (keep reading the plan's sign-in): set at start by assistant/run.ts when this Claude Code offers it. */
   noBare?: boolean;
@@ -57,6 +57,12 @@ export interface BridgeConfig {
 
 /** The only tools the assistant may be given: it searches and reads the web, it never touches this computer. */
 const ALLOWED_TOOLS = new Set(["WebSearch", "WebFetch"]);
+
+/** The warning WebFetch needs (said at start and in the docs): what it opens, someone else's text can choose. */
+export const WEBFETCH_WARNING = "WebFetch is on: a web page, an email or a forwarded message can make Pako fetch a link that carries your notes "
+  + "out to someone else's site, before any card asks you. Leave it off (ASSISTANT_TOOLS=WebSearch) unless you need Pako to open pages.";
+/** Plain warnings for the tools turned on: WebFetch's, or none. */
+export const toolWarnings = (tools: string[]): string[] => (tools.includes("WebFetch") ? [WEBFETCH_WARNING] : []);
 /** The waits between the sends of one reply the server could not deliver. */
 export const REPLY_WAITS_MS = [5_000, 15_000, 45_000, 120_000, 300_000];
 /**

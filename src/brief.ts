@@ -42,6 +42,7 @@ const T = texts(
     more: "…and {n} more",
     reminders: "⏰ Reminders for today:",
     invite: "Anything you'd like me to look into or help with today? Just ask.",
+    connect: "Nothing is connected yet, so there is little to tell. Connect your calendar and mail in Pako's Settings (Your connections), and tomorrow's brief will have your day in it.",
     failed: "I couldn't put the brief together right now. Try again in a moment.",
     logSent: "Daily brief sent",
     logAsked: "Daily brief, asked for",
@@ -221,6 +222,8 @@ export function createBrief(d: BriefDeps) {
     if (other.length) sections.push(other.join("\n"));
 
     // Nothing to say: two lines, the greeting and the invitation (still the daily touch).
+    // Nothing to read at all (no calendar, no mail or Slack): a first brief says how to change that, instead of only a greeting.
+    if (!calendars.length && !(d.extras ?? []).length) sections.push(say("connect"));
     return sections.length ? `${greeting}\n\n${sections.join("\n\n")}\n\n${say("invite")}` : `${greeting}\n${say("invite")}`;
   };
 

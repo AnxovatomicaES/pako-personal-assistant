@@ -628,11 +628,13 @@ function personBlocks(people: Person[], words: string[]): { name: string; text: 
 
 // ---------- the panel's routes ----------
 
-/** POST routes that connect an account, take data in or set up something lasting: "leave the demo first" while it runs. */
+/** POST routes that connect an account, take data in, write to the person's own apps or set up something lasting: "leave the demo first". */
 const BLOCKED = [
   "/panel/api/connections", "/panel/api/google/", "/panel/api/slack/", "/panel/api/zoom/", "/panel/api/teams/", "/panel/api/telegram/",
   "/panel/api/whatsapp/", "/panel/api/mail/connect", "/panel/api/mail/autoconfig", "/panel/api/mail/oauth", "/panel/api/calendar/local",
   "/panel/api/discovery", "/panel/api/people/import", "/panel/api/move", "/panel/api/autostart",
+  // The Mac app's rounds that write to the person's own Apple Reminders and calendars: the invented week's follow-ups must never land there.
+  "/panel/api/reminders/local", "/panel/api/calendar/writes",
 ];
 
 /**

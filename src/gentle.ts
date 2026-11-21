@@ -443,6 +443,18 @@ export function createTimeAnchors(d: TimeAnchorsDeps) {
     memory = s;
     if (d.kv) await d.kv.set(GENTLE_ANCHORS_KEY, JSON.stringify(s), 200 * 24 * 3600);
   };
+  // One change of the record at a time, read again inside it: a press of On it while a slow card goes is not saved over by the look that sent it.
+  let chain: Promise<unknown> = Promise.resolve();
+  const change = <R>(fn: (s: AnchorState) => R): Promise<R> => {
+    const run = chain.then(async () => {
+      const s = await load();
+      const out = fn(s);
+      await save(s);
+      return out;
+    });
+    chain = run.catch(() => undefined);
+    return run;
+  };
   /** Ids of the "On it" buttons sent, to the event they were for (in memory: a press after a restart is a plain thanks). */
   const buttons = new Map<string, string>();
   let ticking = false;
@@ -453,25 +465,27 @@ export function createTimeAnchors(d: TimeAnchorsDeps) {
       const g = await d.settings();
       if (!g) return [];
       const t = now();
-      const s = await load();
       const events = await d.events().catch(() => [] as CalEvent[]);
-      // The meetings that ended: their length, for "this usually takes you about".
-      for (const e of events) {
-        const k = eventKey(e);
-        // Only meetings on the calendar: one known only from an invitation mail may never have been accepted, or held.
-        if (e.allDay || e.response === "declined" || e.invited || e.end > t || s.measured.includes(k)) continue;
-        const min = Math.round((e.end - e.start) / MIN);
-        s.measured.push(k);
-        if (min >= 5 && min <= 8 * 60 && kindKey(e.title)) s.durations.push({ key: kindKey(e.title), min, at: e.end });
-      }
-      const due = anchorsDue(events, t, {
-        timeZone: d.timeZone, leadOnlineMin: g.leadOnlineMin, leadPlaceMin: g.leadPlaceMin, quiet: d.quiet, lastOwner: d.lastOwner(), sent: s.sent,
-        seen: s.seen, history: s.durations,
+      const due = await change((s) => {
+        // The meetings that ended: their length, for "this usually takes you about".
+        for (const e of events) {
+          const k = eventKey(e);
+          // Only meetings on the calendar: one known only from an invitation mail may never have been accepted, or held.
+          if (e.allDay || e.response === "declined" || e.invited || e.end > t || s.measured.includes(k)) continue;
+          const min = Math.round((e.end - e.start) / MIN);
+          s.measured.push(k);
+          if (min >= 5 && min <= 8 * 60 && kindKey(e.title)) s.durations.push({ key: kindKey(e.title), min, at: e.end });
+        }
+        const list = anchorsDue(events, t, {
+          timeZone: d.timeZone, leadOnlineMin: g.leadOnlineMin, leadPlaceMin: g.leadPlaceMin, quiet: d.quiet, lastOwner: d.lastOwner(), sent: s.sent,
+          seen: s.seen, history: s.durations,
+        });
+        // Kept as sent, in the store, before any goes: a slow card, the next minute's look and a restart never send one twice.
+        for (const a of list) s.sent.push({ key: a.key, kind: a.kind, at: t });
+        return list;
       });
       const went: Anchor[] = [];
       for (const a of due) {
-        // Kept as sent before it goes: a slow card and the next minute's look never both send it.
-        s.sent.push({ key: a.key, kind: a.kind, at: t });
         const id = randomBytes(5).toString("hex");
         const ok = await d.card(a.text, [{ id: `ga:${id}`, title: GT()("btnOnIt") }]).catch(() => false);
         if (!ok) continue;
@@ -480,7 +494,6 @@ export function createTimeAnchors(d: TimeAnchorsDeps) {
         d.log?.(GT()("logAnchor", { title: a.event.title }));
         went.push(a);
       }
-      await save(s);
       return went;
     } catch (err) {
       log.error(`the time anchors: ${(err as Error).message}`);
@@ -494,9 +507,9 @@ export function createTimeAnchors(d: TimeAnchorsDeps) {
     const key = buttons.get(id);
     if (key) {
       try {
-        const s = await load();
-        if (!s.seen.includes(key)) s.seen.push(key);
-        await save(s);
+        await change((s) => {
+          if (!s.seen.includes(key)) s.seen.push(key);
+        });
       } catch (err) {
         log.warn(`an On it press could not be kept: ${(err as Error).message}`);
       }

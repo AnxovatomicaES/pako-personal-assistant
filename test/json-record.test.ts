@@ -76,6 +76,28 @@ test("a damaged record that cannot be kept aside is not written over: the read f
   assert.equal(s.m.get("followups"), BAD, "the damaged value stays where it was");
 });
 
+test("a damaged record whose copy the store silently did not keep (the computer's store on a full disk) is not written over", async () => {
+  // src/sqlite-kv.ts logs a failed write and resolves: the copy aside is read back, not taken on the word of set().
+  const m = new Map<string, string>([["followups", BAD]]);
+  let full = true;
+  const kv: Kv = {
+    get: async (k) => m.get(k) ?? null,
+    set: async (k, v) => {
+      if (full && v.length > 40) return; // a full disk: the large copy does not fit; a small record still does, in the pages freed
+      m.set(k, v);
+    },
+  };
+  const told: CorruptRecord[] = [];
+  await assert.rejects(readJsonRecord(kv, "followups", { onCorrupt: (c) => told.push(c) }), /damaged and could not be kept aside/);
+  assert.equal(told.length, 0, "nothing told as kept aside when it was not");
+  const store = mountStore({ d: { kv }, now: () => 1_000 } as unknown as Engine);
+  await assert.rejects(store.mutate((st) => void st.mailRead.push("m1")));
+  assert.equal(m.get("followups"), BAD, "the damaged value stays where it was");
+  full = false;
+  assert.equal(await readJsonRecord(kv, "followups", { now: () => 2_000 }), undefined);
+  assert.equal(m.get("corrupt:followups:2000"), BAD, "kept aside once the store takes it");
+});
+
 test("follow-ups: a damaged record is kept aside and the owner told before the next change starts it again", async () => {
   const s = memoryKv({ followups: BAD });
   const told: CorruptRecord[] = [];

@@ -472,3 +472,12 @@ test("settings page: with the project's own app a card is one Connect button, it
   assert.equal(WORDS["slack.adminNote"], "Your workspace admin may need to approve Pako. Slack sends them the request, and you press Connect Slack again once it's approved.");
   for (const k of ["slack.connectOne", "zoom.connectOne", "connect.ownApp", "cal.google"]) assert.ok(Object.hasOwn(WORDS, k), k);
 });
+
+test("settings page: a refusal for too many tries is said in plain words with what to do, never the server's bare 'too many'", () => {
+  // Every panel route's rate limit answers 429 { error: "too many" }; the page's one fetch helper puts a sentence in its place.
+  const code = read("src/panel/settings.js");
+  const api = code.slice(code.indexOf("async function api("), code.indexOf("/** A route's answer"));
+  assert.match(api, /r\.status === 429/);
+  assert.match(api, /t\("err\.tooMany"\)/);
+  assert.match(WORDS["err.tooMany"] ?? "", /wait a minute/i);
+});

@@ -180,7 +180,7 @@ export const WORDS = {
   "claude.planName": "{plan} plan",
   "claude.api": "Connected (API billing)",
   "claude.cloud": "Connected (cloud provider)",
-  "claude.needsPlan": "Claude Code needs a Pro, Max or Team plan",
+  "claude.needsPlan": "Claude Code needs a Pro, Max, Team or Enterprise plan",
   "claude.needsPlanLine": "This account is on the free plan. Upgrade it, then press “Check again”.",
   "claude.upgrade": "Upgrade your plan",
   "claude.checkAgain": "Check again",
@@ -485,6 +485,7 @@ export const WORDS = {
 
   "err.save": "I couldn't save it. Try again.",
   "err.offline": "I can't find Pako. Is it still open? Try again in a moment.",
+  "err.tooMany": "Too many tries in a row. Wait a minute, then try again.",
   "err.notBack": "Pako is taking a while to come back. Wait a little and reload this page.",
   "err.noConnections": "This Pako isn't connected from here: its connections are in the server's settings.",
   "save": "Save",

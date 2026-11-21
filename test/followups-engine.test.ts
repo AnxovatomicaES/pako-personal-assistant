@@ -9,7 +9,7 @@ test("createFollowups gives the same names it always has, each a function (the r
     kv: null, timeZone: "Europe/London", now: () => Date.parse("2026-11-16T09:00:00Z"), enqueue: async () => true, card: async () => true, notify: async () => undefined,
   });
   assert.deepEqual(Object.keys(engine).sort(), [
-    "answered", "calendarChanged", "chaseNow", "chasePressed", "chaseTick", "chaseWritten", "closeByWords", "closedForYou", "command", "context",
+    "answered", "calendarChanged", "chaseNow", "chasePressed", "chaseTick", "chaseUnsent", "chaseWritten", "closeByWords", "closedForYou", "command", "context",
     "describe", "doneFor", "draftFacts", "dropFromChat", "engaged",
     "expiredParked", "forDraft", "forRef", "fromChat", "fromMail", "ingest", "letGo", "moveDue", "observeMail", "observeSlack", "offer", "open", "parked",
     "parkedText", "press", "read", "rehearse", "reopen", "reopenByWords", "reopenClosed", "result", "setStep", "snoozeCard", "spentToday", "start",

@@ -114,13 +114,18 @@ export interface LoopChase {
   to?: string;
   toName?: string;
   subject?: string;
+  /** The door's STOP count when its card went: a STOP since ends the card (its Send and Copy), as every card waiting. */
+  stops?: number;
 }
+
+/** Which chase a send is: its loop and when that chase was asked (an Undo or a failed send takes back only that one). */
+export interface ChaseRef { loop: string; askedAt: number }
 
 /** What a press on a chase card asks of the door: a text to tell, a draft to copy, or an email to send through the held path. */
 export interface ChasePress {
   say: string;
   copy?: string;
-  send?: { label: string; target: string; subject: string; text: string; key: string };
+  send?: { label: string; target: string; subject: string; text: string; key: string; chase: ChaseRef };
 }
 
 /** What "Not mine" taught: this kind of thing, from this person and place, is not the owner's. */
@@ -328,6 +333,8 @@ export interface FollowupsDeps {
   who?: (name: string) => string;
   /** What else Pako said on its own today (src/proactive.ts suggestions): the day's budget is shared. */
   othersToday?: () => Promise<number>;
+  /** How many STOPs the door has seen (src/door/stop-resume.ts): a chase card shown before a STOP sends or copies nothing after it. */
+  stops?: () => number;
   /** What Pako learned from the owner's corrections (src/lessons.ts): "Not mine" kept as a lesson, and the lessons each extraction reads. */
   lessons?: LessonsPort;
   /**
@@ -490,6 +497,8 @@ export interface FollowupsDoor {
   chaseWritten?(o: { loop: string; tone: ChaseTone; text: string }): Promise<boolean>;
   /** A press on a chase card: ch1 the gentle one, ch2 the firm one, ch3 Not needed. */
   chasePressed?(button: "1" | "2" | "3", id: string): Promise<ChasePress>;
+  /** A chase's email did not go after all (Undo in its window, refused, paused, stale): no longer kept as sent, so its card works again. */
+  chaseUnsent?(c: ChaseRef): Promise<boolean>;
   /** "chase <words>": the one waiting-on loop those words name, chased now (its drafts asked); what to tell the owner. */
   chaseNow?(words: string): Promise<{ ok: boolean; say: string }>;
 }

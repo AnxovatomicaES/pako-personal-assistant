@@ -87,7 +87,11 @@ function mentions(text: string, value: string): boolean {
  * Where a recipient (a name, a number, an address) came from. The owner's words win: a name they wrote, or the relation they wrote of a
  * person they told Pako about. Otherwise outside text that names it makes it someone else's; otherwise the model chose it ("pako").
  */
-export function recipientOrigin(to: string, src: TurnSources): Origin {
+/**
+ * `resolved`: the contact `to` was resolved to (the contact book's name). A relation the owner wrote names its own person only: when the
+ * contact is someone else ("my sister" is Ana Ruiz, the book's only Ana is Ana Gil), the relation does not make it the owner's pick.
+ */
+export function recipientOrigin(to: string, src: TurnSources, resolved?: string): Origin {
   const outside = src.outside.find((o) => mentions(o.text, to));
   // Named by the owner: theirs, unless outside text names it too and the owner only asked about it («¿Qué me dice Luis?») rather than to
   // write, call or tell. Then the request to reach that person came from the outside text, not from them.
@@ -96,7 +100,11 @@ export function recipientOrigin(to: string, src: TurnSources): Origin {
     const names = isAddress(to) || isNumber(to) ? null : [fold(to), ...(first.length >= 3 ? [first] : [])];
     return outside && !src.owner.some((t) => asksToReach(t, names)) ? { from: "third-party", source: outside.source } : { from: "owner" };
   }
-  const person = (src.people ?? []).find((p) => fold(p.name) === fold(to) || fold(p.name).split(" ")[0] === fold(to));
+  // The same person as the contact: one's name words all within the other's ("Ana" and "Ana Ruiz"; never "Ana Ruiz" and "Ana Gil").
+  const words = (s: string): string[] => fold(s).split(" ").filter(Boolean);
+  const within = (a: string[], b: string[]): boolean => a.every((w) => b.includes(w));
+  const same = (p: { name: string }): boolean => !resolved || within(words(p.name), words(resolved)) || within(words(resolved), words(p.name));
+  const person = (src.people ?? []).find((p) => (fold(p.name) === fold(to) || fold(p.name).split(" ")[0] === fold(to)) && same(p));
   const relWords = (r: string | undefined): string[] => (r ? fold(r).split(" ").filter((w) => w.length >= 4) : []);
   const rel = relWords(person?.relation);
   // Another person with the same relation ("my client" with two clients): the owner's words name neither, so the pick is the model's own.
@@ -461,6 +469,8 @@ export interface HeldAction {
   subject?: string;
   /** A call that goes straight to the friend's voicemail. */
   direct?: boolean;
+  /** An email that chases someone's overdue promise (src/followups/chase.ts): taken back there when it does not go. */
+  chase?: { loop: string; askedAt: number };
   /** The chat the answer went to (the receipts go there too). */
   route: string | null;
   at: number;

@@ -120,3 +120,15 @@ test("docs/notarization.md: the owner's costs, Apple steps and where they plug i
   assert.match(read("desktop/mac/release.sh"), /PAKO_NOTARY_PROFILE[\s\S]*notarize\.sh/);
   assert.match(read("package.json"), /"mac-release":/);
 });
+
+test("mac docs: Connect Claude's first-run facts are the app's (how long the sign-in waits, the line shown before installing)", () => {
+  const swift = read("desktop/mac/Claude.swift");
+  const signIn = swift.slice(swift.indexOf("func signIn("), swift.indexOf("func sendCode("));
+  const minutes = Number(/addingTimeInterval\((\d+) \* 60\)/.exec(signIn)?.[1]);
+  assert.ok(minutes > 0, "the sign-in's wait in Claude.swift");
+  const doc = read("docs/desktop-mac.md").replace(/\s+/g, " ");
+  const said = /every 2 seconds, for up to (\d+) minutes, until it says signed in/.exec(doc)?.[1];
+  assert.equal(Number(said), minutes, "docs/desktop-mac.md says how long the window waits for the sign-in");
+  const notInstalled = /case \.notInstalled: return \(connectTitle, "([^"]+)"\)/.exec(read("desktop/mac/Texts.swift"))?.[1];
+  assert.ok(notInstalled && doc.includes(`*${notInstalled}*`), "docs/desktop-mac.md quotes the window's line before installing");
+});

@@ -1,5 +1,5 @@
-// Claude for Pako, set up from the app: the person connects the Claude account they already use (Claude Desktop, claude.ai: a Pro or Max
-// plan) in two clicks, without a terminal and without having to know that Pako runs Claude Code underneath.
+// Claude for Pako, set up from the app: the person connects the Claude account they already use (Claude Desktop, claude.ai: a Pro, Max, Team or
+// Enterprise plan) in two clicks, without a terminal and without having to know that Pako runs Claude Code underneath.
 //
 // Pako's brain is the `claude` command (Claude Code). Claude Desktop alone does not give one a third-party app may use: its sign-in is its own,
 // and nothing here reads it (nor any credential, Keychain item or file of Claude's). So the app does, at the person's click, what Anthropic's
@@ -259,7 +259,7 @@ final class ClaudeHelper: @unchecked Sendable {
     /// Claude's own sign-in (`claude auth login --claudeai`: the Claude subscription, https://code.claude.com/docs/en/cli-reference), which opens
     /// the browser on Claude's site. Claude Code 2.1.325's page then shows a code to paste back ("Paste code here if prompted > "): the window
     /// takes it and `sendCode` writes it to the sign-in's stdin, a pipe kept open for that. Meanwhile `claude auth status` every two seconds, for
-    /// up to five minutes, until it says signed in. `email`: the owner's address, filled in on Claude's page (`--email`), when the app knows it. Its output is only read for the page's address (an "open it again" button), whether it asks
+    /// up to ten minutes, until it says signed in. `email`: the owner's address, filled in on Claude's page (`--email`), when the app knows it. Its output is only read for the page's address (an "open it again" button), whether it asks
     /// for the code, and its last error line; nothing of it is kept or written. nil when signed in; else what it said last ("" when cancelled).
     /// A Cancel pressed before it starts holds: no browser page opens (the app clears `cancelled` when Connect is pressed, not here).
     func signIn(_ bin: String, email: String? = nil, step: @escaping (ConnectStep) -> Void) -> String? {
@@ -273,7 +273,7 @@ final class ClaudeHelper: @unchecked Sendable {
         defer { p.stop(); use(nil); lock.lock(); signing = nil; lock.unlock() }
         var shown = ConnectStep.signingIn(page: nil, code: false, error: "", sent: 0)
         step(shown)
-        let until = Date().addingTimeInterval(5 * 60)
+        let until = Date().addingTimeInterval(10 * 60)
         var page: URL?
         while Date() < until {
             if cancelled { return "" }

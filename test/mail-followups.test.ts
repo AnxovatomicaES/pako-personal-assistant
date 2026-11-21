@@ -379,3 +379,15 @@ test("restart mid-flush: an email thread's due batch stays in the store until it
   assert.equal(st.mailBatches.length, 0);
   assert.equal(st.mailBudget.n, 2, "each counted once");
 });
+
+test("mail body: a line of blanks cannot freeze the server (trailing space is cut in linear time)", () => {
+  // A stranger's line of 190,000 spaces and one letter, quoted in the owner's reply (their Sent folder is read whole, up to 200,000
+  // characters): `/\s+$/` tried every start and took tens of seconds of CPU. CPU time, not the wall clock.
+  const t0 = process.cpuUsage();
+  const body = cleanMailBody(`Thanks, I'll look.\n\n> ${" ".repeat(190_000)}x\n${"\t ".repeat(50_000)}y\n${" ".repeat(150_000)}z\n`);
+  const used = process.cpuUsage(t0);
+  const ms = (used.user + used.system) / 1000;
+  assert.ok(ms < 1000, `took ${ms} ms of CPU`);
+  assert.ok(body.startsWith("Thanks, I'll look."));
+  assert.equal(cleanMailBody("Done.   \nOmar\t \n"), "Done.\nOmar", "trailing blanks still go");
+});

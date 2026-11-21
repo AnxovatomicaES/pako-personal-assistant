@@ -191,6 +191,7 @@ test("email: a reply to their email, Re: its subject, in their language; only th
   const press = await r.engine.chasePressed("1", "c000000002");
   assert.deepEqual(press.send, {
     label: "Ana Ruiz", target: "ana@client.example", subject: "Re: Q3 numbers", text: "Hi Ana, any news on the Q3 numbers?", key: `chase-c000000002-${at("2026-11-17T14:30")}`,
+    chase: { loop: "c000000002", askedAt: at("2026-11-17T14:30") },
   });
   assert.equal(r.stored("c000000002").chase?.chasedAt, at("2026-11-17T14:30"));
   assert.equal((await r.engine.chasePressed("1", "c000000002")).send, undefined, "one chase, one send");
@@ -202,6 +203,45 @@ test("email: a reply to their email, Re: its subject, in their language; only th
   await other.engine.chaseWritten({ loop: "c000000002", tone: "firm", text: "x\nHi Ana, the numbers?" });
   assert.deepEqual(other.cards[0]!.buttons.map((b) => b.title), ["Copy gentle", "Copy firm", "Not needed"]);
   assert.equal((await other.engine.chasePressed("2", "c000000002")).copy, "Hi Ana, the numbers?");
+});
+
+test("email: a sender whose name only contains theirs (Juliana for Ana) is someone else, so the chase is copied, never sent to them", async () => {
+  const r = rig({ loops: [mailLoop()], mail: { name: "Juliana Mora", address: "juliana@client.example", text: "Ana will send the numbers on Tuesday." } });
+  r.clock.now = at("2026-11-17T14:30");
+  await r.engine.chaseTick();
+  assert.equal(r.stored("c000000002").chase?.to, undefined, "not Juliana's address");
+  await r.engine.chaseWritten({ loop: "c000000002", tone: "gentle", text: "x\nHi Ana" });
+  await r.engine.chaseWritten({ loop: "c000000002", tone: "firm", text: "x\nHi Ana, the numbers?" });
+  assert.deepEqual(r.cards[0]!.buttons.map((b) => b.title), ["Copy gentle", "Copy firm", "Not needed"]);
+  assert.equal((await r.engine.chasePressed("1", "c000000002")).send, undefined);
+  // Her own address with a dot or a dash in it is still hers.
+  const own = rig({ loops: [mailLoop()], mail: { name: "", address: "ana.ruiz@client.example", text: "I will send the numbers on Tuesday." } });
+  own.clock.now = at("2026-11-17T14:30");
+  await own.engine.chaseTick();
+  assert.equal(own.stored("c000000002").chase?.to, "ana.ruiz@client.example");
+});
+
+test("a STOP ends a chase card: after RESUME its Send or Copy does nothing; Not needed still works; a new chase is offered afresh", async () => {
+  const r = rig({ loops: [mailLoop()] });
+  let stops = 0;
+  const engine = createFollowups({
+    config: { delayMs: 10 * MIN, maxPerDay: 6, batchMs: 3 * MIN, quiet: QUIET }, drafts: true, kv: r.kv, timeZone: TZ, now: () => r.clock.now,
+    enqueue: async () => true, notify: async () => undefined, card: async (body, buttons) => (r.cards.push({ body, buttons }), true),
+    mailOf: async () => ({ address: "ana@client.example", name: "Ana Ruiz", subject: "Q3 numbers", text: "I will send the Q3 numbers on Tuesday." }),
+    chaseDraft: async () => true, stops: () => stops,
+  });
+  r.clock.now = at("2026-11-17T14:30");
+  await engine.chaseTick();
+  await engine.chaseWritten({ loop: "c000000002", tone: "gentle", text: "x\nHi Ana, any news?" });
+  await engine.chaseWritten({ loop: "c000000002", tone: "firm", text: "x\nHi Ana, the numbers?" });
+  assert.equal(r.cards.length, 1);
+  stops++; // the owner wrote STOP (and RESUME later)
+  const press = await engine.chasePressed("1", "c000000002");
+  assert.equal(press.send, undefined, "nothing goes after a STOP");
+  assert.equal(press.copy, undefined);
+  assert.equal(press.say, "That reminder is no longer there. Type CHASE and a few words to write a new one.");
+  assert.equal(r.stored("c000000002").chase?.chasedAt, undefined);
+  assert.match((await engine.chasePressed("3", "c000000002")).say, /^OK, no more reminders/);
 });
 
 test("grounding: a chase's draft says no date or amount its facts lack, goes back to its loop, and is not told in the chat", async () => {
@@ -246,6 +286,7 @@ test("door: Send on an email chase goes through the held send to that person; Co
   const drafted = { askedAt: at("2026-11-17T14:30"), offeredAt: at("2026-11-17T14:31"), gentle: "Hi Ana, any news on the Q3 numbers?", firm: "Hi Ana, the Q3 numbers were due Tuesday at 10:00. Could you send them?" };
   const r = rig({ loops: [
     mailLoop({ chase: { ...drafted, to: "ana@client.example", toName: "Ana Ruiz", subject: "Q3 numbers" } }), slackLoop({ chase: drafted }), ownLoop,
+    mailLoop({ id: "c000000004", title: "Ana sends the signed lease", chase: { ...drafted, to: "ana@client.example", toName: "Ana Ruiz", subject: "Lease" } }),
   ] });
   r.clock.now = at("2026-11-17T15:00");
   const sent: Body[] = [];
@@ -258,10 +299,11 @@ test("door: Send on an email chase goes through the held send to that person; Co
   const tools = loadVoiceTools({ memory, actions: { contacts: () => [], callContact: async () => ({ ok: true, text: "started" }), lookupCall: async () => "ok" } });
   const config = loadWhatsappConfig(ENV, "+447700900123").config!;
   const app = express();
+  const control = createControl(r.kv, () => r.clock.now);
   mountWhatsapp(app, {
-    config, tools, memory, kv: r.kv, control: createControl(r.kv, () => r.clock.now), ownerName: "Alex", timeZone: TZ, contacts: () => [], fetch: meta,
+    config, tools, memory, kv: r.kv, control, ownerName: "Alex", timeZone: TZ, contacts: () => [], fetch: meta,
     now: () => r.clock.now, callCheckMs: 5, receiptWaitMs: 60_000, followups: followupsProxy(() => r.engine), sendEmail: async (x) => void mails.push(x),
-    autonomy: { config: { mode: "direct", seconds: 10 }, delay: () => 0 },
+    autonomy: { config: { mode: "direct", seconds: 10 }, delay: (ms) => (ms > 0 ? 300 : 0) },
   });
   const server: Server = createServer(app);
   await new Promise<void>((ok) => server.listen(0, "127.0.0.1", () => ok()));
@@ -283,6 +325,13 @@ test("door: Send on an email chase goes through the held send to that person; Co
     assert.ok(texts().includes(drafted.firm), "the draft alone, to copy");
     assert.ok(texts().includes("☝️ Copy it and send it in Slack: https://slack.com/app_redirect?channel=D0ANA0001"));
     assert.equal(mails.length, 0, "a Slack chase is never sent by Pako");
+    // Paused (STOP): nothing goes, and the press is not used up: after RESUME the same Send still sends.
+    await control.setPaused(true, r.clock.now);
+    await press("ch1:c000000002");
+    await new Promise((ok) => setTimeout(ok, 50));
+    assert.equal(mails.length, 0, "nothing sent while paused");
+    assert.equal(r.stored("c000000002").chase?.chasedAt, undefined, "not recorded as chased: nothing went");
+    await control.setPaused(false, r.clock.now);
     await press("ch1:c000000002");
     for (let i = 0; i < 100 && !mails.length; i++) await new Promise((ok) => setTimeout(ok, 10));
     assert.equal(mails.length, 1);
@@ -293,6 +342,20 @@ test("door: Send on an email chase goes through the held send to that person; Co
     await new Promise((ok) => setTimeout(ok, 50));
     assert.equal(mails.length, 1, "one chase sends once");
     assert.equal(texts().at(-1), "You already sent or copied a reminder for this one.");
+    // Send, then Undo in its window: nothing went, so the chase is not kept as sent, and its other tone can still be sent.
+    await press("ch1:c000000004");
+    const undo = [...sent].reverse().find((b) => b.type === "interactive")!.interactive.action.buttons[0].reply.id as string;
+    assert.match(undo, /^a0:/);
+    await press(undo);
+    assert.equal(texts().at(-1), "Undone: nothing went out.");
+    await new Promise((ok) => setTimeout(ok, 400));
+    assert.equal(mails.length, 1, "the undone chase never went");
+    assert.equal(r.stored("c000000004").chase?.chasedAt, undefined, "not kept as chased");
+    r.clock.now += MIN;
+    await press("ch2:c000000004");
+    for (let i = 0; i < 100 && mails.length < 2; i++) await new Promise((ok) => setTimeout(ok, 10));
+    assert.equal(mails.length, 2, "the firm one goes");
+    assert.equal(mails[1]!.subject, "Re: Lease");
     // CHASE and a few words: someone else's promise is drafted now; the owner's own is not theirs to chase.
     await hook({ type: "text", text: { body: "chase q3 numbers" } });
     assert.match(texts().at(-1)!, /^Several things match those words\. Which one\?/);

@@ -3,6 +3,7 @@
 
 import { mountAutonomyPanel } from "../autonomy.ts";
 import { mountBetaAuditPanel } from "../beta-audit.ts";
+import { mountBetaExport } from "../beta-report.ts";
 import { type CalendarFreshness, mountDashboard } from "../dashboard.ts";
 import { demoTimes, recordedAnswer } from "../demo.ts";
 import { mountGentlePanel } from "../gentle.ts";
@@ -179,6 +180,8 @@ export function wirePanel(ctx: AfterDoor) {
   // Gentle mode's card in How Pako acts (src/panel/acts.js): the switch, the day's cap, the lead times and the Parked list.
   // The beta's audit opt-in (src/beta-audit.ts): its card in How Pako acts; built with the jobs' clock, so looked up when asked.
   mountBetaAuditPanel(app, { signedIn: panel.signedIn, audit: () => betaRef.audit });
+  // The beta report as a file, for a tester with no terminal (the Mac app): counts only, saved by the tester, never sent by Pako.
+  mountBetaExport(app, { signedIn: panel.signedIn, kv: () => ctx.kv });
   mountGentlePanel(app, {
     signedIn: panel.signedIn,
     settings: gentleSettings,

@@ -68,7 +68,8 @@ export function mountContext(door: Door): void {
       language: await ownerLanguage(),
       // This server holds the tags of a turn the bridge marks as outside text (src/quarantine.ts); a bridge that sees no such word drops them.
       // 2: it also takes `context` (new outside text in a turn's context lines) and holds only that reply's destructive and standing tags.
-      quarantine: 2,
+      // 3: it holds what such a reply adds too (notes, reminders, lists, tasks, facts), so the bridge sends its notes with the reply.
+      quarantine: 3,
       // Which events carry someone else's words (Pako's own receipts do not): a newer bridge marks a turn only for those.
       outsideEvents: events.filter((e) => e.outside && at - e.at < EVENT_KEEP_MS).map((e) => `${hhmm(e.at)} ${e.text}`),
       // What the latest papers said (the bridge's isolated read), for the owner's next words about them; left out when there is none.

@@ -56,8 +56,8 @@ type ReplyBody = {
   remember?: unknown;
   forget?: unknown;
   /**
-   * A newer bridge: new outside text was in this turn's context lines (src/quarantine.ts), and where from. What deletes or stands is held
-   * for the owner's press (its `forget` comes here too), and words Pako wrote to someone ask first; the rest acts as the owner's own.
+   * A newer bridge: new outside text was in this turn's context lines (src/quarantine.ts), and where from. What deletes, stands or is kept is held
+   * for the owner's press (its `forget` comes here too), and words Pako wrote to someone ask first: only what reaches someone acts now.
    */
   context?: unknown;
   /** A newer bridge (<person>): someone in the owner's life, as the owner told it (src/people.ts). */
@@ -174,8 +174,9 @@ const readReply = (door: Door, b: ReplyBody) => {
     const [key, value] = [line(k.key, ATTRIBUTE_MAX), line(k.value, VALUE_MAX)];
     return key && value ? [{ who: line(k.who, 60), key, value, since: line(k.since, 10) }] : [];
   });
-  // Notes come with a reply only from a marked turn (held below); any other reply's notes went to /assistant/memory.
-  const noteAdds = outside.length ? strings(b.remember, 3, 3, 300) : [];
+  // Notes come with a reply only from a marked turn, or one with new outside text in its context (held below); any other reply's notes went
+  // to /assistant/memory.
+  const noteAdds = outside.length || context.length ? strings(b.remember, 3, 3, 300) : [];
   const noteDrops = outside.length || context.length ? strings(b.forget, 2, 4, 80) : [];
   const text = typeof b.text === "string" ? b.text.trim().slice(0, 8000) : "";
   const call = b.call && typeof b.call.name === "string" && typeof b.call.message === "string"
@@ -201,14 +202,18 @@ const readReply = (door: Door, b: ReplyBody) => {
     ...(promiseAdds.length ? { promises: promiseAdds } : {}),
     ...(personAdds.length ? { people: personAdds } : {}),
   };
-  // A turn with new outside text in its context: what deletes or stands waits for the press (as a marked turn's would), the rest acts.
-  const contextHeld: HeldActs = {
-    call: null, message: null, send: null, book: null, remind: [], unremind, lists: listOps.filter((l) => l.op === "remove"), tasks: [], done: doneWords,
-    ...(closedWords.length ? { closed: closedWords } : {}),
-    remember: [], forget: noteDrops, ...(personAdds.length ? { people: personAdds } : {}),
-  };
-  const contextActs: HeldActs = { ...acts, unremind: [], lists: listOps.filter((l) => l.op !== "remove"), done: [], closed: [], forget: [], people: undefined };
   const lifeFacts = Array.isArray(b.facts) ? b.facts.slice(0, 3) : [];
+  // A turn with new outside text in its context: everything it would keep waits for the press, as a marked turn's would. What deletes or
+  // stands, and also what it adds (a note, a reminder, a list item, a task, a promise, a fact, the diary): kept at once, an injected line
+  // would be read in every later turn as the owner's own words. Only what reaches someone acts now, through src/autonomy.ts, which asks
+  // first for words Pako wrote with that text in front of it.
+  const contextHeld: HeldActs = {
+    ...acts, call: null, message: null, send: null, email: null, book: null,
+    ...(lifeFacts.length ? { facts: lifeFacts as NonNullable<HeldActs["facts"]> } : {}),
+    ...(knowAdds.length ? { know: knowAdds } : {}),
+    ...(roleCount ? { role: roleTags } : {}),
+  };
+  const contextActs: HeldActs = { call, message, send, email, book, remind: [], unremind: [], lists: [], tasks: [], done: [], remember: [], forget: [] };
   const dump = dumpItemsOf(b.dump);
   const checkins = checkinItemsOf(b.checkins);
   return { text, acts, contextHeld, contextActs, outside, context, heard, lifeFacts, routineAdds, watchAdds, knowAdds, roleTags, roleCount, dump, checkins };
@@ -264,10 +269,12 @@ export function mountReply(door: Door): void {
           if (hasActs(contextHeld)) await holdReply(contextHeld, context);
           await act(contextActs, changes, { ...(await turnOf(key, heard, b.notice === true || isRoutineKey(key))), context });
         } else await act(acts, changes, await turnOf(key, heard, b.notice === true || isRoutineKey(key)));
-        // Facts are kept only from a turn of the owner's own words: the engine drops those of a turn that read outside text.
-        if (lifeFacts.length && d.life) await d.life.learn(lifeFacts, { outside: outside.length > 0 }).catch((err: Error) => logProactive.error(`${err.message}`));
-        if (knowAdds.length) await learnKnow(knowAdds, outside.length > 0).catch((err: Error) => logFacts.error(`${err.message}`));
-        if (roleCount) await companion.keep(roleTags);
+        // Facts are kept only from a turn of the owner's own words: the engine drops those of a turn that read outside text, and those of a
+        // turn with new outside text in its context are on its card (contextHeld).
+        const own = !context.length;
+        if (own && lifeFacts.length && d.life) await d.life.learn(lifeFacts, { outside: outside.length > 0 }).catch((err: Error) => logProactive.error(`${err.message}`));
+        if (own && knowAdds.length) await learnKnow(knowAdds, outside.length > 0).catch((err: Error) => logFacts.error(`${err.message}`));
+        if (own && roleCount) await companion.keep(roleTags);
         // A calendar change: always a card first, saying where it came from (this turn's outside text, if any).
         for (const p of calendarOf(b.calendar)) await door.proposeCalendar(p, outside.length ? outside : context);
         if (routineAdds.length || watchAdds.length) {

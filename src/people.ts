@@ -129,8 +129,12 @@ export function birthdayReminder(b: string, now: number, timeZone: string, hour 
 
 /** Whether today (in the owner's zone) is their birthday: the 29th of February counts on the 28th in a year without one. */
 export function isBirthdayToday(p: Person, now: number, timeZone: string): boolean {
+  return isBirthdayOn(p, today(now, timeZone));
+}
+
+/** Whether a date ("YYYY-MM-DD") is this person's birthday (29 February on the 28th in a year without it). */
+export function isBirthdayOn(p: Person, day: string): boolean {
   if (!p.birthday) return false;
-  const day = today(now, timeZone);
   const md = monthDay(p.birthday);
   if (day.slice(5) === md) return true;
   return md === "02-29" && day.slice(5) === "02-28" && daysIn(Number(day.slice(0, 4)), 2) === 28;

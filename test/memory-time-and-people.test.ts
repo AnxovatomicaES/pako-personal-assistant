@@ -644,3 +644,17 @@ for (const [via, seen] of [
     }
   });
 }
+
+test("splitAddress: a hostile From line costs linear time (blanks, quotes, brackets), and the usual shapes still split", () => {
+  // The old pattern took cubic time on a run of blanks with no address: 8,000 characters took over a minute. CPU time, not the wall clock.
+  const t0 = process.cpuUsage();
+  for (const s of [`${" ".repeat(20_000)}x`, `"${" ".repeat(20_000)}`, "<".repeat(20_000), `${" ".repeat(10_000)}"${" ".repeat(10_000)}<a@b`, `a@${" ".repeat(20_000)}`]) splitAddress(s);
+  const used = process.cpuUsage(t0);
+  assert.ok((used.user + used.system) / 1000 < 1000, `took ${(used.user + used.system) / 1000} ms of CPU`);
+  assert.deepEqual(splitAddress("  Ana Ruiz  <ana@x.com> "), { name: "Ana Ruiz", email: "ana@x.com" });
+  assert.deepEqual(splitAddress("<ana@x.com>"), { name: "", email: "ana@x.com" });
+  assert.deepEqual(splitAddress("\"Ruiz, Ana\" <Ana@X.com>"), { name: "Ruiz, Ana", email: "ana@x.com" });
+  assert.deepEqual(splitAddress("Ana <not an address>"), { name: "Ana <not an address>", email: "" });
+  assert.deepEqual(splitAddress("Ana <ana@x.com> extra"), { name: "Ana <ana@x.com> extra", email: "" });
+  assert.deepEqual(splitAddress("Ana"), { name: "Ana", email: "" });
+});

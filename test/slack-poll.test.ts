@@ -249,3 +249,27 @@ test("slack poll (one history call a minute): a DM Slack rate-limited is read ne
   // The refused call is not counted (it never reached the fake): D0001 is read in the round right after it, before D0002.
   assert.deepEqual(read, ["D0000", "D0001", "D0002"], "D0001 is asked again right after Slack's refusal");
 });
+
+test("slack poll: a place the store did not give back at start is not replaced by \"from now\": what came while Pako was off is read", async () => {
+  let clock = 1_800_000_000_000;
+  const s = fakeSlack(1);
+  const got: SlackEvent[] = [];
+  const kv = memoryKv();
+  const make = () => createSlackPoll({ api: s.api, self: async () => "U1", deliver: async (e) => void got.push(e), kv, now: () => clock });
+  await make().round();
+  // Pako is off for an hour; a DM comes meanwhile.
+  clock += 3600_000;
+  s.history.set("D0000", [{ ts: slackTs(clock - 1800_000), user: "U2", text: "Can you call me back?" }]);
+  // At the next start the store does not answer once.
+  const get = kv.get;
+  let down = true;
+  kv.get = async (k) => {
+    if (down) throw new Error("the store did not answer");
+    return get(k);
+  };
+  const poll = make();
+  await poll.round().catch(() => undefined);
+  down = false;
+  await poll.round();
+  assert.deepEqual(got.map((e) => e.text), ["Can you call me back?"], "the DM sent while Pako was off is not skipped");
+});

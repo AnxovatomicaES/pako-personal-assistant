@@ -12,7 +12,7 @@ import { createBridge, type BridgeConfig } from "../assistant/bridge.ts";
 import { BRIEF_PROMPT, BRIEF_TASK_PROMPT } from "../assistant/prompt.ts";
 import { createBrief } from "../src/brief.ts";
 import {
-  BRIEF_V2_KEY, briefMaterial, chatText, createBriefV2, gatherFacts, loadBriefV2Config, mountBriefPage, validateBrief,
+  BRIEF_V2_KEY, briefMaterial, chatText, createBriefV2, gatherFacts, loadBriefV2Config, mountBriefPage, timeBoth, validateBrief,
   type BriefV2Deps, type GatherDeps, type Gathered,
 } from "../src/brief-v2.ts";
 import type { CalEvent } from "../src/calendar.ts";
@@ -729,4 +729,14 @@ test("the bridge: a brief job runs isolated (no tools, no conversation, its own 
     server.close();
     server.closeAllConnections();
   }
+});
+
+test("“tomorrow” is the calendar day after today, also late on the evening before the clocks go forward", () => {
+  const ny = "America/New_York";
+  // Saturday 7 March 2026, 23:30 in New York; the clocks go forward that night, so Sunday has 23 hours.
+  const sat = Date.parse("2026-03-08T04:30:00Z");
+  const sun = Date.parse("2026-03-08T14:00:00Z"); // Sunday 10:00 EDT
+  const mon = Date.parse("2026-03-09T14:00:00Z"); // Monday 10:00 EDT
+  assert.match(timeBoth(sun, undefined, ny, sat, "en"), /^Tomorrow /i);
+  assert.doesNotMatch(timeBoth(mon, undefined, ny, sat, "en"), /^Tomorrow /i, "Monday is not tomorrow on a Saturday");
 });

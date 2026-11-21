@@ -6,7 +6,7 @@ Pako as `npm start` (the same `~/.pako`, the same panel), so you can also go on 
 
 ## Install Pako for Mac
 
-You need macOS 13 (Ventura) or newer, on an Intel Mac or Apple silicon, and a Claude account with a Pro or Max plan.
+You need macOS 13 (Ventura) or newer, on an Intel Mac or Apple silicon, and a Claude account with a Pro, Max, Team or Enterprise plan.
 
 1. **Download** `Pako-<version>.dmg`. (To check the download, compare `shasum -a 256 Pako-<version>.dmg` with the `.sha256` file published
    next to it.)
@@ -229,7 +229,7 @@ never asks for or reads Calendars, Contacts or Mail; the tests check the rules w
 
 ## Connect Claude: your own Claude plan
 
-Pako's brain is the `claude` command (Claude Code), signed in to **your own Claude plan** (Pro or Max): that is the way; an API key is the
+Pako's brain is the `claude` command (Claude Code), signed in to **your own Claude plan** (Pro, Max, Team or Enterprise): that is the way; an API key is the
 advanced alternative. Claude Desktop alone is not enough: its sign-in belongs to it, and no other app may use it (the app never reads it, nor
 any Keychain item, file or token of Claude's). The app sets up Claude Code instead, with the same Claude account, in two clicks, without a
 terminal.
@@ -240,14 +240,14 @@ been connected), when the running Pako says Claude is not signed in (or gone), f
 **Connect**:
 
 1. **Not installed** (no `claude` in your login shell's `PATH`, `~/.local/bin`, `~/.claude/local`, `/opt/homebrew/bin` or `/usr/local/bin`;
-   or the `CLAUDE_BIN` you set is not there): one line says *Pako will install Claude's helper (from Anthropic, about 100 MB) in your user
-   folder*. Connect downloads Anthropic's installer, `https://claude.ai/install.sh` (accepted only over https from `claude.ai` or
+   or the `CLAUDE_BIN` you set is not there): one line says *Pako installs Claude Code (from Anthropic) in your user folder and opens
+   Claude's sign-in page in your browser.* (about 100 MB). Connect downloads Anthropic's installer, `https://claude.ai/install.sh` (accepted only over https from `claude.ai` or
    `downloads.claude.ai`, where it moves to, and only a bash script of a sane size), into a private temporary folder, and runs it with
    `/bin/bash` as a program of its own: no shell command line, no Terminal, no `sudo` (the installer refuses it too). The installer puts
    Claude Code in `~/.local/bin/claude` and checks what it downloads (SHA-256). The window shows a spinner and the installer's last line; if
    it fails, its last lines and **Try again**. **Cancel** stops it. The temporary folder is deleted either way.
 2. **Not signed in**: Connect runs `claude auth login --claudeai` (Claude's own sign-in, with the Claude subscription) as a program of its own,
-   with no terminal and its stdin a pipe the app keeps open. Your browser opens Claude's page: sign in with your Claude account (Pro or Max).
+   with no terminal and its stdin a pipe the app keeps open. Your browser opens Claude's page: sign in with your Claude account (Pro, Max, Team or Enterprise).
    The window says *Finish signing in in your browser* (with *Open the sign-in page again*, the address the sign-in printed, if the browser
    did not open) and asks `claude auth status` every 2 seconds, for up to 10 minutes, until it says signed in. Then **Connected**, and it closes.
    **Paste the code**: Claude Code 2.1.325's page does not hand the sign-in back by itself; it shows a code, and the sign-in prints
@@ -278,7 +278,7 @@ The facts this relies on, from Anthropic's Claude Code docs (read on 2026-11-16)
 
 - Install, the native installer `curl -fsSL https://claude.ai/install.sh | bash` for macOS (recommended; npm and Homebrew are alternatives),
   the launcher at `~/.local/bin/claude`, no `sudo`: <https://code.claude.com/docs/en/setup>
-- Signing in with a Pro or Max plan (`claude` or `claude auth login`, in the browser), credentials in the macOS Keychain, the
+- Signing in with a Pro, Max, Team or Enterprise plan (`claude` or `claude auth login`, in the browser), credentials in the macOS Keychain, the
   authentication precedence (`ANTHROPIC_AUTH_TOKEN`, then `ANTHROPIC_API_KEY`, always used in `-p` mode, before the subscription login),
   `claude setup-token` (a one-year token, not used here): <https://code.claude.com/docs/en/iam> (now *Authentication*,
   <https://code.claude.com/docs/en/authentication>)

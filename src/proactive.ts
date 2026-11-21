@@ -473,19 +473,20 @@ export function createProactive(d: ProactiveDeps) {
   const log = (text: string): void => d.control?.log("proactive", text);
 
   // Health and mood: their own key, on disk only on the owner's computer, never in the log.
-  const readHealth = async (): Promise<Fact[]> => {
+  // Throws when the store does not answer: a change written after that would replace the whole diary with the new fact alone.
+  const loadHealth = async (): Promise<Fact[]> => {
     if (!d.local || !d.kv || healthLoaded) return health;
-    try {
-      const raw = await readJsonRecord(d.kv, HEALTH_KEY);
-      const list = raw ? (raw as unknown) : [];
-      health = (Array.isArray(list) ? list : []).map(factOf).filter((f): f is Fact => !!f && HEALTH_KINDS.includes(f.kind));
-      healthLoaded = true;
-    } catch (err) {
-      logProactive.warn(`the health facts could not be read: ${(err as Error).message}`);
-      health = [];
-    }
+    const raw = await readJsonRecord(d.kv, HEALTH_KEY);
+    const list = raw ? (raw as unknown) : [];
+    health = (Array.isArray(list) ? list : []).map(factOf).filter((f): f is Fact => !!f && HEALTH_KINDS.includes(f.kind));
+    healthLoaded = true;
     return health;
   };
+  /** For reading only: nothing when the store does not answer. */
+  const readHealth = (): Promise<Fact[]> => loadHealth().catch((err: Error) => {
+    logProactive.warn(`the health facts could not be read: ${err.message}`);
+    return [];
+  });
   const writeHealth = async (list: Fact[]): Promise<void> => {
     health = list.slice(-HEALTH_MAX);
     healthLoaded = true;
@@ -897,9 +898,14 @@ export function createProactive(d: ProactiveDeps) {
     const healthy = facts.filter((f) => HEALTH_KINDS.includes(f.kind));
     const rest = facts.filter((f) => !HEALTH_KINDS.includes(f.kind));
     if (healthy.length) {
-      const before = await readHealth();
-      await writeHealth([...before.filter((f) => !healthy.some((h) => h.kind === f.kind && h.key === f.key)), ...healthy]);
-      log(T(l)("logLearnedHealth"));
+      const before = await loadHealth().catch((err: Error) => {
+        logProactive.warn(`the health diary could not be read, so nothing new was kept in it: ${err.message}`);
+        return null;
+      });
+      if (before) {
+        await writeHealth([...before.filter((f) => !healthy.some((h) => h.kind === f.kind && h.key === f.key)), ...healthy]);
+        log(T(l)("logLearnedHealth"));
+      }
     }
     if (rest.length) {
       await mutate((s) => {

@@ -504,7 +504,8 @@ Settings (all optional, in `assistant/.env`): `ASSISTANT_WHISPER_MODEL` (path of
 `ASSISTANT_WRITING_MODEL` (the morning brief and the drafts: `claude-opus-5-5` by default; `off` or empty for `ASSISTANT_MODEL`; when the plan
 cannot use it they run on `ASSISTANT_MODEL` for the rest of the day, see [docs/configuration.md](../docs/configuration.md)),
 `ASSISTANT_TOOLS` (default `WebSearch`; empty for none; tools that run commands
-or edit files are refused), `ASSISTANT_ROTATE_AFTER` (a new conversation every N messages, default 30), `ASSISTANT_RUN_TIMEOUT_MS`,
+or edit files are refused; **adding `WebFetch` is a risk: a web page or a forwarded message can make Pako fetch a link that carries your notes
+out to someone else's site, before any card asks you**), `ASSISTANT_ROTATE_AFTER` (a new conversation every N messages, default 30), `ASSISTANT_RUN_TIMEOUT_MS`,
 `ASSISTANT_TYPED_TOOLS` (on when this Claude Code can load Pako's own MCP server, `assistant/mcp-server.ts`; `off` for the tags alone, as before).
 
 Typed tools: the conversation's `claude -p` gets Pako's MCP server through a generated `--mcp-config` (with `--strict-mcp-config`, so no other

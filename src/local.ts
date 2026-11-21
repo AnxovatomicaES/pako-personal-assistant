@@ -449,7 +449,7 @@ export interface FileKv extends Kv {
    */
   wipe: (keep?: { key: string; value: string; ttlSeconds: number }[]) => boolean;
   /** Each save of the file, as it goes (the watchdog, src/watchdog.ts): true when it was written, false with why when not. */
-  onSave: (report: (ok: boolean, detail?: string) => void) => void;
+  onSave: (report: (ok: boolean, detail?: string, since?: number) => void) => void;
 }
 
 // ---------- the chat window ----------
@@ -573,7 +573,7 @@ export interface BridgeStatus {
   failing?: boolean;
   /**
    * How the claude command is signed in, as its own `claude auth status` says (https://code.claude.com/docs/en/cli-reference): "plan", a
-   * claude.ai login or the long-lived token of `claude setup-token` (the person's Pro or Max plan); "key", an API key or an apiKeyHelper; "other",
+   * claude.ai login or the long-lived token of `claude setup-token` (the person's Pro, Max, Team or Enterprise plan); "key", an API key or an apiKeyHelper; "other",
    * a cloud provider. Absent until it has answered, or when it cannot (an older Claude Code). Only that word is kept: never an address or a token.
    */
   auth?: "plan" | "key" | "other";

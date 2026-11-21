@@ -12,7 +12,7 @@ import { parseReply } from "../assistant/bridge.ts";
 import { systemPromptFor } from "../assistant/prompt.ts";
 import { createCompanion } from "../src/companion.ts";
 import { createControl } from "../src/control.ts";
-import { birthdayEves, checkinNudge, friendCommand } from "../src/friend.ts";
+import { birthdayEves, checkinNudge, datesContext, friendCommand } from "../src/friend.ts";
 import {
   createHealth, doctorSummary, healthCommand, healthNudge, hoursOf, kindOf, loadCountry, redFlag, redFlagReply, HEALTH_KEY, type HealthState,
 } from "../src/health.ts";
@@ -423,6 +423,15 @@ test("other people's text never writes the diary or a lesson: an outside turn's 
 });
 
 // ---------- the friend, and the proactive offers ----------
+
+test("friend: \u201ctomorrow\u201d's birthday is the next calendar date, also late on the evening before the clocks go forward", () => {
+  const ana: Person = { id: "a1b2c3d4e5", name: "Ana", relation: "", birthday: "03-29", likes: [], notes: [], at: 0, updated: 0 };
+  const luis: Person = { id: "b1b2c3d4e5", name: "Luis", relation: "", birthday: "03-30", likes: [], notes: [], at: 0, updated: 0 };
+  // Saturday 28 March 2026, 23:30 in Madrid: Sunday 29 has 23 hours (the clocks go forward), so 24 hours on is already Monday 30.
+  const sat = Date.parse("2026-03-28T22:30:00Z");
+  assert.deepEqual(birthdayEves([ana, luis], sat, TZ, "en").map((e) => e.person.name), ["Ana"]);
+  assert.deepEqual(datesContext([ana, luis], sat, TZ, "en"), ["Ana: birthday tomorrow", "Luis: birthday in 2 days"]);
+});
 
 test("friend: a birthday the day before with an offer to draft (never sent by Pako), the check-in only when turned on, at a calm hour, weekly", async () => {
   const ana: Person = { id: "a1b2c3d4e5", name: "Ana", relation: "mi hermana", birthday: "11-15", likes: [], notes: [], at: 0, updated: 0 };

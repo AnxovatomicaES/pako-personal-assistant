@@ -543,6 +543,9 @@ a web search in that same answer, or one earlier in the same conversation), what
 (*"⚠️ This answer was written while reading other people's text (the web)…"*) with **Do it** and **Cancel**.
 Nothing happens until you press. The card lasts 15 minutes, and `STOP` or a restart ends it; pressing it while paused is refused.
 Every hold, confirmation and drop is in `LOG`. Your own words, as you type them, act as before.
+When something new from other people (an email, a calendar title, a Slack message) is in front of Pako for the first time, whatever that
+answer would keep (a note, a reminder, a list item, a task, a fact about you) is on the same card too, so a line someone else wrote can
+never be kept as if you had said it.
 
 - **Your papers (photos and PDFs).** Send a photo or a PDF on WhatsApp, on Telegram (with or without a caption) or with the paperclip in
   the panel's chat. Pako reads it in a run of its own (the file only, no tools, nothing it says can act) and answers with a short summary,

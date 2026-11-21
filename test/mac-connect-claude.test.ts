@@ -57,7 +57,7 @@ test("the one-button window in every state: Connect your Claude account, the ins
   assert.match(line("connected"), /Connected \/ .*ana@example\.com · Pro plan/);
   assert.match(line("already-connected"), /ana@example\.com · Pro plan/);
   assert.match(line("api-billing"), /Connected \(API billing\)/);
-  assert.match(line("needs-plan"), /Claude Code needs a Pro, Max or Team plan/);
+  assert.match(line("needs-plan"), /Claude Code needs a Pro, Max, Team or Enterprise plan/);
   assert.match(line("needs-plan"), /buttons: .*Upgrade your plan.*Check again|buttons: .*Check again.*Upgrade your plan/);
   assert.match(line("cancelled"), /No problem: press Try again whenever you like/);
   assert.doesNotMatch(r.stdout, /Terminal|terminal/, "never a terminal");

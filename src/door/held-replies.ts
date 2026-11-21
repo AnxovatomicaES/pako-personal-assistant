@@ -78,6 +78,14 @@ export function mountHeldReplies(door: Door): Pick<Door, "heldReplies" | "act" |
       }
     }
     if (a.people?.length) await keepPeople(a.people, changes);
+    // What a turn with new outside text in its context would have kept as the owner's own words, now that the owner said yes to it.
+    try {
+      if (a.facts?.length && d.life) await d.life.learn(a.facts, { outside: false });
+      if (a.know?.length) await door.learnKnow(a.know, false);
+      if (a.role) await door.companion.keep(a.role);
+    } catch (err) {
+      logQuarantine.error(`could not keep the facts: ${(err as Error).message}`);
+    }
     try {
       for (const t of a.remember) {
         const r = await d.memory.addNote(t, now());

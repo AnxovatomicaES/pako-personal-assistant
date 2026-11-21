@@ -110,6 +110,8 @@ export interface Door {
   readonly endCard: (id: string, why: CardEnd) => void;
   readonly sweepCards: () => void;
   stops: number;
+  /** The STOP count read from the store (src/door/core.ts): the owner's messages and a STOP wait for it, so no stale card matches. */
+  stopsLoaded: Promise<void>;
   readonly sendStamps: { digits: string; at: number }[];
   readonly ownerNumbers: { digits: string; at: number }[];
   readonly sentTo: Map<string, { label: string; at: number; }>;
@@ -171,7 +173,8 @@ export interface Door {
   readonly sawContext: (c: Record<string, unknown>) => void;
   readonly turnOf: (key: string, heard: string, initiative: boolean) => Promise<Turn>;
   readonly chosen: (turn: Turn, written: string) => Turn;
-  readonly originOf: (to: string, turn: Turn) => Origin;
+  /** `resolved`: the contact the name was resolved to (a relation the owner wrote names its own person only). */
+  readonly originOf: (to: string, turn: Turn, resolved?: string) => Origin;
   readonly effective: (type: ActionType) => Promise<{ mode: Mode; seconds: number; }>;
   readonly whatOf: (type: HeldType) => string;
   readonly asked: (dec: Decision, type: HeldType, to: string) => string;

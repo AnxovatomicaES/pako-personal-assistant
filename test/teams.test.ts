@@ -918,3 +918,61 @@ test("follow-ups: the owner's own Teams message reaches the engine as theirs (ne
     await ms.close();
   }
 });
+
+test("teams: a place the store did not give back at start is not replaced by \"from now\", and the reader is not stuck after it", async () => {
+  const ms = await fakeMicrosoft();
+  try {
+    const r = reader(ms);
+    ms.g.chats.set(CHAT, { type: "oneOnOne", topic: null, msgs: [] });
+    await r.teams.round();
+    // Pako is off for an hour; a DM comes meanwhile; at the next start the store does not answer once.
+    ms.g.chats.get(CHAT)!.msgs.push({ id: "2", at: T0 + 20 * MIN, from: ANA, name: "Ana", html: "<p>Can you call me back?</p>" });
+    const kv = r.kv;
+    const get = kv.get;
+    let down = true;
+    kv.get = async (k) => {
+      if (down) throw new Error("the store did not answer");
+      return get(k);
+    };
+    const again = reader(ms, { kv });
+    again.clock.now = T0 + 60 * MIN;
+    await again.teams.round().catch(() => 0);
+    down = false;
+    again.clock.now = T0 + 65 * MIN;
+    await again.teams.round();
+    assert.deepEqual(again.seen.map((m) => m.text), ["Can you call me back?"], "the DM sent while Pako was off is not skipped");
+  } finally {
+    await ms.close();
+  }
+});
+
+test("throttling: Microsoft's wait is never longer than it asked for, even when the computer's clock is put back meanwhile", async () => {
+  const ms = await fakeMicrosoft();
+  try {
+    const r = reader(ms);
+    await r.teams.round();
+    ms.g.chats.set(CHAT, { type: "oneOnOne", topic: null, msgs: [{ id: "1", at: T0 + MIN, from: ANA, name: "Ana", html: "ping" }] });
+    ms.g.throttle.push({ status: 429, retryAfter: "600" });
+    r.clock.now = T0 + 5 * MIN;
+    await r.teams.round();
+    assert.equal(r.seen.length, 0);
+    r.clock.now -= 24 * 3600_000; // the clock is corrected back a day
+    r.clock.now += 11 * MIN;
+    await r.teams.round();
+    assert.deepEqual(r.seen.map((m) => m.text), ["ping"], "read after the ten minutes asked, not a day more");
+  } finally {
+    await ms.close();
+  }
+});
+
+test("plainTeams: hostile HTML costs linear time (runs of < and unclosed tags), and the usual markup still reads", () => {
+  // The old patterns scanned to the end from every "<": 120,000 of them took over five seconds. CPU time, not the wall clock.
+  const t0 = process.cpuUsage();
+  for (const s of ["<".repeat(120_000), "<a".repeat(60_000), "<at ".repeat(30_000), "<br".repeat(40_000), "<attachment ".repeat(10_000)]) {
+    plainTeams({ contentType: "html", content: s });
+  }
+  const used = process.cpuUsage(t0);
+  assert.ok((used.user + used.system) / 1000 < 1000, `took ${(used.user + used.system) / 1000} ms of CPU`);
+  assert.equal(plainTeams({ contentType: "html", content: "<p>a <at id=\"1\">Ana <b>R</b></at> b<br/>c</p><attachment id=\"x\"></attachment>d" }), "a @Ana R b c d");
+  assert.equal(plainTeams({ contentType: "html", content: "2 < 3 and <b>bold</b>" }), "2 bold");
+});

@@ -107,6 +107,7 @@ export function chaseOf(v: unknown): LoopChase | undefined {
     ...(s(o.to, 200) ? { to: s(o.to, 200)! } : {}),
     ...(s(o.toName, 80) ? { toName: s(o.toName, 80)! } : {}),
     ...(s(o.subject, 300) ? { subject: s(o.subject, 300)! } : {}),
+    ...(typeof o.stops === "number" && Number.isSafeInteger(o.stops) && o.stops > 0 ? { stops: o.stops } : {}),
   };
   return Object.keys(c).length ? c : undefined;
 }
@@ -186,8 +187,10 @@ export function mountChase(
     const mailRef = l.sources.find((s) => s.kind === "mail" && s.ref)?.ref;
     const got = mailRef && d.mailOf ? await d.mailOf(mailRef).catch(() => null) : null;
     // Their email only when they sent it: a reply to someone else on the thread would chase the wrong person.
+    // A whole word of their name or of their address's own part: "Ana" is not "Juliana" (a reply would reach Juliana).
     const first = fold(l.who).split(" ")[0] ?? "";
-    const mail = got && (!first || fold(`${got.name} ${got.address}`).includes(first)) ? got : null;
+    const nameWords = (m: { name: string; address: string }): string[] => fold(`${m.name} ${m.address.split("@")[0] ?? ""}`).split(/[^\p{L}\p{N}]+/u);
+    const mail = got && (!first || nameWords(got).includes(first)) ? got : null;
     if (mail?.address) {
       await mutate((s) => {
         const x = s.loops.find((y) => y.id === l.id);
@@ -289,6 +292,9 @@ export function mountChase(
       const c = x.chase;
       if (c.gentle === undefined || c.firm === undefined || (c.offeredAt ?? 0) >= c.askedAt! || (!c.gentle && !c.firm)) return null;
       c.offeredAt = now();
+      const stops = d.stops?.() ?? 0;
+      if (stops) c.stops = stops;
+      else delete c.stops;
       return structuredClone(x);
     });
     if (!ready) return false;
@@ -312,14 +318,19 @@ export function mountChase(
       }
       const c = x.chase;
       const text = button === "1" ? c?.gentle : c?.firm;
-      if (!c?.askedAt || !text || c.off) return { say: t("chaseGoneDraft") };
+      // A STOP since its card went ends it, as every card waiting (src/door/stop-resume.ts): nothing sent or copied after a RESUME.
+      if (!c?.askedAt || !text || c.off || (c.stops ?? 0) !== (d.stops?.() ?? 0)) return { say: t("chaseGoneDraft") };
       if ((c.chasedAt ?? 0) >= (c.offeredAt ?? c.askedAt)) return { say: t("chaseAlready") };
+      // Its time is the send's key too: a press after an Undo is a send of its own, held anew.
       c.chasedAt = now();
       const to = chaseTarget(x);
       if (to.send && c.to) {
         return {
           say: "",
-          send: { label: c.toName || x.who || c.to, target: c.to, subject: reSubject(c.subject ?? x.title), text, key: `chase-${x.id}-${c.askedAt}` },
+          send: {
+            label: c.toName || x.who || c.to, target: c.to, subject: reSubject(c.subject ?? x.title), text, key: `chase-${x.id}-${c.chasedAt}`,
+            chase: { loop: x.id, askedAt: c.askedAt },
+          },
         };
       }
       return { say: to.link ? t("chaseCopiedLink", { app: to.app, link: to.link }) : to.app ? t("chaseCopied", { app: to.app }) : t("chaseCopiedAny"), copy: text };
@@ -346,5 +357,14 @@ export function mountChase(
     return { ok, say: ok ? t("chaseWriting", { who: l.who || t("chaseSomeone"), title: l.title }) : t("chaseCant") };
   };
 
-  return { chaseTick, chaseWritten, chasePressed, chaseNow };
+  /** The email of a press did not go: that chase is no longer kept as sent (a newer chase asked since is left alone). */
+  const chaseUnsent: NonNullable<FollowupsDoor["chaseUnsent"]> = (c) =>
+    mutate((s) => {
+      const x = s.loops.find((y) => y.id === c.loop);
+      if (!x?.chase?.chasedAt || x.chase.askedAt !== c.askedAt) return false;
+      delete x.chase.chasedAt;
+      return true;
+    });
+
+  return { chaseTick, chaseWritten, chasePressed, chaseNow, chaseUnsent };
 }

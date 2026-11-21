@@ -43,7 +43,7 @@ export function createFollowups(d: FollowupsDeps) {
   // Loops from the mail triage, and the panel's Done on a mail (src/followups/mail.ts).
   const mail = mountMailLoops(base, { mutate, read, keep, press, touched, told });
   // Chasing what others owe the owner, once it is overdue (src/followups/chase.ts).
-  const { chaseTick, chaseWritten, chasePressed, chaseNow } = mountChase(base, { mutate, read, runCheck, draftFacts, forDraft, quietNow, dueText });
+  const { chaseTick, chaseWritten, chasePressed, chaseNow, chaseUnsent } = mountChase(base, { mutate, read, runCheck, draftFacts, forDraft, quietNow, dueText });
   /** A round: the nudges, then the chases (each with its own guard: a failing chase never stops a nudge). */
   const sweep = async () => {
     const out = await tick();
@@ -89,6 +89,7 @@ export function createFollowups(d: FollowupsDeps) {
     chaseWritten,
     chasePressed,
     chaseNow,
+    chaseUnsent,
     chaseTick,
     /** The owner moved a loop's time in Apple Reminders (src/reminders-local.ts): the loop follows. */
     moveDue,

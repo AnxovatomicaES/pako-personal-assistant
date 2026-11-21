@@ -127,7 +127,9 @@ export function pushOf(raw: unknown, o: { now: number; timeZone: string; titles?
 export function findLocalEvent(k: Kept, title: string, start: number): { eventId: string; at: number; start: number; end: number; title: string; calendarId: string } | null {
   const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
   const want = fold(title);
-  const hits = k.events.filter((e) => Math.abs(e.start - start) < 60_000 && !!want && (fold(e.title) === want || fold(e.title).includes(want) || want.includes(fold(e.title))));
+  // An event with no title names nothing: "" is inside every title, so it would stand for any change asked at its time.
+  const hits = k.events.filter((e) => Math.abs(e.start - start) < 60_000 && !!want && !!fold(e.title)
+    && (fold(e.title) === want || fold(e.title).includes(want) || want.includes(fold(e.title))));
   if (hits.length !== 1) return null;
   const e = hits[0]!;
   // Its key is "mac:<EventKit id>@<start>": the Mac finds the occurrence by both.

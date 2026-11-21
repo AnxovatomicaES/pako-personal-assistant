@@ -29,7 +29,7 @@ import { locale, ownerClock, texts, type Lang } from "./i18n.ts";
 import { regionAttr, uses12h } from "./region.ts";
 import type { Kv } from "./kv.ts";
 import type { BriefMeeting } from "./meeting-review.ts";
-import { today as dayOf, type Task } from "./lists.ts";
+import { today as dayOf, tomorrow as dayAfter, type Task } from "./lists.ts";
 import type { RecentMail } from "./mail.ts";
 import { categoryOf, CATEGORY_LABEL, type MailCategory } from "./mail-categories.ts";
 
@@ -233,7 +233,7 @@ export function timeBoth(t: number, tz: string | undefined, ownerTz: string, now
   const time = other ? `${clock12(t, other)} ${zoneName(other)} (${mine})` : mine;
   const d = dayOf(t, ownerTz);
   if (d === dayOf(now, ownerTz)) return `${F(l)("today")} ${time}`;
-  if (d === dayOf(now + DAY, ownerTz)) return `${F(l)("tomorrow")} ${time}`;
+  if (d === dayAfter(now, ownerTz)) return `${F(l)("tomorrow")} ${time}`;
   const day = new Intl.DateTimeFormat(locale(l), { timeZone: ownerTz, weekday: "short", day: "numeric", month: "numeric" }).format(t);
   return `${day} ${time}`;
 }
@@ -348,7 +348,7 @@ export async function gatherFacts(d: GatherDeps): Promise<Gathered> {
     });
   }
   const tasks = (await take(d.tasks, "tasks")) ?? [];
-  const tomorrow = dayOf(t + DAY, tz);
+  const tomorrow = dayAfter(t, tz);
   for (const k of tasks.filter((x) => !x.done && (!x.due || x.due <= tomorrow)).sort((a, b) => (a.due ?? "9") < (b.due ?? "9") ? -1 : 1).slice(0, 15)) {
     const made = new Intl.DateTimeFormat(locale(l), { timeZone: tz, day: "numeric", month: "short" }).format(k.at);
     push("T", {

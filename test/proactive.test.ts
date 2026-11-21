@@ -515,3 +515,21 @@ test("the door: the job, /assistant/proactive, the card and its press, plain wor
     server.closeAllConnections();
   }
 });
+
+test("a health diary the store could not read is not written over: the new fact waits, the diary stays whole", async () => {
+  const r = rig();
+  const kept = JSON.stringify([{ kind: "salud", key: "espalda", text: "le duele la espalda", at: T0 - DAY }]);
+  r.store.m.set(HEALTH_KEY, kept);
+  const get = r.store.kv.get;
+  let down = true;
+  r.store.kv.get = async (k) => {
+    if (down && k === HEALTH_KEY) throw new Error("the store did not answer");
+    return get(k);
+  };
+  await r.engine.learn([{ kind: "animo", key: "hoy", text: "está cansado" }], { outside: false }).catch(() => 0);
+  assert.equal(r.store.m.get(HEALTH_KEY), kept, "the diary as it was, not replaced by the one new fact");
+  down = false;
+  await r.engine.learn([{ kind: "animo", key: "hoy", text: "está cansado" }], { outside: false });
+  const now = JSON.parse(r.store.m.get(HEALTH_KEY)!) as { key: string }[];
+  assert.deepEqual(now.map((f) => f.key).sort(), ["espalda", "hoy"], "once the store answers, the fact is added to the diary");
+});

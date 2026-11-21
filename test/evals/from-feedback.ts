@@ -9,12 +9,13 @@
 //
 //   npm run evals:from-feedback [-- --home <PAKO_HOME>] [--tz Europe/Madrid] [--days 30] [--out <folder>]
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { FOLLOWUPS_KEY, stateOf, type Loop } from "../../src/followups.ts";
 import { FEEDBACK_KEY, qualityStateOf } from "../../src/quality.ts";
+import { openForeignReadOnly, STORE_FILES } from "../../src/sqlite-kv.ts";
 import type { EvalCase } from "./harness.ts";
 
 // ---------- placeholders ----------
@@ -167,16 +168,36 @@ export function draftCases(feedback: unknown, followups: unknown, o: { people?: 
 
 // ---------- the command ----------
 
-/** The store's file as it is on disk ({key: {v, exp}}): read, never written. */
-export function readStore(home: string): (key: string) => unknown {
-  let data: Record<string, { v?: unknown }> = {};
-  try {
-    data = JSON.parse(readFileSync(join(home, "kv.json"), "utf8")) as typeof data;
-  } catch (err) {
-    throw new Error(`cannot read ${join(home, "kv.json")}: ${(err as Error).message}`);
+/**
+ * The Pako folder's store, read, never written: kv.db (SQLite, since 0.3.0; opened read-only, so a running Pako is not disturbed), else an
+ * older install's kv.json ({key: {v, exp}}). Entries expired at `now` are left out, as Pako itself would.
+ */
+export function readStore(home: string, now = Date.now()): (key: string) => unknown {
+  const live = (exp: unknown): boolean => !(typeof exp === "number" && exp > 0 && exp < now);
+  const raw = new Map<string, string>();
+  const db = join(home, STORE_FILES.db);
+  if (existsSync(db)) {
+    const conn = openForeignReadOnly(db);
+    try {
+      for (const r of conn.prepare("SELECT k, v, exp FROM kv").all()) {
+        if (typeof r.k === "string" && typeof r.v === "string" && live(Number(r.exp))) raw.set(r.k, r.v);
+      }
+    } finally {
+      conn.close();
+    }
+  } else if (existsSync(join(home, STORE_FILES.legacy))) {
+    let data: Record<string, { v?: unknown; exp?: unknown }> = {};
+    try {
+      data = JSON.parse(readFileSync(join(home, STORE_FILES.legacy), "utf8")) as typeof data;
+    } catch (err) {
+      throw new Error(`cannot read ${join(home, STORE_FILES.legacy)}: ${(err as Error).message}`);
+    }
+    for (const [k, e] of Object.entries(data)) if (typeof e?.v === "string" && live(e.exp)) raw.set(k, e.v);
+  } else {
+    throw new Error(`no Pako store in ${home} (neither ${STORE_FILES.db} nor ${STORE_FILES.legacy}): give the Pako folder with --home`);
   }
   return (key) => {
-    const v = data[key]?.v;
+    const v = raw.get(key);
     try {
       return typeof v === "string" ? JSON.parse(v) : null;
     } catch {

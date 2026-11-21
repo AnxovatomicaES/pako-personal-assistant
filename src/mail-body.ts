@@ -43,7 +43,8 @@ export function cleanMailBody(text: string, max: number = MAIL_BODY_MAX): string
   const lines = raw.split("\n");
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!.replace(/\s+$/, "");
+    // trimEnd, not /\s+$/: that regex tries every start, and a stranger's line of blanks took tens of seconds of CPU.
+    const line = lines[i]!.trimEnd();
     const t = line.trim();
     if (/^>/.test(t)) continue;
     // "On Mon … Ana" / "<ana@x.com> wrote:" broken over two lines: the pair read as one.

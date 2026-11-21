@@ -13,7 +13,7 @@ import { createApp, loadAppConfig, STAND_IN_NAME, type LocalContext } from "./ap
 import { labsFor } from "./app/base.ts";
 import { loadLabCode } from "./lab-code.ts";
 import { appServices } from "./app/services.ts";
-import { lastingExitCode, runAutostartCli } from "./autostart.ts";
+import { capLogs, lastingExitCode, runAutostartCli } from "./autostart.ts";
 import { appliedAtStart, applyStoredSettings } from "./connections.ts";
 import { createSettings, createLocalChannel, isLocalMode, loadEnvFiles, loadHome, localEnv, lockHome, openBrowser, pakoHome, superviseBridge } from "./local.ts";
 import { demoDir, demoEnv, demoStart, demoStartedAt, demoWanted, seedDemo } from "./demo.ts";
@@ -139,6 +139,10 @@ async function main(): Promise<void> {
     home.name = settings.name() || STAND_IN_NAME;
     Object.assign(process.env, localEnv(process.env, home, port));
     const kv = sqliteKv(home.dir);
+    // The background Pako's own output (src/autostart.ts): capped now, then every hour, as the Mac app caps its app.log.
+    const logs = join(home.dir, "logs");
+    capLogs(logs);
+    setInterval(() => void capLogs(logs), 3600_000).unref();
     if (demo) {
       const timeZone = process.env.PERSONAL_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
       const seeded = await seedDemo(kv, { now: Date.now(), timeZone, name: home.name, briefUrl: `http://127.0.0.1:${port}` });

@@ -5,7 +5,8 @@
 // readJsonRecord is the one way such a record is read. A record that does not parse is first copied aside, as it is, to
 // `corrupt:<key>:<time>` (kept 180 days, never exported: it may hold anything the record held; the sqlite store does the same for its whole file, kv.db.bad), then the owner is told, once per
 // record and process, and only then does the caller start that record again empty. When the copy cannot be kept aside (the store refuses
-// the write) the read fails instead: a caller that writes after reading then writes nothing, and the damaged value stays where it is.
+// the write, or does not hold it when read back: src/sqlite-kv.ts resolves a write it could not make) the read fails instead: a caller
+// that writes after reading then writes nothing, and the damaged value stays where it is.
 //
 // Who writes: at home, only the server, which holds the folder's lock (src/local.ts lockHome) before it opens the store (src/server.ts);
 // the bridge, the panel command (bin/panel.cjs) and the Mac app never open kv.db (test/json-record.test.ts checks both). So there is one
@@ -92,6 +93,8 @@ export async function readJsonRecord(kv: Kv, key: string, o: { onCorrupt?: Corru
   const aside = corruptKey(`${key}:${at}`);
   try {
     await kv.set(corruptKey(`${key}:${at}`), raw, CORRUPT_TTL_S);
+    // Read back: the computer's store (src/sqlite-kv.ts) logs a write it could not make (a full disk) and resolves all the same.
+    if ((await kv.get(aside)) !== raw) throw new Error("the copy is not in the store");
   } catch (err) {
     log().error(`${key} is not valid JSON and could not be kept aside (${(err as Error).message}): left as it is, nothing written over it`);
     throw new Error(`the stored ${key} is damaged and could not be kept aside`);

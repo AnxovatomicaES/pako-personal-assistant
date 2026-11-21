@@ -6,8 +6,11 @@ import { GRACE_MS } from "../jobs.ts";
 import { REMINDER_LATE_MAX_MS } from "./shared.ts";
 import type { Reminder, Door } from "./door.ts";
 import { createLog } from "../log.ts";
+import { waitLeft } from "../clock.ts";
 
 const log = createLog("whatsapp");
+/** The longest wait before a refused reminder is tried again. */
+const RETRY_MAX_MS = 15 * 60_000;
 
 export function mountRemindersDue(door: Door): Pick<Door, "runReminders"> {
   const {
@@ -41,7 +44,8 @@ export function mountRemindersDue(door: Door): Pick<Door, "runReminders"> {
       const t = now();
       let changed = false;
       for (const r of [...list]) {
-        if (r.held || r.at > t || (r.retryAt ?? 0) > t) continue;
+        // A retry waits at most its own longest wait: a clock put back meanwhile would otherwise add the jump to it.
+        if (r.held || r.at > t || waitLeft(r.retryAt ?? 0, RETRY_MAX_MS, t)) continue;
         if (d.relay?.firedByRelay(r)) {
           note(tx("noteReminderSent", { text: r.text }));
           d.control?.log("reminder", tx("logReminderRelayed", { text: r.text }));
@@ -78,7 +82,7 @@ export function mountRemindersDue(door: Door): Pick<Door, "runReminders"> {
         } else {
           // Tried again after 30 s, 1 min, 2 min... up to a quarter of an hour; kept for the owner's next message when the window closed or it is three hours late.
           r.tries++;
-          r.retryAt = t + Math.min(30_000 * 2 ** (r.tries - 1), 15 * 60_000);
+          r.retryAt = t + Math.min(30_000 * 2 ** (r.tries - 1), RETRY_MAX_MS);
           if (!(await reachable(t)) || t - r.at > 3 * 3600_000) {
             // A repeat leaves this time's copy waiting for the owner's next message, and goes on to its next time. One copy per series:
             // a day missed again moves it to the latest time, so days of silence are one card later, not one card a day.

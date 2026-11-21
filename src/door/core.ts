@@ -12,6 +12,8 @@ import { createInbox } from "./inbox.ts";
 import { type Say, T } from "./texts.ts";
 import type { OwnerAsk } from "./deps.ts";
 import { type CardEnd, PENDING_CALL_MS, EVENT_KEEP } from "./shared.ts";
+import { STOPS_KEY } from "./stop-resume.ts";
+import { createLog } from "../log.ts";
 import type { Door } from "./door.ts";
 
 /** The names this part adds to the door. */
@@ -99,6 +101,17 @@ export function mountCore(door: Door): Part {
   };
   /** STOPs so far: a card that was being sent while one came must count for nothing. */
   door.stops = 0;
+  // Kept across a restart: a STOP, a restart and a RESUME would otherwise bring back every card shown before the STOP (their count matched).
+  door.stopsLoaded = (async () => {
+    try {
+      const n = Number(d.kv ? await d.kv.get(STOPS_KEY) : 0);
+      if (Number.isSafeInteger(n) && n > door.stops) door.stops = n;
+    } catch (err) {
+      createLog("autonomy").error(`the STOP count could not be read: cards from before a restart count as from before a STOP (${(err as Error).message})`);
+      // Unknown: one more than any card could have kept, so none of them matches.
+      door.stops += 1_000_000;
+    }
+  })();
   const sendStamps: { digits: string; at: number }[] = [];
   /** Numbers the owner wrote in the chat: a number the assistant proposes to write to must be one of them (or a contact). */
   const ownerNumbers: { digits: string; at: number }[] = [];

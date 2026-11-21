@@ -5,7 +5,7 @@
 
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { createServer as createTcpServer, type AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -904,4 +904,21 @@ test("the app on a server: the owner's first deploy of the guard on a store in u
     server.close();
     server.closeAllConnections();
   }
+});
+
+test("at home, a STOP the store could not write is said not kept (the computer's store resolves a write it could not make)", { skip: process.platform === "win32" }, async () => {
+  const dir = tmp();
+  const kv = sqliteKv(dir);
+  const errors = console.error;
+  console.error = () => undefined;
+  try {
+    // A folder Pako can no longer write in (a full disk, a permission changed): SQLite cannot make its journal, the write fails.
+    chmodSync(dir, 0o500);
+    assert.equal(await createControl(kv).setPaused(true, T0), false, "the owner is told it was not kept");
+  } finally {
+    chmodSync(dir, 0o700);
+    console.error = errors;
+  }
+  assert.equal(await createControl(kv).setPaused(true, T0 + 1), true, "kept once the store takes it");
+  assert.deepEqual(await createControl(kv).state(), { paused: T0 + 1, why: "owner" });
 });

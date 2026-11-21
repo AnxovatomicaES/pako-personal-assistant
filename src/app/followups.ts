@@ -32,6 +32,8 @@ export function wireFollowups(ctx: AfterMeetings) {
       enqueue: (m) => door.inbox.add(m),
       card: (body, buttons) => door.sendCard(body, buttons),
       notify: (text) => door.notifyOwner(text),
+      // A STOP ends a chase card waiting (its Send and Copy), as every other card.
+      stops: () => door.stops(),
       ...(quality ? { quality: quality.followups } : {}),
       // The beta's audit (src/beta-audit.ts): told of each conversation read; it keeps nothing unless the tester opted in.
       audit: {

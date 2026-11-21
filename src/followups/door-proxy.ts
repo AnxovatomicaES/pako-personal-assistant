@@ -9,7 +9,7 @@ import type { FollowupsDoor } from "./types.ts";
 export const PROXIED = [
   "press", "command", "context", "result", "offer", "fromMail", "answered", "closeByWords", "calendarChanged", "reopenClosed", "fromChat", "dropFromChat",
   "forDraft", "draftFacts", "observeMail", "snoozeCard", "parked", "parkedText", "unpark", "closedForYou", "reopenByWords",
-  "chaseWritten", "chasePressed", "chaseNow",
+  "chaseWritten", "chasePressed", "chaseNow", "chaseUnsent",
 ] as const satisfies readonly (keyof FollowupsDoor)[];
 
 export function followupsProxy(engine: () => Followups | null): FollowupsDoor & Required<Pick<FollowupsDoor, (typeof PROXIED)[number]>> {
@@ -39,5 +39,6 @@ export function followupsProxy(engine: () => Followups | null): FollowupsDoor & 
     chaseWritten: (o) => (e() ? e()!.chaseWritten(o) : Promise.resolve(false)),
     chasePressed: (b, id) => (e() ? e()!.chasePressed(b, id) : Promise.resolve({ say: "" })),
     chaseNow: (w) => (e() ? e()!.chaseNow(w) : Promise.resolve({ ok: false, say: "" })),
+    chaseUnsent: (c) => (e() ? e()!.chaseUnsent(c) : Promise.resolve(false)),
   };
 }

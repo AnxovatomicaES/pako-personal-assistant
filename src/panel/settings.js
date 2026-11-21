@@ -80,6 +80,8 @@ async function api(path, { method = "GET", body } = {}) {
       return { ok: false, status: 401, data: {} };
     }
     const data = await r.json().catch(() => ({}));
+    // A route's rate limit says only "too many": the person gets what happened and what to do instead.
+    if (r.status === 429) return { ok: false, status: 429, data: { ...data, error: t("err.tooMany") } };
     return { ok: r.ok, status: r.status, data };
   } catch {
     /* offline: no answer (status 0) */

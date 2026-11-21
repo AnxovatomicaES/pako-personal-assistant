@@ -346,7 +346,7 @@ test("nothing is said before the server listens; what failed meanwhile is said a
   await dog.settled();
   dog.stop();
   assert.equal(said.length, 1);
-  assert.match(said[0]!, /^⚠️ I can't save anything \(ENOSPC\).*\nWhat to do: check the disk has free space and the ~\/\.pako folder can be written to\.$/s);
+  assert.match(said[0]!, /^⚠️ Pako couldn't save to disk \(ENOSPC\)\. Changes since 12:00 may be lost\.\nWhat to do: check the disk has free space and the ~\/\.pako folder can be written to\.$/);
 });
 
 test("WATCHDOG=off: the panel still shows each part, and nothing is said", async () => {

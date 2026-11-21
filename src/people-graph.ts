@@ -125,10 +125,21 @@ export function identityValue(kind: IdentityKind, raw: string): string {
 
 /** "Ana Garcia <ana@x.com>" (a From line, an attendee) as a name and an address; either may be empty. */
 export function splitAddress(from: string): { name: string; email: string } {
-  const m = /^\s*"?([^"<]*?)"?\s*<([^<>\s]+@[^<>\s]+)>\s*$/.exec(from);
-  if (m) return { name: line(m[1], GNAME_MAX), email: m[2]!.toLowerCase() };
-  const bare = /^\s*([^\s<>@]+@[^\s<>@]+)\s*$/.exec(from);
-  return bare ? { name: "", email: bare[1]!.toLowerCase() } : { name: line(from, GNAME_MAX), email: "" };
+  // Read by hand, not by one pattern: a pattern with a lazy name between two runs of blanks took cubic time on a From line of blanks.
+  const s = from.trim();
+  if (s.endsWith(">")) {
+    const open = s.lastIndexOf("<");
+    const address = open >= 0 ? s.slice(open + 1, -1) : "";
+    // The address: no blank or bracket, and an @ with something on each side.
+    if (address.length >= 3 && !/[\s<>]/.test(address) && address.slice(1, -1).includes("@")) {
+      let name = s.slice(0, open).trim();
+      if (name.startsWith('"')) name = name.slice(1);
+      if (name.endsWith('"')) name = name.slice(0, -1);
+      if (!/["<]/.test(name)) return { name: line(name, GNAME_MAX), email: address.toLowerCase() };
+    }
+  }
+  const bare = /^[^\s<>@]+@[^\s<>@]+$/.test(s);
+  return bare ? { name: "", email: s.toLowerCase() } : { name: line(from, GNAME_MAX), email: "" };
 }
 
 const names = (p: GraphPerson): string[] => [p.name, ...p.aliases];

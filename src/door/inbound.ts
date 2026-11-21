@@ -108,6 +108,7 @@ export function mountInbound(door: Door): Pick<Door, "handleMessage"> {
 }
 
 const handleMessageOnce = async (door: Door, m: Record<string, unknown>, channel: OwnerChannel): Promise<string> => {
+  await door.stopsLoaded; // a press on a card checks the STOP count: never against the zero of a fresh start
   const heard = await intake(door, m, channel);
   if (typeof heard === "string") return heard;
   const other = await notText(door, m, channel, heard.id, heard.at);

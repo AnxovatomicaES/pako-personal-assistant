@@ -73,6 +73,9 @@ export function mountButtons(door: Door): Pick<Door, "pressed" | "NO" | "SEND_YE
     const ch = CHASE_BUTTON.exec(buttonId);
     if (ch) {
       if (!d.followups?.chasePressed) return void (await sendText(tx("expired")));
+      // Paused: asked before the press is taken, so a Send that cannot go is not kept as sent (after RESUME the same button still works).
+      const pause = ch[1] !== "3" && d.control ? await d.control.state() : null;
+      if (pause && pause.paused !== null) return void (await sendText(tx("notSentPaused", { paused: pausedText(pause.why, lang()) })));
       const r = await d.followups.chasePressed(ch[1] as "1" | "2" | "3", ch[2]!);
       if (r.copy) await sendText(r.copy);
       if (r.say) await sendText(r.say);

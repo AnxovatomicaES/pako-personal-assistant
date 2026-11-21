@@ -108,6 +108,7 @@ export interface Chasing {
   chaseWritten: NonNullable<FollowupsDoor["chaseWritten"]>;
   chasePressed: NonNullable<FollowupsDoor["chasePressed"]>;
   chaseNow: NonNullable<FollowupsDoor["chaseNow"]>;
+  chaseUnsent: NonNullable<FollowupsDoor["chaseUnsent"]>;
 }
 
 /** Every part's names together: a part's needs are written as a Pick of this. */

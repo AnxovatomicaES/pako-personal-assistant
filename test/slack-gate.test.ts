@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import express from "express";
+import { createSlackGate } from "../src/slack-gate.ts";
 import { mountSlack } from "../src/slack.ts";
 
 const TOKEN = "xoxp-1234567890-1234567890-abcdefghijklmnop";
@@ -96,4 +97,15 @@ test("gate: Slack's Retry-After is kept by both, and 'ratelimited' is Slack busy
   await assert.rejects(r.reader.history("D0ANA", { limit: 15 }), /ratelimited/);
   await assert.rejects(r.reader.history("D0ANA", { limit: 15 }), /busy/);
   assert.equal(r.reports.filter((x) => !x.ok).length, 0);
+});
+
+test("gate: Slack's wait is never longer than it asked for, even when the computer's clock is put back meanwhile", () => {
+  let t = T0;
+  const gate = createSlackGate({ now: () => t, perMinute: 1 });
+  assert.equal(gate.poll(), true);
+  gate.limited(60_000);
+  assert.equal(gate.poll(), false, "within Slack's minute");
+  t -= 24 * 3600_000; // the clock is corrected back a day
+  t += 61_000;
+  assert.equal(gate.poll(), true, "after the minute it asked for, not a day more");
 });

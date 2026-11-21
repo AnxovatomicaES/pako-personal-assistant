@@ -8,7 +8,7 @@
 import { texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
 import { today } from "./lists.ts";
-import { isBirthdayToday, type Person } from "./people.ts";
+import { isBirthdayOn, type Person } from "./people.ts";
 import { readJsonRecord } from "./json-record.ts";
 
 export const FRIEND_KEY = "friend";
@@ -130,14 +130,21 @@ const T = texts(
 );
 export const friendTexts = T;
 
+/** The calendar date `n` days after a date ("YYYY-MM-DD"). */
+const dayAfter = (day: string, n: number): string => {
+  const [y, m, d] = day.split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+};
+
 const relationOf = (p: Person): string => (p.relation ? ` (${p.relation})` : "");
 
 /** People whose birthday is tomorrow in the owner's zone, each with the words of the offer. */
 export function birthdayEves(people: Person[], now: number, tz: string, l: Lang): { person: Person; year: string; text: string }[] {
-  const tomorrow = now + DAY_MS;
-  const year = today(tomorrow, tz).slice(0, 4);
+  // The next calendar date, never the day of now + 24 hours (from 23:30 before the clocks go forward, that is the day after).
+  const tomorrow = dayAfter(today(now, tz), 1);
+  const year = tomorrow.slice(0, 4);
   return people
-    .filter((p) => isBirthdayToday(p, tomorrow, tz))
+    .filter((p) => isBirthdayOn(p, tomorrow))
     .map((p) => ({ person: p, year, text: T(l)("eve", { name: p.name, relation: relationOf(p) }) }));
 }
 
@@ -146,7 +153,8 @@ export function datesContext(people: Person[], now: number, tz: string, l: Lang)
   const t = T(l);
   const out: string[] = [];
   for (let n = 0; n <= 7; n++) {
-    for (const p of people.filter((x) => isBirthdayToday(x, now + n * DAY_MS, tz))) {
+    const day = dayAfter(today(now, tz), n);
+    for (const p of people.filter((x) => isBirthdayOn(x, day))) {
       out.push(t("soon", { name: p.name, relation: relationOf(p), when: n === 0 ? t("today") : n === 1 ? t("tomorrow") : t("inDays", { n }) }));
     }
   }

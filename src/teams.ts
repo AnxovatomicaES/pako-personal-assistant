@@ -27,6 +27,7 @@ import type { Kv } from "./kv.ts";
 import type { HealthReport } from "./watchdog.ts";
 import { createLog } from "./log.ts";
 import { readJsonRecord } from "./json-record.ts";
+import { waitLeft } from "./clock.ts";
 
 const log = createLog("teams");
 
@@ -103,16 +104,51 @@ export const teamsTs = (ms: number): string => (ms / 1000).toFixed(3);
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " };
 
 /** A message body as the owner would read it: mentions as @Name, no markup, no invisible characters, one line, cut. */
+/** Tags that end a line, and Teams' own blocks that stand for something not text: a space each. */
+const BREAKS = new Set(["br", "/p", "/div", "/li", "attachment", "systemeventmessage"]);
+
+/**
+ * Teams' HTML as text, in one pass (a tag from its < to the first > after it): <at>Name</at> as "@Name", a break as a space, any other tag
+ * gone, a < with no > after it left as text. By hand, not by patterns: those scanned to the end from every "<", quadratic on a run of them.
+ * `mentions` false: every tag simply goes (the words inside a mention).
+ */
+function teamsTags(html: string, mentions = true): string {
+  const lower = html.toLowerCase();
+  let out = "";
+  let i = 0;
+  // Where the next "</at>" is, found once and reused until passed: a mention with no end costs one search, not one per mention.
+  let closeAt = -2;
+  const nextClose = (from: number): number => {
+    if (closeAt === -1 || closeAt >= from) return closeAt;
+    closeAt = lower.indexOf("</at>", from);
+    return closeAt;
+  };
+  while (i < html.length) {
+    const lt = html.indexOf("<", i);
+    if (lt < 0) break;
+    const gt = html.indexOf(">", lt + 1);
+    if (gt < 0) break; // no > after it: the rest is text, as it was
+    out += html.slice(i, lt);
+    const name = (/^\/?[a-z][a-z0-9_]*/.exec(lower.slice(lt + 1, Math.min(gt, lt + 40)))?.[0]) ?? "";
+    i = gt + 1;
+    if (mentions && name === "at") {
+      const end = nextClose(i);
+      if (end >= 0) {
+        out += `@${teamsTags(html.slice(i, end), false).replace(/</g, "")}`;
+        i = end + 5;
+      }
+    } else if (BREAKS.has(name)) {
+      out += " ";
+      if ((name === "attachment" || name === "systemeventmessage") && lower.startsWith(`</${name}>`, i)) i += name.length + 3;
+    }
+  }
+  return out + html.slice(i);
+}
+
 export function plainTeams(body: { contentType?: unknown; content?: unknown } | undefined): string {
   const raw = typeof body?.content === "string" ? body.content : "";
   let s = raw;
-  if (body?.contentType !== "text") {
-    s = s
-      .replace(/<at\b[^>]*>([\s\S]*?)<\/at>/gi, (_m, name: string) => `@${name.replace(/<[^>]*>/g, "")}`)
-      .replace(/<(br|\/p|\/div|\/li)\b[^>]*>/gi, " ")
-      .replace(/<(attachment|systemEventMessage)\b[^>]*>(<\/\1>)?/gi, " ")
-      .replace(/<[^>]*>/g, "");
-  }
+  if (body?.contentType !== "text") s = teamsTags(s);
   return s
     .replace(/&(#x[0-9a-f]{1,6}|#\d{1,7}|[a-z]{2,6});/gi, (m, e: string) => {
       if (e[0] === "#") {
@@ -398,6 +434,7 @@ export function createTeams(d: TeamsDeps) {
     clientId: d.config.clientId, refreshToken: d.config.refreshToken, ...(d.keep ? { keep: d.keep } : {}), fetch: f, now, ...(d.tokenUrl ? { tokenUrl: d.tokenUrl } : {}),
   });
   let throttledUntil = 0;
+  let throttledMs = 0;
 
   /**
    * One Graph GET. A link Graph gave (next page, delta) is followed only when it is on Graph itself: the token never goes anywhere else.
@@ -407,7 +444,7 @@ export function createTeams(d: TeamsDeps) {
     const url = pathOrUrl.startsWith("http") ? pathOrUrl : `${base}${pathOrUrl}`;
     if (!url.startsWith(`${base}/`)) throw new Error(`${what}: a link outside Microsoft Graph was not followed`);
     for (let attempt = 0; ; attempt++) {
-      if (now() < throttledUntil) throw new Throttled(throttledUntil);
+      if (waitLeft(throttledUntil, throttledMs, now())) throw new Throttled(throttledUntil);
       const token = await tokens.access();
       let r: Response;
       try {
@@ -424,7 +461,8 @@ export function createTeams(d: TeamsDeps) {
           await sleep(wait);
           continue;
         }
-        throttledUntil = now() + Math.max(wait, 60_000);
+        throttledMs = Math.max(wait, 60_000);
+        throttledUntil = now() + throttledMs;
         throw new Throttled(throttledUntil);
       }
       if (r.status === 401 && attempt === 0) {
@@ -459,9 +497,11 @@ export function createTeams(d: TeamsDeps) {
       const raw = d.kv ? await readJsonRecord(d.kv, TEAMS_KEY) : null;
       const p = raw ? (raw as Partial<State>) : null;
       if (p && typeof p.start === "string") s = { ...fresh(), ...p } as State;
-    } catch {
-      /* not JSON, or the store did not answer: logged, and started from now */
-      log.error("the stored place could not be read: starting from now");
+    } catch (err) {
+      // The store did not answer (a damaged value is kept aside and reads as none, above): nothing is read until it does. Starting from
+      // now would skip what came while Pako was off, and the next save would write that over the place kept.
+      log.error(`the stored place could not be read, no look until it can: ${(err as Error).message}`);
+      throw err;
     }
     firstEver = !s;
     state = s ?? fresh();
@@ -790,9 +830,16 @@ export function createTeams(d: TeamsDeps) {
   const round = async (): Promise<number> => {
     if (busy) return 0;
     busy = true;
-    const s = await load();
+    let s: State;
     try {
-      if (now() < throttledUntil) return 0;
+      s = await load();
+    } catch {
+      /* logged by load; the next round reads it again */
+      busy = false;
+      return 0;
+    }
+    try {
+      if (waitLeft(throttledUntil, throttledMs, now())) return 0;
       const self = (await whoAmI()).id;
       if (firstEver) {
         firstEver = false;
@@ -881,7 +928,7 @@ export function createTeams(d: TeamsDeps) {
       if (!tokens.granted().length) await tokens.access().catch(() => undefined);
       return {
         account: d.config.account, name: d.config.name || me?.name || "", org: d.config.org, granted: features(tokens.granted()),
-        lastRead: s.lastRead, lastError: s.lastError, transcriptsOff: s.transcriptsOff, throttledUntil: throttledUntil > now() ? throttledUntil : null,
+        lastRead: s.lastRead, lastError: s.lastError, transcriptsOff: s.transcriptsOff, throttledUntil: waitLeft(throttledUntil, throttledMs, now()) ? throttledUntil : null,
       };
     },
     /** For the watchdog's half-hourly look: whether the sign-in still works. */

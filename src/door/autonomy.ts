@@ -85,7 +85,7 @@ export function mountAutonomy(door: Door): Part {
    * model wrote, so a name taken from an email still gets the card (with its why) after the press.
    */
   const chosen = (turn: Turn, written: string): Turn => ({ ...turn, recipient: turn.recipient ?? recipientOrigin(written, turn.sources) });
-  const originOf = (to: string, turn: Turn): Origin => turn.recipient ?? recipientOrigin(to, turn.sources);
+  const originOf = (to: string, turn: Turn, resolved?: string): Origin => turn.recipient ?? recipientOrigin(to, turn.sources, resolved);
   const effective = (type: ActionType): Promise<{ mode: Mode; seconds: number }> =>
     autonomy.effective(type).catch(() => ({ mode: "confirm" as Mode, seconds: autonomyConfig.seconds }));
   const whatOf = (type: HeldType): string => at(type === "email" ? "whatEmail" : type === "call" ? "whatCall" : "whatMessage");

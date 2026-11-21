@@ -30,7 +30,8 @@ const logWatchdog = createLog("watchdog");
 type Env = Record<string, string | undefined>;
 
 /** What a part says about one round of its work: true when it went through, false with a short reason when it did not. */
-export type HealthReport = (ok: boolean, detail?: string) => void;
+/** `since`: when the failing began, when the part knew it before it could say so (the store's writes before the watchdog listened). */
+export type HealthReport = (ok: boolean, detail?: string, since?: number) => void;
 
 // slack: Slack's Web API with the user token (searches, the half-hourly auth.test); slackEvents: Slack's events by Socket Mode (SLACK_APP_TOKEN).
 // Two tokens, two parts: a working search must never close an incident of a refused Socket Mode, nor a hello one of a revoked user token.
@@ -195,6 +196,7 @@ const T = texts(
     "what.bridge": "Your assistant gets no messages: its computer has stopped asking me for them",
     "what.claude": "Claude does not answer on {where} ({detail})",
     "what.store": "I can't save anything ({detail}): what you tell me now may be lost",
+    "down.storeLocal": "⚠️ Pako couldn't save to disk ({detail}). Changes since {time} may be lost.\nWhat to do: {todo}",
     "what.part": "{name} is failing ({detail})",
     "what.update": "Your assistant's computer still runs an old version ({sha}, from {day}) and the server is more than a day ahead",
     "where.local": "this computer",
@@ -402,6 +404,8 @@ export function createWatchdog(d: WatchdogDeps) {
       // On a computer the connections page's one button installs Claude Code and signs in: no terminal.
       todo = state === "missing" && !d.local ? t("todo.claude.missing", { where: machine }) : t(d.local ? "todo.claude.local" : "todo.claude.hosted");
     } else if (key === "store") {
+      // On a computer, plainly: what may be lost is everything changed since the first write that failed.
+      if (d.local) return t("down.storeLocal", { detail, time: sinceText(since, l).replace(/^since /, ""), todo: t("todo.store.local") });
       what = t("what.store", { detail });
       todo = t(d.local ? "todo.store.local" : "todo.store.hosted");
     } else if (key === "update") {
@@ -505,7 +509,7 @@ export function createWatchdog(d: WatchdogDeps) {
   // ---------- what the parts say ----------
 
   /** One round of a part: true when it went through; false, with why, when it did not. Never throws. */
-  const report = (key: PartKey, ok: boolean, detail = ""): void => {
+  const report = (key: PartKey, ok: boolean, detail = "", since?: number): void => {
     try {
       const p = part(key);
       const t = now();
@@ -518,7 +522,7 @@ export function createWatchdog(d: WatchdogDeps) {
         return;
       }
       p.fails++;
-      p.failSince ??= t;
+      p.failSince ??= Math.min(since ?? t, t);
       p.detail = clean(detail) || p.detail;
       const due = key === "store" ? p.fails >= STORE_ROUNDS && t - p.failSince >= STORE_MIN_MS : p.fails >= ROUNDS && t - p.failSince >= CONNECTOR_MIN_MS;
       if (due) void load().then(() => open(key, p.failSince ?? t));
@@ -682,7 +686,7 @@ export function createWatchdog(d: WatchdogDeps) {
     summary,
     report,
     /** A reporter bound to one part, for a module's deps. */
-    reporter: (key: PartKey): HealthReport => (ok, detail) => report(key, ok, detail),
+    reporter: (key: PartKey): HealthReport => (ok, detail, since) => report(key, ok, detail, since),
     watch,
     /** A check for a part with no rounds of its own, run every `everyMs` from the next look on (Slack's auth.test). */
     probe: (everyMs: number, run: () => Promise<unknown>): void => void probes.push({ everyMs, run }),

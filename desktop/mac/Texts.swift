@@ -93,7 +93,7 @@ struct Texts {
         case let .signingIn(_, code, _, _):
             return ("Finish signing in in your browser…",
                     code ? "Sign in in your browser. If it shows a code, paste it here:"
-                         : "Sign in with your Claude account (Pro or Max) on Claude's page, then come back: this window carries on by itself.")
+                         : "Sign in with your Claude account (Pro, Max, Team or Enterprise) on Claude's page, then come back: this window carries on by itself.")
         case .signInFailed: return ("The sign-in didn't finish",
                                     "No problem: press Try again whenever you like.")
         case .connected: return ("Connected", "Pako now uses your Claude plan.")
@@ -104,7 +104,7 @@ struct Texts {
         switch s {
         case .notInstalled: return (connectTitle, "Pako installs Claude Code (from Anthropic) in your user folder and opens Claude's sign-in page in your browser.")
         case .notSignedIn: return (connectTitle, "Claude's sign-in page opens in your browser. Sign in and come back: this window carries on by itself.")
-        case .needsPlan: return ("Claude Code needs a Pro, Max or Team plan",
+        case .needsPlan: return ("Claude Code needs a Pro, Max, Team or Enterprise plan",
                                  "This account is on the free plan. Upgrade it, then press Check again.")
         case .plan: return ("Connected", "")
         case .apiKey: return (apiBilling, "Not your Claude plan: the key is paid by use.")

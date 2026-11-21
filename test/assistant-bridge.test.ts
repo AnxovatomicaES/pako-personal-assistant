@@ -1027,3 +1027,15 @@ test("parseReply: a half-open <closed> or <promise> never reaches the owner as m
   assert.equal(parseReply('Noted <promise who="Ana">send the deck').text, "Noted send the deck");
   assert.equal(parseReply("ok </closed> fine").text, "ok fine");
 });
+
+test("config: WebFetch on gets a plain warning (a page or a forwarded message can make Pako fetch a link that carries your notes out)", async () => {
+  const { toolWarnings } = await import("../assistant/bridge/config.ts");
+  assert.deepEqual(toolWarnings(["WebSearch"]), [], "WebSearch alone, the default: nothing to warn about");
+  const [w] = toolWarnings(["WebSearch", "WebFetch"]);
+  assert.match(w ?? "", /WebFetch is on/);
+  assert.match(w ?? "", /notes/);
+  const { readFileSync } = await import("node:fs");
+  for (const f of ["assistant/README.md", "assistant/env.example"]) {
+    assert.match(readFileSync(new URL(`../${f}`, import.meta.url), "utf8"), /WebFetch[^\n]*\n?[^\n]*(carries|carry) your notes/, `${f} warns about WebFetch`);
+  }
+});

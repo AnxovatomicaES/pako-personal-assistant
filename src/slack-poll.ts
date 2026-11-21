@@ -88,9 +88,11 @@ export function createSlackPoll(d: SlackPollDeps) {
           active: p.active && typeof p.active === "object" ? (p.active as Record<string, number>) : {},
         };
       }
-    } catch {
-      /* not JSON, or the store did not answer: logged, and started from now */
-      log.error("the poll's stored state could not be read: starting from now");
+    } catch (err) {
+      // The store did not answer (a damaged value is kept aside and reads as none, above): no round until it does. Starting from now
+      // would skip everything that came while Pako was off, and the next save would write that over the place kept.
+      log.error(`the poll's place could not be read, no look until it can: ${(err as Error).message}`);
+      throw err;
     }
     const start = slackTs(now());
     state = s ?? { start, after: {}, mentions: start, active: {} };

@@ -63,7 +63,7 @@ the store protects them at rest and in copies, not from your own programs.
 | `assistant/state.json` | The conversation in progress with Claude: its session id and a count. (`ASSISTANT_STATE_DIR` moves this folder.) |
 | `assistant/tool-data.json` | A copy of your last message's context for Pako's tools in the chat: your message, notes, reminders, lists, tasks and agenda. Rewritten at each message. |
 | `assistant/handled-unacked.json` | The ids of items the bridge answered whose receipt the server has not confirmed yet (no text), so a restart never answers one twice. Kept two days at most. |
-| `logs/pako.log`, `logs/pako.err.log` | What the Pako that starts by itself writes: its notices and errors, which can quote a message. Only with autostart on (on Windows the previous start's are kept as `.old`). |
+| `logs/pako.log`, `logs/pako.err.log` | What the Pako that starts by itself writes: its notices and errors, which can quote a message. Only with autostart on. Capped past 5 MB: the full one is kept once as `.old` (on Windows the previous start's too). |
 | `logs/app.log` (and `app.log.1` to `.3`) | What the Pako started by the Mac app writes, and the app's own lines (a crash, a restart): notices and errors, which can quote a message. Rotated past 5 MB, three kept. No sign-in link is ever written there. |
 | `autostart/` | Windows only: the small launcher the sign-in task runs. |
 | `papers/` | The photos and PDFs you send Pako to read (by WhatsApp, Telegram or the panel's chat): the last 50, for 30 days at most. On a server they are kept in memory only, for two days at most, and dropped once read. |
@@ -103,6 +103,7 @@ also capped, as said.
 | `assistant-log` | The activity log: one line per action (the last 300) | 90 days |
 | `assistant-paused` | Whether STOP is on, and since when | 1 year |
 | `assistant-paused-why` | Why the pause was set, when it wasn't you | 1 year |
+| `assistant-stops` | How many times you said STOP: a card shown before a STOP stays cancelled | 400 days |
 | `assistant-inbox` | Messages waiting for Claude's answer | 2 days |
 | `assistant-held-notices` | Notices kept to give you later | 7 days |
 | `assistant-last-owner-at` | When you last wrote | 3 days |

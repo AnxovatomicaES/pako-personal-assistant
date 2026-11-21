@@ -129,6 +129,14 @@ export function sqliteKv(dir: string, now: () => number = Date.now): FileKv {
   let lost: StoreLost | null = null;
   let legacy: Record<string, { v: string; exp: number }> | null = null;
 
+  /** An older Pako's kv.json, its well-formed entries; throws when it is not JSON. */
+  const readLegacy = (): Record<string, { v: string; exp: number }> => {
+    const raw = JSON.parse(readFileSync(p("legacy"), "utf8")) as Record<string, { v?: unknown; exp?: unknown }>;
+    const out: Record<string, { v: string; exp: number }> = {};
+    for (const [k, e] of Object.entries(raw ?? {})) if (typeof e?.v === "string" && typeof e.exp === "number") out[k] = { v: e.v, exp: e.exp };
+    return out;
+  };
+
   // A kv.db with nothing in it beside an older Pako's kv.json is a copy that did not finish (the process stopped inside the transaction,
   // which SQLite rolled back, or the disk was full): kv.json is still the store, and is copied in again now.
   let unfinished = false;
@@ -151,9 +159,7 @@ export function sqliteKv(dir: string, now: () => number = Date.now): FileKv {
     /* said above */
   } else if (unfinished || (!existsSync(p("db")) && existsSync(p("legacy")))) {
     try {
-      const raw = JSON.parse(readFileSync(p("legacy"), "utf8")) as Record<string, { v?: unknown; exp?: unknown }>;
-      legacy = {};
-      for (const [k, e] of Object.entries(raw ?? {})) if (typeof e?.v === "string" && typeof e.exp === "number") legacy[k] = { v: e.v, exp: e.exp };
+      legacy = readLegacy();
     } catch {
       /* not JSON: logged, set aside, and an empty store */
       lost = "damaged";
@@ -199,6 +205,12 @@ export function sqliteKv(dir: string, now: () => number = Date.now): FileKv {
     }
   };
 
+  /** Whether kv.db holds every live entry of an older Pako's kv.json exactly: the check that lets that file go. */
+  const holds = (old: Record<string, { v: string; exp: number }>): boolean =>
+    Object.entries(old).filter(([, e]) => live(e.exp)).every(([k, e]) => {
+      const r = q.get.get(k);
+      return !!r && String(r.v) === e.v && Number(r.exp) === e.exp;
+    });
   if (legacy) {
     // One transaction: either everything is copied, or kv.json stays as it is and the next start tries again.
     tx(() => {
@@ -208,16 +220,29 @@ export function sqliteKv(dir: string, now: () => number = Date.now): FileKv {
     // things is a privacy cost, so it is not kept "just in case". If anything differs (which would be a bug), the old file is kept aside as
     // kv.json.migrated, listed on the privacy page and removed by "delete everything".
     const copied = Object.entries(legacy).filter(([, e]) => live(e.exp));
-    const exact = copied.every(([k, e]) => {
-      const r = q.get.get(k);
-      return !!r && String(r.v) === e.v && Number(r.exp) === e.exp;
-    });
-    if (exact) {
+    if (holds(legacy)) {
       rmSync(p("legacy"), { force: true });
       log.info(`the store moved from ${STORE_FILES.legacy} to ${STORE_FILES.db} (${copied.length} entries, each checked); the old file is deleted`);
     } else {
       move(p("legacy"), p("migrated"));
       log.error(`the store moved to ${STORE_FILES.db}, but the copy did not match ${STORE_FILES.legacy}: the old file is kept as ${STORE_FILES.migrated}`);
+    }
+    rmSync(p("legacyMade"), { force: true });
+  } else if (!lost && existsSync(p("legacy"))) {
+    // A kv.json beside a kv.db that holds things: the copy was made and checked, and Pako stopped before the old file was deleted. Deleted
+    // now, after the same check; one that does not match what kv.db holds is kept aside as kv.json.migrated, as a copy that did not match is.
+    let old: Record<string, { v: string; exp: number }> | null = null;
+    try {
+      old = readLegacy();
+    } catch {
+      /* not JSON: kept aside below, never read as the store */
+    }
+    if (old && holds(old)) {
+      rmSync(p("legacy"), { force: true });
+      log.info(`${STORE_FILES.legacy} was still beside ${STORE_FILES.db}, which holds all of it: the old file is deleted`);
+    } else {
+      move(p("legacy"), p("migrated"));
+      log.error(`${STORE_FILES.legacy} was still beside ${STORE_FILES.db} and does not match it: kept as ${STORE_FILES.migrated}`);
     }
     rmSync(p("legacyMade"), { force: true });
   }
@@ -227,7 +252,22 @@ export function sqliteKv(dir: string, now: () => number = Date.now): FileKv {
   q.purge.run(now());
   let purged = now();
 
-  let saved: ((ok: boolean, detail?: string) => void) | null = null;
+  let saved: ((ok: boolean, detail?: string, since?: number) => void) | null = null;
+  /**
+   * The writes failing now, since when and why, in plain words; null while they go through. A failed write is not thrown to its caller (each
+   * module would have to handle it): it is kept here and told to the watchdog (onSave), which tells the owner once, also when it came before
+   * the watchdog was listening, and says so again when a write goes through.
+   */
+  let failing: { since: number; detail: string } | null = null;
+  const plain = (err: unknown): string => {
+    const e = err as NodeJS.ErrnoException & { errcode?: number };
+    const base = typeof e.errcode === "number" ? e.errcode & 0xff : -1;
+    if (e.code === "ENOSPC" || base === 13) return "the disk is full";
+    if (e.code === "EACCES" || e.code === "EPERM" || e.code === "EROFS" || base === 8 || base === 14) {
+      return "the disk is full, or the Pako folder cannot be written to";
+    }
+    return `a disk error (${e.code ?? e.message})`.slice(0, 120);
+  };
   /** Set by wipe: nothing is written any more, until the process starts again. */
   let sealed = false;
   let closed = false;
@@ -240,12 +280,14 @@ export function sqliteKv(dir: string, now: () => number = Date.now): FileKv {
         purged = now();
       }
       markMade();
+      if (failing) log.info(`saving to ${p("db")} works again`);
+      failing = null;
       saved?.(true);
       return true;
     } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code ?? (err as Error).message;
       log.error(`could not save to ${p("db")}: ${(err as Error).message}`);
-      saved?.(false, String(code));
+      failing ??= { since: now(), detail: plain(err) };
+      saved?.(false, failing.detail, failing.since);
       return false;
     }
   };
@@ -264,6 +306,7 @@ export function sqliteKv(dir: string, now: () => number = Date.now): FileKv {
     lost,
     onSave: (report) => {
       saved = report;
+      if (failing) report(false, failing.detail, failing.since);
     },
     entries: () =>
       q.all.all(now()).map((r) => ({ key: String(r.k), value: String(r.v), expires: Number(r.exp) > 0 ? Number(r.exp) : null })),

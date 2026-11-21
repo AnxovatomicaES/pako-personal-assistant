@@ -166,14 +166,14 @@ test("an address Pako knows that could read as a flag is never passed to the sig
   assert.equal(c.view().emailHint, "");
 });
 
-test("a free plan: signed in, and the plan check says Claude Code needs Pro, Max or Team, with the upgrade link", async () => {
+test("a free plan: signed in, and the plan check says Claude Code needs Pro, Max, Team or Enterprise, with the upgrade link", async () => {
   const r = rig(null, { CLAUDE_STUB_PLAN: "free" });
   const c = createClaudeConnect({ env: r.env, find: async () => STUB, pollMs: 50 });
   await c.start();
   const v = c.view();
   assert.equal(v.phase, "needs-plan");
   assert.equal(v.upgradeUrl, "https://claude.ai/upgrade");
-  assert.deepEqual(claudeStatusLine(v, "en"), { state: "needsAction", detail: "Claude Code needs a Pro, Max or Team plan" });
+  assert.deepEqual(claudeStatusLine(v, "en"), { state: "needsAction", detail: "Claude Code needs a Pro, Max, Team or Enterprise plan" });
   // Upgraded, then Check again: the same button, now connected.
   writeFileSync(r.authFile, JSON.stringify({ loggedIn: true, authMethod: "claude.ai", email: "ana@example.com", subscriptionType: "pro" }));
   await c.start();

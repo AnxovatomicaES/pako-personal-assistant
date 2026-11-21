@@ -412,7 +412,7 @@ const MARKED = {
 test("server: an old bridge's reply (no mark) acts at once as before, and a note sent with it is not taken", async () => {
   const s = await serverRig();
   try {
-    assert.equal((await s.get("/assistant/context")).quarantine, 2, "the context says this server holds marked tags (and splits a reply with new outside text in its context)");
+    assert.equal((await s.get("/assistant/context")).quarantine, 3, "the context says this server holds marked tags (and splits a reply with new outside text in its context, adds too)");
     await s.say("recuérdame pagar");
     assert.equal(await s.post({ text: "Hecho.", remind: [{ at: "2026-11-16 09:00", text: "pagar" }], remember: ["no por aquí"], key: `wamid.q${n}` }), 200);
     assert.equal(((await s.get("/assistant/context")).reminders as string[]).length, 1);

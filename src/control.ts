@@ -245,11 +245,15 @@ export function createControl(kv: Kv | null, now: () => number = Date.now): Cont
   const write = async (): Promise<boolean> => {
     if (!kv || pausedAt === undefined) return true;
     try {
-      if (pausedAt === null) await kv.set(PAUSE_KEY, "0", 60);
+      const value = pausedAt === null ? "0" : String(pausedAt);
+      if (pausedAt === null) await kv.set(PAUSE_KEY, value, 60);
       else {
-        await kv.set(PAUSE_KEY, String(pausedAt), PAUSE_TTL_S);
+        await kv.set(PAUSE_KEY, value, PAUSE_TTL_S);
         if (reason !== "owner") await kv.set(WHY_KEY, JSON.stringify({ at: pausedAt, why: reason }), PAUSE_TTL_S);
       }
+      // Read back: the computer's store (src/sqlite-kv.ts) logs a write it could not make and resolves all the same; a STOP that is not
+      // there would be gone at the next start, and the owner must hear so.
+      if ((await kv.get(PAUSE_KEY)) !== value) throw new Error("the store did not keep it");
       return true;
     } catch (err) {
       logControl.error(`could not keep the pause: ${(err as Error).message}`);

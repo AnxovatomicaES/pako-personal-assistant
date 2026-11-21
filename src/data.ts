@@ -63,6 +63,7 @@ const KEY_LIST = [
   { key: "assistant-log", keep: 90 * DAY }, // control.ts
   { key: "assistant-paused", keep: 365 * DAY },
   { key: "assistant-paused-why", keep: 365 * DAY },
+  { key: "assistant-stops", keep: 400 * DAY }, // door/stop-resume.ts
   { key: "assistant-inbox", keep: 2 * DAY }, // whatsapp.ts
   { key: "assistant-held-notices", keep: 7 * DAY },
   { key: "assistant-last-owner-at", keep: 3 * DAY },
@@ -163,6 +164,7 @@ const ABOUT = texts<AboutKey | "unknown">(
     "assistant-log": "The activity log: one line per action (the last 300)",
     "assistant-paused": "Whether STOP is on, and since when",
     "assistant-paused-why": "Why the pause was set, when it wasn't you",
+    "assistant-stops": "How many times you said STOP: a card shown before a STOP stays cancelled",
     "assistant-inbox": "Messages waiting for Claude's answer",
     "assistant-held-notices": "Notices kept to give you later",
     "assistant-last-owner-at": "When you last wrote",

@@ -8,7 +8,7 @@ import { zonedTime } from "./time.ts";
 import type { ClosedLoop, CloseOutcome, FollowupsDoor, Loop } from "./types.ts";
 import { GT } from "../gentle.ts";
 import { ownerClock } from "../i18n.ts";
-import { fold, today } from "../lists.ts";
+import { fold, today, tomorrow } from "../lists.ts";
 import { createLog } from "../log.ts";
 
 const log = createLog("followups");
@@ -34,11 +34,7 @@ export function mountOwner(
     const at = q && q.start > q.end && q.end > nine ? q.end : nine;
     return zonedTime(`${day} ${String(Math.floor(at / 60)).padStart(2, "0")}:${String(at % 60).padStart(2, "0")}`, d.timeZone);
   };
-  const tomorrowAt = (t: number): number => {
-    let day = today(t + 24 * 3600_000, d.timeZone);
-    if (day === today(t, d.timeZone)) day = today(t + 26 * 3600_000, d.timeZone);
-    return morningOf(day) ?? t + 24 * 3600_000;
-  };
+  const tomorrowAt = (t: number): number => morningOf(tomorrow(t, d.timeZone)) ?? t + 24 * 3600_000;
   /**
    * Gentle mode's "later today": three hours on; if that falls in the quiet hours, the morning they end (09:00, or their end if later). Pressed
    * after midnight (01:00, quiet until 08:00) that is this morning, not the morning after.

@@ -42,6 +42,7 @@ import type { Backfill } from "./backfill.ts";
 import type { SentMail } from "./mail-followups.ts";
 import { createLog } from "./log.ts";
 import { readJsonRecord } from "./json-record.ts";
+import { waitLeft } from "./clock.ts";
 
 const log = createLog("imap");
 
@@ -597,7 +598,7 @@ export function createImapReader(d: ImapDeps) {
   const provider = providerOf(config.host, [config.user]);
   let memory: ImapState | null = null;
   let polling = false;
-  let failure: { kind: FailKind; count: number; until: number } | null = null;
+  let failure: { kind: FailKind; count: number; until: number; ms: number } | null = null;
   /** The failure last said (its kind): the same one again is not said again. */
   let said: FailKind | null = null;
   const badFolders = new Set<string>();
@@ -757,7 +758,7 @@ export function createImapReader(d: ImapDeps) {
     const kind = failKind(err);
     const count = (failure?.kind === kind ? failure.count : 0) + 1;
     const wait = backoffMinutes(kind, count, config.pollMinutes);
-    failure = { kind, count, until: now() + wait * 60_000 };
+    failure = { kind, count, until: now() + wait * 60_000, ms: wait * 60_000 };
     if (said === kind) return;
     said = kind;
     const code = typeof (err as { code?: unknown })?.code === "string" ? ` (${clean((err as { code: string }).code)})` : "";
@@ -771,7 +772,8 @@ export function createImapReader(d: ImapDeps) {
   const poll = async (): Promise<PollResult> => {
     const out: PollResult = { queued: 0, stored: 0, old: 0, quiet: 0 };
     if (polling) return { ...out, skipped: "busy" };
-    if (failure && now() < failure.until) return { ...out, skipped: "waiting" };
+    // Never longer than the backoff itself: a clock put back meanwhile would otherwise add the jump to the wait.
+    if (failure && waitLeft(failure.until, failure.ms, now())) return { ...out, skipped: "waiting" };
     polling = true;
     let client: ImapClient | null = null;
     try {

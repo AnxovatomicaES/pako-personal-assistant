@@ -4,6 +4,8 @@
 // minute from Slack: the gate keeps to it. Slack's "ratelimited" says how long to wait (Retry-After): no call goes before that.
 // A follow-up's read waits for the next free call and goes before the poll; the poll never waits: it reads that conversation next round.
 
+import { waitLeft } from "./clock.ts";
+
 /** A call this close to its minute is let go: the poll's own minute is never quite sixty seconds. */
 const EARLY_MS = 2_000;
 /** A follow-up waits at most this long for a call; past it the read is said as Slack being busy. */
@@ -24,10 +26,12 @@ export function createSlackGate(d: SlackGateDeps = {}) {
   /** The next call the minute's budget allows, and the end of the wait Slack asked for. */
   let spacedAt = 0;
   let retryAt = 0;
+  /** How long the wait Slack asked for lasts (waitLeft: never longer, whatever the clock does). */
+  let retryMs = 0;
   /** Follow-up reads waiting: the poll leaves the call to them. */
   let waiting = 0;
   let chain: Promise<unknown> = Promise.resolve();
-  const waitFor = (): number => Math.max(0, retryAt - now(), spacing ? spacedAt - EARLY_MS - now() : 0);
+  const waitFor = (): number => Math.max(waitLeft(retryAt, retryMs, now()), spacing ? waitLeft(spacedAt - EARLY_MS, spacing, now()) : 0);
   const take = (): void => {
     if (spacing) spacedAt = now() + spacing;
   };
@@ -57,7 +61,8 @@ export function createSlackGate(d: SlackGateDeps = {}) {
     },
     /** Slack answered "ratelimited": no read before `ms` from now (Retry-After, a minute when it named none). */
     limited: (ms: number): void => {
-      retryAt = Math.max(retryAt, now() + (Number.isFinite(ms) && ms > 0 ? Math.min(ms, 3600_000) : 60_000));
+      const wait = Number.isFinite(ms) && ms > 0 ? Math.min(ms, 3600_000) : 60_000;
+      if (now() + wait > retryAt || !waitLeft(retryAt, retryMs, now())) [retryAt, retryMs] = [now() + wait, wait];
     },
   };
 }

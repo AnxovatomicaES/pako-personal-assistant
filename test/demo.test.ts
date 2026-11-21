@@ -321,3 +321,11 @@ test("the demo needs no Claude plan and no sign-in: recorded answers say they ar
   const site = readFileSync(new URL("../site/index.html", import.meta.url), "utf8").replace(/\s+/g, " ");
   assert.match(site, /No Claude plan or sign-in needed/);
 });
+
+test("the demo never writes the week's follow-ups into the owner's real Apple Reminders (the Mac app's round is refused)", () => {
+  // The Mac app pushes its Reminders round whenever its own switch is on: in the demo the answer would create the invented week's
+  // follow-ups in the owner's real lists, synced to their iPhone, and left there after the demo (the real Pako never knew those loops).
+  assert.equal(demoBlocks("POST", "/panel/api/reminders/local"), true);
+  assert.equal(demoBlocks("POST", "/panel/api/calendar/writes"), true);
+  assert.equal(demoBlocks("GET", "/panel/api/reminders"), false);
+});

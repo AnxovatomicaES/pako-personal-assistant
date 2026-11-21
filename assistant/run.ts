@@ -7,6 +7,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import {
   createBridge, createCliWatch, loadBridgeConfig, offersFlag, offersMcpTools, offersNoBare, stopRunningClaude, type BridgeConfig,
 } from "./bridge.ts";
+import { toolWarnings } from "./bridge/config.ts";
 import { createUpdater, loadUpdateConfig, restartSelf } from "./update.ts";
 
 // A wrong setting is said in a sentence, not a stack trace: on a computer (local mode) this lands in the terminal where the person typed
@@ -37,6 +38,7 @@ config.mcpTools = (process.env.ASSISTANT_TYPED_TOOLS ?? "").trim().toLowerCase()
 // `--self-check` (assistant/update.ts): that only asks whether this code loads, and runs nothing of Claude Code's.
 const cliWatch = createCliWatch({ config });
 const cliAtStart = process.argv.includes("--self-check") ? null : await cliWatch.check();
+for (const w of toolWarnings(config.tools)) console.warn(`Warning: ${w}`);
 console.log(config.mcpTools ? "Pako's tools are on: Claude acts through typed tool calls (the tags still work)" : "Pako's tools are off: Claude acts through tags");
 const bridge = createBridge({ config });
 if (cliAtStart) bridge.setCli(cliAtStart);

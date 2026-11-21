@@ -180,7 +180,7 @@ export const findConnection = (id: unknown): ConnectionDef | undefined => CATALO
 export const WORDS = texts(
   {
     "claude.name": "Claude with an API key",
-    "claude.how": "Not needed: Pako uses the claude command signed in with your Claude plan (Pro or Max) on this computer. If you'd rather pay "
+    "claude.how": "Not needed: Pako uses the claude command signed in with your Claude plan (Pro, Max, Team or Enterprise) on this computer. If you'd rather pay "
       + "by use, make a key at console.anthropic.com (API Keys) and paste it here: claude will use it instead of your sign-in.",
     "calendar.name": "Calendar (ICS link)",
     "calendar.how": "Your calendar's private link in iCal format. Google Calendar: Settings, your calendar, \"Secret address in iCal format\". "

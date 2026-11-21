@@ -338,8 +338,10 @@ export function mountTurn(b: AfterJobs) {
       + `${reply.call ? "a proposed call" : "no call"}, ${reply.message ? "a WhatsApp to send" : "no WhatsApp"}`
       + `${reply.send ? ", a message to send itself" : ""}, $${result.costUsd.toFixed(4)}`);
     // Held notes go with the reply (the server keeps them with the rest until the owner presses), never straight to the notes.
-    // A turn the server splits sends its forgets with the reply too (held there), and its new notes straight on as always.
-    const noted = held ? null : { remember: reply.remember, forget: splits ? [] : reply.forget };
+    // A turn the server splits sends its forgets with the reply too (held there); its new notes as well when the server holds what a reply
+    // adds (quarantine 3), since an injected line kept as a note would read as the owner's own words. An older server: straight on.
+    const holdsAdds = splits && typeof ctx.quarantine === "number" && ctx.quarantine >= 3;
+    const noted = held ? null : { remember: holdsAdds ? [] : reply.remember, forget: splits ? [] : reply.forget };
     if (noted && (noted.remember.length || noted.forget.length)) {
       // Kept until the server has them: a note lost to a blip would be "Apuntado" to the owner and gone.
       pendingNotes.push({ ...noted, key: msg.id });
@@ -377,7 +379,9 @@ export function mountTurn(b: AfterJobs) {
       ...(held && serverHolds
         ? { outside: heldWhy, ...(reply.remember.length ? { remember: reply.remember } : {}), ...(reply.forget.length ? { forget: reply.forget } : {}) }
         : {}),
-      ...(splits && !held ? { context: ctxWhy, ...(reply.forget.length ? { forget: reply.forget } : {}) } : {}),
+      ...(splits && !held
+        ? { context: ctxWhy, ...(reply.forget.length ? { forget: reply.forget } : {}), ...(holdsAdds && reply.remember.length ? { remember: reply.remember } : {}) }
+        : {}),
     };
     // The lines this owner's turn had in front of it are seen once its answer is with the server: a restart before that answers it again
     // with them still new (marked), never unmarked.

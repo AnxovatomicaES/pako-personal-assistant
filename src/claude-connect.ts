@@ -576,7 +576,7 @@ const LINE = texts(
     plan: "{plan} plan",
     api: "Connected (API billing)",
     cloud: "Connected (cloud provider)",
-    needsPlan: "Claude Code needs a Pro, Max or Team plan",
+    needsPlan: "Claude Code needs a Pro, Max, Team or Enterprise plan",
     signIn: "Claude needs you to sign in again",
     missing: "Claude Code isn't installed: press “Connect your Claude account”",
   },

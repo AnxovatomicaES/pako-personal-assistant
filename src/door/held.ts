@@ -72,26 +72,38 @@ export function mountHeld(door: Door): Pick<Door, "heldQueue" | "holdAction" | "
     if (r.placed) watchCall(r.placed);
     return !!r.placed || r.unknown === true;
   };
+  /** A chase's email that did not go (undone, refused, paused, stale): no longer kept as sent on its follow-up, so its card works again. */
+  const unsent = async (a: { chase?: HeldAction["chase"] }): Promise<void> => {
+    if (!a.chase || !d.followups?.chaseUnsent) return;
+    await d.followups.chaseUnsent(a.chase).catch((err: Error) => log.error(`a chase that did not go is still kept as sent: ${err.message}`));
+  };
   const heldQueue: HeldQueue = createHeldQueue({
     kv: d.kv,
     now,
     ...(d.autonomy?.delay ? { delay: d.autonomy.delay } : {}),
-    run: (a) => {
+    run: async (a) => {
       let went = true;
-      return inChat(a.route, async () => void (went = await runHeld(a))).then(() => went);
+      await inChat(a.route, async () => void (went = await runHeld(a)));
+      if (!went) await unsent(a);
+      return went;
     },
-    tell: (a, kind) => inChat(a.route, async () => void (await sendText(at(kind, { what: whatOf(a.type), to: a.label })))),
+    tell: async (a, kind) => {
+      if (kind === "stale") await unsent(a);
+      await inChat(a.route, async () => void (await sendText(at(kind, { what: whatOf(a.type), to: a.label }))));
+    },
   });
   void heldQueue.start();
   /** Holds it for its window, with the receipt and its Undo. False when it could not be kept (then nothing goes). */
   const holdAction = async (
-    input: { type: HeldType; label: string; target: string; text: string; subject?: string; direct?: boolean }, seconds: number, key: string,
+    input: { type: HeldType; label: string; target: string; text: string; subject?: string; direct?: boolean; chase?: HeldAction["chase"] },
+    seconds: number, key: string,
   ): Promise<void> => {
     const id = heldId(key, input.type);
     // Asked while paused: refused now, not held. Held, it would go by itself after a RESUME within its window.
     const pause = d.control ? await d.control.state() : null;
     if (pause && pause.paused !== null) {
       d.control?.log("autonomy", at("paused", { what: whatOf(input.type), to: input.label }));
+      await unsent(input);
       await sendText(at("paused", { what: whatOf(input.type), to: input.label }));
       return;
     }
@@ -101,6 +113,7 @@ export function mountHeld(door: Door): Pick<Door, "heldQueue" | "holdAction" | "
       fresh = await heldQueue.hold({ ...input, id, route: via.getStore() ?? null, at: t, due: t + seconds * 1000 });
     } catch (err) {
       log.error(`could not keep a held ${input.type}: ${(err as Error).message}`);
+      await unsent(input);
       await sendText(tx("reminderUnsaved"));
       return;
     }
@@ -121,6 +134,7 @@ export function mountHeld(door: Door): Pick<Door, "heldQueue" | "holdAction" | "
     const r = await heldQueue.undo(id).catch(() => ({ status: "gone" as const, action: undefined }));
     if (r.status === "undone" && r.action) {
       d.control?.log("autonomy", at("logUndone", { what: whatOf(r.action.type), to: r.action.label }));
+      await unsent(r.action);
       // Stopped before it went: a lesson for the next drafts and actions (src/lessons.ts), from the action Pako itself held.
       void d.lessons?.undone({ what: r.action.type, title: shortText(r.action.text), who: r.action.label })
         .catch((err: Error) => log.error(`a stopped ${r.action?.type ?? "action"} could not be kept as a lesson: ${err.message}`));
@@ -169,5 +183,14 @@ export function mountHeld(door: Door): Pick<Door, "heldQueue" | "holdAction" | "
     await c.go(name);
   };
 
-  return { heldQueue, holdAction, undoLatestHeld, pressedAutonomy };
+  // STOP takes back everything held (src/door/stop-resume.ts): a chase among them did not go either.
+  const queue: HeldQueue = {
+    ...heldQueue,
+    cancelAll: async () => {
+      const gone = await heldQueue.cancelAll();
+      for (const a of gone) await unsent(a);
+      return gone;
+    },
+  };
+  return { heldQueue: queue, holdAction, undoLatestHeld, pressedAutonomy };
 }

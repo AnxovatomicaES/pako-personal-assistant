@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openForeignReadOnly, sqlite, sqliteKv } from "../src/sqlite-kv.ts";
@@ -69,6 +69,26 @@ test("sqliteKv: a copy of kv.json that stopped halfway (an empty kv.db beside it
   assert.ok(!existsSync(join(dir, "kv.json")), "copied and checked: the plaintext file is gone");
 });
 
+test("sqliteKv: a kv.json left beside kv.db by a stop right after the copy is deleted at the next start, once kv.db is seen to hold it", async () => {
+  const dir = tmp();
+  const t = 5_000_000;
+  const old = JSON.stringify({ note: { v: "hola", exp: 0 }, list: { v: "[1,2]", exp: 9_000_000 }, gone: { v: "x", exp: 10 } });
+  writeFileSync(join(dir, "kv.json"), old);
+  sqliteKv(dir, () => t);
+  // The copy was made and checked, and Pako stopped before the old file was deleted: it is still there at the next start.
+  writeFileSync(join(dir, "kv.json"), old);
+  writeFileSync(join(dir, "kv.json.made"), "x");
+  const kv = sqliteKv(dir, () => t + 1000);
+  assert.equal(await kv.get("note"), "hola");
+  assert.equal(kv.lost, null);
+  assert.ok(!existsSync(join(dir, "kv.json")) && !existsSync(join(dir, "kv.json.made")), "no plaintext copy left behind");
+  assert.ok(!existsSync(join(dir, "kv.json.migrated")));
+  // One that does not match what kv.db holds is not deleted unseen: kept aside as kv.json.migrated, as a copy that did not match is.
+  writeFileSync(join(dir, "kv.json"), JSON.stringify({ note: { v: "something else", exp: 0 } }));
+  assert.equal(await sqliteKv(dir, () => t).get("note"), "hola");
+  assert.ok(!existsSync(join(dir, "kv.json")) && existsSync(join(dir, "kv.json.migrated")));
+});
+
 test("sqliteKv: a store that existed and is gone starts as 'missing', for kv.db and for an older Pako's kv.json", () => {
   const a = tmp();
   writeFileSync(join(a, "kv.db.made"), "x");
@@ -117,6 +137,28 @@ test("sqliteKv: add writes only when the key is free or expired; onSave hears ea
   assert.equal(await kv.get("job"), "c");
   assert.ok(saves.length >= 2 && saves.every(Boolean));
 });
+
+test("sqliteKv: a write that fails is kept as a failing state, told in plain words even to who listens later, and cleared by a good write",
+  { skip: process.platform === "win32" }, async () => {
+    const dir = tmp();
+    const kv = sqliteKv(dir);
+    const errors = console.error;
+    console.error = () => undefined;
+    try {
+      chmodSync(dir, 0o500); // a folder it can no longer write in: SQLite cannot make its journal
+      await kv.set("a", "1", 0);
+    } finally {
+      chmodSync(dir, 0o700);
+      console.error = errors;
+    }
+    assert.equal(await kv.get("a"), null);
+    // The watchdog listens only once the app is built: a write that failed before is told to it then.
+    const saves: [boolean, string | undefined][] = [];
+    kv.onSave((ok, detail) => saves.push([ok, detail]));
+    assert.deepEqual(saves, [[false, "the disk is full, or the Pako folder cannot be written to"]]);
+    await kv.set("a", "1", 0);
+    assert.deepEqual(saves.at(-1), [true, undefined], "writes work again: cleared");
+  });
 
 test("sqliteKv: opening it prints no 'experimental' warning to the person", () => {
   const dir = tmp();

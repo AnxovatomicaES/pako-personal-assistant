@@ -74,7 +74,7 @@ export function adminRequest(req: Request, adminKey: string): boolean {
 /** Local mode (src/local.ts): what the server needs to run for one person on this computer, with no WhatsApp. */
 export interface LocalContext {
   /** The file store at home (src/sqlite-kv.ts): `onSave` tells the watchdog how each save went. */
-  kv: Kv & { onSave?: (report: (ok: boolean, detail?: string) => void) => void };
+  kv: Kv & { onSave?: (report: (ok: boolean, detail?: string, since?: number) => void) => void };
   channel: LocalChannel;
   bridgeToken: string;
   /** The secret that signs the panel's sessions, kept between starts so the browser stays signed in. */

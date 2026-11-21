@@ -93,6 +93,8 @@ export function mountDelivery(door: Door): Pick<Door, "graphTo" | "deliver" | "h
       await sendText(tx("sentFriend", { label: p.label, template: templated ? tx("sentFriendTemplate") : "" }));
       return true;
     }
+    // No answer: it may have gone. Counted as sent (the day's limits) and the friend's reply is passed on, as for one that surely went.
+    if (r.code === -1) markSent(p.digits, p.label, at);
     note(tx("noteNotSent", { label: p.label, code: r.code }));
     d.control?.log("failure", tx("logNotSent", { label: p.label, code: r.code }));
     await sendText(r.code === -1 ? tx("sendUnknown", { label: p.label }) : failureText(p.label, p.digits, p.text, r.code, r.detail));

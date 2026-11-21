@@ -688,3 +688,14 @@ test("parseMessage: an encoded word never makes an address (a From that passes i
   // A display name in an encoded word still reads as it should.
   assert.equal(parseMessage(raw("=?utf-8?q?Jos=C3=A9_P=C3=A9rez?= <jose@amigos.example>")).from, "José Pérez <jose@amigos.example>");
 });
+
+test("a backoff waits its own length, not the length plus a clock that jumped back meanwhile", async () => {
+  const err = Object.assign(new Error("login failed"), { authenticationFailed: true });
+  const r = rig({ INBOX: { validity: 1, msgs: [] } }, { fake: { connectError: err } });
+  await captured(() => r.reader.poll());
+  assert.equal((await r.reader.poll()).skipped, "waiting");
+  // The computer's clock is put back a day (it was wrong, and is corrected) and then the 30 minutes go by.
+  r.tick(-24 * HOUR);
+  r.tick(31 * 60_000);
+  assert.equal((await captured(() => r.reader.poll())).value.skipped, "failed", "tried again after its 30 minutes, not after a day more");
+});

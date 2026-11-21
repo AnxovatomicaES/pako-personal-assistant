@@ -76,6 +76,15 @@ export function today(now: number, timeZone: string): string {
   return `${p.year}-${p.month}-${p.day}`;
 }
 
+/**
+ * Tomorrow in the owner's time zone, "YYYY-MM-DD": the calendar day after today's, never the day of now + 24 hours (from 23:30 before the
+ * clocks go forward, that is already the day after tomorrow).
+ */
+export function tomorrow(now: number, timeZone: string): string {
+  const [y, m, d] = today(now, timeZone).split("-").map(Number) as [number, number, number];
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}
+
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object";
 export const itemOf = (v: unknown): Item | null =>
   isObject(v) && typeof v.id === "string" && HEX10.test(v.id) && typeof v.text === "string" && v.text && typeof v.at === "number"

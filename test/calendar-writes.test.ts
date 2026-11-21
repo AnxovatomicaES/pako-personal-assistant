@@ -238,3 +238,8 @@ test("calendar writes: a re-applied move keeps the original times, a delete of n
   assert.match(swift, /rememberedBefore\(id\)/);
   assert.match(swift, /"notFound": true/);
 });
+
+test("an event with no title is never the one a change names (an empty title is inside every title)", () => {
+  const k = pushOf({ writes: true, calendars: ["C1"], events: [{ id: "E2", calendarId: "C1", title: "", start: T0 + 60 * MIN, end: T0 + 90 * MIN }] }, { now: T0, timeZone: "Europe/London" })!;
+  assert.equal(findLocalEvent(k, "Dentist", T0 + 60 * MIN), null);
+});
