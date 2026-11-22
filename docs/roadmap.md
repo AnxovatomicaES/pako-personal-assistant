@@ -2,7 +2,7 @@
 
 Where Pako is going, in the order it will get there, and the decisions behind it. Each phase ships on its own; nothing here is a promise of a date.
 
-**Where it stands:** Phases 0 to 3 are built and the clean repository is public ([pako-personal-assistant](https://github.com/AnxovatomicaES/pako-personal-assistant)), with Pako for Mac 0.3.10 (unsigned preview, beta) in its Releases. Phase 4 is built too; of Phase 5, the Mac desktop app is built.
+**Where it stands:** Phases 0 to 3 are built and the clean repository is public ([pako-personal-assistant](https://github.com/AnxovatomicaES/pako-personal-assistant)), with Pako for Mac 0.3.11 (unsigned preview, beta) in its Releases. Phase 4 is built too; of Phase 5, the Mac desktop app is built.
 
 ## Who Pako is for
 
