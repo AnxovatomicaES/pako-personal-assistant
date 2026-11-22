@@ -8,6 +8,19 @@ Pako as `npm start` (the same `~/.pako`, the same panel), so you can also go on 
 
 You need macOS 13 (Ventura) or newer, on an Intel Mac or Apple silicon, and a Claude account with a Pro, Max, Team or Enterprise plan.
 
+**The quickest way, with no macOS warning:** paste this into Terminal.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/AnxovatomicaES/pako-personal-assistant/main/install-mac.sh | sh
+```
+
+It downloads the latest release, checks it against Pako's signed update feed (the same check the app makes on its own updates), puts
+Pako in Applications and opens it. Files curl downloads carry no "quarantined" mark, so macOS opens Pako straight away. It never uses
+`sudo`; running it again installs the newest release. Read it first if you like: [install-mac.sh](../install-mac.sh). The feed's Ed25519
+signature is checked when your Mac has OpenSSL 3 (from Homebrew, say); macOS's own OpenSSL cannot, and then only the SHA-256 is.
+
+**Or by hand:**
+
 1. **Download** `Pako-<version>.dmg`. (To check the download, compare `shasum -a 256 Pako-<version>.dmg` with the `.sha256` file published
    next to it.)
 2. **Open** it and **drag Pako to Applications**.
