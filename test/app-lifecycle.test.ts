@@ -17,6 +17,7 @@ import { createServer } from "node:http";
 import { join } from "node:path";
 import { createApp, loadAppConfig } from ${src("app.ts")};
 import { appServices } from ${src("app/services.ts")};
+import { loadLabCode } from ${src("lab-code.ts")};
 import { createLocalChannel, createSettings, loadHome, localEnv } from ${src("local.ts")};
 import { demoDir, demoEnv, demoStart, seedDemo } from ${src("demo.ts")};
 import { sqliteKv } from ${src("sqlite-kv.ts")};
@@ -28,6 +29,7 @@ demoStart(real.dir);
 const home = { ...real, dir: demoDir(real.dir), name: "Alex" };
 const outer = { PERSONAL_TIMEZONE: "Europe/Madrid" };
 demoEnv(outer);
+Object.assign(outer, JSON.parse(process.env.EXTRA ?? "{}")); // after the demo took its own out: a test turns one back on
 const env = { ...localEnv(outer, home, 0), PAKO_HOME: home.dir };
 const kv = sqliteKv(home.dir);
 await seedDemo(kv, { now: Date.now(), timeZone: "Europe/Madrid", name: "Alex" });
@@ -35,6 +37,7 @@ const local = {
   kv, channel: createLocalChannel({ kv }), bridgeToken: real.bridgeToken, panelSecret: real.panelSecret,
   bridge: { status: () => ({ claude: "login", running: false }) }, settings: createSettings(home.dir, env), demo: { on: true, home: real.dir },
 };
+await loadLabCode(["booking"]); // the code of a lab that is on is loaded before the app is built (src/lab-code.ts); a lab that is off ignores it
 const app = createApp(loadAppConfig(env), env, local);
 const services = appServices(app);
 const server = createServer(app);
@@ -56,10 +59,11 @@ await new Promise((r) => setImmediate(r));
 console.log("STOPPED " + JSON.stringify(process.getActiveResourcesInfo()));
 `;
 
-test("demo mode: createApp starts its services, serves the panel, stops, and its process then ends by itself (no open handles)", async () => {
+/** Runs the child above with `extra` settings in the owner's environment; its two printed lines, and whether it ended by itself with code 0. */
+async function runChild(extra: Record<string, string>): Promise<{ ended: { code: number | null; killed: boolean }; out: string }> {
   const root = mkdtempSync(join(tmpdir(), "pako-lifecycle-"));
   const child = spawn(process.execPath, ["--disable-warning=ExperimentalWarning", "--input-type=module", "-e", CHILD], {
-    env: { PATH: process.env.PATH ?? "", HOME: root, ROOT: root, TZ: "Europe/Madrid", PAKO_NO_OPEN: "1" },
+    env: { PATH: process.env.PATH ?? "", HOME: root, ROOT: root, TZ: "Europe/Madrid", PAKO_NO_OPEN: "1", EXTRA: JSON.stringify(extra) },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let out = "";
@@ -70,6 +74,11 @@ test("demo mode: createApp starts its services, serves the panel, stops, and its
     const limit = setTimeout(() => (child.kill("SIGKILL"), resolve({ code: null, killed: true })), 40_000);
     child.on("exit", (code) => (clearTimeout(limit), resolve({ code, killed: false })));
   });
+  return { ended, out };
+}
+
+test("demo mode: createApp starts its services, serves the panel, stops, and its process then ends by itself (no open handles)", async () => {
+  const { ended, out } = await runChild({});
   assert.equal(ended.killed, false, `the process did not end by itself after the stop: something is still open\n${out}`);
   assert.equal(ended.code, 0, out);
   const started = /STARTED (\{.*\})/.exec(out);
@@ -82,4 +91,13 @@ test("demo mode: createApp starts its services, serves the panel, stops, and its
   const left = /STOPPED (\[.*\])/.exec(out);
   assert.ok(left, out);
   assert.deepEqual((JSON.parse(left[1]!) as string[]).filter((r) => r !== "PipeWrap"), [], "nothing left open after the stop but stdout and stderr");
+});
+
+test("table booking on: Maître's browser is a part of the lifecycle, started after the store guard and stopped with Pako (nothing is left open)", async () => {
+  // PAKO_CHROME names a file that exists (any one: the browser is only started by a booking, so nothing is launched here).
+  const { ended, out } = await runChild({ PAKO_LABS: "booking", BOOKING: "on", GOOGLE_PLACES_API_KEY: "test-key", PAKO_CHROME: process.execPath });
+  assert.equal(ended.killed, false, `the process did not end by itself after the stop: something is still open\n${out}`);
+  assert.equal(ended.code, 0, out);
+  const s = JSON.parse(/STARTED (\{.*\})/.exec(out)![1]!) as { order: string[] };
+  assert.deepEqual(s.order, ["storeGuard", "telegram", "watchdog", "mobile", "maitreBrowser"], out);
 });

@@ -93,6 +93,23 @@ test("maitre cdp: CoverManager Book fills the form, checks the summary, submits 
   }
 });
 
+test("maitre cdp: CoverManager puts the owner's own country code in the select, and never books a number it cannot place", { skip }, async () => {
+  const before = srv.submits.length;
+  // +33 and +351 are in the module's list: the longest start of the number is chosen, the rest is typed.
+  for (const phone of ["33612345678", "351912345678", "447700900123"]) {
+    const r = await pool.withPage((page) => coverManager.book(ctxOf(page, cm("fixture")), { date: DATE, time: "21:00", party: 2 }, { ...GUEST, phone }));
+    assert.equal(r.kind, "confirmed", `${phone}: ${JSON.stringify(r)}`);
+    assert.equal(srv.submits.at(-1)!.phone, phone, `${phone}: the number the restaurant gets is the owner's`);
+  }
+  assert.equal(srv.submits.length, before + 3);
+  // +81 is not in the list: the form is left unsent (the owner is given the other ways to book).
+  let pressed = 0;
+  const odd = await pool.withPage((page) => coverManager.book(ctxOf(page, cm("fixture"), { submitting: async () => void pressed++ }), { date: DATE, time: "21:00", party: 2 }, { ...GUEST, phone: "81312345678" }));
+  assert.equal(odd.kind, "changed", JSON.stringify(odd));
+  assert.equal(pressed, 0);
+  assert.equal(srv.submits.length, before + 3, "no booking with a number that is not the owner's");
+});
+
 test("maitre cdp: CoverManager says no_slot with the nearest real times, and a full day with none", { skip }, async () => {
   const r = await pool.withPage((page) => coverManager.book(ctxOf(page, cm("fixture")), { date: DATE, time: "21:15", party: 2 }, GUEST));
   assert.equal(r.kind, "no_slot");
@@ -148,6 +165,7 @@ test("maitre cdp: OpenTable Look and Book through the deep link, with the confir
   const book = await pool.withPage((page) => openTable.book(ctxOf(page, url), { date: DATE, time: "21:00", party: 2 }, GUEST));
   assert.equal(book.kind, "confirmed", JSON.stringify(book));
   assert.match(book.kind === "confirmed" ? book.evidence.confirmationId ?? "" : "", /^4\d+$/);
+  assert.deepEqual(book.kind === "confirmed" && book.evidence.said, { date: DATE, time: "21:00", party: 2 }, "the confirmation's day, time and party are read back");
   assert.equal(srv.submits.length, before + 1);
   assert.equal(srv.submits.at(-1)!.phone, "+34600111222");
   const blocked = await pool.withPage((page) => openTable.look(ctxOf(page, `${srv.base}/r/akamai-grill`), { date: DATE, time: "21:00", party: 2 }));
@@ -155,6 +173,19 @@ test("maitre cdp: OpenTable Look and Book through the deep link, with the confir
   const otp = await pool.withPage((page) => openTable.book(ctxOf(page, `${srv.base}/r/otp-grill`), { date: DATE, time: "21:00", party: 2 }, GUEST));
   assert.equal(otp.kind, "gate");
   assert.equal(otp.kind === "gate" && otp.gate, "code");
+});
+
+test("maitre cdp: OpenTable books nothing when the slot it offers is for another day: the details page must show the day, time and party asked for", { skip }, async () => {
+  const before = srv.submits.length;
+  // The offered link says the other day in its address, or only on the page: either way the form is not even filled in.
+  for (const path of ["/r/nextday-grill", "/r/textonly-grill"]) {
+    let pressed = 0;
+    const r = await pool.withPage((page) => openTable.book(ctxOf(page, `${srv.base}${path}`, { submitting: async () => void pressed++ }), { date: DATE, time: "21:00", party: 2 }, GUEST));
+    assert.equal(r.kind, "changed", `${path}: ${JSON.stringify(r)}`);
+    assert.match(r.kind === "changed" ? r.detail : "", /does not show the day, time and party/);
+    assert.equal(pressed, 0, `${path}: the ledger was never told of a press`);
+  }
+  assert.equal(srv.submits.length, before, "nothing reached the engine");
 });
 
 /** The cartridges with their address check widened to the local server's pages. */

@@ -53,7 +53,15 @@ test("links: a restaurant's own site gives its email, WhatsApp, deposit rule and
     assert.equal(restaurantWhatsapp('<a href="https://wa.me/626728492">WhatsApp</a>'), "34626728492", "a Spanish owner's national number gets +34");
     assert.equal(restaurantWhatsapp('<a href="https://wa.me/+14155550100">WhatsApp</a>'), "14155550100", "a number with + keeps its own code");
     setOwnerRegion("US");
-    assert.equal(restaurantWhatsapp('<a href="https://wa.me/4155550100">WhatsApp</a>'), "14155550100", "a US owner's 10-digit number gets +1");
+    assert.equal(restaurantWhatsapp('<a href="https://wa.me/4155550100">WhatsApp</a>'), "4155550100", "ten digits are a full international number: a US owner's +1 is not put in front");
+    // A restaurant abroad: its correct link (the code first, no plus) is never taken for a number of the owner's country.
+    assert.equal(restaurantWhatsapp('<a href="https://wa.me/4522345678">WhatsApp</a>'), "4522345678", "Denmark, read by a US owner");
+    for (const country of ["MX", "AR", "IT", "CO"]) {
+      setOwnerRegion(country);
+      assert.equal(restaurantWhatsapp('<a href="https://wa.me/4531234567">WhatsApp</a>'), "4531234567", `Denmark, read by an owner in ${country}`);
+      assert.equal(restaurantWhatsapp('<a href="https://api.whatsapp.com/send?phone=3221234567">WhatsApp</a>'), "3221234567", `Belgium, in a send link, read by an owner in ${country}`);
+    }
+    setOwnerRegion("US");
     assert.equal(restaurantWhatsapp('<a href="https://wa.me/626728492">WhatsApp</a>'), undefined, "not a national number in the owner's country: skipped");
     setOwnerRegion("JP");
     assert.equal(restaurantWhatsapp('<a href="https://wa.me/626728492">WhatsApp</a>'), undefined, "a country with no number rules: skipped");

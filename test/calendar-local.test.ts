@@ -176,3 +176,18 @@ test("the Mac's attendees are kept (address and name, at most 30) for People and
   const kept = pushOf(push, { now: NOW, timeZone: TZ })!;
   assert.deepEqual(kept.events[0]!.attendees, [{ email: "ana@example.com", name: "Ana García" }, { email: "marc@example.com" }]);
 });
+
+test("the same meeting in two calendars picked on this Mac is kept once: one agenda line, no overlap with itself, one reminder", async () => {
+  const copy = (id: string, calendarId: string, extra: Record<string, unknown> = {}) => ({
+    id, calendarId, title: "Budget review", start: "2026-11-16T09:08:00+01:00", end: "2026-11-16T10:00:00+01:00", allDay: false, uid: "040000008200E00074C5", ...extra,
+  });
+  const kept = pushOf({ calendars: ["work", "team"], events: [copy("AAAA:1@1", "work"), copy("BBBB:2@1", "team", { location: "Sala 2" })] }, { now: NOW, timeZone: TZ })!;
+  assert.equal(kept.events.length, 1);
+  assert.equal(kept.events[0]!.location, "Sala 2", "what the other copy knows is kept");
+  const local = createLocalCalendar({ kv: memoryKv(), now: () => NOW });
+  await local.write(kept);
+  const told: string[] = [];
+  const core = createCalendarCore({ sources: [local.source], timing: { remindMinutes: 10 }, kv: null, timeZone: TZ, notify: async (t) => void told.push(t), now: () => NOW, log: () => {} });
+  assert.doesNotMatch(await core.day(0), /overlaps/);
+  assert.equal((await core.tick()).reminded, 1);
+});

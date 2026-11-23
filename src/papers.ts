@@ -139,6 +139,48 @@ const FILES_MS = 30 * 24 * 3600_000;
 export class PaperStoreFull extends Error {}
 
 /**
+ * Takes out of a computer's papers folder what is past its time: a paper older than 30 days, and all but the newest 50. A paper is its bytes
+ * (p_<id>.pdf, .jpg, .png or .webp) and its note (p_<id>.json); its age is the note's, or its file's own date when the note is missing or says
+ * nothing (a paper whose note never got written, or was lost, is still the owner's file and goes by age like the rest). Run when a paper is
+ * kept, when Pako starts and every day (src/server.ts): a paper nobody follows with another is not kept past its 30 days. Never throws.
+ */
+export function tidyPapers(dir: string, now: () => number = Date.now): void {
+  try {
+    const found = new Map<string, { files: string[]; at: number | null; mtime: number }>();
+    for (const f of readdirSync(dir)) {
+      const m = /^(p_[0-9a-f]{16})\.(json|jpg|png|webp|pdf)$/.exec(f);
+      if (!m) continue;
+      const one = found.get(m[1]!) ?? { files: [], at: null, mtime: 0 };
+      one.files.push(f);
+      try {
+        one.mtime = Math.max(one.mtime, statSync(join(dir, f)).mtimeMs);
+      } catch {
+        /* gone since the listing */
+      }
+      if (m[2] === "json") {
+        try {
+          const at = Number((JSON.parse(readFileSync(join(dir, f), "utf8")) as { at?: unknown }).at);
+          // A note that is not JSON is taken as the oldest, as a note with no usable time is taken at its file's date.
+          one.at = Number.isFinite(at) ? at : null;
+        } catch {
+          // not readable JSON: taken as the oldest, so it goes first
+          one.at = 0;
+        }
+      }
+      found.set(m[1]!, one);
+    }
+    const papers = [...found.entries()].map(([id, p]) => ({ id, files: p.files, at: p.at ?? p.mtime })).sort((a, b) => b.at - a.at);
+    for (const [i, p] of papers.entries()) {
+      if (i < FILES_MAX && now() - p.at < FILES_MS) continue;
+      for (const f of p.files) rmSync(join(dir, f), { force: true });
+    }
+  } catch (err) {
+    // No folder yet: nothing to tidy. Anything else is said, and tried again at the next one.
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") log.error(`could not tidy ${dir}: ${(err as Error).message}`);
+  }
+}
+
+/**
  * `dir`: a computer's ~/.pako/papers (private: 700, each file 600); kept there for 30 days, the last 50. Without it (a server on the internet),
  * memory only: a few papers (20, 60 MB), for two days at most, gone once read or on a restart (the bridge then asks for it again). A paper
  * not read yet is never pushed out by a newer one: the newer one is refused.
@@ -168,41 +210,13 @@ export function createPaperStore(o: { dir?: string; now?: () => number } = {}): 
     };
   }
   const dir = o.dir;
-  const prune = (): void => {
-    let metas: { id: string; at: number }[] = [];
-    try {
-      for (const f of readdirSync(dir)) {
-        const m = /^(p_[0-9a-f]{16})\.json$/.exec(f);
-        if (!m) continue;
-        try {
-          const at = Number((JSON.parse(readFileSync(join(dir, f), "utf8")) as { at?: unknown }).at);
-          metas.push({ id: m[1]!, at: Number.isFinite(at) ? at : statSync(join(dir, f)).mtimeMs });
-        } catch {
-          /* unreadable: taken as the oldest */
-          metas.push({ id: m[1]!, at: 0 });
-        }
-      }
-    } catch {
-      /* no folder yet: nothing to prune */
-      return;
-    }
-    metas = metas.sort((a, b) => b.at - a.at);
-    for (const [i, m] of metas.entries()) {
-      if (i < FILES_MAX && now() - m.at < FILES_MS) continue;
-      for (const f of readdirSync(dir)) if (f.startsWith(`${m.id}.`)) rmSync(join(dir, f), { force: true });
-    }
-  };
   return {
     put: (bytes, mime, name) => {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
       const id = newId();
       writeFileSync(join(dir, `${id}.${EXT[mime]}`), bytes, { mode: 0o600 });
       writeFileSync(join(dir, `${id}.json`), JSON.stringify({ mime, name, at: now() }), { mode: 0o600 });
-      try {
-        prune();
-      } catch (err) {
-        log.error(`could not tidy ${dir}: ${(err as Error).message}`);
-      }
+      tidyPapers(dir, now);
       return id;
     },
     get: (id) => {

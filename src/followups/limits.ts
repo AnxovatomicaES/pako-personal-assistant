@@ -31,6 +31,8 @@ export const ESCALATE_BEFORE_MS = 60 * 60_000;
 /** A loop that cannot be checked by anything (an email to send) is said once, this long before its deadline. */
 export const NONE_BEFORE_MS = 2 * 3600_000;
 export const SNOOZE_MS = 3600_000;
+/** The last silent look at a loop with a time comes this long before it, and a snooze never reaches past it: a nudge after the time is never said. */
+export const LAST_LOOK_BEFORE_MS = 5 * 60_000;
 /** After its nudge, a loop with no time is looked at again (silently: only to close it) this often, for this long after it was said. */
 export const RECHECK_MS = 3 * 3600_000;
 export const RECHECK_FOR_MS = 3 * 24 * 3600_000;
@@ -43,6 +45,13 @@ export const CREATED_SLACK_MS = 5 * 60_000;
 /** A meeting counts as the one asked for when it starts this close to the time, whatever its topic; within the window when its topic names them. */
 export const SAME_TIME_MS = 15 * 60_000;
 export const NEAR_TIME_MS = 90 * 60_000;
+/**
+ * A day alone ("today") is 18:00 that day (src/followups/time.ts). Said so close to that hour (or after it) that less than DAY_ONLY_ROOM_MS is
+ * left (the first look is 10 minutes on, and a time already past is never nudged), it is DAY_ONLY_LATE_MS after it was said instead, within
+ * that day. The later one is more than NONE_BEFORE_MS, so a loop nothing can check is still said once before it.
+ */
+export const DAY_ONLY_ROOM_MS = 30 * 60_000;
+export const DAY_ONLY_LATE_MS = 3 * 3600_000;
 export const TITLE_MAX = 140;
 export const DETAIL_MAX = 300;
 export const WHO_MAX = 60;

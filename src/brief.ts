@@ -368,12 +368,15 @@ export function createBrief(d: BriefDeps) {
    * The old brief instead of a written one that did not come: only for the day that was handed to it, and only while a brief may still come.
    * A laptop that slept with the written brief pending gets no "good morning" at 19:00 (BRIEF says it was skipped), and on waking the
    * next day before the hour no brief of that new day goes early: its own hour gives it.
+   * `began`: when the written brief was begun, when it is given up on at the end of its wait. The old one is as late as that, not as its wait
+   * ends: a computer woken at 10:50 (the late limit is 11:00) begins the written brief, which has until 11:05, and its late line already went.
    */
-  const fallback = async (): Promise<void> => {
+  const fallback = async (o?: { began: number }): Promise<void> => {
     const t = now();
     const day = await loadDay().catch(() => null);
     const last = d.at === null ? 24 * 60 : sleeps ? lateUntil(d.at) : until(d.at);
-    if (day === ymd(t) && minutesOf(t) < last) return plain(t);
+    const from = o && ymd(o.began) === ymd(t) ? o.began : t;
+    if (day === ymd(t) && minutesOf(from) < last) return plain(t);
     log.error(`the written brief did not come in time, and the old one is too late now: none goes for ${day ?? "?"}`);
     if (sleeps && day === ymd(t)) await skip(day);
   };
@@ -435,7 +438,7 @@ export function createBrief(d: BriefDeps) {
     tick,
     jobKind,
     /** What goes when the written brief does not come (src/brief-v2.ts giveUp): see fallback. */
-    plain: () => fallback(),
+    plain: (o?: { began: number }) => fallback(o),
     now: now_,
     /** With the durable jobs (src/jobs.ts), the brief is their slot a day; without them, its own timers as before. */
     start: (jobs?: Pick<Jobs, "define" | "sleeps">) => {

@@ -15,7 +15,7 @@ import { matchContacts } from "../src/autonomy.ts";
 import { attendeesOf } from "../src/calendar.ts";
 import { createControl } from "../src/control.ts";
 import type { Kv } from "../src/kv.ts";
-import { changesBrief, changesSince, createFacts, currentAbout, judgement, ownAttribute, JUDGE_MS, type Fact } from "../src/memory-facts.ts";
+import { changesBrief, changesSince, createFacts, currentAbout, FACTS_MAX, judgement, ownAttribute, JUDGE_MS, type Fact } from "../src/memory-facts.ts";
 import {
   createPeopleGraph, eventSightings, identityValue, mailSightings, slackSightings, splitAddress, whoCommand, zoomSightings,
 } from "../src/people-graph.ts";
@@ -549,6 +549,73 @@ test("facts: a full PERSONAS mirrored into more facts than FACTS_MAX never pushe
   assert.equal(kv.m.get("memory-facts"), stored, "nothing changed: the store is not written again");
 });
 
+test("facts: a derived fact the owner's later word closed is not pruned as old history while PEOPLE still says it, so it never comes back as current", async () => {
+  const kv = memKv();
+  let now = T0;
+  const people = [{ id: "aaaaaaaaaa", name: "Ana", relation: "my boss", likes: [], notes: [], at: now, updated: now }];
+  const facts = createFacts(kv, { now: () => now, seed: async () => ({ notes: [], people: people as any }) });
+  await facts.read();
+  now += DAY;
+  const told = await facts.add([{ subject: "Ana", attribute: "relation", value: "my ex-boss", source: { who: "owner", where: "chat", at: now } }], now);
+  assert.deepEqual(told.closed.map((c) => c.old.value), ["my boss"], "the told value closes the derived one");
+  const currentRelation = async (): Promise<string[]> =>
+    currentAbout(await facts.read(), ["Ana"]).filter((f) => f.attribute === "relation").map((f) => `${f.value}${f.origin ? " (derived)" : ""}`);
+  assert.deepEqual(await currentRelation(), ["my ex-boss"]);
+  // A year and a day on, any change runs the prune of closed history: PEOPLE has not been touched, and still says "my boss".
+  now += 366 * DAY;
+  await facts.add([{ subject: "", attribute: "coffee", value: "black", source: { who: "owner", where: "chat", at: now } }], now);
+  assert.deepEqual(await currentRelation(), ["my ex-boss"], "not both: the closed derived fact was not forgotten and derived again");
+  assert.equal((await facts.read()).filter((f) => f.origin === "person:aaaaaaaaaa:relation").length, 1, "still there, closed");
+  // Once PEOPLE says something else, the old closed one is only history and goes with the next prune after its year.
+  people[0]!.relation = "my friend";
+  now += 2 * DAY;
+  assert.deepEqual(await currentRelation(), ["my friend (derived)"], "the owner changed it there after telling another value: the newest wins");
+  now += 366 * DAY;
+  await facts.add([{ subject: "", attribute: "tea", value: "green", source: { who: "owner", where: "chat", at: now } }], now);
+  assert.deepEqual((await facts.read()).filter((f) => f.origin === "person:aaaaaaaaaa:relation").map((f) => f.value), ["my friend"]);
+});
+
+test("facts: the limit on facts never drops a closed derived fact its origin still derives (it is the only closed one, so the limit would take it first)", async () => {
+  const kv = memKv();
+  let now = T0;
+  const people = [{ id: "aaaaaaaaaa", name: "Ana", relation: "my boss", likes: [], notes: [], at: now, updated: now }];
+  const facts = createFacts(kv, { now: () => now, seed: async () => ({ notes: [], people: people as any }) });
+  await facts.read();
+  // More told facts than FACTS_MAX (10 a call), then the one that closes the derived relation.
+  for (let i = 0; i < FACTS_MAX / 10 + 2; i++) {
+    now += 1000;
+    await facts.add(Array.from({ length: 10 }, (_, j) => ({ subject: `Person ${i}-${j}`, attribute: "likes tea", value: "yes", source: { who: "owner", where: "chat", at: now } })), now);
+  }
+  now += 1000;
+  await facts.add([{ subject: "Ana", attribute: "relation", value: "my ex-boss", source: { who: "owner", where: "chat", at: now } }], now);
+  const all = await facts.read();
+  assert.ok(all.filter((f) => !f.origin).length <= FACTS_MAX, "the limit still holds for what the owner told");
+  assert.equal(all.filter((f) => f.origin === "person:aaaaaaaaaa:relation" && f.validTo !== undefined).length, 1, "the closed derived fact was kept");
+  assert.deepEqual(currentAbout(all, ["Ana"]).map((f) => f.value), ["my ex-boss"], "and so it did not come back as current beside what was told");
+});
+
+test("facts: when the notes and people cannot be read at this load, no closed derived fact is pruned (nothing can be said to have changed)", async () => {
+  const kv = memKv();
+  let now = T0;
+  let readable = true;
+  const people = [{ id: "aaaaaaaaaa", name: "Ana", relation: "my boss", likes: [], notes: [], at: now, updated: now }];
+  const facts = createFacts(kv, { now: () => now, seed: async () => { if (!readable) throw new Error("locked"); return { notes: [], people: people as any }; } });
+  await facts.read();
+  now += DAY;
+  await facts.add([{ subject: "Ana", attribute: "relation", value: "my ex-boss", source: { who: "owner", where: "chat", at: now } }], now);
+  now += 366 * DAY;
+  readable = false;
+  const errors = console.error;
+  console.error = () => undefined;
+  try {
+    await facts.add([{ subject: "", attribute: "coffee", value: "black", source: { who: "owner", where: "chat", at: now } }], now);
+  } finally {
+    console.error = errors;
+  }
+  readable = true;
+  assert.deepEqual(currentAbout(await facts.read(), ["Ana"]).map((f) => f.value), ["my ex-boss"]);
+});
+
 test("people: a first name the owner says never resolves to a stranger named only in a mail header, so the stranger's fact stays", async () => {
   const kv = memKv();
   const graph = createPeopleGraph(kv, { now: () => T0, people: async () => [] });
@@ -580,6 +647,29 @@ test("OLVIDA PERSONA after a rename forgets the facts told under the old name to
     await r.say("FORGET PERSON Ana María");
     assert.deepEqual((await r.door.facts.read()).filter((f) => !f.origin), []);
     assert.ok(!JSON.stringify((await r.context()).peopleRecords ?? []).includes("enfermera"));
+  } finally {
+    r.close();
+  }
+});
+
+test("renaming the owner's person to a name already confirmed for her keeps the old name as an alias: what was told under it still shows on her card, and OLVIDA PERSONA reaches it", async () => {
+  const r = await rig({ seed: oldStores });
+  try {
+    // The mail's “Ana García” was confirmed to be the owner's Ana (a trusted alias), and a fact was told under “Ana”.
+    await r.door.peopleGraph.observe([{ name: "Ana García", identities: [{ kind: "email", value: "ana@x.example" }], via: "correo", at: T0 }], T0);
+    const q = await r.door.peopleGraph.nextQuestion(T0);
+    assert.ok(q);
+    await r.door.peopleGraph.answer(q.q.id, true, T0);
+    await r.post("/assistant/reply", { text: "Ok.", know: [{ who: "Ana", key: "trabajo", value: "enfermera" }] });
+    // The owner then renames her record to that very name: the name she had must not be dropped from the card.
+    await r.say("PERSON Ana: name Ana García");
+    const card = (await r.door.peopleGraph.read()).persons.find((p) => p.personId === "0a1b2c3d4e")!;
+    assert.deepEqual([card.name, card.aliases], ["Ana García", ["Ana"]]);
+    r.sent.length = 0;
+    await r.say("What do you know about Ana García?");
+    assert.match(r.texts()[0]!, /enfermera/, "the fact told under the old name is on her card");
+    await r.say("FORGET PERSON Ana García");
+    assert.deepEqual((await r.door.facts.read()).filter((f) => !f.origin), [], "and is forgotten with her");
   } finally {
     r.close();
   }

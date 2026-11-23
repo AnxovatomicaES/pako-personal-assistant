@@ -4,6 +4,7 @@ import { categoryOf, loopFromVerdict, readVerdict, senderAddress, senderName, VE
 import type { Change } from "../undo.ts";
 import type { Door } from "./door.ts";
 import type { Loop } from "../followups/types.ts";
+import { cut } from "./shared.ts";
 
 export function mountDigests(door: Door): void {
   const { app, d, now, tx, keyOf, noteReceipt, failed, bridge, json, strings } = door;
@@ -16,7 +17,7 @@ export function mountDigests(door: Door): void {
     if (typeof b.id === "string" && /^rb:[0-9a-f]{10}$/.test(b.id)) {
       if (!d.rehearsal) return void res.status(400).json({ error: "No such job." });
       try {
-        res.json(await d.rehearsal.answer(b.id, typeof b.text === "string" ? b.text.slice(0, 30_000) : ""));
+        res.json(await d.rehearsal.answer(b.id, typeof b.text === "string" ? cut(b.text, 30_000) : ""));
       } catch (err) {
         res.status(503).json({ error: (err as Error).message });
       }
@@ -28,7 +29,7 @@ export function mountDigests(door: Door): void {
       return;
     }
     try {
-      res.json(await d.briefJobs.result(id, typeof b.text === "string" ? b.text.slice(0, 30_000) : ""));
+      res.json(await d.briefJobs.result(id, typeof b.text === "string" ? cut(b.text, 30_000) : ""));
     } catch (err) {
       res.status(503).json({ error: (err as Error).message });
     }
@@ -36,7 +37,7 @@ export function mountDigests(door: Door): void {
 
   /** A search of the owner's Slack for the assistant (its <slack> tag): one line per message, other people's words. */
   app.get("/assistant/slack/search", failed, bridge, async (req, res) => {
-    const q = typeof req.query.q === "string" ? req.query.q.replace(/\s+/g, " ").trim().slice(0, 200) : "";
+    const q = typeof req.query.q === "string" ? cut(req.query.q.replace(/\s+/g, " ").trim(), 200) : "";
     if (!d.slack || !q) {
       res.status(400).json({ error: d.slack ? "Empty search." : "Slack is not connected." });
       return;
@@ -74,15 +75,17 @@ export function mountDigests(door: Door): void {
       // Mail read quietly when the mailbox was connected was not told, but the bridge says whether it would have been (`worth`).
       const worth = b.notify === true || (b.quiet === true && b.worth === true);
       const kept = await d.mail.annotate(id, b.notify === true ? "aviso" : "guardado", summary, scam, verdict);
-      // One the owner already replied to (a mailbox's catch-up) is dealt with: off the dashboard, its loops closed (known, never a nudge).
-      const replied = b.replied === true;
-      if (kept && replied && d.mail.replied) await d.mail.replied(id).catch(() => undefined);
+      const mail = kept && d.mail.get ? await d.mail.get(id).catch(() => null) : null;
+      // One the owner already replied to is dealt with: off the dashboard, its loops closed (known, never a nudge). A mailbox's catch-up says so
+      // (`replied`); so does the record, when the owner answered it from their phone before the Mac got to its summary (a sleeping computer, a
+      // backlog): the summary then finds it already marked, and must neither open a loop for it nor tell the owner about it.
+      const replied = b.replied === true || !!mail?.repliedAt;
+      if (kept && b.replied === true && d.mail.replied) await d.mail.replied(id).catch(() => undefined);
       // Without a verdict the bridge decided (an older one, or a run that gave no category): its word stands. A catch-up is never told.
-      const notify = b.quiet === true ? false : kept && verdict && d.mail.notifies ? await d.mail.notifies(id) : b.notify === true;
+      const notify = b.quiet === true || mail?.repliedAt ? false : kept && verdict && d.mail.notifies ? await d.mail.notifies(id) : b.notify === true;
       res.json({ ok: kept, ...(verdict ? { notify } : {}) });
       if (kept && d.followups) {
         const fu = d.followups;
-        const mail = d.mail.get ? await d.mail.get(id).catch(() => null) : null;
         const label = "email";
         const category = verdict?.category ?? categoryOf({ kind: worth ? "aviso" : "guardado", scam, summary });
         if (mail && category !== "suspicious" && fu.answered) {
@@ -117,7 +120,7 @@ export function mountDigests(door: Door): void {
         }
       }
       // A mailbox's catch-up hears each verdict: its "Caught up" line counts what needs the owner.
-      if (b.quiet === true && d.backfillAnswered) void d.backfillAnswered(id, { worth: b.worth === true && scam !== true, replied: b.replied === true }).catch(() => undefined);
+      if (b.quiet === true && d.backfillAnswered) void d.backfillAnswered(id, { worth: b.worth === true && scam !== true, replied }).catch(() => undefined);
     } catch (err) {
       res.status(503).json({ error: (err as Error).message });
     }

@@ -7,8 +7,9 @@
 // shown) but not analysed, and the dashboard says so. The cheap filters run before anything is handed here (src/mail.ts cheapSkip): mail
 // sent to many, no-reply senders and receipts never reach Claude.
 //
-// - Inbox mail: summarized in the isolated email run (assistant/bridge.ts, kind "backfill"), never told; worth telling means the follow-ups
-//   look at it, made closed when the owner already replied in the same thread (`replied`).
+// - Inbox mail: summarized in the isolated email run (assistant/bridge.ts, kind "backfill"), never told, the newest first (the mailbox keeps
+//   only its newest records, so the oldest are the ones it may already have dropped); worth telling means the follow-ups look at it, made
+//   closed when the owner already replied in the same thread (`replied`).
 // - Sent mail: the owner's own words, where their promises live ("I'll send it Friday"): read whole by the follow-ups with its thread
 //   (src/mail-followups.ts), as loops the owner owes and replies that close what was asked.
 //
@@ -136,8 +137,11 @@ export function createBackfill(d: BackfillDeps) {
   const locked = <V>(fn: (s: State) => Promise<V>): Promise<V> => {
     const run = chain.then(async () => {
       const s = await read();
+      const before = JSON.stringify(s);
       const out = await fn(s);
-      await write(s);
+      // The timer's idle ticks (every few seconds) change nothing: the record, up to a few hundred queued items, is not written again for them.
+      if (JSON.stringify(s) !== before) await write(s);
+      else memory = s;
       return out;
     });
     chain = run.then(() => undefined, () => undefined);
@@ -159,8 +163,31 @@ export function createBackfill(d: BackfillDeps) {
     waitingWord: plural(s.waiting.length, "person", "people"),
   });
 
-  /** False when the queue is full: the item is counted, but not queued. */
+  /**
+   * Where the next item to hand out is: the queue in order, except that the inbox mail at its front goes newest first. The mailbox keeps only
+   * its newest records (src/mail.ts keepRecent) and a summary has nowhere to go for a mail it has already dropped: handed out oldest first, a
+   * catch-up of more mail than that spent its whole allowance on exactly the ones the mailbox had let go.
+   */
+  const nextAt = (queue: Item[]): number => {
+    let best = 0;
+    let newest = -Infinity;
+    for (let i = 0; i < queue.length; i++) {
+      const x = queue[i]!;
+      if (x.type !== "mail") break;
+      if (x.m.at > newest) {
+        newest = x.m.at;
+        best = i;
+      }
+    }
+    return best;
+  };
+
+  /**
+   * False when the queue is full: the item is counted, but not queued. A catch-up already reported, with nothing waiting, is over: what comes
+   * now is another connection's (a second mailbox, Teams) and starts afresh, with its own allowance, its own count and its own summary.
+   */
   const push = (s: State, item: Item): boolean => {
+    if (s.reported && !s.queue.length && !s.pending.length) Object.assign(s, fresh());
     if (!s.startedAt) s.startedAt = now();
     s.total++;
     if (s.queue.length >= QUEUE_MAX) {
@@ -199,7 +226,7 @@ export function createBackfill(d: BackfillDeps) {
         return "idle";
       }
       if (t - s.lastAt < d.config.everyMs) return "waiting";
-      const item = s.queue.shift()!;
+      const item = s.queue.splice(nextAt(s.queue), 1)[0]!;
       s.lastAt = t;
       s.runs++;
       if (item.type === "mail") {
@@ -241,13 +268,9 @@ export function createBackfill(d: BackfillDeps) {
         const { mail, ...rest } = o;
         push(s, { type: "sent", ...rest, text: rest.text.slice(0, 4000), ...(mail ? { mail: { ...mail, text: mail.text.slice(0, 4000) } } : {}) });
       }),
-    /**
-     * A chat conversation of a new connection's catch-up (Teams), handed out later, paced, in the same allowance. A catch-up already
-     * reported starts afresh: this is a new connection's, with its own summary.
-     */
+    /** A chat conversation of a new connection's catch-up (Teams), handed out later, paced, in the same allowance. */
     addChat: (c: BackfillChat): Promise<void> =>
       locked(async (s) => {
-        if (s.reported && !s.queue.length && !s.pending.length) Object.assign(s, fresh());
         push(s, { type: "chat", chat: { ...c, msgs: c.msgs.slice(-25).map((m) => ({ ...m, text: m.text.slice(0, 600) })) } });
       }),
     /** The assistant's verdict on a catch-up email (POST /assistant/mail-summary): worth telling counts for the summary. */

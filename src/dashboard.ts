@@ -37,6 +37,12 @@ const SESSION_MS = 30 * 24 * 3600_000;
 export const SIGN_OUT_KEY = "panel-sessions";
 const LINK_MS = 10 * 60_000;
 
+/** The sessions' generation kept apart from the store. `read` is null when it cannot be read (taken as 0); `write` throws when it cannot be kept. */
+export interface SessionGeneration {
+  read: () => number | null;
+  write: (gen: number) => void;
+}
+
 export interface Integration {
   key: string;
   name: string;
@@ -59,6 +65,12 @@ export interface PanelDeps {
   secret: string;
   /** Where the sessions' generation is kept (SIGN_OUT_KEY): "Sign out everywhere" moves it on, and every session made before ends. */
   kv?: Kv | null;
+  /**
+   * On a computer, the generation kept a second time, apart from the store (src/local.ts sessionGeneration: with the run secrets). Delete
+   * everything empties the store, and the demo week runs on a store of its own: a generation kept only there would go back to 0 and bring
+   * back every session "Sign out everywhere" had ended. The one in force is the higher of the two.
+   */
+  generation?: SessionGeneration;
   /** The server's public address, for the sign-in link (a function: it may be learnt after start). */
   publicUrl: string | (() => string);
   ownerName: string;
@@ -316,18 +328,28 @@ export function mountDashboard(app: Express, d: PanelDeps) {
   // made before this change go on until their time; "Sign out everywhere" moves the generation on and every one made before ends (an
   // independent audit: a session could not be ended before its 30 days, short of changing the bridge token).
   const sign = (exp: number, g = 0) => createHmac("sha256", key).update(g ? `${exp}.${g}` : String(exp)).digest("base64url");
+  /** The generation kept apart from the store (0 when there is none, or it cannot be read: the store's then decides). */
+  const apart = (): number => {
+    try {
+      return d.generation?.read() ?? 0;
+    } catch (err) {
+      logPanel.error(`the sessions' generation kept apart could not be read: ${(err as Error).message}`);
+      return 0;
+    }
+  };
   /** The generation now; null until the store answered (no session is taken before that: a moment at start). */
-  let gen: number | null = d.kv ? null : 0;
+  let gen: number | null = d.kv ? null : apart();
   if (d.kv) {
     void readJsonRecord(d.kv, SIGN_OUT_KEY).then(
       (r) => {
         const g = (r as { gen?: unknown } | null)?.gen;
-        gen = typeof g === "number" && Number.isInteger(g) && g >= 0 ? g : 0;
+        // The higher of the store's and the one kept apart: an emptied or other store (Delete everything, the demo week) never lowers it.
+        gen = Math.max(typeof g === "number" && Number.isInteger(g) && g >= 0 ? g : 0, apart());
       },
       (err: Error) => {
-        // Unreadable: the last generation cannot be known. Taken as 0 so the owner is not locked out; said, so it can be looked at.
+        // Unreadable: the last generation cannot be known. Taken as the one kept apart (0 without it) so the owner is not locked out; said, so it can be looked at.
         logPanel.error(`the sessions' generation could not be read (sessions made before a "sign out everywhere" may work): ${err.message}`);
-        gen = 0;
+        gen = apart();
       },
     );
   }
@@ -441,12 +463,16 @@ export function mountDashboard(app: Express, d: PanelDeps) {
     if (!d.kv) return void res.status(404).json({ error: "off" });
     const next = (gen ?? 0) + 1;
     try {
+      // The one that survives a wiped store first: when it cannot be kept, nothing ends and the owner is told.
+      d.generation?.write(next);
       await d.kv.set(SIGN_OUT_KEY, JSON.stringify({ gen: next }), 400 * 24 * 3600);
     } catch (err) {
       logPanel.error(`could not end the sessions: ${(err as Error).message}`);
       return void res.status(503).json({ error: "store" });
     }
     gen = next;
+    // A sign-in link made before is a session waiting to start: it ends with the others.
+    links.clear();
     res.clearCookie(cookieName(), { path: "/panel" });
     d.control.log("panel", LOG(lang())("signedOutAll"));
     res.json({ ok: true });

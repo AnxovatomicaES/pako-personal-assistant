@@ -239,3 +239,38 @@ test("review fixes: a gap inside the week is not its end; next Monday says its d
   assert.match(lines[0]!, /“Plan the offsite”, due Fri 4\./);
   assert.match(lines[0]!, /Nadia: Old contract \(due Mon 16\)/);
 });
+
+test("the week's wrap-up is on the last working day of the owner's week, whichever days they work: a week that runs over the weekend ends on Sunday", () => {
+  // Monday 16 to Sunday 22 November 2026, 18:00 in London.
+  const week = (days: number[]): string[] => {
+    const out: string[] = [];
+    for (let d = 16; d <= 22; d++) {
+      const now = at(`2026-11-${d}T18:00:00Z`);
+      if (!days.includes(new Date(now).getUTCDay())) continue;
+      const p = planShutdown({ loops: [], events: null, now, tz: TZ, hours: { ...WORK, days }, quiet: QUIET })!;
+      if (p.week) out.push(new Intl.DateTimeFormat("en-GB", { weekday: "short", timeZone: TZ }).format(now));
+    }
+    return out;
+  };
+  assert.deepEqual(week([1, 2, 3, 4, 5]), ["Fri"]);
+  assert.deepEqual(week([5, 6, 0]), ["Sun"], "Friday to Sunday, not Saturday");
+  assert.deepEqual(week([6, 0]), ["Sun"], "Saturday and Sunday");
+  assert.deepEqual(week([3, 4, 5, 6, 0]), ["Sun"], "Wednesday to Sunday");
+  assert.deepEqual(week([0, 1, 2, 3, 4]), ["Thu"], "Sunday to Thursday ends on its Thursday");
+  assert.deepEqual(week([1, 2, 4, 5]), ["Fri"], "a gap inside the week is not its end");
+});
+
+test("Done today counts what the owner closed, not follow-ups a mailbox's catch-up made already closed", () => {
+  const NOON = THU18 - 6 * HOUR;
+  // Made closed by the catch-up this morning (its closing is its making); one the owner pressed Done on today; one yesterday.
+  const caughtUp = (i: number): Loop => loop({ id: `aaaaaaaac${i}`, title: `Old ask ${i}`, status: "done", createdAt: NOON, closedAt: NOON, whenSaid: NOON - 13 * 24 * HOUR });
+  const loops = [1, 2, 3].map(caughtUp);
+  const mine = loop({ id: "aaaaaaaad1", status: "done", createdAt: THU18 - 48 * HOUR, closedAt: THU18 - HOUR });
+  const yesterday = loop({ id: "aaaaaaaad2", status: "done", createdAt: THU18 - 72 * HOUR, closedAt: THU18 - 30 * HOUR });
+  const plan = (l: Loop[], now = THU18) => planShutdown({ loops: l, events: null, now, tz: TZ, hours: WORK, quiet: QUIET })!;
+  assert.equal(plan(loops).doneToday, 0, "three that came in closed are no work of today");
+  assert.equal(plan([...loops, mine, yesterday]).doneToday, 1, "the one the owner closed");
+  // The week counts the same way.
+  const FRI18 = at("2026-11-27T18:00:00Z");
+  assert.equal(plan([...loops, mine], FRI18).week!.done, 1);
+});

@@ -14,7 +14,7 @@ import { createCompanion } from "../src/companion.ts";
 import { createControl } from "../src/control.ts";
 import { birthdayEves, checkinNudge, datesContext, friendCommand } from "../src/friend.ts";
 import {
-  createHealth, doctorSummary, healthCommand, healthNudge, hoursOf, kindOf, loadCountry, redFlag, redFlagReply, HEALTH_KEY, type HealthState,
+  createHealth, doctorSummary, healthCommand, healthNudge, hoursOf, kindOf, loadCountry, nightsOf, redFlag, redFlagReply, sleepText, HEALTH_KEY, type HealthState,
 } from "../src/health.ts";
 import { plainWords } from "../src/intents.ts";
 import type { Kv } from "../src/kv.ts";
@@ -172,6 +172,21 @@ test("red flags: a heart attack, «me falta el aire», a strong pain or tightnes
   ]) assert.equal(redFlag(s), null, s);
 });
 
+test("red flags: a seizure, an overdose or anaphylaxis in any form (plural, past, adjective), «wanna die», «don't wanna live»", () => {
+  for (const s of [
+    "my son is having seizures", "he's convulsing", "she had convulsions", "I think I'm going into anaphylaxis", "anaphylactic shock, the EpiPen is at home",
+    "I overdosed", "he overdosed on his pills", "I took too many pills", "le dio un ataque epiléptico", "está convulsionando", "creo que es anafilaxia",
+    "ha tenido una sobredosis", "me he tomado demasiadas pastillas",
+  ]) assert.equal(redFlag(s), "emergency", s);
+  for (const s of ["I wanna die", "i just wanna die", "I don't wanna live anymore", "I do not want to be alive", "I dont want to wake up", "I wish I was dead"]) {
+    assert.equal(redFlag(s), "suicide", s);
+  }
+  for (const s of ["he seized the chance", "we overdid it at the gym", "I don't want to eat out", "I wanna dye my hair", "the seizing-up of my schedule is annoying"]) {
+    assert.equal(redFlag(s), null, s);
+  }
+  assert.doesNotMatch(redFlagReply("emergency", "en", "ES"), /seizure|overdose|anaphyla|diagnos/i, "the answer says nothing about what it is");
+});
+
 test("the door: the emergency number before the notices kept while WhatsApp's window was closed", async () => {
   const r = await rig({ fresh: true });
   try {
@@ -245,6 +260,20 @@ test("health commands: an ordinary note with a health-sounding word is not the d
   assert.equal(cmd("log in my health diary: gym 1 hour")?.op, "log", "said to be for the diary");
 });
 
+test("health commands: «note: …» or «log: …» is the diary only with a health verb, state or measure next to the first person, not any sentence with I and a word like run, water or pain", () => {
+  const cmd = (s: string) => healthCommand(s, plainWords(s));
+  for (const note of [
+    "note: I have to run the payroll tomorrow", "note that I had a great idea about water billing", "log: I did 3 steps of the migration", "note: I am ranking the candidates tonight",
+    "note: I have a pain point with the new API", "log: I feel the Q3 plan is too cold on pricing", "note: I feel good about the new pricing", "log: I ran into Ana at the gym",
+    "log: I ran the numbers on the gym budget", "note: I'm fine with Thursday", "note: I had water delivered",
+  ]) assert.equal(cmd(note), null, `${note}: a note for the assistant`);
+  for (const [note, kind] of [
+    ["log: I have had a headache since yesterday", "symptom"], ["log: I had a fever last night", "symptom"], ["log: I've got a cold", "symptom"], ["note: my head hurts", "symptom"],
+    ["log: I feel a bit dizzy", "mood"], ["log: I feel great today", "mood"], ["log: feeling anxious", "mood"], ["log: I slept badly", "sleep"],
+    ["log: I did 30 minutes of yoga", "exercise"], ["log: ran 5 km", "exercise"], ["log that I drank 2 litres of water", "water"],
+  ] as const) assert.equal(cmd(note)?.op === "log" ? (cmd(note) as { kind: string }).kind : null, kind, note);
+});
+
 test("the diary at the door: logged in its own key, shown, summarised for the doctor, deleted only when confirmed; nothing about it in the log", async () => {
   const r = await rig();
   try {
@@ -290,6 +319,32 @@ test("doctor summary and habit nudges: the owner's words only, one nudge a day, 
   const store = createHealth(memKv());
   assert.equal(await store.claimNudge("2026-11-14"), true);
   assert.equal(await store.claimNudge("2026-11-14"), false);
+});
+
+test("sleep: one figure for each of the owner's days (the longest note, never a nap's): the nudge counts three different days, the average counts nights; «4 1/2 hours» is 4.5", () => {
+  assert.equal(hoursOf("slept 4 1/2 hours"), 4.5);
+  assert.equal(hoursOf("4½ h"), 4.5);
+  assert.equal(hoursOf("dormí 5 horas y media"), 5.5);
+  assert.equal(hoursOf("slept 6 hours"), 6);
+  const evening = Date.parse("2026-11-18T17:30:00Z"); // Wednesday, 18:30 in Madrid
+  const note = (daysAgo: number, text: string, hoursLater = 0): { at: number; kind: "sleep"; text: string } =>
+    ({ at: evening - daysAgo * DAY - 9 * 3600_000 + hoursLater * 3600_000, kind: "sleep", text });
+  // Three notes of one day (a short night, a second figure, a nap) are one day, not three nights.
+  const oneDay: HealthState = { meds: [], entries: [note(0, "I slept 5 hours"), note(0, "I had a 1 hour nap", 1), note(0, "nap was more like 1.5 hours", 2), note(0, "slept 4 hours", 3)] };
+  assert.equal(healthNudge(oneDay, evening, TZ, "en"), null);
+  assert.deepEqual([...nightsOf(oneDay.entries, TZ)], [["2026-11-18", 5]], "the longest note of the day; a nap's is never one");
+  // Three different days of little sleep: the nudge.
+  const threeDays: HealthState = { meds: [], entries: [note(2, "slept 5 hours"), note(1, "slept 4 hours"), note(0, "dormí 5 horas")] };
+  assert.match(healthNudge(threeDays, evening, TZ, "en")?.text ?? "", /slept little/);
+  // Naps alone are not nights, and a long night with a short note of the same day is a long night.
+  const naps: HealthState = { meds: [], entries: [note(2, "siesta de 1 hora"), note(1, "a 1 hour nap"), note(0, "nap of 1 h")] };
+  assert.equal(healthNudge(naps, evening, TZ, "en"), null);
+  assert.equal(nightsOf(naps.entries, TZ).size, 0);
+  const mixed: HealthState = { meds: [], entries: [note(2, "slept 5 hours"), note(1, "slept 5 hours"), note(0, "slept 5 hours"), note(0, "slept 8 hours", 1)] };
+  assert.equal(healthNudge(mixed, evening, TZ, "en"), null, "the third day's longest note is 8 hours");
+  // HOW AM I SLEEPING: the average is of nights (days), with the nap left out.
+  const text = sleepText({ meds: [], entries: [note(1, "slept 7 hours"), note(0, "I slept 8 hours"), note(0, "I had a 1 hour nap", 1)] }, [], evening, TZ, "en");
+  assert.match(text, /Of 2 night\(s\) with hours: 7\.5 h on average\./);
 });
 
 // ---------- the teacher ----------
@@ -488,6 +543,43 @@ test("an offer that could not be sent is given back: the birthday comes at the n
   assert.deepEqual((await c.offers()).map((o) => o.topic), ["friend", "learning"], "both come again");
   assert.equal((await c.learning.read()).asking, undefined, "no question waits: its card never went");
   assert.equal(await c.command("to get up early", plainWords("to get up early")), null, "a short message is not taken as its answer");
+});
+
+test("a quiz the check offered is graded only for an attempt: «not now» lets it go, other messages go on to the assistant, the card stays due", async () => {
+  const clock = { now: Date.parse("2026-11-14T17:30:00Z") };
+  const make = async () => {
+    const c = createCompanion({ kv: memKv(), timeZone: TZ, lang: () => "en", people: async () => [], now: () => clock.now });
+    await c.learning.addCards([{ goal: "Italian", q: "How do you say 'cheese'?", a: "formaggio" }], clock.now - 2 * DAY);
+    const quiz = (await c.offers()).find((o) => o.topic === "learning")!;
+    assert.equal(await quiz.claim(), true, "sent: the question waits for its answer");
+    clock.now += 5 * 60_000;
+    return c;
+  };
+  for (const said of ["buy eggs", "running late today", "ok thanks", "what's on tomorrow?", "remind me to call Ana"]) {
+    const c = await make();
+    assert.equal(await c.command(said, plainWords(said)), null, `${said}: not an answer, so it goes on to the assistant`);
+    const card = (await c.learning.read()).cards[0]!;
+    assert.deepEqual([card.seen, card.right], [0, 0], `${said}: nothing was graded`);
+  }
+  for (const said of ["not now", "Later", "no thanks", "maybe later"]) {
+    const c = await make();
+    assert.match((await c.command(said, plainWords(said)))?.say ?? "", /^OK, I'll leave it/, said);
+    const s = await c.learning.read();
+    assert.equal(s.asking, undefined, `${said}: the question stops waiting`);
+    assert.equal(s.cards[0]!.seen, 0, `${said}: not a miss`);
+    assert.ok(s.cards[0]!.due <= clock.now, `${said}: the card is still due`);
+    assert.equal(await c.command("formaggio", plainWords("formaggio")), null, `${said}: a later short message is not an answer`);
+  }
+  // Attempts still count: the right answer, a near one, a wrong one of the right size, "I don't know"; and the same words answer QUIZ ME.
+  for (const [said, graded] of [["formaggio", /^✅ Right/], ["formagio", /^✅ Nearly/], ["cheddar", /^❌ It was “formaggio”/], ["I don't know", /^It was “formaggio”/]] as const) {
+    const c = await make();
+    assert.match((await c.command(said, plainWords(said)))?.say ?? "", graded, said);
+    assert.equal((await c.learning.read()).cards[0]!.seen, 1, said);
+  }
+  const asked = createCompanion({ kv: memKv(), timeZone: TZ, lang: () => "en", people: async () => [], now: () => clock.now });
+  await asked.learning.addCards([{ goal: "Italian", q: "How do you say 'cheese'?", a: "formaggio" }], clock.now - 2 * DAY);
+  assert.match((await asked.command("QUIZ ME", plainWords("QUIZ ME")))?.say ?? "", /cheese/);
+  assert.match((await asked.command("not now", plainWords("not now")))?.say ?? "", /^❌ It was “formaggio”/, "the owner asked for this one: the old rule holds");
 });
 
 test("the prompt with Labs on: friend, health companion and teacher, honest about being an AI, the red-flag rule, no diagnosis, the new tags", () => {

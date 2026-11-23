@@ -8,7 +8,7 @@ import type { Base, Engine, Matching } from "./parts.ts";
 import { ESCALATE_BEFORE_MS, LOOPS_PER_JOB, NONE_BEFORE_MS, REVIEW_LOOPS_MAX, SAME_TIME_MS, WHO_MAX } from "./limits.ts";
 import { HEX10, isObject, isOpen, newId, num } from "./record.ts";
 import { T } from "./texts.ts";
-import type { Check, FollowupsDoor, FollowupsState, Job, Loop, LoopSource } from "./types.ts";
+import type { FollowupsDoor, FollowupsState, Job, Loop, LoopSource } from "./types.ts";
 import { createLog } from "../log.ts";
 
 const log = createLog("followups");
@@ -32,18 +32,15 @@ export function mountMatching({ d, now, lang, config }: Base, { mutate }: Pick<E
       if (c.who && d.who) c.who = clean(d.who(c.who), WHO_MAX) || c.who;
       const src: LoopSource = { kind: job.source, label: job.label, at: job.whenSaid, ...(job.ref ? { ref: job.ref } : {}) };
       if (ruledOut(s, c, job)) continue;
-      // The same thing again: the open loop the run named (of this conversation only), the same title, (a re-ping worded differently, in a
-      // later message) the same kind and check from the same person in the same conversation for the same time, or the same ask from the
-      // same person said elsewhere (on Slack, then by email), its title's words in another order.
+      // The same thing again: the open loop the run named (of this conversation only), the same title, or the same ask from the same person
+      // said elsewhere (on Slack, then by email), its title's words in another order. A re-ping worded differently is the same loop only
+      // when the run says so ("same"): the same person, kind and check in one conversation say nothing of the ask itself, and a second,
+      // different ask there (with no time on either, or the same one) must be kept, not swallowed into the first.
       const here = (l: Loop): boolean =>
         (!!job.where.channel && l.where.channel === job.where.channel) || (!!job.where.mailThread && l.where.mailThread === job.where.mailThread);
-      const checkKind = (k: Check): string => Object.keys(k)[0]!;
       const named = isObject(v) && typeof v.same === "string" && HEX10.test(v.same) ? v.same : "";
-      const sameTime = (a?: number, b?: number): boolean => (a === undefined && b === undefined) || (!!a && !!b && Math.abs(a - b) <= SAME_TIME_MS);
       const twin = s.loops.find((l) => isOpen(l) && here(l) && l.id === named)
         ?? s.loops.find((l) => isOpen(l) && fold(l.who) === fold(c.who) && sameThing(l.title, c.title))
-        ?? s.loops.find((l) => isOpen(l) && here(l) && !fresh.has(l.id) && !!c.who && fold(l.who) === fold(c.who) && l.kind === c.kind
-          && checkKind(l.check) === checkKind(c.check) && sameTime(l.dueAt, c.dueAt))
         ?? s.loops.find((l) => isOpen(l) && !fresh.has(l.id) && sameAsk(l, c, SAME_TIME_MS));
       const given = trusted && isObject(v) ? num(v.checkAt) : undefined;
       // Someone else's promise is theirs to keep: looked at once, near its time (their invitation on the calendar), never 10 minutes after.

@@ -103,6 +103,10 @@ test("times: a time said in ET is read in New York's zone; zone words; a time th
   assert.equal(zonedTime("2026-11-16", "Europe/Madrid"), Date.parse("2026-11-16T17:00:00Z"), "a day alone is 18:00 there");
   assert.equal(zonedTime("2026-02-30 10:00", "Europe/Madrid"), null);
   assert.equal(zonedTime("tomorrow", "Europe/Madrid"), null);
+  // The hour the clocks skip is moved on to the same wall time after the jump, in the Americas as in Europe (never an hour early).
+  assert.equal(zonedTime("2026-03-29 02:30", "Europe/Madrid"), Date.parse("2026-03-29T01:30:00Z"), "03:30 in Madrid");
+  assert.equal(zonedTime("2026-03-08 02:30", "America/Los_Angeles"), Date.parse("2026-03-08T10:30:00Z"), "03:30 in Los Angeles");
+  assert.equal(zonedTime("2026-03-08 02:30", "America/New_York"), Date.parse("2026-03-08T07:30:00Z"), "03:30 in New York");
   assert.equal(zoneOf("ET"), "America/New_York");
   assert.equal(zoneOf("Asia/Hong_Kong"), "Asia/Hong_Kong");
   assert.equal(zoneOf("Mars/Olympus"), null);
@@ -300,6 +304,32 @@ test("escalation: checked again an hour before; still not there -> one more nudg
   assert.deepEqual(await s.engine.open(), []);
 });
 
+test("a day alone said of today after its 18:00 default is a few hours on, still that day: the ask is nudged, not dropped unsaid", async () => {
+  const ask = (due: string) => JSON.stringify({ loops: [{ kind: "request_to_owner", title: "Enviar el deck a Rohan", who: "Rohan", due, check: "slackReply" }] });
+  // 18:20 in Madrid on Wednesday 18 November: "can you send me the deck today?"
+  const r = rig({ at: Date.parse("2026-11-18T17:20:00Z") });
+  await askAndExtract(r, ask("2026-11-18"));
+  const l = (await r.engine.read()).loops[0]!;
+  assert.equal(l.dueAt, Date.parse("2026-11-18T17:20:00Z") + 3 * 60 * MIN, "three hours on, not 18:00 which has gone");
+  for (let t = r.clock.now; t < Date.parse("2026-11-18T22:30:00Z"); t += 5 * MIN) {
+    r.clock.now = t;
+    await r.engine.tick();
+  }
+  assert.ok(r.cards.length >= 1, "said at least once");
+  assert.match(r.cards[0]!.body, /^🔔 Rohan asked you to .*, at 21:20\./);
+  // Said late in the evening, it stays within the day: never tomorrow's.
+  const late = rig({ at: Date.parse("2026-11-18T21:30:00Z") }); // 22:30 in Madrid
+  await askAndExtract(late, ask("2026-11-18"));
+  assert.equal((await late.engine.read()).loops[0]!.dueAt, Date.parse("2026-11-18T22:59:00Z"), "23:59 at the latest");
+  // Before the hour, or for another day, the default stays 18:00.
+  const morning = rig({ at: Date.parse("2026-11-18T08:30:00Z") });
+  await askAndExtract(morning, ask("2026-11-18"));
+  assert.equal((await morning.engine.read()).loops[0]!.dueAt, Date.parse("2026-11-18T17:00:00Z"));
+  const tomorrow = rig({ at: Date.parse("2026-11-18T17:20:00Z") });
+  await askAndExtract(tomorrow, ask("2026-11-19"));
+  assert.equal((await tomorrow.engine.read()).loops[0]!.dueAt, Date.parse("2026-11-19T17:00:00Z"));
+});
+
 test("buttons: Done closes, In 1 h checks again an hour later (and nudges if still not done), Not mine teaches a rule the next job gets", async () => {
   const r = rig();
   await askAndExtract(r);
@@ -330,6 +360,43 @@ test("buttons: Done closes, In 1 h checks again an hour later (and nudges if sti
   assert.ok(again);
   assert.match(n.queued.at(-1)!.followup!.text, /create no loops like these:\n- from Rohan in Rohan \(privado\): Montar la reunión con samir/);
   assert.deepEqual(await n.engine.open(), [], "the rule keeps it out");
+});
+
+test("buttons: In 1 h on the reminder an hour before the time looks again just before the time, never after it (where nothing is said any more)", async () => {
+  const DUE = Date.parse("2026-11-16T10:15:00Z");
+  for (const [pressedAt, lookAt, reply] of [
+    [DUE - 57 * MIN, DUE - 5 * MIN, "OK, I'll look again just before it's due."],
+    [DUE - 3 * MIN, DUE - 2 * MIN, "OK, I'll look again just before it's due."],
+  ] as const) {
+    const r = rig();
+    await askAndExtract(r);
+    for (const t of [T0 + 10 * MIN, DUE - 60 * MIN]) {
+      r.clock.now = t;
+      await r.engine.tick();
+    }
+    assert.equal(r.cards.length, 2, "the first nudge, and the one an hour before");
+    assert.match(r.cards[1]!.body, /^⏰ Not long now\./);
+    const id = /^f1:(.+)$/.exec(r.cards[1]!.buttons[0]!.id)![1]!;
+    r.clock.now = pressedAt;
+    assert.equal(await r.engine.press("2", id), reply);
+    const l = (await r.engine.read()).loops[0]!;
+    assert.equal(l.nextCheckAt, lookAt, "before the time, though an hour on is after it");
+    r.clock.now = lookAt - MIN;
+    await r.engine.tick();
+    assert.equal(r.cards.length, 2, "not before");
+    r.clock.now = lookAt;
+    await r.engine.tick();
+    assert.equal(r.cards.length, 3, "said again, before the time");
+    assert.equal((await r.engine.read()).loops[0]!.status, "open", "no longer left snoozed");
+  }
+  // Far from its time (an hour on is still before it), or at the time, nothing changes.
+  const far = rig();
+  await askAndExtract(far);
+  far.clock.now = T0 + 10 * MIN;
+  await far.engine.tick();
+  const fid = (await far.engine.read()).loops[0]!.id;
+  assert.equal(await far.engine.press("2", fid), "OK, I'll look again in an hour.");
+  assert.equal((await far.engine.read()).loops[0]!.nextCheckAt, T0 + 70 * MIN);
 });
 
 test("PENDING and the assistant's context: newest first, with the source and the last check", async () => {

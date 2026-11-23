@@ -5,7 +5,7 @@ import { bodyOrigin, decide, isAddress, isNumber, matchContacts } from "../auton
 import { callWords } from "./format.ts";
 import { addressOf } from "../mail.ts";
 import { senderName } from "../mail-categories.ts";
-import { PENDING_CALL_MS, CALL_ID } from "./shared.ts";
+import { PENDING_CALL_MS, CALL_ID, CARD_MAX, chunkText, cut } from "./shared.ts";
 import type { Turn, Door } from "./door.ts";
 
 export function mountActions(door: Door): Pick<Door, "choices" | "emailCards" | "callAuto" | "sendAuto" | "emailAuto" | "offerDraftSend"> {
@@ -26,7 +26,7 @@ export function mountActions(door: Door): Pick<Door, "choices" | "emailCards" | 
     choices.set(id, { at: now(), names, go });
     if (door.pendingCall) door.pendingCall.typed = false;
     if (door.pendingSend) door.pendingSend.typed = false;
-    const buttons = [...names.map((n, i) => ({ type: "reply", reply: { id: `w${i}:${id}`, title: n.slice(0, 20) } })), { type: "reply", reply: { id: `wx:${id}`, title: tx("btnCancel") } }];
+    const buttons = [...names.map((n, i) => ({ type: "reply", reply: { id: `w${i}:${id}`, title: cut(n, 20) } })), { type: "reply", reply: { id: `wx:${id}`, title: tx("btnCancel") } }];
     await graph({ type: "interactive", interactive: { type: "button", body: { text: at("which", { to }) }, action: { buttons } } });
   };
 
@@ -39,7 +39,18 @@ export function mountActions(door: Door): Pick<Door, "choices" | "emailCards" | 
     emailCards.set(id, { at: now(), ...e });
     if (door.pendingCall) door.pendingCall.typed = false;
     if (door.pendingSend) door.pendingSend.typed = false;
-    const card = at("emailCard", { to: e.label, address: e.target, subject: e.subject, text: e.text.slice(0, 600) });
+    // The press sends the whole text, so the owner is shown the whole text. A card holds CARD_MAX characters at most: what does not fit comes
+    // first as messages of its own, exactly as it will be sent, and the card points to them.
+    let card = at("emailCard", { to: e.label, address: e.target, subject: e.subject, text: e.text });
+    if ((why ? `${why}\n\n${card}` : card).length > CARD_MAX) {
+      for (const part of chunkText(e.text)) {
+        if (!(await graph({ type: "text", text: { body: part, preview_url: false } }))) {
+          emailCards.delete(id); // the text did not arrive: nothing is asked about it
+          return;
+        }
+      }
+      card = at("emailCardLong", { to: e.label, address: e.target, subject: e.subject });
+    }
     await sendButtons(why ? `${why}\n\n${card}` : card, `e1:${id}`, `e0:${id}`, at("emailYes"));
   };
 
@@ -167,7 +178,7 @@ export function mountActions(door: Door): Pick<Door, "choices" | "emailCards" | 
     const lines = o.text.split("\n");
     const body = (lines.length > 1 ? lines.slice(1) : lines).join("\n").trim();
     if (!body) return;
-    const subject = /^re:/i.test(o.subject.trim()) ? o.subject.trim() : `Re: ${o.subject.trim()}`.slice(0, 150);
+    const subject = /^re:/i.test(o.subject.trim()) ? o.subject.trim() : cut(`Re: ${o.subject.trim()}`, 150);
     await proposeEmail({ label: senderName(o.from), target, subject, text: body }, at("draftSendWhy", { title: o.title }));
   };
 

@@ -38,7 +38,7 @@ function memKv() {
   return { kv, m };
 }
 
-function rig(o: { quality?: ReturnType<typeof createQuality> } = {}) {
+function rig(o: { quality?: ReturnType<typeof createQuality>; lineShown?: boolean } = {}) {
   const clock = { now: T0 };
   const store = memKv();
   const queued: Inbound[] = [];
@@ -46,7 +46,11 @@ function rig(o: { quality?: ReturnType<typeof createQuality> } = {}) {
   const engine = createFollowups({
     config: CONFIG, kv: store.kv, timeZone: "Europe/Madrid", now: () => clock.now,
     enqueue: async (m) => (queued.push(m), true),
-    card: async (body, buttons, feedback) => (cards.push({ body, buttons, ...(feedback ? { feedback } : {}) }), true),
+    card: async (body, buttons, feedback) => {
+      // What the door's sendCard reports: the line was under the text (WhatsApp), or the buttons were there instead.
+      if (feedback && o.lineShown !== undefined) feedback.lineShown = o.lineShown;
+      return cards.push({ body, buttons, ...(feedback ? { feedback } : {}) }), true;
+    },
     notify: async () => undefined,
     zoom: async () => [],
     ...(o.quality ? { quality: o.quality.followups } : {}),
@@ -143,6 +147,24 @@ test("followups: the nudge card keeps its three buttons and carries a quiet 👍
   const q = await quality.stats();
   assert.equal(q.nudges.sent, 1);
   assert.equal(q.nudges.notMine, 1);
+});
+
+test("followups: a typed no answers the nudge only when its Useful? line was shown; with the 👍/👎 buttons (Telegram, the panel's chat) it is an ordinary message", async () => {
+  for (const lineShown of [true, false]) {
+    const quality = createQuality({ kv: memKv().kv, timeZone: "Europe/Madrid", now: () => T0 });
+    const r = rig({ quality, lineShown });
+    await r.engine.observeSlack(rohan(T0));
+    r.clock.now += 3 * MIN;
+    await r.engine.tick();
+    await r.engine.result(/^fu:(.+)$/.exec(r.queued[0]!.id)![1]!, EXTRACTED);
+    r.clock.now = T0 + 10 * MIN;
+    await r.engine.tick();
+    assert.equal(r.cards.length, 1);
+    const said = await quality.answerText("no");
+    if (lineShown) assert.match(said ?? "", /^Noted 👎/);
+    else assert.equal(said, null, "no line was shown: the no is not a verdict (and writes no lesson)");
+    assert.equal((await quality.stats()).nudges.sent, 1, "the nudge is counted either way");
+  }
 });
 
 test("rehearsal (engine): a draft is the real job's text; its dry answer says what would be nudged, and the record is left exactly as it was", async () => {
@@ -411,4 +433,7 @@ test("the panel's chat has room: the nudge card shows its three buttons and then
   const shown = (await channel.list(0)).at(-1)!;
   assert.equal(shown.text, "🔔 Rohan asked you for something.");
   assert.deepEqual(shown.buttons?.map((b) => b.title), ["Done", "In 1 h", "Not mine", "👍", "👎"]);
+  assert.equal(fb.lineShown, false, "the send says the buttons were there, not the line: a typed no does not answer this card");
+  quality.followups.nudged({ id: "f000000001", title: "x" }, !!fb.lineShown);
+  assert.equal(await quality.answerText("no"), null);
 });

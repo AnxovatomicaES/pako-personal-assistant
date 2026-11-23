@@ -12,7 +12,7 @@ import { parseEmailVerdict } from "../assistant/bridge.ts";
 import { createFollowups } from "../src/followups.ts";
 import type { Kv } from "../src/kv.ts";
 import {
-  authenticated, CATEGORIES, categoryOf, loopFromVerdict, needsPreview, NOTIFY_DEFAULTS, openLink, preClassify, providerOf, readVerdict, redFlag,
+  authenticated, authservId, CATEGORIES, categoryOf, loopFromVerdict, needsPreview, NOTIFY_DEFAULTS, openLink, preClassify, providerHost, providerOf, readVerdict, redFlag,
   shouldNotify,
   type MailCategory, type PreviewMail,
 } from "../src/mail-categories.ts";
@@ -151,6 +151,42 @@ test("the gate: only the topmost Authentication-Results counts; DKIM must be ali
   assert.equal(authenticated(from, []), false, "no header");
   // A sender can write its own header further down; only the receiving server's, on top, is read.
   assert.equal(authenticated(from, ["mx.owner.example; dkim=fail header.d=shop.example", "forged.example; dkim=pass header.d=shop.example"]), false);
+});
+
+test("the gate: on a host that is not a big provider's, only a header that names that server counts; a provider's own header counts as it is", () => {
+  const from = "Shop <orders@shop.example>";
+  const ok = "dkim=pass header.d=shop.example";
+  assert.equal(authenticated(from, [`imap.example.com; ${ok}`], "imap.example.com"), true, "the server's own name");
+  assert.equal(authenticated(from, [`mx.example.com 1; ${ok}`], "imap.example.com"), true, "a name in its domain (a version may follow)");
+  assert.equal(authenticated(from, [`example.com; ${ok}`], "imap.example.com"), true, "its domain");
+  assert.equal(authenticated(from, [`mx.anything.example; ${ok}`], "imap.example.com"), false, "another server's name: the sender's own line");
+  assert.equal(authenticated(from, [`mx.badexample.com; ${ok}`], "imap.example.com"), false, "a name that only ends the same way");
+  assert.equal(authenticated(from, [ok], "imap.example.com"), false, "a header that names no server");
+  assert.equal(authenticated(from, [`mx.anything.example; ${ok}`, `imap.example.com; ${ok}`], "imap.example.com"), false, "only the topmost is looked at");
+  assert.equal(authenticated(from, [`mx.anything.example; ${ok}`]), true, "no server to compare with (Apple Mail, Pako's own inbox): as before");
+  assert.equal(authservId("MX.Example.COM. 1; dkim=pass"), "mx.example.com");
+  assert.equal(authservId("mx.example.com (Postfix); dkim=pass"), "mx.example.com");
+  assert.equal(authservId("spf=pass (sender IP is 1.2.3.4) smtp.mailfrom=x.example; dkim=pass"), "", "a result first, no server named");
+  // The big providers put their own header on top and strip a sender's, so they keep the old rule: Gmail names mx.google.com for
+  // imap.gmail.com, and Microsoft 365 often names no server at all.
+  assert.equal(authenticated(from, [`mx.google.com; ${ok}`], "imap.gmail.com"), true, "Gmail: mx.google.com");
+  const microsoft = "spf=pass (sender IP is 1.2.3.4) smtp.mailfrom=shop.example; dkim=pass (signature was verified) header.d=shop.example; dmarc=pass action=none header.from=shop.example";
+  assert.equal(authenticated(from, [microsoft], "outlook.office365.com"), true, "Microsoft 365: no server named");
+  for (const host of [
+    "imap.gmail.com", "imap.googlemail.com", "outlook.office365.com", "imap-mail.outlook.com", "smtp.outlook.com", "imap.mail.yahoo.com", "export.imap.mail.yahoo.com",
+    "imap.mail.me.com", "imap.mail.icloud.com", "imap.fastmail.com", "mail.messagingengine.fastmail.com", "imap.zoho.com", "imap.zoho.eu", "imap.aol.com", "IMAP.GMAIL.COM",
+  ]) {
+    assert.equal(providerHost(host), true, host);
+    assert.equal(authenticated(from, [`mx.anything.example; ${ok}`], host), true, `${host}: its header counts as it is`);
+    assert.equal(authenticated(from, [`mx.anything.example; dkim=pass header.d=evil.example`], host), false, `${host}: still aligned with From`);
+  }
+  // Anything else, however it looks, is checked: a company's or a self-hosted server, a look-alike name, a provider's name inside another's.
+  for (const host of ["imap.example.com", "mail.company.example", "imap.gmail.com.evil.example", "imap.notgmail.com", "evil-outlook.com", "notyahoo.com", "fastmail.com.evil.example", "imap.zoho.example"]) {
+    assert.equal(providerHost(host), false, host);
+    assert.equal(authenticated(from, [`mx.google.com; ${ok}`], host), false, `${host}: a forged line naming another server`);
+    assert.equal(authenticated(from, [microsoft], host), false, `${host}: no server named`);
+    assert.equal(authenticated(from, [`${host}; ${ok}`], host), true, `${host}: its own name`);
+  }
 });
 
 test("the gate: a misaligned DKIM domain and every red flag send the mail to Claude even when authenticated", async () => {
@@ -356,6 +392,14 @@ test("reader: plain text only (no script, no remote image, links as words), one-
   }
 });
 
+test("reader: a plain text mail with <a.garcia@acme.com> keeps its addresses; one that carries markup is still made text", () => {
+  const plain = "Hi Marta,\n\nPlease send the signed contract to Ana García <a.garcia@acme.com> and copy Pedro <p.ruiz@acme.com>, Luis <br@acme.com> and <div.lead@acme.com>.\n\nThanks";
+  assert.equal(readerText(plain), plain, "an address in angle brackets is not a tag");
+  assert.equal(readerText("<p>Hello</p><a href=\"https://docs.example\">the plan</a><br/>bye<br>"), "Hello\nthe plan\nbye", "real tags still go");
+  assert.equal(readerText("<a>x</a>"), "x");
+  assert.equal(readerText("<DIV class=x>Hi</DIV><img src=https://t.example/p.gif>"), "Hi");
+});
+
 // ---------- the dashboard's "Needs you" preview ----------
 
 const pm = (o: Partial<PreviewMail> & { id: string }): PreviewMail => ({ at: T0 - HOUR, from: "Ana <ana@x.example>", subject: o.id, category: "needs_you", ...o });
@@ -426,6 +470,54 @@ test("preview: Done hides the row, closes its loop through the button's path and
     view = await p.get("/panel/api/mail/view") as typeof view;
     assert.deepEqual(view.needs.rows.map((r) => r.id), ["d1"]);
     assert.equal((await engine.read()).loops[0]!.status, "open");
+  } finally {
+    await p.close();
+  }
+});
+
+test("preview: a Needs you mail stays on the dashboard, with Done and Undo, after 150 newer newsletters have come", async () => {
+  const box = createMailbox(memKv(), { lang: () => "en" });
+  await box.record({ id: "ask", at: T0, from: "Dana <dana@client.example>", subject: "Contract: need your signature", preview: "", kind: "aviso", category: "needs_you" }, "", T0);
+  // Three days of an ordinary inbox: fifty newsletters, offers and notices a day.
+  for (let i = 1; i <= 150; i++) {
+    const at = T0 + i * 28 * 60_000;
+    await box.record({ id: `bulk${i}`, at, from: "Shop <news@shop.example>", subject: `Offer ${i}`, preview: "", kind: "masivo", category: "promotions" }, "", at);
+  }
+  const later = T0 + 3 * 24 * HOUR;
+  const rows = async () => (await mailView({ box, timeZone: "Europe/Madrid", loops: () => null }, later)).needs.rows.map((r) => r.subject);
+  assert.deepEqual(await rows(), ["Contract: need your signature"], "the panel promises 30 days, not 150 mails");
+  const p = await panel(box);
+  try {
+    assert.equal((await p.post("/panel/api/mail/done", { id: "ask" })).ok, true, "Done still finds it");
+    assert.deepEqual(await rows(), []);
+    assert.equal((await p.post("/panel/api/mail/undone", { id: "ask" })).ok, true, "and so does Undo");
+    assert.deepEqual(await rows(), ["Contract: need your signature"]);
+  } finally {
+    await p.close();
+  }
+});
+
+test("preview: Done twice (a double click) and then Undo still brings the row and its loop back", async () => {
+  const { engine } = engineRig();
+  const box = createMailbox(memKv(), { lang: () => "en" });
+  await box.record({ id: "d2", at: T0 - HOUR, from: "Ana <ana@x.example>", subject: "Budget", preview: "", kind: "pendiente" });
+  await box.annotate("d2", "aviso", "Ana asks you to approve the budget.", T0, { verdict: { category: "needs_you", why: "x", security: false } });
+  const loop = loopFromVerdict(readVerdict("NEEDS_YOU\nLOOP: Approve the budget | Ana | 2026-11-20\ny")!.verdict, "Ana")!;
+  await engine.fromMail({ ref: "d2", label: "email · Ana", at: T0 - HOUR, loops: [loop] });
+  const loops = () => ({ all: async () => (await engine.read()).loops, doneFor: (ref: string) => engine.doneFor(ref), reopen: (ids: string[]) => engine.reopen(ids) });
+  const p = await panel(box, loops);
+  try {
+    assert.equal(((await p.post("/panel/api/mail/done", { id: "d2" })) as { closed: string[] }).closed.length, 1);
+    const first = (await box.get("d2"))!;
+    // The second one finds no open loop (the first closed it): it must neither lose what the first closed nor move when it was done.
+    assert.deepEqual(((await p.post("/panel/api/mail/done", { id: "d2" })) as { closed: string[] }).closed, []);
+    const second = (await box.get("d2"))!;
+    assert.deepEqual(second.closedLoops, first.closedLoops);
+    assert.equal(second.handledAt, first.handledAt);
+    const undone = (await p.post("/panel/api/mail/undone", { id: "d2" })) as { reopened: number };
+    assert.equal(undone.reopened, 1, "the loop the first Done closed is reopened");
+    assert.equal((await engine.read()).loops[0]!.status, "open");
+    assert.deepEqual((await mailView({ box, timeZone: "Europe/Madrid", loops }, T0)).needs.rows.map((r) => r.id), ["d2"]);
   } finally {
     await p.close();
   }

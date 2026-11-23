@@ -13,7 +13,7 @@
 // SHUTDOWN: off, or the time (HH:MM); by default the end of WORK_HOURS.
 
 import { randomBytes } from "node:crypto";
-import { addDays, hhmm, weekdayOf } from "./day-time.ts";
+import { addDays, hhmm, weekdayOf, weekStartOf } from "./day-time.ts";
 import type { CalEvent } from "./calendar.ts";
 import type { Loop } from "./followups/types.ts";
 import { zonedTime } from "./followups/time.ts";
@@ -145,6 +145,11 @@ export const duration = (min: number): string => {
 };
 
 const owed = (l: Loop): boolean => OWED_KINDS.includes(l.kind);
+/**
+ * Done by the owner (or seen done by Pako) at the time it was closed: not a loop that came in already closed (a mailbox's catch-up finding the
+ * thread answered, src/followups/matching.ts), which has no closing of its own: its closing is its making.
+ */
+const closedLater = (l: Loop): boolean => l.status === "done" && !!l.closedAt && l.closedAt !== l.createdAt;
 const isOpenLoop = (l: Loop): boolean => l.status === "open" || l.status === "snoozed";
 
 export interface ShutdownPlan {
@@ -198,7 +203,7 @@ export function planShutdown(o: {
   const overdue = open.filter((l) => !!l.dueAt && l.dueAt <= t && t - l.dueAt < OVERDUE_MS).sort((a, b) => a.dueAt! - b.dueAt!);
   const next = open.filter((l) => !!l.dueAt && l.dueAt > t && today(l.dueAt, o.tz) === day).sort((a, b) => a.dueAt! - b.dueAt!);
   const later = open.filter((l) => !!l.dueAt && l.dueAt > t && today(l.dueAt, o.tz) < day).sort((a, b) => a.dueAt! - b.dueAt!);
-  const doneToday = o.loops.filter((l) => owed(l) && l.status === "done" && !!l.closedAt && today(l.closedAt, o.tz) === todayDay).length;
+  const doneToday = o.loops.filter((l) => owed(l) && closedLater(l) && today(l.closedAt!, o.tz) === todayDay).length;
   let fit: ShutdownPlan["fit"] = null;
   let troubles: ReturnType<typeof dayTroubles> = { clashes: [], unanswered: [] };
   if (o.events) {
@@ -213,11 +218,15 @@ export function planShutdown(o: {
     }
   }
   const { clashes, unanswered } = troubles;
-  // The week's end: the next working day starts the owner's next week (it comes earlier in the week than today, or a week or more on).
-  // A gap inside the week (WORK_DAYS mon,tue,thu,fri: Tuesday) is not one (review finding).
-  const weekEnd = weekdayOf(day) < weekdayOf(todayDay) || day >= nextDate(todayDay, 7);
+  // The week's end: the next working day starts the owner's next week (it comes earlier in the week than today, or a week or more on). The
+  // week starts on the working day after the longest days off (Monday, but Sunday for Sunday to Thursday, and Friday for Friday to Sunday: a
+  // week that runs over the weekend ends on its Sunday, not on Saturday). A gap inside the week (WORK_DAYS mon,tue,thu,fri: Tuesday) is not one
+  // (review finding).
+  const start = weekStartOf(o.hours.days);
+  const place = (d: string): number => (weekdayOf(d) - start + 7) % 7;
+  const weekEnd = place(day) < place(todayDay) || day >= nextDate(todayDay, 7);
   if (!weekEnd) return { overdue, next, later, doneToday, day, fit, clashes, unanswered };
-  const done = o.loops.filter((l) => owed(l) && l.status === "done" && !!l.closedAt && t - l.closedAt < 7 * DAY).length;
+  const done = o.loops.filter((l) => owed(l) && closedLater(l) && t - l.closedAt! < 7 * DAY).length;
   const waiting = o.loops.filter((l) => l.kind === "other_promise" && isOpenLoop(l) && !!l.dueAt && l.dueAt <= t && t - l.dueAt < 14 * DAY)
     .sort((a, b) => a.dueAt! - b.dueAt!);
   // After the next working day, up to the same weekday a week on (midnight in the owner's zone, across a clock change).

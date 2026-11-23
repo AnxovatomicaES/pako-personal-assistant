@@ -8,6 +8,7 @@ import type { Loop } from "../followups/types.ts";
 import type { Door } from "./door.ts";
 import type { Handler } from "./incoming.ts";
 import { createLog } from "../log.ts";
+import { cut } from "./shared.ts";
 
 const logCalendar = createLog("calendar");
 const logWatchdog = createLog("watchdog");
@@ -126,6 +127,8 @@ export const onHealth: Handler = async (door, { command }) => {
 /**
  * DRAFT (after a reminder: that one) or DRAFT and a few words of a follow-up: the message the owner sends to close it, written in a run of
  * its own from the loop and what Pako knows of that person, and told in the chat. Nothing is sent: the owner copies it and presses send.
+ * With words it takes the message only when they match exactly one open follow-up: "draft an email to Ana about Friday" is a request for the
+ * assistant, whatever follow-ups there are, so no match or several goes on to it. (DRAFT alone is only this command, and says what is missing.)
  */
 export const onDraft: Handler = async (door, { command }) => {
   const { d, sendText, tx } = door;
@@ -133,10 +136,12 @@ export const onDraft: Handler = async (door, { command }) => {
   if (!m || !d.followups?.forDraft || !d.followups.draftFacts || !d.draftFor) return null;
   const found = await d.followups.forDraft(m[1] ?? "").catch(() => ({ none: true as const }));
   if ("none" in found) {
-    await sendText(m[1] ? tx("draftNone", { words: m[1] }) : tx("draftNoneAny"));
+    if (m[1]) return null;
+    await sendText(tx("draftNoneAny"));
     return "draft: none";
   }
   if ("many" in found) {
+    if (m[1]) return null;
     await sendText(tx("draftMany", { list: found.many.map((x) => `• ${x}`).join("\n") }));
     return "draft: which";
   }
@@ -164,7 +169,9 @@ export async function draftLoop(door: Door, l: Loop): Promise<{ id?: string; sta
   // A loop from an email: the draft remembers that email, so it can come back as a reply the owner sends with one press.
   const mailRef = l.sources.find((s) => s.kind === "mail" && s.ref)?.ref;
   // Whom and where it goes: what the owner then sends there is compared with the draft, and what they changed is learnt (src/lessons.ts).
-  const to = { ...(l.who ? { who: l.who } : {}), where: l.where.label, ...(l.where.channel ? { channel: l.where.channel } : {}) };
+  const to = {
+    ...(l.who ? { who: l.who } : {}), where: l.where.label, ...(l.where.channel ? { channel: l.where.channel } : {}), ...(l.where.thread ? { thread: l.where.thread } : {}),
+  };
   return d.draftFor({
     title: l.title, facts: [...d.followups.draftFacts(l), ...about], ...(mailRef ? { mailRef } : {}), about: to, ...(block?.own.length ? { allow: block.own } : {}),
   })
@@ -223,7 +230,7 @@ export const onMissed: Handler = async (door, { command, text }) => {
   const m = /^(?:pako )?(?:you missed|you forgot|you didn t catch|you did not catch)\s+(.{3,160})$/.exec(command);
   if (!m) return null;
   // The owner's own words, as typed (the command is folded): the loop's title.
-  const raw = text.trim().replace(/^\s*(?:pako[\s,:]+)?(?:you\s+missed|you\s+forgot|you\s+didn['’]?t\s+catch|you\s+did\s+not\s+catch)\s*:?\s*/i, "").slice(0, 160);
+  const raw = cut(text.trim().replace(/^\s*(?:pako[\s,:]+)?(?:you\s+missed|you\s+forgot|you\s+didn['’]?t\s+catch|you\s+did\s+not\s+catch)\s*:?\s*/i, ""), 160);
   const what = raw.length >= 3 ? raw : m[1]!;
   const loop = d.followups?.fromChat ? await d.followups.fromChat({ title: what }).catch(() => null) : null;
   // With the follow-up it made: the beta's audit counts it as told, never as one Pako caught.

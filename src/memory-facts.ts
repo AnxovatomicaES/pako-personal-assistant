@@ -246,22 +246,39 @@ export function sweep(facts: Fact[], now: number): boolean {
 const mirror = (f: Fact): boolean => !!f.origin && holds(f);
 
 /**
- * Closed history past a year goes; then, past the limit (counting all but the current derived facts), the oldest closed facts, and only
- * when no closed one is left the oldest told one. A full PEOPLE list never pushes out what the owner told.
+ * What each origin derives now, by value (folded): a closed derived fact whose origin still says the same is what keeps it closed (see
+ * reconcile). Null when the older store could not be read at this load: nothing can be said to have changed there, so none is let go.
  */
-function prune(facts: Fact[], now: number): void {
+export type Derives = Map<string, string> | null;
+
+/** The values the older stores derive now, by origin. */
+export function derivedValues(seed: FactSeed): Derives {
+  return new Map([...derive(seed)].map(([origin, d]) => [origin, fold(d.value)]));
+}
+
+/**
+ * Closed history past a year goes; then, past the limit (counting all but the current derived facts), the oldest closed facts, and only
+ * when no closed one is left the oldest told one. A full PEOPLE list never pushes out what the owner told. A closed derived fact whose origin
+ * still derives the same value is never pruned, by age or by count: the next load would derive it again as current, and what the owner told
+ * since (the reason it closed) would sit beside it as if both held.
+ */
+function prune(facts: Fact[], now: number, derives: Derives): void {
+  const newest = new Map<string, Fact>();
+  for (const f of facts) if (f.origin) newest.set(f.origin, f);
+  const keeps = (f: Fact): boolean => !!f.origin && !holds(f) && newest.get(f.origin) === f && (derives === null || derives.get(f.origin) === fold(f.value));
   for (let i = facts.length - 1; i >= 0; i--) {
     const f = facts[i]!;
-    if (!holds(f) && (f.closedAt ?? 0) < now - CLOSED_KEEP_MS) facts.splice(i, 1);
+    if (!holds(f) && (f.closedAt ?? 0) < now - CLOSED_KEEP_MS && !keeps(f)) facts.splice(i, 1);
   }
-  let over = facts.filter((f) => !mirror(f)).length - FACTS_MAX;
+  const counted = (f: Fact): boolean => !mirror(f) && !keeps(f);
+  let over = facts.filter(counted).length - FACTS_MAX;
   if (over <= 0) return;
-  const closed = facts.filter((f) => !holds(f)).sort((a, b) => (a.closedAt ?? 0) - (b.closedAt ?? 0));
+  const closed = facts.filter((f) => !holds(f) && !keeps(f)).sort((a, b) => (a.closedAt ?? 0) - (b.closedAt ?? 0));
   const drop = new Set(closed.slice(0, over));
   over -= drop.size;
   for (const f of facts) {
     if (over <= 0) break;
-    if (!mirror(f) && !drop.has(f)) {
+    if (counted(f) && !drop.has(f)) {
       drop.add(f);
       over--;
     }
@@ -304,25 +321,29 @@ export function createFacts(kv: Kv | null, o: { seed?: () => Promise<FactSeed>; 
     chain = run.then(() => undefined, () => undefined);
     return run;
   };
-  /** The record with the older stores read in and late judgements settled; `dirty` when that changed it (the caller writes). */
-  const load = async (now: number): Promise<{ facts: Fact[]; dirty: boolean }> => {
+  /** The record with the older stores read in and late judgements settled; `dirty` when that changed it (the caller writes). `derives`: what they say now. */
+  const load = async (now: number): Promise<{ facts: Fact[]; dirty: boolean; derives: Derives }> => {
     const facts = await readRaw();
     let dirty = false;
+    let derives: Derives = new Map();
     if (o.seed) {
       // An older store that cannot be read now is read next time: nothing is deleted on a failed read.
       const seed = await o.seed().catch((err: Error) => (log.error(`could not read the notes and people: ${err.message}`), null));
-      if (seed) dirty = reconcile(facts, seed, now);
+      if (seed) {
+        dirty = reconcile(facts, seed, now);
+        derives = derivedValues(seed);
+      } else derives = null;
     }
     if (sweep(facts, now)) dirty = true;
-    return { facts, dirty };
+    return { facts, dirty, derives };
   };
   const change = <T>(fn: (facts: Fact[], now: number) => { out: T; changed: boolean }, at?: number): Promise<T> =>
     locked(async () => {
       const now = at ?? clock();
-      const { facts, dirty } = await load(now);
+      const { facts, dirty, derives } = await load(now);
       const { out, changed } = fn(facts, now);
       if (changed || dirty) {
-        prune(facts, now);
+        prune(facts, now, derives);
         await write(facts);
       }
       return out;

@@ -4,6 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, st
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
+import { loadBridgeConfig } from "../assistant/bridge/config.ts";
 
 const SCRIPT = join(import.meta.dirname, "..", "assistant", "install.sh");
 const TOKEN = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEF";
@@ -54,6 +55,32 @@ test("install (dry run): the LaunchAgent has this machine's paths, runs the brid
   assert.match(plist, /<key>KeepAlive<\/key>\s*<true\/>/);
   assert.ok(!plist.includes(TOKEN), "the secret stays in the config file");
   assert.equal(plist.split("<dict>").length, plist.split("</dict>").length, "balanced");
+});
+
+test("install: takes exactly the server addresses the bridge takes (no path, no http other than this computer), and writes nothing for the rest", () => {
+  // It took https://host/panel and http://localhost.<anything>: it wrote them and said all was well, and the bridge then refused them at every
+  // start (the LaunchAgent restarting it in a loop); its own check sent the token over plain http to that other computer.
+  const bridgeTakes = (url: string) => {
+    try {
+      loadBridgeConfig({ ASSISTANT_SERVER_URL: url, ASSISTANT_BRIDGE_TOKEN: TOKEN });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  for (const url of [
+    "https://pako.example.com", "https://pako.example.com/", "https://pako.example.com:8443", "http://localhost:8820", "http://127.0.0.1",
+    "https://pako.example.com/panel", "http://localhost.evil.example", "http://127.0.0.1.evil.example", "http://localhost:80/x", "http://pako.example.com",
+    "https://", "https://pako example.com", "ftp://pako.example.com",
+  ]) {
+    const s = sandbox();
+    const r = s.run([], { ASSISTANT_BRIDGE_TOKEN: TOKEN, ASSISTANT_SERVER_URL: url });
+    assert.equal(r.status === 0, bridgeTakes(url), `${url}: ${r.stderr}`);
+    if (r.status !== 0) {
+      assert.match(r.stderr, /server's name only/);
+      assert.ok(!existsSync(s.envFile) && !existsSync(s.plist), `${url}: nothing written`);
+    }
+  }
 });
 
 test("install: refuses a bad token, a missing Claude Code and an unknown option, and writes nothing then", () => {

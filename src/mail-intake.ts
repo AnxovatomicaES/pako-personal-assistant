@@ -11,7 +11,7 @@ import type { Backfill } from "./backfill.ts";
 import type { ParsedMessage } from "./imap.ts";
 import type { InviteStore } from "./invites.ts";
 import { cleanMailBody } from "./mail-body.ts";
-import { authenticated, type MailProvider } from "./mail-categories.ts";
+import { authenticated, mailboxes, type MailProvider } from "./mail-categories.ts";
 import type { SentMail } from "./mail-followups.ts";
 import { addressOf, htmlToText, takeMail, takeOwnMail, type AgentMailMessage, type IntakeDeps, type MailAccount, type Mailbox } from "./mail.ts";
 import type { Inbound } from "./whatsapp.ts";
@@ -30,6 +30,8 @@ export interface MailIntakeDeps {
   vip: string[];
   /** Where the owner's copy lives (an IMAP host tells); without it, read from the addresses the mail was delivered to. */
   provider?: MailProvider | undefined;
+  /** The mailbox's server (its IMAP host): off the big providers, only an Authentication-Results header that names it counts (src/mail-categories.ts authenticated). */
+  authServer?: string | undefined;
   filed?: IntakeDeps["filed"];
   /** Invitations caught from the mail (src/invites.ts). */
   invites?: InviteStore | undefined;
@@ -70,8 +72,10 @@ export function createMailIntake(d: MailIntakeDeps) {
     // What it answers and is already kept leaves the dashboard's preview (src/mail.ts takeOwnMail).
     await takeOwnMail(d.box, { headers: p.headers }, d.now()).catch((err: Error) => log.error(`a reply of the owner's could not be matched: ${err.message}`));
     if (d.ownSent) {
-      const mine = (p.text ?? (p.html ? htmlToText(p.html) : "")).replace(/\n>.*$/gs, "").trim().slice(0, 3000);
-      if (mine) await d.ownSent({ to: p.to.map((x) => addressOf(x)), text: mine, at }).catch((err: Error) => log.error(`a sent email's lesson failed: ${err.message}`));
+      // Only the quoted lines go (a reply written under or between them stays); each header holds a list, so one address per mailbox.
+      const mine = (p.text ?? (p.html ? htmlToText(p.html) : "")).replace(/^>.*$/gm, "").trim().slice(0, 3000);
+      const to = p.to.flatMap(mailboxes).map(addressOf).filter((a) => a.includes("@"));
+      if (mine) await d.ownSent({ to, text: mine, at }).catch((err: Error) => log.error(`a sent email's lesson failed: ${err.message}`));
     }
     // The owner's own email, read whole by the follow-ups (src/mail-followups.ts): what they promise in it ("I'll send it Friday") becomes
     // their loop, and a reply that does what was asked closes it.
@@ -99,13 +103,13 @@ export function createMailIntake(d: MailIntakeDeps) {
     const authResults = p.headers.filter((h) => /^authentication-results$/i.test(h.name)).map((h) => h.value);
     const from = addressOf(p.from);
     if (p.calendar && d.invites) {
-      await d.invites.take(p.calendar, at, { address: from, vouched: authenticated(p.from, authResults) })
+      await d.invites.take(p.calendar, at, { address: from, vouched: authenticated(p.from, authResults, d.authServer) })
         .catch((err: unknown) => log.error(`an invitation could not be read: ${(err as Error)?.name}`));
     }
     // Anyone can write the owner's address on a From line: outside the Sent folder only a mail their own server vouched for (DKIM or DMARC
     // aligned) closes what it answers. A forged one is not news either, and closes nothing.
     if (from && o.own.includes(from)) {
-      const vouched = o.sentFolder || authenticated(p.from, authResults);
+      const vouched = o.sentFolder || authenticated(p.from, authResults, d.authServer);
       if (vouched) await takeOwnMail(d.box, { headers: p.headers }, d.now()).catch((err: Error) => log.error(`a reply of the owner's could not be matched: ${err.message}`));
       return "own";
     }
@@ -123,7 +127,7 @@ export function createMailIntake(d: MailIntakeDeps) {
     };
     const bf = o.catchUp ? d.backfill : undefined;
     const replied = !!o.replied;
-    return takeMail({ box: d.box, enqueue: d.enqueue, control: d.control, lang: d.lang, now: d.now, vip: d.vip, provider: d.provider, filed: d.filed }, o.id, m, o.account, {
+    return takeMail({ box: d.box, enqueue: d.enqueue, control: d.control, lang: d.lang, now: d.now, vip: d.vip, provider: d.provider, authServer: d.authServer, filed: d.filed }, o.id, m, o.account, {
       quiet: !!o.quiet, ...(replied ? { replied: true } : {}), ...(bf ? { enqueue: (x: Inbound) => bf.add(x, { from, replied }) } : {}),
     });
   };

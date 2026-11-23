@@ -258,7 +258,9 @@ export function linkPeople(s: Stored, people: Person[], now: number): boolean {
     const g = s.persons.find((x) => x.personId === p.id);
     if (g) {
       if (g.name !== p.name) {
-        if (!trustedHas(g, p.name)) g.aliases = [...g.aliases, g.name].slice(-NAMES_MAX);
+        // The name she had stays as an alias, whether or not the new one was already one: what was told under it (door/facts.ts files a fact
+        // under the record's name) must still find her card, and FORGET PERSON must still reach it.
+        g.aliases = [...g.aliases.filter((n) => fold(n) !== fold(g.name)), g.name].slice(-NAMES_MAX);
         g.aliases = g.aliases.filter((n) => fold(n) !== fold(p.name));
         g.name = p.name;
         g.updated = now;

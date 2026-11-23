@@ -12,6 +12,8 @@ import {
   gateOn,
   hhmm,
   nearest,
+  pressCancel,
+  timesIn,
   type BookResult,
   type Cartridge,
   type CartridgeContext,
@@ -66,7 +68,65 @@ async function shownSlots(page: Page, q: LookQuery): Promise<Slot[]> {
   });
 }
 
-async function verify(page: Page): Promise<Evidence | null> {
+// ---------- what a details or confirmation page says about the day, the time and the party ----------
+
+/** Month words by their first letters, English and Spanish (the pages of OpenTable's English and Spanish sites). Another language reads as "no date shown". */
+const MONTH_WORDS: Record<string, number> = {
+  jan: 1, january: 1, ene: 1, enero: 1, feb: 2, february: 2, febrero: 2, mar: 3, march: 3, marzo: 3, apr: 4, april: 4, abr: 4, abril: 4, may: 5, mayo: 5,
+  jun: 6, june: 6, junio: 6, jul: 7, july: 7, julio: 7, aug: 8, august: 8, ago: 8, agosto: 8, sep: 9, sept: 9, september: 9, septiembre: 9, setiembre: 9,
+  oct: 10, october: 10, octubre: 10, nov: 11, november: 11, noviembre: 11, dec: 12, december: 12, dic: 12, diciembre: 12,
+};
+
+/**
+ * Every day, time and party size a page shows, as "YYYY-MM-DD", "HH:MM" and numbers. A day written without its year ("Saturday, November 28")
+ * takes the year that puts it nearest to `anchor` (a YYYY-MM-DD: the day asked for, or today).
+ */
+export function factsOf(text: string, anchor: string): { dates: string[]; times: string[]; parties: number[] } {
+  const t = text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  const near = (month: number, day: number): string | null => {
+    const ay = Number(anchor.slice(0, 4));
+    const days = (iso: string): number => Date.parse(`${iso}T00:00:00Z`) / 86_400_000;
+    const options = [ay - 1, ay, ay + 1]
+      .map((y) => new Date(Date.UTC(y, month - 1, day)))
+      .filter((d) => d.getUTCMonth() === month - 1 && d.getUTCDate() === day)
+      .map((d) => d.toISOString().slice(0, 10));
+    return options.sort((a, b) => Math.abs(days(a) - days(anchor)) - Math.abs(days(b) - days(anchor)))[0] ?? null;
+  };
+  const dates: string[] = [];
+  const add = (iso: string | null) => void (iso && !dates.includes(iso) && dates.push(iso));
+  for (const m of t.matchAll(/(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)/g)) add(Date.parse(m[0]) ? m[0] : null);
+  // "Nov 27", "November 27th" (US) and "27 Nov", "27 de noviembre" (UK, Spain).
+  for (const m of t.matchAll(/(?<![a-z])([a-z]{3,10})\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?![\d:]|[.]\d|h\d)/g)) {
+    if (MONTH_WORDS[m[1]!]) add(near(MONTH_WORDS[m[1]!]!, Number(m[2])));
+  }
+  for (const m of t.matchAll(/(?<!\d)(\d{1,2})(?:st|nd|rd|th|o)?\s+(?:de\s+)?([a-z]{3,10})(?![a-z])/g)) {
+    if (MONTH_WORDS[m[2]!]) add(near(MONTH_WORDS[m[2]!]!, Number(m[1])));
+  }
+  const parties: number[] = [];
+  // "2 people", "Table for 2", "party of 2", "Party size: 2".
+  const sizes = [
+    /(?<!\d)(\d{1,2})\s*(?:people|persons?|guests?|diners?|covers?|personas?|comensales|pax)(?![a-z])/g,
+    /(?:table|party|mesa)\s+(?:for|of|para)\s+(\d{1,2})(?!\d)/g,
+    /party size\s*:?\s*(\d{1,2})(?!\d)/g,
+  ];
+  for (const m of sizes.flatMap((re) => [...t.matchAll(re)])) {
+    const n = Number(m[1]);
+    if (!parties.includes(n)) parties.push(n);
+  }
+  return { dates, times: timesIn(t), parties };
+}
+
+/** What a page says it is for, to compare with what was asked: the asked value when the page shows it (a page may name other days too), else the first one shown. */
+function saidBy(text: string, asked?: { date: string; time: string; party: number }): Evidence["said"] | undefined {
+  const f = factsOf(text, asked?.date ?? new Date().toISOString().slice(0, 10));
+  const date = asked && f.dates.includes(asked.date) ? asked.date : f.dates[0];
+  const time = asked && f.times.includes(asked.time) ? asked.time : f.times[0];
+  const party = asked && f.parties.includes(asked.party) ? asked.party : f.parties[0];
+  const said = { ...(date ? { date } : {}), ...(time ? { time } : {}), ...(party ? { party } : {}) };
+  return Object.keys(said).length ? said : undefined;
+}
+
+async function confirmation(page: Page, asked?: Slot): Promise<Evidence | null> {
   let url: string;
   let text: string;
   try {
@@ -80,8 +140,11 @@ async function verify(page: Page): Promise<Evidence | null> {
   const id = /confirmation\s*(?:#|number|no\.?)\s*:?\s*(\d{3,15})/i.exec(text)?.[1];
   const cancelUrl = await page.evaluate<string | null>(`(() => { const a = [...document.querySelectorAll('a[href]')].find((x) => /cancel/i.test(x.href + ' ' + x.textContent));
     return a ? a.href : null; })()`).catch(() => null);
-  return { url, text: text.slice(0, 1500), ...(id ? { confirmationId: id } : {}), ...(cancelUrl ? { cancelUrl } : {}) };
+  const said = saidBy(text, asked);
+  return { url, text: text.slice(0, 1500), ...(id ? { confirmationId: id } : {}), ...(cancelUrl ? { cancelUrl } : {}), ...(said ? { said } : {}) };
 }
+
+const verify = (page: Page): Promise<Evidence | null> => confirmation(page);
 
 export const openTable: Cartridge = {
   engine: "OpenTable",
@@ -137,9 +200,14 @@ export const openTable: Cartridge = {
       if (guest.notes && (await page.visible("#specialRequest").catch(() => false))) await page.type("#specialRequest", guest.notes.slice(0, 300), stepMs);
       // Marketing opt-ins stay off.
       await page.evaluate(`document.querySelectorAll('input[type=checkbox][name*="optIn" i], input[type=checkbox][id*="marketing" i]').forEach((c) => { if (c.checked) c.click(); })`);
+      // The page must say the day, the time and the party that were asked for (a slot offered for another day is booked as that day).
       const text = await page.text(8000);
-      if (!text.includes(String(slot.party)) || !(text.includes(slot.time) || text.includes(twelve(slot.time)))) {
-        return { kind: "changed", detail: "the details page does not show the party and time asked for" };
+      const facts = factsOf(text, slot.date);
+      const link = new URL(await page.url());
+      const linked = /^\d{4}-\d{2}-\d{2}/.exec(link.searchParams.get("dateTime") ?? link.searchParams.get("datetime") ?? "")?.[0];
+      const dayOk = (!linked || linked === slot.date) && (facts.dates.length ? facts.dates.includes(slot.date) : linked === slot.date);
+      if (!dayOk || !facts.times.includes(slot.time) || !facts.parties.includes(slot.party)) {
+        return { kind: "changed", detail: "the details page does not show the day, time and party asked for" };
       }
       const gate = await gateOn(page, GATES);
       if (gate) return { kind: "gate", gate: gate.gate, detail: gate.detail, submitted: false };
@@ -151,7 +219,7 @@ export const openTable: Cartridge = {
       await page.click(button, stepMs);
       const deadline = Date.now() + Math.max(stepMs * 2, 30_000);
       while (Date.now() < deadline) {
-        const ev = await verify(page);
+        const ev = await confirmation(page, slot);
         if (ev) {
           if (ctx.shotPath) ev.screenshot = await page.screenshot(ctx.shotPath).catch(() => undefined);
           return { kind: "confirmed", evidence: ev };
@@ -175,22 +243,8 @@ export const openTable: Cartridge = {
     await page.goto(evidence.cancelUrl, stepMs * 2);
     const button = '[data-test="cancel-reservation-button"], [data-testid="cancel-reservation-button"]';
     if (!(await page.visible(button).catch(() => false))) return false;
-    page.acceptDialogs = true;
-    await page.click(button, stepMs);
-    try {
-      await page.waitForText(/cancel(l)?ed/i, stepMs);
-      return true;
-    } catch {
-      /* no cancellation shown in time: not cancelled */
-      return false;
-    }
+    return pressCancel(page, button, /cancel(l)?ed/i, stepMs);
   },
-};
-
-/** "21:00" as OpenTable's US pages write it ("9:00 PM"). */
-const twelve = (t: string): string => {
-  const h = Number(t.slice(0, 2));
-  return `${h % 12 === 0 ? 12 : h % 12}:${t.slice(3, 5)} ${h < 12 ? "AM" : "PM"}`;
 };
 
 /** hhmm() as page code, so the slot is matched in the page exactly as Look read it. */

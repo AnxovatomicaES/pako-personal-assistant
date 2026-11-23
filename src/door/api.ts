@@ -5,11 +5,15 @@ import { briefLine } from "../lists.ts";
 import { birthdaysBrief } from "../people.ts";
 import { changesBrief } from "../memory-facts.ts";
 import type { OwnerChannel } from "./deps.ts";
-import { TEMPLATE_TEXT_MAX } from "./shared.ts";
+import { CARD_MAX, TEMPLATE_TEXT_MAX, cut } from "./shared.ts";
+import { nextRepeat } from "./time.ts";
 import type { Door } from "./door.ts";
-import type { Loop } from "../followups/types.ts";
+import type { CardFeedback, Loop } from "../followups/types.ts";
 import { draftLoop } from "./views.ts";
 import { stopEverything } from "./stop-resume.ts";
+
+/** The most times after its next that a repeating reminder is sent to the relay (a daily one has seven in a week). */
+const RELAY_REPEATS = 8;
 
 export function doorApi(door: Door) {
   const {
@@ -35,39 +39,43 @@ export function doorApi(door: Door) {
      * could not go (the caller keeps a plain notice instead). For src/followups.ts.
      */
     sendCard: async (
-      body: string, buttons: { id: string; title: string }[], feedback?: { buttons: { id: string; title: string }[]; line: string },
-      more?: { buttons: { id: string; title: string }[]; line: string },
+      body: string, buttons: { id: string; title: string }[], feedback?: CardFeedback, more?: CardFeedback,
     ): Promise<boolean> => {
       if (!d.local && !(await reachable(now()))) return false;
       // `feedback` (src/quality.ts): its 👍/👎 after the three where the chat has room (Telegram, the panel's chat), else its line under the text.
       // `more` (gentle mode's "Check on me in 30 min"): a fourth button the same way, before the 👍/👎, with room for a longer title.
       const isRoomy = await roomy();
       const all = [
-        ...buttons.slice(0, 3).map((b) => ({ ...b, title: b.title.slice(0, 20) })),
-        ...(more && isRoomy ? more.buttons.slice(0, 1).map((b) => ({ ...b, title: b.title.slice(0, 30) })) : []),
-        ...(feedback && isRoomy ? feedback.buttons.slice(0, 2).map((b) => ({ ...b, title: b.title.slice(0, 20) })) : []),
+        ...buttons.slice(0, 3).map((b) => ({ ...b, title: cut(b.title, 20) })),
+        ...(more && isRoomy ? more.buttons.slice(0, 1).map((b) => ({ ...b, title: cut(b.title, 30) })) : []),
+        ...(feedback && isRoomy ? feedback.buttons.slice(0, 2).map((b) => ({ ...b, title: cut(b.title, 20) })) : []),
       ];
       const text = [body, ...(more && !isRoomy ? [more.line] : []), ...(feedback && !isRoomy ? [feedback.line] : [])].join("\n");
-      return graph({
+      const went = await graph({
         type: "interactive",
         interactive: {
           type: "button",
-          body: { text: text.slice(0, 1000) },
+          body: { text: cut(text, CARD_MAX) },
           action: { buttons: all.map((b) => ({ type: "reply", reply: { id: b.id, title: b.title } })) },
         },
       });
+      // Told to the caller: a typed yes or no answers the card only where its "Useful?" line was there to read (src/quality.ts nudged).
+      if (feedback) feedback.lineShown = went && !isRoomy;
+      return went;
     },
     /** A card with every button where the chat has room (the weekly reset's This one and Park for each item), the first three elsewhere. */
     sendButtons: async (body: string, buttons: { id: string; title: string }[]): Promise<boolean> => {
       if (!d.local && !(await reachable(now()))) return false;
-      const list = buttons.slice(0, (await roomy()) ? 10 : 3).map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } }));
-      return graph({ type: "interactive", interactive: { type: "button", body: { text: body.slice(0, 1000) }, action: { buttons: list } } });
+      const list = buttons.slice(0, (await roomy()) ? 10 : 3).map((b) => ({ type: "reply", reply: { id: b.id, title: cut(b.title, 20) } }));
+      return graph({ type: "interactive", interactive: { type: "button", body: { text: cut(body, CARD_MAX) }, action: { buttons: list } } });
     },
     /** Whether the chat now has room for more than three buttons (the panel's chat, Telegram): the weekly reset's per-item Park. */
     roomy,
     /** Whether the owner can be written to now (as a card can: the panel's chat, Telegram, WhatsApp's 24-hour window). */
     writable: async (): Promise<boolean> => !!d.local || (await reachable(now())),
     lastPoll: () => door.lastPollAt,
+    /** Whether the assistant's computer has really asked since this start (the watchdog's "works again" waits for it). */
+    polled: () => door.polled,
     /** When the owner last wrote (ms; 0: not since this start): proactive Pako speaks only when they have been quiet a while. */
     lastOwner: () => Math.max(door.lastHeardAt, door.lastOwnerAt),
     /** A reminder at "YYYY-MM-DD HH:MM" in the owner's zone, as the <remind> tag sets one (src/proactive.ts: an offer pressed). */
@@ -108,9 +116,26 @@ export function doorApi(door: Door) {
     askCall,
     /** For the owner's panel: the pending reminders, and what happened to proposed calls and messages. */
     /** `birthday`: a person's yearly one (src/people.ts), which the brief leaves to its own birthdays line. */
-    /** The reminders with their ids, for Pako Relay's sync (src/relay-client.ts): an occurrence is its id and time. */
-    relayReminders: async (): Promise<{ id: string; at: number; text: string; held: boolean }[]> =>
-      (await loadReminders()).map((r) => ({ id: r.id, at: r.at, text: r.text, held: !!r.held })), // no lock: runReminders holds it while it syncs
+    /**
+     * The reminders with their ids, for Pako Relay's sync (src/relay-client.ts): an occurrence is its id and time. With `until`, a repeating
+     * one is each of its times before it (at most RELAY_REPEATS after its next), so the relay sends every one that comes while the laptop
+     * sleeps, not only the first; the laptop's own look on waking moves the repeat past them (src/door/reminders-due.ts).
+     */
+    relayReminders: async (until?: number): Promise<{ id: string; at: number; text: string; held: boolean }[]> => {
+      const out: { id: string; at: number; text: string; held: boolean }[] = [];
+      for (const r of await loadReminders()) { // no lock: runReminders holds it while it syncs
+        out.push({ id: r.id, at: r.at, text: r.text, held: !!r.held });
+        if (until === undefined || r.held || !r.every || !r.anchor) continue;
+        let at = r.at;
+        for (let i = 0; i < RELAY_REPEATS; i++) {
+          const next = nextRepeat(at, r.every, r.anchor, d.timeZone);
+          if (next === null || next >= until) break;
+          out.push({ id: r.id, at: next, text: r.text, held: false });
+          at = next;
+        }
+      }
+      return out;
+    },
     reminders: async (): Promise<{ at: number; text: string; held: boolean; every?: Every; birthday?: true }[]> =>
       (await loadReminders()).map((r) => ({
         at: r.at, text: r.text, held: r.held, ...(r.every ? { every: r.every } : {}), ...(r.birthday ? { birthday: true as const } : {}),

@@ -2,13 +2,14 @@
 // signed stand-in Pako.app in a dmg made here, a feed signed with a key made here (PAKO_FEED_PUBLIC_KEY), and file:// addresses. Nothing is
 // downloaded, and nothing is installed outside a temporary folder.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import { generateFeedKey, signFeed } from "../desktop/mac/feed-sign.ts";
+import { eventually } from "./helpers/wait.ts";
 
 const root = join(import.meta.dirname, "..");
 const SCRIPT = join(root, "install-mac.sh");
@@ -174,4 +175,66 @@ test("install-mac.sh: a dry run checks the feed and changes nothing", { skip: !m
   assert.equal(r.status, 0, r.out);
   assert.match(r.out, /Would install Pako 9\.8\.7/);
   assert.equal(existsSync(r.apps), false);
+});
+
+/** An older Pako in `apps` whose program really runs (a copy of sleep, signed here): the installer must see it as running. */
+function runningPako(apps: string) {
+  const at = join(apps, "Pako.app");
+  app(at, "io.github.anxovatomicaes.pako", "0.0.1");
+  const exe = join(at, "Contents/MacOS/Pako");
+  copyFileSync("/bin/sleep", exe);
+  const sign = spawnSync("codesign", ["--force", "-s", "-", exe], { encoding: "utf8" });
+  assert.equal(sign.status, 0, sign.stderr);
+  const child = spawn(exe, ["60"], { stdio: "ignore" });
+  return { at, stop: () => child.kill() };
+}
+
+test("install-mac.sh: a running Pako is never replaced, whatever the folder's spelling (a trailing slash, brackets, a plus)", { skip: !mac }, async () => {
+  const apps = join(mkdtempSync(join(dir, "apps-")), "Apps (old)+[8]");
+  mkdirSync(apps);
+  const p = runningPako(apps);
+  try {
+    await eventually(() => spawnSync("pgrep", ["-x", "Pako"]).status === 0);
+    for (const spelled of [apps, `${apps}/`, `${apps}//`]) {
+      const r = install(feed("running"), { apps: spelled });
+      assert.notEqual(r.status, 0, `${spelled}: ${r.out}`);
+      assert.match(r.out, /Pako is running/);
+      assert.equal(versionOf(p.at), "0.0.1", spelled);
+    }
+  } finally {
+    p.stop();
+  }
+});
+
+/** A command of `name` in front of the real one, running `script`: there it stops the installer as Ctrl+C would. */
+function interrupting(name: string, script: string) {
+  const shim = mkdtempSync(join(dir, "shim-"));
+  writeFileSync(join(shim, name), `#!/bin/sh\n${script}\n`);
+  chmodSync(join(shim, name), 0o755);
+  return { PATH: `${shim}:${process.env.PATH ?? "/usr/bin:/bin:/usr/sbin:/sbin"}` };
+}
+
+test("install-mac.sh: stopped during the copy, it leaves no hidden copy, and the old Pako where it was", { skip: !mac }, () => {
+  const apps = mkdtempSync(join(dir, "apps-"));
+  app(join(apps, "Pako.app"), "io.github.anxovatomicaes.pako", "0.0.1");
+  const r = install(feed("interrupted"), { apps, env: interrupting("ditto", '/usr/bin/ditto "$@"\nkill -INT $PPID') });
+  assert.equal(r.status, 130, r.out);
+  assert.deepEqual(readdirSync(apps), ["Pako.app"], "no .Pako-installing.app left behind");
+  assert.equal(versionOf(join(apps, "Pako.app")), "0.0.1");
+});
+
+test("install-mac.sh: stopped between setting the old Pako aside and moving the new one in, the old one is put back", { skip: !mac }, () => {
+  const apps = mkdtempSync(join(dir, "apps-"));
+  app(join(apps, "Pako.app"), "io.github.anxovatomicaes.pako", "0.0.1");
+  // The rename of the staged copy is where it stops: the old app is already aside, the new one not yet in.
+  const mv = 'case "$1" in *.Pako-installing.app) kill -INT $PPID; exit 1 ;; esac\nexec /bin/mv "$@"';
+  const r = install(feed("between"), { apps, env: interrupting("mv", mv) });
+  assert.notEqual(r.status, 0, r.out);
+  assert.deepEqual(readdirSync(apps), ["Pako.app"], "nothing hidden left behind");
+  assert.equal(versionOf(join(apps, "Pako.app")), "0.0.1");
+  // And uninterrupted, the old one ends in the Trash with nothing left aside.
+  const ok = install(feed("between-ok"), { apps });
+  assert.equal(ok.status, 0, ok.out);
+  assert.deepEqual(readdirSync(apps), ["Pako.app"]);
+  assert.equal(versionOf(join(apps, "Pako.app")), VERSION);
 });

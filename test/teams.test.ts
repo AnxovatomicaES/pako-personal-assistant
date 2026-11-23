@@ -977,3 +977,37 @@ test("plainTeams: hostile HTML costs linear time (runs of < and unclosed tags), 
   assert.equal(plainTeams({ contentType: "html", content: "<p>a <at id=\"1\">Ana <b>R</b></at> b<br/>c</p><attachment id=\"x\"></attachment>d" }), "a @Ana R b c d");
   assert.equal(plainTeams({ contentType: "html", content: "2 < 3 and <b>bold</b>" }), "2 bold");
 });
+
+test("teams transcripts: three meetings with no transcript do not hold back a later one's for hours: the least recently looked up go first", async () => {
+  const MIN = 60_000;
+  const clock = { now: Date.UTC(2026, 10, 23, 12, 15) };
+  const GRAPH = "https://graph.test/v1.0";
+  const iso = (t: number) => new Date(t).toISOString().replace("Z", "");
+  const mt = (n: number, h: number) => ({
+    id: `ev${n}`, subject: `Meeting ${n}`, start: { dateTime: iso(Date.UTC(2026, 10, 23, h, 0)) }, end: { dateTime: iso(Date.UTC(2026, 10, 23, h + 1, 0)) },
+    isOnlineMeeting: true, onlineMeetingProvider: "teamsForBusiness", onlineMeeting: { joinUrl: `https://teams.microsoft.com/l/meetup-join/m${n}` }, type: "singleInstance",
+  });
+  const fake = (async (input: string | URL | Request) => {
+    const url = decodeURIComponent(String(input));
+    if (url.includes("/token")) return Response.json({ access_token: "t".repeat(30), expires_in: 3600, scope: "OnlineMeetingTranscript.Read.All OnlineMeetings.Read Calendars.Read User.Read" });
+    if (url.startsWith(`${GRAPH}/me?`)) return Response.json({ id: "me-1", displayName: "Owner" });
+    if (url.includes("/me/calendarView")) return Response.json({ value: [mt(1, 8), mt(2, 9), mt(3, 10), mt(4, 11)] });
+    const om = /JoinWebUrl eq '.*\/m(\d)'/.exec(url);
+    if (om) return Response.json({ value: [{ id: `om${om[1]}` }] });
+    const tr = /onlineMeetings\/om(\d)\/transcripts$/.exec(url);
+    if (tr) return Response.json({ value: tr[1] === "4" ? [{ id: "tr4", createdDateTime: "2026-11-23T12:01:00Z" }] : [] });
+    if (url.includes("/transcripts/tr4/content")) return new Response("WEBVTT\n\n00:00:01.000 --> 00:00:03.000\n<v Ana>I'll send the contract on Friday.</v>\n", { status: 200, headers: { "content-type": "text/vtt" } });
+    return new Response("{}", { status: 404, headers: { "content-type": "application/json" } });
+  }) as unknown as typeof fetch;
+  const offered: number[] = [];
+  const teams = createTeams({
+    config: { clientId: "00000000-0000-4000-8000-000000000000", refreshToken: "r".repeat(30), account: "", name: "", org: "", pollMinutes: 5 },
+    kv: null, observe: () => {}, offer: async () => (offered.push(clock.now), true),
+    fetch: fake, now: () => clock.now, graph: GRAPH, tokenUrl: "https://login.test/token", sleep: async () => {},
+  });
+  for (let i = 0; i < 3 && !offered.length; i++) {
+    await teams.round();
+    clock.now += 5 * MIN;
+  }
+  assert.equal(offered.length, 1, "Meeting 4's transcript is handed on within the first rounds, not six hours later");
+});

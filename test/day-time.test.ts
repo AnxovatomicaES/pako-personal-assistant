@@ -2,7 +2,7 @@
 // reported with the default used, and a mistyped SLACK_QUIET_HOURS no longer turning Slack off.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addDays, hhmm, minutesOfDay, quietAt, quietSetting, weekdayOf, windowOf, within } from "../src/day-time.ts";
+import { addDays, hhmm, minutesOfDay, quietAt, quietSetting, weekdayOf, weekStartOf, windowOf, within } from "../src/day-time.ts";
 import { loadFollowupsConfig } from "../src/followups/config.ts";
 import { loadSlackConfig } from "../src/slack.ts";
 import { loadWatchdogConfig } from "../src/watchdog.ts";
@@ -22,6 +22,18 @@ test("times, windows and dates", () => {
   assert.equal(addDays("2026-12-31"), "2027-01-01");
   assert.equal(addDays("2026-03-01", -1), "2026-02-28");
   assert.equal(weekdayOf("2026-11-27"), 5);
+});
+
+test("a working week starts on the working day after its longest days off, Monday when they tie", () => {
+  assert.equal(weekStartOf([1, 2, 3, 4, 5]), 1, "Monday to Friday");
+  assert.equal(weekStartOf([1, 2, 4, 5]), 1, "a gap inside the week is not its start");
+  assert.equal(weekStartOf([0, 1, 2, 3, 4]), 0, "Sunday to Thursday starts on the Sunday");
+  assert.equal(weekStartOf([5, 6, 0]), 5, "Friday to Sunday");
+  assert.equal(weekStartOf([6, 0]), 6, "a weekend only");
+  assert.equal(weekStartOf([3, 4, 5, 6, 0]), 3, "Wednesday to Sunday");
+  assert.equal(weekStartOf([1, 2, 3, 4, 5, 6, 0]), 1, "every day: a Monday-first week");
+  assert.equal(weekStartOf([4]), 4, "one day a week");
+  assert.equal(weekStartOf([]), 1);
 });
 
 test("quiet-hours settings: off in any case, empty is the default, a mistake is said and the default used", () => {

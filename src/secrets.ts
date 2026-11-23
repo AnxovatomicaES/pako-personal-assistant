@@ -200,7 +200,8 @@ function writeFile(path: string, value: unknown): void {
   }
 }
 
-type Raw = { ok: true; text: string | null; value: Record<string, unknown> } | { ok: false };
+/** `opened: false` is a file that could not be opened (permissions, a lock, a disk error: it may be fine, and holds what it held); `true`, one that was read and is not a JSON object. */
+type Raw = { ok: true; text: string | null; value: Record<string, unknown> } | { ok: false; opened: boolean; code?: string };
 
 /** The file as it is: text null when there is none; not ok when it is there but cannot be read or is not a JSON object. */
 function readRaw(path: string): Raw {
@@ -208,14 +209,15 @@ function readRaw(path: string): Raw {
   try {
     text = readFileSync(path, "utf8");
   } catch (err) {
-    return (err as NodeJS.ErrnoException).code === "ENOENT" ? { ok: true, text: null, value: {} } : { ok: false };
+    const code = (err as NodeJS.ErrnoException).code;
+    return code === "ENOENT" ? { ok: true, text: null, value: {} } : { ok: false, opened: false, code };
   }
   try {
     const v = JSON.parse(text) as unknown;
-    return v && typeof v === "object" && !Array.isArray(v) ? { ok: true, text, value: v as Record<string, unknown> } : { ok: false };
+    return v && typeof v === "object" && !Array.isArray(v) ? { ok: true, text, value: v as Record<string, unknown> } : { ok: false, opened: true };
   } catch {
     /* not JSON: not ours */
-    return { ok: false };
+    return { ok: false, opened: true };
   }
 }
 
@@ -230,6 +232,13 @@ const cache = new Map<string, Cached>();
 /** Why the last read of a folder's secrets failed, for the owner (loadHome tells them); null when it did not. */
 const problems = new Map<string, string>();
 export const secretsProblem = (dir: string): string | null => problems.get(resolve(dir)) ?? null;
+
+/**
+ * Folders whose last readSecrets could not open secrets.json at all. That is not a damaged file: it may hold every secret, and only this
+ * start cannot see them. loadHome treats it like a store that does not answer (temporary secrets, nothing written), never as a file to make again.
+ */
+const unopened = new Set<string>();
+export const secretsUnopened = (dir: string): boolean => unopened.has(resolve(dir));
 
 const plainPart = (v: Record<string, unknown>): Record<string, unknown> => Object.fromEntries(Object.entries(v).filter(([k]) => !k.startsWith("_")));
 
@@ -273,8 +282,10 @@ function storedValues(dir: string, text: string, m: Marker): Cached | null {
  */
 export function readSecrets(dir: string): Record<string, unknown> | null {
   const raw = readRaw(join(dir, SECRETS_FILE));
+  unopened.delete(resolve(dir));
   if (!raw.ok) {
-    problems.set(resolve(dir), `${SECRETS_FILE} cannot be read`);
+    if (!raw.opened) unopened.add(resolve(dir));
+    problems.set(resolve(dir), raw.opened ? `${SECRETS_FILE} cannot be read` : `${SECRETS_FILE} cannot be opened (${raw.code ?? "error"})`);
     return null;
   }
   if (raw.text === null || !("_store" in raw.value)) return raw.value;
@@ -313,6 +324,8 @@ export function secretsWhere(dir: string): "file" | StoreKind {
 export function writeSecrets(dir: string, next: Record<string, unknown>): void {
   const path = join(dir, SECRETS_FILE);
   const raw = readRaw(path);
+  // A file that cannot be opened holds secrets this process cannot see (or the marker that names them): written over blind, they are gone.
+  if (!raw.ok && !raw.opened) throw new StoreError(`${SECRETS_FILE} cannot be opened (${raw.code ?? "error"}), so none are written`);
   const m = raw.ok && raw.text !== null ? asMarker(raw.value) : null;
   if (!m) {
     writeFile(path, next);
@@ -360,16 +373,19 @@ const NOTICE = texts(
       + "connections are off, and nothing new is saved to them. If the keychain is locked, unlock it (or sign in to your session) and "
       + "restart Pako. If you copied Pako's folder from another computer, its secrets stayed there: connect everything again, or start it "
       + "there with PAKO_SECRET_STORE=file before copying.",
+    unreadableFile: "⚠️ I couldn't use my secrets file: {why}. I've started with temporary secrets, so Telegram, WhatsApp and the panel's "
+      + "connections are off, and nothing new is saved to them. I changed nothing in the file. Make sure it can be read (its permissions, "
+      + "or another program holding it), then restart Pako.",
     keychain: "the macOS keychain",
     wincred: "the Windows Credential Manager",
     libsecret: "your desktop's secret store",
   },
 );
 
-/** What the chat says when a start could not read the secrets from the store (src/server.ts). */
-export function unreadableNotice(lang: Lang, where: StoreKind, why: string): string {
+/** What the chat says when a start could not read the secrets, from the store or from secrets.json itself (src/server.ts). */
+export function unreadableNotice(lang: Lang, where: "file" | StoreKind, why: string): string {
   const t = NOTICE(lang);
-  return t("unreadable", { where: t(where), why });
+  return where === "file" ? t("unreadableFile", { why }) : t("unreadable", { where: t(where), why });
 }
 
 // ---------- moving in and out of the store ----------

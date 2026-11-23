@@ -302,10 +302,20 @@ export function icsEvents(root: Component, w: IcsWindow, calendar = "", warn: (t
     const start = zoneless(x) ? (masters.get(uid)?.getFirstPropertyValue("dtstart") as Time | null) : null;
     return resolver(start && !start.isDate ? start : x, w.timeZone);
   };
+  // A change "from this one on" (RANGE=THISANDFUTURE): each later occurrence of its series takes its time shift and its details too.
+  const future = new Map<string, { from: number; v: Component; shift: number; length: Span }[]>();
   for (const { uid, rid, v } of changes) {
     let m = overrides.get(uid);
     if (!m) overrides.set(uid, (m = new Map()));
-    m.set(occurrenceKey(rid, clockOf(rid, uid)), v);
+    // A day (VALUE=DATE, some exporters) naming an occurrence of a timed series: that day's occurrence, matched below on the series' clock.
+    const series = masters.get(uid)?.getFirstPropertyValue("dtstart") as Time | null | undefined;
+    const ridAt = clockOf(rid, uid);
+    m.set(rid.isDate && series && !series.isDate ? `day:${rid.year}${pad(rid.month)}${pad(rid.day)}` : occurrenceKey(rid, ridAt), v);
+    const start = v.getFirstPropertyValue("dtstart") as Time | null;
+    if (start && String(v.getFirstProperty("recurrence-id")?.getParameter("range") ?? "").toUpperCase() === "THISANDFUTURE") {
+      const at = resolver(start, w.timeZone);
+      future.set(uid, [...(future.get(uid) ?? []), { from: ridAt(rid), v, shift: at(start) - ridAt(rid), length: span(v, start, at, w.timeZone) }]);
+    }
   }
 
   const out: CalEvent[] = [];
@@ -441,9 +451,24 @@ export function icsEvents(root: Component, w: IcsWindow, calendar = "", warn: (t
         if (ra(x) < w.to && ra(x) >= earliest) occurrences.set(occurrenceKey(x, ra), x);
       }
       for (const [key, x] of occurrences) {
-        if (skip.has(key) || skip.has(`day:${x.year}${pad(x.month)}${pad(x.day)}`)) continue;
+        const day = `day:${x.year}${pad(x.month)}${pad(x.day)}`;
+        if (skip.has(key) || skip.has(day)) continue;
+        // A change named by its day is this occurrence's: kept under its own key, so its id is the occurrence's.
+        if (own?.has(day) && !own.has(key)) {
+          own.set(key, own.get(day)!);
+          own.delete(day);
+        }
         const changed = own?.get(key);
         if (changed) continue; // the override below takes its place
+        const s = at(x);
+        const from = (future.get(uid) ?? []).filter((f) => s > f.from).sort((a, b) => b.from - a.from)[0];
+        if (from) {
+          // Changed from an earlier one on: its details, at this occurrence's time moved as that one was (or called off with it).
+          if (cancelled(from.v)) continue;
+          const e = make(from.v, `${uidKey(uid)}@${key}`, x, at, from.length);
+          if (e && e.end + from.shift > w.from && e.start + from.shift < w.to) out.push({ ...e, start: e.start + from.shift, end: e.end + from.shift, recurring: true });
+          continue;
+        }
         const e = make(master, `${uidKey(uid)}@${key}`, x, at, length);
         if (e) out.push({ ...e, recurring: true });
       }

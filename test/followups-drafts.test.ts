@@ -78,7 +78,7 @@ const ENV = {
   ASSISTANT_BRIDGE_TOKEN: "b".repeat(48),
 };
 
-test("door: DRAFT asks for the draft with the loop and what the owner told about that person; DRAFT omar asks which", async () => {
+test("door: DRAFT asks for the draft with the loop and what the owner told about that person; words that fit no follow-up, or two, are left to the assistant", async () => {
   const fu = rig();
   const sent: Body[] = [];
   const meta = (async (_u: string | URL | Request, init?: RequestInit) => {
@@ -118,10 +118,12 @@ test("door: DRAFT asks for the draft with the loop and what the owner told about
     assert.equal(asked[0]!.title, "Send Ana the Q4 deck");
     assert.match(asked[0]!.facts[0]!.text, /^They asked the owner: Send Ana the Q4 deck/);
     assert.ok(asked[0]!.facts.some((f) => /prefers short notes/.test(f.text)), JSON.stringify(asked[0]!.facts));
+    // With words, the command takes the message only for exactly one follow-up: two (omar) or none (dentist) is a request for the assistant, so the
+    // door says nothing and the message goes on to it (src/door/views.ts).
+    const told = sent.length;
     await say("draft omar");
-    assert.equal(last(), "Which one?\n• Book the call with Omar\n• Send Omar the contract\nWrite DRAFT and a few words of it.");
     await say("draft dentist");
-    assert.equal(last(), "I don't see an open follow-up with “dentist”. OPEN lists them.");
+    assert.equal(sent.length, told, "the door answered neither");
     assert.equal(asked.length, 1, "nothing asked when it is not one follow-up");
   } finally {
     server.close();

@@ -307,6 +307,7 @@ const T = texts(
     emailOff: "I have no mail to send from (Pako's inbox needs connecting with send permission).",
     emailNoAddress: "I don't have an email address for “{to}”. Tell me it (name@domain) or add it to your contacts.",
     emailCard: "✉️ Email to {to} ({address}), on your behalf and written by your assistant:\n\nSubject: {subject}\n{text}",
+    emailCardLong: "✉️ Email to {to} ({address}), on your behalf and written by your assistant.\n\nSubject: {subject}\n\nIts whole text is in the message just above.",
     draftSendWhy: "📝 The draft for “{title}”, as a reply to that email. It goes only if you press Send:",
     emailYes: "Send",
     emailNo: "OK, I won't send anything.",

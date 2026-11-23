@@ -13,21 +13,22 @@ import express from "express";
 import { ClaudeError, createBridge, type BridgeConfig, type runClaude } from "../assistant/bridge.ts";
 import { classifyFailure, errorSignals, overloaded } from "../assistant/bridge/claude-errors.ts";
 import { limitText, limitWait } from "../assistant/bridge/limits.ts";
-import { createBudget } from "../assistant/budget.ts";
+import { createBudget, type BudgetConfig } from "../assistant/budget.ts";
 
 const TOKEN = "t".repeat(48);
 const MIN = 60_000;
 
-type Outcome = "ok" | "limit" | "busy" | "login";
+type Outcome = "ok" | "limit" | "busy" | "login" | "missing";
 
 /** A stand-in for the server's bridge routes, and a bridge whose runs answer or fail as `h.outcome` says. */
-async function rig(stateDir = mkdtempSync(join(tmpdir(), "asst-limits-")), resetsAt = Date.now() + 3 * 3600_000) {
+async function rig(stateDir = mkdtempSync(join(tmpdir(), "asst-limits-")), resetsAt = Date.now() + 3 * 3600_000, budget?: BudgetConfig) {
   const h = {
     inbox: [] as Record<string, unknown>[],
     acked: [] as string[],
     replies: [] as Record<string, unknown>[],
     followups: [] as Record<string, unknown>[],
     mail: [] as Record<string, unknown>[],
+    meetings: [] as Record<string, unknown>[],
     runs: 0,
     outcome: "ok" as Outcome,
     /** The next replies this many refuse (the server down for a moment). */
@@ -59,18 +60,24 @@ async function rig(stateDir = mkdtempSync(join(tmpdir(), "asst-limits-")), reset
     h.mail.push(req.body);
     res.json({ ok: true });
   });
+  app.post("/assistant/meeting-summary", (req, res) => {
+    h.meetings.push(req.body);
+    res.json({ ok: true });
+  });
   for (const path of ["/assistant/memory", "/assistant/health"]) app.post(path, (_req, res) => void res.json({ ok: true }));
   const server: Server = createServer(app);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
   const config: BridgeConfig = {
     server: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, token: TOKEN, claudeBin: "claude", model: "", stateDir, tools: [],
     runTimeoutMs: 20_000, rotateAfter: 30, noticeMs: 60_000, whisperModel: "", whisperBin: "whisper-cli", ffmpegBin: "ffmpeg", whisperLang: "auto",
+    ...(budget ? { budget } : {}),
   };
   const run = (async () => {
     h.runs++;
     if (h.outcome === "limit") throw new ClaudeError("You've hit your 5-hour limit", "limit", { via: "stream", resetsAt });
     if (h.outcome === "busy") throw new ClaudeError("Overloaded", "limit", { status: 529, via: "status" });
     if (h.outcome === "login") throw new ClaudeError("Not logged in · Please run /login", "login", { via: "text" });
+    if (h.outcome === "missing") throw new ClaudeError("could not start claude: spawn claude ENOENT", "missing", { via: "spawn" });
     return { text: "Done.", sessionId: "s-1", costUsd: 0 };
   }) as typeof runClaude;
   const bridge = createBridge({ config, run, log: () => undefined, replyWaitsMs: [0, 0, 0, 0, 0] });
@@ -243,6 +250,90 @@ test("a lost sign-in is not the limit: its own message says what to do, and the 
     await r.bridge.tick(0);
     assert.deepEqual(notices(r.h), [], "no limit 'back' note after a sign-in");
     assert.deepEqual(r.h.acked, ["o1"]);
+  } finally {
+    r.close();
+  }
+});
+
+test("a lost sign-in does not spend the day's background runs: after it, the mail that waited is still read by Claude, not kept without it", async (t) => {
+  const c = clock(t);
+  const r = await rig(undefined, undefined, { perDay: 2, coalesceMs: 0, unchangedMs: 0 });
+  try {
+    r.h.outcome = "login";
+    // Four different emails, each met by the lost sign-in (one is tried per round, and each then waits five minutes): twice the day's cap.
+    for (const n of [1, 2, 3, 4]) r.h.inbox.push({ ...email(`mail:<${n}@x>`), at: n });
+    for (let i = 0; i < 4; i++) await r.bridge.tick(0);
+    assert.equal(r.h.runs, 4, "each was tried: none was kept without Claude for the cap");
+    const u = r.bridge.usage();
+    assert.deepEqual([u.background, u.skipped.cap, u.kinds.email], [0, 0, undefined], "runs that never reached Claude are not the day's");
+    assert.equal(r.h.mail.length, 0, "nothing was kept: the emails wait for Claude");
+    // Signed in again: the day's two background runs are still there, and go to the first two emails; the rest are kept, as the cap says.
+    r.h.outcome = "ok";
+    c.advance(6 * MIN);
+    r.h.inbox.push({ ...email("mail:<5@x>"), at: 5 });
+    for (let i = 0; i < 5; i++) await r.bridge.tick(0);
+    assert.deepEqual(r.h.acked, ["mail:<1@x>", "mail:<2@x>", "mail:<3@x>", "mail:<4@x>", "mail:<5@x>"]);
+    assert.deepEqual(r.h.mail.map((m) => m.summary), ["Done.", "Done.", "Are you coming?", "Are you coming?", "Are you coming?"]);
+    assert.equal(r.bridge.usage().background, 2);
+  } finally {
+    r.close();
+  }
+});
+
+test("a missing claude command does not spend the day's background runs either", async (t) => {
+  clock(t);
+  const r = await rig(undefined, undefined, { perDay: 1, coalesceMs: 0, unchangedMs: 0 });
+  try {
+    r.h.outcome = "missing";
+    r.h.inbox.push({ ...email("mail:<1@x>"), at: 1 }, { ...email("mail:<2@x>"), at: 2 });
+    await r.bridge.tick(0);
+    await r.bridge.tick(0);
+    assert.equal(r.h.runs, 2, "the second email was tried too: the first did not use the cap");
+    assert.equal(r.bridge.usage().background, 0);
+  } finally {
+    r.close();
+  }
+});
+
+test("a meeting over the day's budget is not 'failed' and acknowledged: it waits for tomorrow's budget, then is summarized", async (t) => {
+  const c = clock(t);
+  const r = await rig(undefined, undefined, { perDay: 1, coalesceMs: 0, unchangedMs: 0 });
+  try {
+    r.h.inbox.push({ ...email("mail:<a@x>"), at: 1 }, { id: "zoom:m1", at: 2, text: "", meeting: { topic: "Launch", when: "14/11, 10:00", transcript: "Ana: we launch on Monday" } });
+    await r.bridge.tick(0); // the email takes the day's one background run
+    await r.bridge.tick(0); // the meeting finds the day's budget spent
+    assert.equal(r.h.runs, 1);
+    assert.equal(r.h.meetings.length, 0, "no 'could not summarize' kept by the server");
+    assert.ok(!r.h.replies.some((x) => /couldn't summarize/.test(String(x.text))), "nothing said to the owner either");
+    assert.deepEqual(r.h.acked, ["mail:<a@x>"], "the meeting stays in the server's inbox");
+    for (let i = 0; i < 3; i++) await r.bridge.tick(0);
+    assert.equal(r.h.runs, 1);
+    assert.equal(r.bridge.usage().skipped.cap, 1, "not asked again and again during the day: it waits for the next one");
+    // A day later the budget is new: the same meeting is summarized.
+    const now = new Date();
+    const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
+    c.advance(tomorrow - Date.now() - 1000);
+    await r.bridge.tick(0);
+    assert.equal(r.h.runs, 1, "not before tomorrow");
+    c.advance(2000);
+    await r.bridge.tick(0);
+    assert.equal(r.h.runs, 2);
+    assert.deepEqual(r.h.meetings.map((m) => [m.id, m.summary]), [["zoom:m1", "Done."]]);
+    assert.deepEqual(r.h.acked, ["mail:<a@x>", "zoom:m1"]);
+  } finally {
+    r.close();
+  }
+});
+
+test("a meeting when the owner allows no background runs at all (the cap is 0) is still answered at once, as 'could not summarize'", async (t) => {
+  clock(t);
+  const r = await rig(undefined, undefined, { perDay: 0, coalesceMs: 0, unchangedMs: 0 });
+  try {
+    r.h.inbox.push({ id: "zoom:m2", at: 1, text: "", meeting: { topic: "Launch", when: "14/11, 10:00", transcript: "Ana: hi" } });
+    await r.bridge.tick(0);
+    assert.equal(r.h.runs, 0);
+    assert.deepEqual(r.h.meetings.map((m) => m.summary), ["I couldn't summarize the transcript; it's in Zoom."], "tomorrow would bring no run either");
+    assert.deepEqual(r.h.acked, ["zoom:m2"]);
   } finally {
     r.close();
   }

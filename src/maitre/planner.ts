@@ -11,7 +11,7 @@
 import { join } from "node:path";
 import type { Kv } from "../kv.ts";
 import type { Page, PagePool } from "./cdp.ts";
-import { policyOf, type BookResult, type Cartridge, type CartridgeContext, type Evidence, type GateKind, type Guest, type LookQuery, type LookResult, type Slot } from "./cartridge.ts";
+import { mismatchOf, policyOf, type BookResult, type Cartridge, type CartridgeContext, type Evidence, type GateKind, type Guest, type LookQuery, type LookResult, type Slot } from "./cartridge.ts";
 import { CARTRIDGES, cartridgeFor } from "./cartridges/index.ts";
 import { forkLink } from "./cartridges/thefork.ts";
 import { tableLink } from "./cartridges/opentable.ts";
@@ -263,7 +263,7 @@ export function createMaitre(d: MaitreDeps) {
       if (missing.length) return { kind: "offweb", reason: `missing ${missing.join(", ")}` };
       const slot: Slot = { date: r.date, time: r.time, party: r.party, ...(r.zone ? { zone: r.zone } : {}) };
       // The engine's confirmation already in the inbox: it is booked (by the owner, or by an earlier try whose answer was lost).
-      const mail = await ledger.inboxConfirmation({ name: r.name, date: r.date, engine: cart.engine });
+      const mail = await ledger.inboxConfirmation({ placeId: r.placeId, name: r.name, date: r.date, time: r.time, engine: cart.engine });
       if (mail) return { kind: "duplicate", mail };
       let entry: LedgerEntry;
       try {
@@ -280,7 +280,12 @@ export function createMaitre(d: MaitreDeps) {
       // The ledger's word right before the press that submits: a refusal there means another attempt got in first.
       let refused: DuplicateBooking | null = null;
       let submitted = false;
+      // The whole-booking deadline below ends this run for good: a step that was only slow must not press anything later, with the entry
+      // already handed over (planned again) or its window opened.
+      let stopped = false;
+      let tab: Page | undefined;
       const submitting = async (): Promise<void> => {
+        if (stopped) throw new Error("the booking took too long and was stopped");
         try {
           entry = await ledger.submitting(entry.id);
           submitted = true;
@@ -290,10 +295,19 @@ export function createMaitre(d: MaitreDeps) {
         }
       };
       const shotPath = shot(entry.id);
-      const run = paced(cart.engine, () => d.pool.withPage((page) => cart.book(ctx(page, url, submitting, shotPath ? { shotPath } : {}), slot, r.guest)));
+      const run = paced(cart.engine, () => d.pool.withPage((page) => {
+        if (stopped) throw new Error("the booking took too long and was stopped");
+        tab = page;
+        return cart.book(ctx(page, url, submitting, shotPath ? { shotPath } : {}), slot, r.guest);
+      }));
       let timer: NodeJS.Timeout | undefined;
       const deadline = new Promise<BookResult>((res) => {
-        timer = setTimeout(() => res({ kind: "timeout", detail: "the whole booking took too long", submitted }), bookMs);
+        timer = setTimeout(() => {
+          // The losing run is stopped, not left to go on: its tab is closed (every step it takes then fails) and its press is refused above.
+          stopped = true;
+          void Promise.resolve().then(() => tab?.close()).catch(() => undefined);
+          res({ kind: "timeout", detail: "the whole booking took too long", submitted });
+        }, bookMs);
       });
       let result: BookResult | "rate";
       try {
@@ -319,12 +333,7 @@ export function createMaitre(d: MaitreDeps) {
         case "confirmed": {
           const e = (await ledger.confirm(entry.id, result.evidence)) ?? entry;
           await writePassport(r.placeId, (p) => ((p.lastSuccess = now()), p.times.push(ms)), base);
-          const s = result.evidence.said;
-          const off = [
-            s?.date && s.date !== r.date ? `date ${s.date}` : "",
-            s?.time && s.time !== r.time ? `time ${s.time}` : "",
-            s?.party && s.party !== r.party ? `party ${s.party}` : "",
-          ].filter(Boolean).join(", ");
+          const off = mismatchOf(result.evidence.said, r);
           return { kind: "confirmed", entry: e, evidence: result.evidence, ms, ...(off ? { mismatch: off } : {}) };
         }
         case "gate":

@@ -20,6 +20,7 @@
 //   pass for that meeting.
 
 import { randomBytes } from "node:crypto";
+import { cap, takeOf, type Take } from "./app/budget.ts";
 import { addDays, hhmm, weekdayOf } from "./day-time.ts";
 import type { CalEvent } from "./calendar.ts";
 import { zonedTime } from "./followups/time.ts";
@@ -80,6 +81,7 @@ export const TIME_WORDS = {
   blocked: "OK: “{event}”, {slot}, goes on your Mac's calendar in a few seconds.",
   already: "That block is already on its way to your calendar.",
   passed: "That time has passed, so I added nothing. Here is the next free time I see:",
+  taken: "That time is taken now, so I added nothing. Here is the next free time I see:",
   closed: "“{title}” is closed already, so I added nothing.",
   gone: "That's no longer pending. Say “find time for …” to look once more.",
   paused: "{paused} Your calendar was not changed.",
@@ -384,6 +386,8 @@ export function riskText(r: Risk, now: number, tz: string): string {
 export interface TimeWrites {
   canWrite: () => Promise<boolean>;
   enqueue: (w: { id: string; op: "create"; start: number; end: number; title: string }) => Promise<boolean>;
+  /** A queued write as it stands (failed: the Mac never made it); absent: what was queued is taken as made. */
+  get?: (id: string) => Promise<{ status: string } | null>;
 }
 
 /** One block proposed for a follow-up, and what became of it. */
@@ -446,6 +450,8 @@ export interface TimeToDoDeps {
   usually?: (title: string) => Promise<number | null>;
   /** Follow-up nudges, check-ins and Pako's own suggestions sent today: the cap is shared. */
   others?: () => Promise<number>;
+  /** This part's turn at the day's cap (src/app/budget.ts): the check against the others and the count are one turn. Absent: `others`. */
+  take?: Take;
   /** The calendar writes (src/door/deps.ts); absent or null: the calendar is read-only for Pako. */
   writes?: () => TimeWrites | null | undefined;
   /** Pako paused (STOP, the panel's switch): what to say, or null when it is not. */
@@ -460,6 +466,7 @@ export interface TimeToDoDeps {
 
 export function createTimeToDo(d: TimeToDoDeps) {
   const now = d.now ?? Date.now;
+  const take = takeOf(d.take, d.others);
   const tz = d.timeZone;
   let memory = empty();
   let lookedAt = 0;
@@ -486,6 +493,11 @@ export function createTimeToDo(d: TimeToDoDeps) {
     return !!w && (await w.canWrite().catch(() => false));
   };
   const opts = (t: number, until: number) => ({ now: t, until, tz, hours: d.hours, quiet: d.quiet });
+  /** A block whose write failed (the Mac app was closed, the calendar refused it): nothing is on the calendar, so it is not blocked. */
+  const writeFailed = async (o: Offer): Promise<boolean> => {
+    const get = d.writes?.()?.get;
+    return o.state === "blocked" && !!get && (await get(o.write).catch(() => null))?.status === "failed";
+  };
 
   /** The card for one block: Block, Another time, Not needed; a calendar Pako cannot write: Snooze 1 h (the follow-up's own) instead of Block. */
   const cardFor = async (r: Risk, writable: boolean, lead?: string): Promise<boolean> => {
@@ -519,7 +531,8 @@ export function createTimeToDo(d: TimeToDoDeps) {
     const t = now();
     const until = horizonEnd(t, tz, d.hours);
     const loops = (await d.loops()).filter((l) => considered(l, t) && l.dueAt! <= until);
-    const done = new Set(s.offers.filter((o) => o.state !== "asked").map((o) => o.loop));
+    const done = new Set<string>();
+    for (const o of s.offers) if (o.state !== "asked" && !(await writeFailed(o))) done.add(o.loop);
     const todo = loops.filter((l) => !done.has(l.id));
     if (!todo.length) return [];
     const events = await d.events();
@@ -555,13 +568,16 @@ export function createTimeToDo(d: TimeToDoDeps) {
     if (!r) return null;
     const day = today(t, tz);
     if (s.day !== day) Object.assign(s, { day, n: 0 });
-    const cap = g ? g.maxPerDay : d.standardMax;
-    const others = await (d.others?.() ?? Promise.resolve(0)).catch(() => 0);
-    if (s.n + others >= cap) return null;
-    // Counted and kept before the card goes: two looks never both send it. A card that could not go is taken back (the next look tries).
-    offerOf(r, true, s);
-    s.n++;
-    await save(s);
+    // Counted and kept before the card goes: two looks never both send it, nor this and another part the last place of the day (the check
+    // and the count are one turn at the cap). A card that could not go is taken back (the next look tries).
+    const took = await take(cap(d.standardMax, g?.maxPerDay), async (room) => {
+      if (s.n >= room) return false;
+      offerOf(r, true, s);
+      s.n++;
+      await save(s);
+      return true;
+    });
+    if (!took) return null;
     const writable = await canWrite();
     if (!(await cardFor(r, writable))) {
       s.offers = s.offers.filter((o) => o.loop !== r.loop.id);
@@ -610,7 +626,11 @@ export function createTimeToDo(d: TimeToDoDeps) {
     }
     const o = s.offers.find((x) => x.loop === loopId);
     if (!o || o.stops !== (d.stops?.() ?? 0)) return TW()("gone");
-    if (o.state === "blocked") return TW()("already");
+    if (o.state === "blocked") {
+      if (!(await writeFailed(o))) return TW()("already");
+      // Its write failed: Block again is a new write (the failed one's id is spent).
+      Object.assign(o, { state: "asked", write: randomBytes(5).toString("hex") });
+    }
     if (o.state === "declined") return TW()("gone");
     o.pressed = true;
     if (d.engaged) await d.engaged(loopId).catch((err: Error) => log.warn(`a press could not be kept on its follow-up: ${err.message}`));
@@ -658,6 +678,16 @@ export function createTimeToDo(d: TimeToDoDeps) {
       offerOf(r, false, s);
       await save(s);
       await cardFor(r, await canWrite(), TW()("passed"));
+      return "";
+    }
+    // The calendar as it is now: a meeting booked in that time since the card went is never written over.
+    if (busySpans(events, o.start, o.end).length) {
+      const r = assess(l, events, { ...opts(t, until), learned: await learned(l) });
+      await save(s);
+      if (!r?.proposal) return TW()(l.dueAt ? "findNoTime" : "findNoTimeOpen", { title: l.title, due: l.dueAt ? dueWords(l.dueAt, t, tz) : "" });
+      offerOf(r, false, s);
+      await save(s);
+      await cardFor(r, await canWrite(), TW()("taken"));
       return "";
     }
     const w = d.writes?.();

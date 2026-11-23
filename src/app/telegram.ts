@@ -82,7 +82,7 @@ export function wireTelegram(ctx: AfterPanel) {
       ...(keep ? { keep } : {}),
       use: (channel) => {
         tgRef.channel = channel;
-        void channel.paired(); // read the paired account now, for the panel (a pairing made with this bot before is still good)
+        void channel.paired().catch(() => false); // read the paired account now, for the panel (a pairing made with this bot before is still good)
         pollNow();
         logTelegram.info("ON: long polling, with the bot token set in the panel");
       },

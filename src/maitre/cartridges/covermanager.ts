@@ -11,6 +11,7 @@ import {
   failure,
   gateOn,
   nearest,
+  pressCancel,
   type BookResult,
   type Cartridge,
   type CartridgeContext,
@@ -63,6 +64,20 @@ export function freeTimes(json: string): string[] | null {
   if (typeof d.hour_box === "string") return hoursOf(d.hour_box);
   if (d.hoursall && typeof d.hoursall === "object") return Object.keys(d.hoursall).filter((k) => /^\d{2}:\d{2}$/.test(k));
   return null;
+}
+
+/**
+ * What goes in the country select and the phone box for an owner's number (digits with the country code): the option whose value is the longest
+ * start of the number, and the rest of it. A module with no country select takes the whole number, written with its plus. Null when the select
+ * has no option for this number's country.
+ */
+export function phoneParts(options: string[], phone: string): { option: string | null; number: string } | null {
+  if (!options.length) return { option: null, number: `+${phone}` };
+  const best = options
+    .map((value) => ({ value, code: value.replace(/\D/g, "") }))
+    .filter((o) => o.code && phone.startsWith(o.code))
+    .sort((a, b) => b.code.length - a.code.length)[0];
+  return best ? { option: best.value, number: phone.slice(best.code.length) } : null;
 }
 
 const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
@@ -184,9 +199,12 @@ export const coverManager: Cartridge = {
       await page.type("#user_last_name", guest.lastName, stepMs);
       await page.type("#user_email", guest.email, stepMs);
       // The phone is required even without a marker: an empty one blocks Reserve silently (learned on the first real booking).
-      const cc = guest.phone.startsWith("34") ? "34" : guest.phone.startsWith("44") ? "44" : guest.phone.startsWith("1") ? "1" : "";
-      if (cc) await page.select("#int_call_code", cc, stepMs).catch(() => false);
-      await page.type("#user_phone", cc ? guest.phone.slice(cc.length) : guest.phone, stepMs);
+      // The country code is the select's own option that starts the owner's number: a number that stays in the wrong country is not the owner's.
+      const options = await page.evaluate<string[]>(`[...document.querySelectorAll('#int_call_code option')].map((o) => o.value)`);
+      const phone = phoneParts(options, guest.phone);
+      if (!phone) return { kind: "changed", detail: "the module's country codes do not include the owner's phone" };
+      if (phone.option && !(await page.select("#int_call_code", phone.option, stepMs))) return { kind: "changed", detail: "the module's country code could not be chosen" };
+      await page.type("#user_phone", phone.number, stepMs);
       if (await page.visible("#no_food_restrictions").catch(() => false)) await page.check("#no_food_restrictions", true, stepMs);
       if (guest.notes && (await page.visible("#commentary").catch(() => false))) await page.type("#commentary", guest.notes.slice(0, 300), stepMs);
       await page.check("#consentimiento_legal", true, stepMs);
@@ -237,15 +255,6 @@ export const coverManager: Cartridge = {
         if (!b) return null; b.setAttribute('data-maitre-cancel', '1'); return '[data-maitre-cancel="1"]'; })()`,
     );
     if (!button) return false;
-    // The owner pressed Undo: the engine's "are you sure?" is answered yes for this one press.
-    page.acceptDialogs = true;
-    await page.click(button, stepMs);
-    try {
-      await page.waitForText(/cancel(l)?ed|cancelada|anulada/i, stepMs);
-      return true;
-    } catch {
-      /* no cancellation shown in time: not cancelled */
-      return false;
-    }
+    return pressCancel(page, button, /cancel(l)?ed|cancelada|anulada/i, stepMs);
   },
 };

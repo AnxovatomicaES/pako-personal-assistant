@@ -43,6 +43,9 @@ async function load() {
   }
 }
 
+/** The lines notices() put in #notices last time: the only ones it takes away (the catch-up line, app.js's, lives in the same box). */
+let mine = [];
+
 /**
  * The quiet lines at the top of the dashboard: a channel that stopped working (Telegram unpaired, WhatsApp refused: reminders would stop
  * arriving), and at most ONE suggestion, the single most useful thing not connected yet. Setting things up happens in Settings.
@@ -68,7 +71,10 @@ async function notices() {
     // The welcome block of an empty dashboard names the same one step.
     window.pakoNextStep = next;
     if (next) lines.push(link(`${next.text} · ${DASH.settings}`, next.href));
-    box.replaceChildren(...lines);
+    // Only its own: replacing the whole box took app.js's catch-up line away until the next refresh of the page.
+    for (const old of mine) old.remove();
+    mine = lines;
+    box.append(...lines);
   } catch {
     /* the server is restarting: the next load asks again */
   }

@@ -5,7 +5,8 @@
 // The owner's plain words, English like every command: "I want to learn X" keeps the goal (the message still goes to the assistant, which
 // starts the first lesson); "quiz me" asks the next card that is due; the next short message is the answer, graded here (exact, close,
 // wrong; "pass" is a miss), and the card's next time follows. "my progress" lists the goals; "stop learning X" pauses a goal (its cards
-// stay, nothing is deleted). A quiz the proactive check offers is the same question: answered the same way. The same wishes in another
+// stay, nothing is deleted). A quiz the proactive check offers is the same question, but only offered: the owner may carry on with their day, so
+// only an attempt answers it ("buy eggs" goes on to the assistant) and "not now" lets it go. The same wishes in another
 // language go to the assistant. An answer to a card is graded in any language (it is the owner's answer, often in the language they learn),
 // so its "I don't know" words stay in Spanish too.
 //
@@ -55,8 +56,11 @@ export interface Card {
 export interface LearningState {
   goals: Goal[];
   cards: Card[];
-  /** The card asked and when: the next short message answers it, within ASK_MS. */
-  asking?: { card: string; at: number };
+  /**
+   * The card asked and when: the next short message answers it, within ASK_MS. `offered`: the proactive check offered it ("answer here, or
+   * carry on with your day"), so only an attempt answers it, and a "not now" lets it go.
+   */
+  asking?: { card: string; at: number; offered?: true };
   /** The last quiz offered by the proactive check (the owner's day). */
   offered?: string;
 }
@@ -91,7 +95,9 @@ export function learningOf(raw: unknown): LearningState {
   return {
     goals: goals.slice(-GOALS_MAX),
     cards: cards.slice(-CARDS_MAX),
-    ...(ask && typeof ask.card === "string" && Number.isFinite(ask.at) ? { asking: { card: ask.card, at: Number(ask.at) } } : {}),
+    ...(ask && typeof ask.card === "string" && Number.isFinite(ask.at)
+      ? { asking: { card: ask.card, at: Number(ask.at), ...(ask.offered === true ? { offered: true as const } : {}) } }
+      : {}),
     ...(typeof o.offered === "string" && /^\d{4}-\d{2}-\d{2}$/.test(o.offered) ? { offered: o.offered } : {}),
   };
 }
@@ -181,10 +187,15 @@ export interface LearningStore {
   pauseGoal(topic: string): Promise<Goal | null>;
   /** Cards from a lesson, for a goal by its topic (made when it is new). Repeats of a question are skipped. Returns how many were kept. */
   addCards(cards: { goal: string; q: string; a: string }[], now: number): Promise<number>;
-  /** The next due card (of one goal when a topic is given) marked as asked; null when nothing is due. */
-  ask(now: number, topic?: string): Promise<{ card: Card; goal: Goal; due: number } | null>;
-  /** The answer to the card being asked, or null when nothing is waiting for one. */
+  /** The next due card (of one goal when a topic is given) marked as asked; null when nothing is due. `offered`: by the proactive check. */
+  ask(now: number, topic?: string, o?: { offered?: boolean }): Promise<{ card: Card; goal: Goal; due: number } | null>;
+  /**
+   * The answer to the card being asked, or null when nothing is waiting for one, or the message is not an answer (it goes on to the assistant,
+   * and the question keeps waiting).
+   */
   answer(text: string, now: number): Promise<{ card: Card; quality: number; next: number } | null>;
+  /** A "not now" to the quiz the proactive check offered: the question stops waiting (the card is still due, for tomorrow's or QUIZ ME). */
+  decline(text: string, now: number): Promise<boolean>;
   /** A quiz offered by the proactive check today: false when one was already offered. */
   claimOffer(day: string): Promise<boolean>;
   /** The day's quiz given back (its card could not be sent): unclaimed, and the question asked at `at` no longer waits for an answer. */
@@ -271,13 +282,13 @@ export function createLearning(kv: Kv | null): LearningStore {
         s.cards = s.cards.slice(-CARDS_MAX);
         return { out: kept, changed: kept > 0 };
       }),
-    ask: (now, topic) =>
+    ask: (now, topic, o) =>
       change((s) => {
         const goals = s.goals.filter((g) => !g.paused && (!topic || match(topic, g)));
         const due = s.cards.filter((c) => goals.some((g) => g.id === c.goal) && c.due <= now).sort((a, b) => a.due - b.due);
         const card = due[0];
         if (!card) return { out: null, changed: false };
-        s.asking = { card: card.id, at: now };
+        s.asking = { card: card.id, at: now, ...(o?.offered ? { offered: true as const } : {}) };
         return { out: { card: structuredClone(card), goal: structuredClone(goals.find((g) => g.id === card.goal)!), due: due.length }, changed: true };
       }),
     answer: (text, now) =>
@@ -291,11 +302,22 @@ export function createLearning(kv: Kv | null): LearningStore {
         }
         const quality = grade(text, card.a);
         // Not right, and not shaped like an answer ("remind me to call the dentist", "what's on tomorrow?"): a new request, which goes on to
-        // the assistant; the question keeps waiting for its answer.
-        if (quality < 3 && !answerShaped(text, card.a)) return { out: null, changed: false };
+        // the assistant; the question keeps waiting for its answer. A quiz that was only offered is stricter: the owner may be carrying on
+        // with their day ("buy eggs"), so only an "I don't know" or a wrong answer the size of the right one is graded.
+        if (quality < 3 && !(ask.offered ? attemptAt(text, card.a) : answerShaped(text, card.a))) return { out: null, changed: false };
         delete s.asking;
         Object.assign(card, sm2(card, quality, now), { seen: (card.seen ?? 0) + 1, right: (card.right ?? 0) + (quality >= 3 ? 1 : 0) });
         return { out: { card: structuredClone(card), quality, next: card.due }, changed: true };
+      }),
+    decline: (text, now) =>
+      change((s) => {
+        const ask = s.asking;
+        if (!ask?.offered || now - ask.at > ASK_MS || !DECLINE.test(plainWords(text))) return { out: false, changed: false };
+        // The right answer to a card is never a "no" to it ("no" for "how do you say no?").
+        const card = s.cards.find((c) => c.id === ask.card);
+        if (card && grade(text, card.a) >= 3) return { out: false, changed: false };
+        delete s.asking;
+        return { out: true, changed: true };
       }),
     claimOffer: (day) =>
       change((s) => {
@@ -340,6 +362,21 @@ export function answerShaped(text: string, expected: string): boolean {
   return a.split(" ").length <= Math.max(4, most * 2 + 1);
 }
 
+/** A "not now" to a quiz that was only offered, on plainWords. */
+const DECLINE = /^(?:not now|not right now|not today|later|maybe later|another time|some other time|no thanks|no thank you|no)$/;
+
+/**
+ * Whether a message reads as an attempt at the card a quiz OFFERED by the proactive check asked: an "I don't know", or an answer shaped like
+ * one (answerShaped) and no longer than the longest right answer ("buy eggs" and "running late today" are not attempts at "formaggio").
+ */
+export function attemptAt(text: string, expected: string): boolean {
+  const a = plainWords(text);
+  if (PASS.test(a)) return true;
+  if (!answerShaped(text, expected)) return false;
+  const most = Math.max(1, ...expected.split(/[/;]/).map(plainWords).filter(Boolean).map((x) => x.split(" ").length));
+  return a.split(" ").length <= most;
+}
+
 /** Whether a question is waiting for this message as its answer: asked a moment ago, and the message is short (not a new request). */
 export const waitingAnswer = (s: LearningState, text: string, now: number): boolean =>
   !!s.asking && now - s.asking.at <= ASK_MS && text.trim().length <= 80 && !/\n/.test(text.trim());
@@ -365,6 +402,7 @@ const T = texts(
     pausedSaid: "⏸️ Paused {topic}. Its cards stay; “I want to learn {topic}” to carry on.",
     unknownGoal: "I have no goal called “{topic}”.",
     offer: "📚 A minute of {topic}? {q}\n(Answer here, or carry on with your day.)",
+    declined: "OK, I'll leave it. QUIZ ME whenever you like.",
     tomorrow: "tomorrow",
     inDays: "in {n} days",
     unread: "I couldn't read what you're learning right now. Try again in a moment.",

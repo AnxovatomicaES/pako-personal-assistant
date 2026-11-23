@@ -86,11 +86,12 @@ const SUICIDE = [
   /\bno quiero (?:vivir|seguir viviendo|seguir aqui|despertar(?:me)?)\b/,
   /\b(?:hacerme dano|autolesion|cortarme las venas)\b/,
   /\bkill(?:ing)? myself\b/,
-  /\b(?:want|wanna|going) to die\b/,
+  /\b(?:want to|wanna|going to) die\b/,
+  /\bwish i (?:was|were) dead\b/,
   /\bend (?:my life|it all)\b/,
   /\b(?:hurt|harm|cut)(?:ing)? myself\b/,
   /\bself harm/,
-  /\bdon t want to (?:live|be alive|wake up)\b/,
+  /\b(?:don t|dont|do not) (?:want to|wanna) (?:live|be alive|wake up)\b/,
   /\bno reason to live\b/,
   /\b(?:quiero|quisiera|ganas de|me gustaria) desaparecer (?:para siempre|del mundo|y no volver)\b/,
   /\b(?:want|wanna|wish i could) (?:to )?disappear (?:forever|for good)\b/,
@@ -126,9 +127,12 @@ const EMERGENCY = [
   /\b(?:sangr(?:o|a|ando) (?:mucho|sin parar|a chorros)|no (?:para|deja) de sangrar|hemorragia)\b/,
   /\b(?:bleeding (?:heavily|a lot|badly|won t stop)|won t stop bleeding|can t stop (?:the )?bleeding)\b/,
   // Other emergencies.
-  /\b(?:me he desmayado|ha perdido el conocimiento|he perdido el conocimiento|convulsion|convulsiones|anafilaxia|sobredosis|envenenad[oa])\b/,
+  /\b(?:me he desmayado|ha perdido el conocimiento|he perdido el conocimiento|sobredosis|envenenad[oa])\b/,
   /\bse me (?:esta )?(?:hinchando|cerrando) la garganta\b/,
-  /\b(?:is unconscious|lost consciousness|seizure|anaphyla|overdose|poisoned|throat (?:is )?(?:swelling|closing))\b/,
+  /\b(?:is unconscious|lost consciousness|poisoned|throat (?:is )?(?:swelling|closing))\b/,
+  // Stems, with no word end: "seizures", "overdosed", "anaphylactic", "convulsing", "convulsiones", "anafilaxia" are all the same alarm.
+  /\b(?:seizure|anaphyla|overdos|convuls|anafila|(?:ataque|crisis) epilept)/,
+  /\btook too many (?:pills|tablets|meds)\b|\b(?:tomado|tome) demasiad[ao]s (?:pastillas|pildoras|comprimidos)\b/,
 ];
 
 /** The red flag in the owner's own words, or null. Suicide first: it has a line of its own. */
@@ -271,7 +275,20 @@ export function kindOf(text: string): HealthKind | null {
   return null;
 }
 
-/** Words about the owner's own body, on plainWords: the first person, a past tense with a measure, or a measure alone. */
+/**
+ * English words about the owner's own body, for OWN_HEALTH: a state or a complaint after the first person and a few joining words
+ * ("I have had a headache", "I'm so tired", "I feel a bit dizzy"), never a verb or a noun alone: "I have to run the payroll", "I had a great
+ * idea about water billing" and "I have a pain point with the API" are not about the body.
+ */
+const BODY_STATE = "tired|sick|ill|unwell|dizzy|nauseous|anxious|stressed|exhausted|sad|depressed|drained|weak|faint|sleepy|dehydrated|hungover|congested"
+  + "|achy|feverish|overwhelmed|burnt out|burned out|worn out|run down";
+const BODY_NOUN = "headache|migraine|fever|cough|cold|flu|nausea|cramps?|allergy|allergies|rash|infection|anxiety|insomnia|toothache|backache|stomach ?ache"
+  + "|sore throat|panic attacks?|pain(?! point)";
+const JOIN = "(?:(?:have|had|has|ve|got|been|having|m|am|was|feel|feeling|felt|really|very|so|quite|a|an|the|some|bit|little|slightly|too|still|just|always|often|now) )*";
+/** "I feel good": only said about how they feel, not "I feel good about the plan". */
+const FEEL_GOOD = "(?:good|great|fine|better|worse|okay|ok|happy|calm|energetic|terrible|awful|bad|low|down)\\b(?! (?:about|with|that|like|the|this|it)\\b)";
+
+/** Words about the owner's own body, on plainWords: the first person with a health verb or state, or a measure alone. */
 const OWN_HEALTH = new RegExp(
   [
     "\\b(?:he|hemos) (?:dormido|bebido|corrido|caminado|andado|nadado|entrenado|hecho (?:yoga|ejercicio|deporte|pesas|pilates|\\d)|ido (?:al gimnasio|a (?:correr|nadar|caminar)))",
@@ -279,8 +296,16 @@ const OWN_HEALTH = new RegExp(
     "\\bme (?:duele|duelen|siento|encuentro|mareo|he mareado|cuesta dormir)\\b",
     "\\bestoy (?:triste|bien|mal|feliz|cansad|agobiad|ansios|content|resfriad|enferm|malo|mala|baj)",
     "\\btengo (?:fiebre|tos|dolor|mareo|nauseas|migrana|alergia|ansiedad|estres|insomnio|el animo)",
-    "\\bi (?:slept|drank|ran|walked|swam|did|feel|felt|have|had|m|am|cycled|worked out)\\b",
-    "^(?:slept|drank|ran|walked|swam|cycled|feeling|felt|woke)\\b",
+    // English: a verb of the body, a measure of running or exercise, or a state or complaint next to the first person.
+    "\\bi (?:slept|drank|walked|swam|cycled|jogged|worked out|exercised|meditated|stretched)\\b",
+    "\\bi ran (?:for |about |around |almost )?(?:\\d|a (?:mile|5k|10k|lap|marathon))",
+    "\\bi did (?:(?:\\d+ (?:minutes?|mins?|hours?) of )?(?:yoga|pilates|cardio|stretching|weights|gym|a workout|my workout|exercise)\\b"
+      + "|\\d+ (?:km|miles?|laps?|reps?|sets?|push ?ups?|sit ?ups?|squats?)\\b)",
+    `\\bi ${JOIN}(?:${BODY_STATE}|${BODY_NOUN})\\b`,
+    `\\bi (?:(?:have|had|has|ve|m|am|was|really|very|so|quite|just|still|now) )*(?:feel|felt|feeling) (?:(?:really|very|so|quite|a|bit|little|slightly|much|still) )*${FEEL_GOOD}`,
+    "^(?:slept|drank|walked|swam|cycled|woke)\\b",
+    "^ran (?:for |about |around |almost )?\\d",
+    `^(?:feeling|felt) ${JOIN}(?:(?:${BODY_STATE})\\b|${FEEL_GOOD})`,
     "\\bmy \\w+ (?:hurts|aches)\\b",
     "^\\d+(?: \\d+)? (?:vasos?|litros?|horas?|h|km|kilometros|minutos|min|pasos|glasses|liters|litres|hours|miles|steps)\\b",
   ].join("|"),
@@ -459,7 +484,8 @@ export function sleepText(s: HealthState, more: { at: number; text: string }[], 
     ...more.filter((m) => kindOf(m.text) === "sleep"),
   ].filter((e) => now - e.at < 14 * DAY_MS && e.at <= now).sort((a, b) => a.at - b.at);
   if (!notes.length) return t("sleepNone");
-  const hours = notes.map((e) => hoursOf(e.text)).filter((h): h is number => h !== null);
+  // One figure for each of the owner's days (a nap, or a note said twice, is not another night).
+  const hours = [...nightsOf(notes, tz).values()];
   const avg = hours.length ? Math.round((hours.reduce((a, b) => a + b, 0) / hours.length) * 10) / 10 : null;
   const parts = [t("sleepHead"), ...notes.slice(-10).map((e) => `• ${dayOf(e.at, tz, l)}: ${e.text}`)];
   if (avg !== null) parts.push("", t("sleepAvg", { n: hours.length, avg: new Intl.NumberFormat(locale(l), { maximumFractionDigits: 1 }).format(avg) }));
@@ -483,17 +509,36 @@ export function healthNudge(s: HealthState, now: number, tz: string, l: Lang): {
     new Set(s.entries.filter((e) => e.kind === kind && now - e.at < n * DAY_MS).map((e) => today(e.at, tz)));
   const water = days("water", 7);
   if (water.size >= 4 && !water.has(day)) return { key: `health:water:${day}`, text: t("nudgeWater") };
-  const shortNights = s.entries.filter((e) => e.kind === "sleep" && now - e.at < 4 * DAY_MS && hoursOf(e.text) !== null && hoursOf(e.text)! < 6);
+  // Three different days of little sleep (one figure a day: a nap, or several notes of one day, are not three nights).
+  const shortNights = [...nightsOf(s.entries.filter((e) => e.kind === "sleep" && now - e.at < 4 * DAY_MS), tz).values()].filter((h) => h < 6);
   if (shortNights.length >= 3) return { key: `health:sleep:${day}`, text: t("nudgeSleep") };
   const moved = days("exercise", 21);
   if (moved.size >= 4 && !days("exercise", 4).size) return { key: `health:move:${day}`, text: t("nudgeMove") };
   return null;
 }
 
-/** "5 horas", "6h", "slept 7 hours", "5,5 h": the hours in a sleep note, or null. */
+/** "5 horas", "6h", "slept 7 hours", "5,5 h", "4 1/2 hours", "4½ h", "5 horas y media": the hours in a sleep note, or null. */
 export function hoursOf(text: string): number | null {
-  const m = /(\d{1,2}(?:[.,]\d)?)\s*(?:h\b|horas?\b|hours?\b|hrs?\b)/i.exec(text);
+  const m = /(\d{1,2}(?:[.,]\d)?)(\s*(?:1\/2|½))?\s*(?:h\b|horas?\b|hours?\b|hrs?\b)(\s+y\s+media\b)?/i.exec(text);
   if (!m) return null;
-  const n = Number(m[1]!.replace(",", "."));
+  const n = Number(m[1]!.replace(",", ".")) + (m[2] || m[3] ? 0.5 : 0);
   return n > 0 && n <= 24 ? n : null;
+}
+
+/** A nap, not a night. On plainWords. */
+const NAP = /\b(?:naps?|napped|napping|siestas?)\b/;
+
+/**
+ * The night's sleep for each of the owner's days, from sleep notes: the longest figure noted that day, never one from a note about a nap
+ * ("1 hour nap", "una siesta de 2 horas"). One figure a day, so a nap or a note said twice is not another night.
+ */
+export function nightsOf(notes: { at: number; text: string }[], tz: string): Map<string, number> {
+  const nights = new Map<string, number>();
+  for (const n of notes) {
+    const h = NAP.test(plainWords(n.text)) ? null : hoursOf(n.text);
+    if (h === null) continue;
+    const day = today(n.at, tz);
+    nights.set(day, Math.max(nights.get(day) ?? 0, h));
+  }
+  return nights;
 }

@@ -230,3 +230,55 @@ test("panel: Sign out everywhere ends every session made before (this one too); 
     r.close();
   }
 });
+
+test("panel: Sign out everywhere holds when the store is emptied or another one takes over (Delete everything, the demo week); a link not used yet ends too", async () => {
+  const memKv = () => {
+    const m = new Map<string, string>();
+    return { get: async (k: string) => m.get(k) ?? null, set: async (k: string, v: string) => void m.set(k, v) };
+  };
+  // On a computer the generation is also kept with the run secrets (src/local.ts sessionGeneration), which both of those leave as they are.
+  let kept = 0;
+  const generation = { read: () => kept, write: (g: number) => void (kept = g) };
+  const signInTo = async (r: Awaited<ReturnType<typeof rig>>) => cookieOf(await fetch(`${r.base}${new URL(r.panel.link()).pathname}`, { redirect: "manual" }));
+  const status = (r: Awaited<ReturnType<typeof rig>>, cookie: string) => fetch(`${r.base}/panel/api/overview`, { headers: { cookie } }).then((x) => x.status);
+
+  const first = await rig({ kv: memKv(), generation });
+  let stolen: string;
+  let owner: string;
+  try {
+    stolen = await signInTo(first);
+    const unused = new URL(first.panel.link()).pathname;
+    assert.equal(await status(first, stolen), 200);
+    const end = await fetch(`${first.base}/panel/api/sessions/end`, { method: "POST", headers: { cookie: stolen, "x-pako": "1" } });
+    assert.equal(end.status, 200);
+    assert.equal(kept, 1, "kept apart from the store");
+    assert.equal(await status(first, stolen), 401);
+    assert.equal((await fetch(`${first.base}${unused}`, { redirect: "manual" })).status, 401, "a link made before is worth nothing now");
+    owner = await signInTo(first);
+    assert.equal(await status(first, owner), 200, "the owner signs in again with a new link");
+  } finally {
+    first.close();
+  }
+  // The store is empty (Delete everything keeps the run secrets, the demo week has a store of its own): same secret, no generation in it.
+  const wiped = await rig({ kv: memKv(), generation });
+  try {
+    assert.equal(await status(wiped, stolen), 401, "the session ended by Sign out everywhere stays ended");
+    assert.equal(await status(wiped, owner), 200, "the owner's own session goes on");
+    const next = await signInTo(wiped);
+    assert.match(next, /^pako_panel_443=\d+\.1\.[A-Za-z0-9_-]+$/, "new sessions carry the generation, so the next Sign out everywhere moves it on from there");
+    const end = await fetch(`${wiped.base}/panel/api/sessions/end`, { method: "POST", headers: { cookie: next, "x-pako": "1" } });
+    assert.equal(end.status, 200);
+    assert.equal(kept, 2);
+  } finally {
+    wiped.close();
+  }
+  // The generation cannot be kept (the secrets cannot be written): nothing ends, and the owner is told.
+  const stuck = await rig({ kv: memKv(), generation: { read: () => kept, write: () => { throw new Error("keychain locked"); } } });
+  try {
+    const c = await signInTo(stuck);
+    assert.equal((await fetch(`${stuck.base}/panel/api/sessions/end`, { method: "POST", headers: { cookie: c, "x-pako": "1" } })).status, 503);
+    assert.equal(await status(stuck, c), 200);
+  } finally {
+    stuck.close();
+  }
+});

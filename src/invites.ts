@@ -9,6 +9,9 @@
 //   or a new REQUEST for its UID counts only from its organizer's address (or the address the first invitation came from), and only when the
 //   owner's mail server vouched for that sender (DKIM or DMARC aligned, src/mail-categories.ts authenticated). Anything else is logged and
 //   the invitation stays as it was.
+// - A new REQUEST for a kept UID replaces it, whether the new time is inside the next 60 days or not (moved far ahead or into the past, the
+//   old time is gone, not left on the dashboard); one with a lower SEQUENCE than the kept one is an older copy (the same mail read twice, or
+//   delivered out of order) and changes nothing.
 //
 // The invitation is a stranger's text, like the rest of the mail: it is parsed by the same bounded iCalendar reader as the calendar links
 // (src/ics.ts), its words are only shown (cut, one line each), and nothing in it ever acts. Kept in the store under "mail-invites".
@@ -39,6 +42,8 @@ export interface MailInvite {
   from?: string;
   location?: string;
   join?: string;
+  /** The invitation's SEQUENCE (its version; absent: 0): an older copy of the mail does not change a newer one. */
+  sequence?: number;
   /** When the mail came. */
   at: number;
 }
@@ -49,17 +54,24 @@ export interface InviteSender {
   vouched: boolean;
 }
 
-/** Each event's organizer address (its mailto), by UID. */
-function organizers(ics: string): Map<string, string> {
-  const out = new Map<string, string>();
+/**
+ * What the file says of each event it names, by UID, inside the next 60 days or not: its organizer's address (its mailto) and its highest
+ * SEQUENCE. An event outside the window is still named: a kept invitation moved out of it is replaced, not left standing.
+ */
+function eventFacts(ics: string): Map<string, { organizer?: string; sequence: number }> {
+  const out = new Map<string, { organizer?: string; sequence: number }>();
   try {
     for (const v of parseFeed(ics.slice(0, 256 * 1024)).getAllSubcomponents("vevent").slice(0, 50)) {
       const uid = String(v.getFirstPropertyValue("uid") ?? "");
+      if (!uid) continue;
       const org = String(v.getFirstProperty("organizer")?.getFirstValue() ?? "").replace(/^mailto:/i, "").trim().toLowerCase();
-      if (uid && org.includes("@") && !out.has(uid)) out.set(uid, org.slice(0, 200));
+      const sequence = Math.max(0, Math.trunc(Number(v.getFirstPropertyValue("sequence") ?? 0)) || 0);
+      const was = out.get(uid);
+      const organizer = was?.organizer ?? (org.includes("@") ? org.slice(0, 200) : undefined);
+      out.set(uid, { ...(organizer ? { organizer } : {}), sequence: Math.max(sequence, was?.sequence ?? 0) });
     }
   } catch {
-    /* not a calendar file: no organizers */
+    /* not a calendar file: nothing named */
   }
   return out;
 }
@@ -138,16 +150,21 @@ export function createInviteStore(o: { kv: Kv | null; timeZone: string; now?: ()
           if (!sender?.vouched || !from.includes("@")) return false;
           return was.every((x) => x.organizerAddress === from || x.from === from);
         };
-        const all = [...new Set(got.events.map((e) => e.uid!))];
-        const uids = all.filter(may);
-        if (uids.length < all.length) log.warn(`a ${got.method} for ${all.length - uids.length} kept invitation(s) not from its organizer: ignored`);
+        const facts = eventFacts(ics);
+        // The events named in the mail, inside the window or not: a kept one moved out of it must still be found and replaced.
+        const all = [...new Set([...got.events.map((e) => e.uid!), ...facts.keys()])];
+        const allowed = all.filter(may);
+        if (allowed.length < all.length) log.warn(`a ${got.method} for ${all.length - allowed.length} kept invitation(s) not from its organizer: ignored`);
+        // A REQUEST with a lower SEQUENCE than the kept invitation's is an older copy of it: nothing changes.
+        const older = (uid: string): boolean => got.method === "request" && kept.some((x) => x.uid === uid && (facts.get(uid)?.sequence ?? 0) < (x.sequence ?? 0));
+        const uids = allowed.filter((u) => !older(u));
         const list = kept.filter((x) => !uids.includes(x.uid));
-        const orgs = organizers(ics);
         if (got.method === "request") {
           for (const e of got.events.filter((x) => uids.includes(x.uid!))) {
-            const organizerAddress = orgs.get(e.uid!);
+            const organizerAddress = facts.get(e.uid!)?.organizer;
+            const sequence = facts.get(e.uid!)?.sequence ?? 0;
             list.push({
-              uid: e.uid!, title: e.title.slice(0, 150), start: e.start, end: e.end, allDay: e.allDay, at,
+              uid: e.uid!, title: e.title.slice(0, 150), start: e.start, end: e.end, allDay: e.allDay, at, ...(sequence ? { sequence } : {}),
               ...(e.organizer ? { organizer: e.organizer } : {}), ...(organizerAddress ? { organizerAddress } : {}),
               ...(from.includes("@") ? { from: from.slice(0, 200) } : {}),
               ...(e.location ? { location: e.location } : {}), ...(e.join ? { join: e.join } : {}),

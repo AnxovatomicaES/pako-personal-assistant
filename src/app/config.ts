@@ -3,6 +3,7 @@
 
 import { sameSecret } from "../panel-guard.ts";
 import type { Request } from "express";
+import type { SessionGeneration } from "../dashboard.ts";
 import type { Kv } from "../kv.ts";
 import type { BridgeHealth, BridgeStatus, LocalChannel, LocalSettings } from "../local.ts";
 import { loadPersonalConfigSafely, type PersonalConfig } from "../personal-caller.ts";
@@ -93,6 +94,11 @@ export interface LocalContext {
    * src/restaurants/website.ts, each hop's host checked to be public.
    */
   icsNet?: { fetch: typeof fetch; resolve: (host: string) => Promise<string[]> };
+  /**
+   * The panel's sessions' generation kept with the run secrets of Pako's real folder (src/local.ts sessionGeneration), so "Sign out
+   * everywhere" holds through Delete everything and the demo week. Absent (tests): kept in the store only.
+   */
+  sessionGeneration?: SessionGeneration;
   /**
    * The demo week (src/demo.ts): `on` while it runs (its sources are the demo store's, nothing goes out), and Pako's real home, where the
    * panel makes and deletes the demo's folder. Absent: off, the home from PAKO_HOME.

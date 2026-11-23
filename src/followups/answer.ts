@@ -1,9 +1,9 @@
 // Extraction, the server's side: what the bridge's run sends back (strict JSON) read, each candidate checked field by field, and the test
 // for the same thing said twice.
 
-import { fold } from "../lists.ts";
+import { fold, today } from "../lists.ts";
 import { neutralise } from "../quarantine.ts";
-import { DETAIL_MAX, TITLE_MAX, WHO_MAX } from "./limits.ts";
+import { DAY_ONLY_LATE_MS, DAY_ONLY_ROOM_MS, DETAIL_MAX, TITLE_MAX, WHO_MAX } from "./limits.ts";
 import { HEX10, isObject } from "./record.ts";
 import { zonedTime, zoneOf } from "./time.ts";
 import { LOOP_KINDS, type Check, type Job, type Loop, type LoopKind } from "./types.ts";
@@ -52,6 +52,13 @@ export function candidate(
   if (title.length < 3) return null;
   const tz = zoneOf(v.tz) ?? ownerTz;
   let dueAt = zonedTime(v.due, tz) ?? undefined;
+  // A day alone said of today after its 18:00 default ("can you send it today?" at 18:20): that time is already past, so the loop would be
+  // dropped unsaid at its first look. It is a few hours on instead, still that day (in the zone the day was said in).
+  const day = typeof v.due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.due.trim()) ? v.due.trim() : "";
+  if (day && dueAt !== undefined && dueAt < job.whenSaid + DAY_ONLY_ROOM_MS && today(job.whenSaid, tz) === day) {
+    const endOfDay = zonedTime(`${day} 23:59`, tz);
+    if (endOfDay !== null && endOfDay > job.whenSaid) dueAt = Math.min(job.whenSaid + DAY_ONLY_LATE_MS, endOfDay);
+  }
   // A time far from when it was said is a misreading: kept without it.
   if (dueAt !== undefined && (dueAt < job.whenSaid - 24 * 3600_000 || dueAt > job.whenSaid + 90 * 24 * 3600_000)) dueAt = undefined;
   const hints = (Array.isArray(v.hints) ? v.hints : []).map((h) => clean(h, 60)).filter((h) => h.length >= 2).slice(0, 5);
@@ -102,16 +109,20 @@ const FILLER = new Set(["the", "to", "and", "for", "with", "of", "from", "an", "
 const wordsOf = (s: string, drop: Set<string>): Set<string> =>
   new Set(fold(s).split(/[^\p{L}\p{N}]+/u).filter((w) => (w.length >= 2 || /\d/.test(w)) && !FILLER.has(w) && !drop.has(w)));
 
+/** What the owner owes is one thing whether they were asked or promised: "can you send me the deck?" on Slack, "I'll send Ana the deck" in the chat. */
+const family = (kind: string): string => (kind === "request_to_owner" || kind === "owner_promise" ? "owed" : kind);
+
 /**
- * The same ask from the same person, said in another place (on Slack, then by email): the same first name, the same kind, the same time
- * (or none on both), and the same words in its title whatever their order, the person's own name aside ("Send Dana Whitlock the signed NDA"
- * is "Send the signed NDA to Dana"). Two words at least: a bare "Call Dana" is never taken for another call.
+ * The same ask from the same person, said in another place (on Slack, then by email, or in the chat): the same first name, the same kind (a
+ * request to the owner and the owner's promise are one), the same time (or none on both), and the same words in its title whatever their
+ * order, the person's own name aside ("Send Dana Whitlock the signed NDA" is "Send the signed NDA to Dana"). Two words at least: a bare
+ * "Call Dana" is never taken for another call.
  */
 export function sameAsk(
   a: { who: string; title: string; kind: string; dueAt?: number }, b: { who: string; title: string; kind: string; dueAt?: number }, sameTimeMs: number,
 ): boolean {
   const first = (w: string): string => fold(w).split(/\s+/)[0] ?? "";
-  if (!first(a.who) || first(a.who) !== first(b.who) || a.kind !== b.kind) return false;
+  if (!first(a.who) || first(a.who) !== first(b.who) || family(a.kind) !== family(b.kind)) return false;
   if ((a.dueAt === undefined) !== (b.dueAt === undefined) || (a.dueAt !== undefined && Math.abs(a.dueAt - b.dueAt!) > sameTimeMs)) return false;
   const names = new Set(`${fold(a.who)} ${fold(b.who)}`.split(/[^\p{L}\p{N}]+/u).filter(Boolean));
   const x = wordsOf(a.title, names);

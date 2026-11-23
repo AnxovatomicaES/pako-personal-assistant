@@ -56,7 +56,7 @@ the store protects them at rest and in copies, not from your own programs.
 | `.env` | Your own settings and keys, if you wrote any. Pako reads it and never writes it. |
 | `kv.db` | The store: everything in the next table, in one SQLite file. Each change is on disk as soon as it is made, and what is deleted is overwritten in the file. |
 | `kv.db.made` | A mark that the store existed, so that if `kv.db` goes missing Pako starts paused and says so. |
-| `kv.db.bad` | A damaged store kept aside, if there ever was one (`kv.json.bad` for an older Pako's). |
+| `kv.db.bad` | A damaged store kept aside, if there ever was one (`kv.json.bad` for an older Pako's). A later damage never writes over it: the older copy keeps its place under a dated name (`kv.db.bad.<time>`). A store that is only busy or cannot be opened is never moved aside. |
 | `kv.json.migrated` | Only if copying an older Pako's JSON store into `kv.db` did not check out exactly: that old file, kept aside. A checked copy deletes the old file. |
 | `import-backup-<time>.json` | What an import from another Pako replaced, kept in case you want it back (only after an import). |
 | `.lock` | That Pako is running: its process number, port, the computer's uptime and when that process started. |
@@ -156,7 +156,7 @@ also capped, as said.
 | `calendar-local` | The events of the calendars on this Mac you picked, from 2 days ago to 14 ahead: title, times, place and the video call's link (never the notes or the attendees). Forgotten with the discovery | 30 days |
 | `reminders-mirror` | Apple Reminders (off until you turn it on in Pako for Mac): whether it is on, whether "Pako: waiting on" is too, and for each follow-up its reminder's id and the title and time both sides last agreed on (never the reminder's notes). Forgotten with the discovery | 400 days |
 | `after-meeting` | The questions asked after a meeting (its title and time; 14 days) and the meeting titles you said not to ask after again (100 at most) | 400 days |
-| `panel-sessions` | One number: the panel sessions' generation, moved on by **Sign out everywhere** (a session made before it no longer works) | 400 days after the last change |
+| `panel-sessions` | One number: the panel sessions' generation, moved on by **Sign out everywhere** (a session made before it no longer works). On a computer it is also kept in `secrets.json` (or the secret store) with Pako's own secrets, so deleting everything or the demo week does not bring those sessions back | 400 days after the last change |
 | `day-helpers` | Around your day: your switches for the evening wrap-up, the question after a meeting and the calendar alerts (on or off) | 400 days after your last change |
 | `shutdown` | The evening wrap-up: the day each one was sent and the follow-ups it listed (their id and title, three at most), for its Plan and Done buttons; the last 14 days | 30 days |
 | `time-to-do` | Time to do it: the focus blocks offered (which follow-up, the proposed time, and whether you blocked it, asked for another or said not needed; the last 100) and today's count of those cards | 15 days |
@@ -267,13 +267,13 @@ In the same card, type **DELETE EVERYTHING** (or **BORRAR TODO**) and press **De
    answer says so, Pako stays paused and keeps nothing new, and pressing again once there is space finishes the job;
 3. unpairs Telegram and removes its bot token, with every connection set in the panel, from `secrets.json` or the secret store;
 4. forgets your choices in `config.json` (it keeps only the computer's own language, as on the very first start);
-5. deletes `kv.db.bad`, `kv.json.bad` and `kv.json.migrated`, any `import-backup-<time>.json`, the photos and PDFs in `~/.pako/papers`, the booking screenshots in `~/.pako/maitre` and the booking browser's profile in `~/.pako/browser` (your sign-ins to booking sites), `assistant/state.json` (Claude starts a fresh conversation), `assistant/tool-data.json`, `assistant/outside-seen.json` and `assistant/handled-unacked.json` and any voice note being turned into text, and
+5. deletes `kv.db.bad`, `kv.json.bad` (and the dated older copies of both) and `kv.json.migrated`, any `import-backup-<time>.json`, the photos and PDFs in `~/.pako/papers`, the booking screenshots in `~/.pako/maitre` and the booking browser's profile in `~/.pako/browser` (your sign-ins to booking sites), `assistant/state.json` (Claude starts a fresh conversation), `assistant/tool-data.json`, `assistant/outside-seen.json` and `assistant/handled-unacked.json` and any voice note being turned into text, and
    empties the logs in `~/.pako/logs` (the background Pako's and the Mac app's `app.log`; the `.old` and rotated `app.log.1` to `.3` are deleted);
 6. starts again, and the panel shows the welcome, as on the first day.
 
 What stays, and the answer says so:
 
-- Pako's three own secrets stay (in the secret store, or `secrets.json`): the server needs them to run, and they say nothing about you (your browser stays signed in);
+- Pako's three own secrets stay (in the secret store, or `secrets.json`), with the count of your **Sign out everywhere**s: the server needs them to run, and they say nothing about you (your browser stays signed in, and a session you ended stays ended);
 - `~/.pako/.env` and settings given in the terminal or `./.env`: they are your files, which Pako never writes. Delete the keys there yourself;
 - Claude Code's history in `~/.claude/projects/…` (see above);
 - autostart, as you set it: it is a file, not your data. Turn it off in the **Start with this computer** card or with

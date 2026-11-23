@@ -216,7 +216,7 @@ export interface WhatsappDeps {
     /** Whether this email is told to the owner now (its category and the owner's switches; a VIP always). */
     notifies?: (id: string) => Promise<boolean>;
     /** The email as kept (its sender and time, for the loops it makes; its thread, for the triage's loop). */
-    get?: (id: string) => Promise<{ from: string; at: number; subject: string; thread?: string; to?: string; cc?: string } | null>;
+    get?: (id: string) => Promise<{ from: string; at: number; subject: string; thread?: string; to?: string; cc?: string; repliedAt?: number } | null>;
     /**
      * The email read whole by the follow-ups when its category is one they read (src/mail-followups.ts inbox). True when they took it: the
      * triage's own LOOP line is then left out (one reading of it, not two).

@@ -59,7 +59,8 @@ const READER_MAX = 12_000;
  * way the intake does it (scripts, styles and tags dropped, so no image or script survives); characters that hide or reorder text removed.
  */
 export function readerText(raw: string): string {
-  const looksHtml = /<\s*(?:html|body|div|p|br|img|script|style|a|table|span|iframe)\b/i.test(raw);
+  // The tag's name must end there (a blank, ">" or "/"): "<a.garcia@acme.com>" in a plain text mail is an address, not an <a> tag.
+  const looksHtml = /<\s*(?:html|body|div|p|br|img|script|style|a|table|span|iframe)(?=[\s>/])/i.test(raw);
   const text = looksHtml ? htmlToText(raw) : raw;
   return text.replace(INVISIBLE, "").replace(/\r\n?/g, "\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, READER_MAX);
 }
@@ -81,7 +82,8 @@ const isOpen = (l: Loop): boolean => l.status === "open" || l.status === "snooze
 export async function mailView(d: Pick<MailPanelDeps, "box" | "timeZone" | "loops" | "gentle">, now: number) {
   const gentle = d.gentle ? await d.gentle().catch(() => false) : false;
   if (!d.box) return { connected: false as const, needs: { rows: [], more: 0 }, loops: {}, gentle };
-  const items = await d.box.items(150);
+  // Every record kept, not only the newest 150: a Needs you mail not dealt with is kept past them on purpose (src/mail.ts keepRecent).
+  const items = await d.box.items(Infinity);
   const engine = d.loops();
   const loops = engine ? byMail(await engine.all().catch(() => [])) : new Map<string, Loop[]>();
   const of = (id: string): PreviewLoop[] => (loops.get(id) ?? []).map((l) => ({ open: isOpen(l), ...(l.dueAt ? { dueAt: l.dueAt } : {}) }));

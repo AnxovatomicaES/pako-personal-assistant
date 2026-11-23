@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -17,7 +17,7 @@ import { buildClaudeArgs, createBridge, parseReply, runClaude, type BridgeConfig
 import { PAPER_PROMPT } from "../assistant/prompt.ts";
 import type { Lang } from "../src/i18n.ts";
 import type { Kv } from "../src/kv.ts";
-import { checkPaper, createPaperStore, hidePaperCodes, IMAGE_MAX, PAPER_MAX, PaperStoreFull, paperName, refuseEarly, sniffPaper } from "../src/papers.ts";
+import { checkPaper, createPaperStore, hidePaperCodes, IMAGE_MAX, PAPER_MAX, PaperStoreFull, paperName, refuseEarly, sniffPaper, tidyPapers } from "../src/papers.ts";
 import { mountPaperUpload } from "../src/papers-panel.ts";
 import { createTelegram } from "../src/telegram.ts";
 import { loadMemory } from "../src/voice-memory.ts";
@@ -126,6 +126,49 @@ test("papers: a server keeps them in memory only (a few, gone once read); a comp
   const again = createPaperStore({ dir }); // a restart
   assert.deepEqual(again.get(kept)?.bytes, EVIL_PDF, "the owner's own folder keeps it");
   assert.equal(again.get("p_../../x"), null);
+});
+
+test("papers: on a computer none is kept past its 30 days, when Pako starts and every day, with no other paper arriving; one whose note is gone goes by its file's date", () => {
+  const DAY = 24 * 3600_000;
+  const dir = join(mkdtempSync(join(tmpdir(), "papers-")), "papers");
+  const t0 = Date.now();
+  let now = t0;
+  const store = createPaperStore({ dir, now: () => now });
+  const old = store.put(Buffer.from("%PDF-1.4 a bill"), "application/pdf", "bill.pdf");
+  now = t0 + 29 * DAY;
+  const recent = store.put(JPEG, "image/jpeg", "ticket.jpg");
+  // Two papers whose note was lost, bytes only: their date is their file's (set here to 40 days and to 3 days before "now"), and one
+  // thing that is not a paper at all.
+  const orphans = { old: "p_00000000000000a1", fresh: "p_00000000000000a2" };
+  writeFileSync(join(dir, `${orphans.old}.pdf`), "%PDF-1.4 no note");
+  writeFileSync(join(dir, `${orphans.fresh}.jpg`), JPEG);
+  writeFileSync(join(dir, "notes.txt"), "not a paper: never touched");
+  const at = (file: string, t: number): void => utimesSync(join(dir, file), t / 1000, t / 1000);
+  at(`${orphans.old}.pdf`, now - 40 * DAY);
+  at(`${orphans.fresh}.jpg`, now - 3 * DAY);
+  // Day 29 of the first one: nothing is past its time yet, apart from the bytes with no note that are 40 days old.
+  tidyPapers(dir, () => now);
+  assert.ok(store.get(old), "29 days: still kept");
+  assert.deepEqual(readdirSync(dir).filter((f) => f.startsWith(orphans.old)), [], "40 days old by its file: gone");
+  // Day 31 (a start of Pako, or the daily look), and no other paper was put since: it goes, with its note.
+  now = t0 + 31 * DAY;
+  tidyPapers(dir, () => now);
+  assert.deepEqual(readdirSync(dir).filter((f) => f.startsWith(old)), [], "past 30 days with no other paper put: the bytes and the note are gone");
+  assert.equal(store.get(old), null);
+  assert.ok(store.get(recent), "the other one, 2 days old, is kept");
+  assert.ok(existsSync(join(dir, `${orphans.fresh}.jpg`)), "3 days old by its file at day 29, 5 at day 31: kept");
+  assert.ok(existsSync(join(dir, "notes.txt")), "anything that is not a paper is left alone");
+  // 200 days on: every one is past its time.
+  now = t0 + 200 * DAY;
+  tidyPapers(dir, () => now);
+  assert.deepEqual(readdirSync(dir).filter((f) => f !== "notes.txt"), []);
+  // A folder that is not there yet is no error.
+  tidyPapers(join(dir, "nowhere"), () => now);
+});
+
+test("papers: src/server.ts looks at the folder when Pako starts and every day", () => {
+  const server = readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
+  assert.match(server, /tidyPapers\(papers\);\s*setInterval\(\(\) => tidyPapers\(papers\), 24 \* 3600_000\)\.unref\(\);/);
 });
 
 // ---------- 3. the door: WhatsApp, an older bridge, the bridge's routes ----------

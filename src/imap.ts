@@ -689,6 +689,9 @@ export function createImapReader(d: ImapDeps) {
     // first hours of the window. The exact window is checked on each message's arrival time below.
     const since = new Date(now() - windowMs - 24 * 3600_000);
     const found = await client.search(fresh ? { since } : { since, uid: `${last + 1}:*` }, { uid: true });
+    // imapflow answers `false` when the server refused the SEARCH (a NO or a BAD, "temporary failure"): that is a failed look, not an empty
+    // one. Read as "nothing new" it moved the pointer to the folder's end and the mail that came meanwhile was never read.
+    if (found === false) throw Object.assign(new Error("the server refused the search"), { code: "ESEARCHREFUSED" });
     const uids = [...new Set(Array.isArray(found) ? found : [])].filter((u) => Number.isInteger(u) && u > last).sort((a, b) => a - b);
     // A first look takes the newest; later ones the oldest first, so nothing new is skipped.
     const take = fresh ? uids.slice(-(o.catchUp ? CATCH_UP_MAX : PER_POLL)) : uids.slice(0, o.catchUp ? CATCH_UP_MAX : PER_POLL);
@@ -728,7 +731,7 @@ export function createImapReader(d: ImapDeps) {
 
   /** The mail intake both readers of the owner's mailbox share (src/mail-intake.ts): the mailbox, the follow-ups, the lessons, the invitations. */
   const intake = createMailIntake({
-    box: d.box, enqueue: d.enqueue, control: d.control, lang, now, vip: config.vip, provider, filed: d.filed, invites: d.invites, ownSent: d.ownSent,
+    box: d.box, enqueue: d.enqueue, control: d.control, lang, now, vip: config.vip, provider, authServer: config.host, filed: d.filed, invites: d.invites, ownSent: d.ownSent,
     sentMail: d.sentMail, backfill: d.backfill, log,
   });
 
@@ -782,25 +785,40 @@ export function createImapReader(d: ImapDeps) {
       if (d.control && (await d.control.paused()) !== null) return { ...out, skipped: "paused" };
       // Signed in with the provider: a fresh access token for this login (refreshed when it is about to run out).
       if (config.oauth && !d.tokens) throw Object.assign(new Error("no token source"), { code: "EOAUTHSIGNIN" });
-      if (!config.oauth) client = await connect(config);
+      // The login is `client.connect()`: with imapflow `connect(...)` only builds the client, so a refusal comes from there and the retry below
+      // has to cover it. A client whose login failed is closed before the next try.
+      const login = async (c: ImapConfig): Promise<ImapClient> => {
+        const made = await connect(c);
+        // An error after the look (the server closing an idle socket) must not end the process.
+        made.on("error", (err) => log.error(`the connection: ${failKind(err)}`));
+        try {
+          await made.connect();
+        } catch (err) {
+          try {
+            made.close();
+          } catch {
+            /* already closed */
+          }
+          throw err;
+        }
+        return made;
+      };
+      if (!config.oauth) client = await login(config);
       else {
         try {
-          client = await connect({ ...config, accessToken: await d.tokens!() });
+          client = await login({ ...config, accessToken: await d.tokens!() });
         } catch (err) {
           // A refused login with a provider's token is not a wrong app password: the held token may have been revoked or rotated before its
           // time. Once with a fresh one; refused again, only a new sign-in mends it.
           if (failKind(err) !== "auth") throw err;
           d.forgetToken?.();
           try {
-            client = await connect({ ...config, accessToken: await d.tokens!() });
+            client = await login({ ...config, accessToken: await d.tokens!() });
           } catch (again) {
             throw failKind(again) === "auth" ? Object.assign(new Error("the provider's token was refused"), { code: "EOAUTHSIGNIN" }) : again;
           }
         }
       }
-      // An error after the look (the server closing an idle socket) must not end the process.
-      client.on("error", (err) => log.error(`the connection: ${failKind(err)}`));
-      await client.connect();
       const state = await load();
       // A new account's first look is its catch-up: the last days of the inbox, and of Sent first (what the owner answered closes what was
       // asked of them). Later looks read the configured folders only.

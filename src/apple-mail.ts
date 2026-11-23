@@ -56,7 +56,7 @@ const PER_ROUND = 300;
 const KEEP_S = 60 * 24 * 3600;
 /** A message dated this long before it shows up is old mail arriving (an account's first sync), not something new. */
 const LATE_MS = 3 * 24 * 3600_000;
-/** A message whose file Mail has not written yet is looked for again this long. */
+/** A message whose file Mail has not written yet is looked for again this long, from when its row was first seen (not from the message's date). */
 const WAIT_MS = 2 * 3600_000;
 const WAIT_MAX = 200;
 /** Bytes of a message read at most: the same as IMAP reads (its words; attachments are only named). */
@@ -265,6 +265,11 @@ interface Waiting {
   id: number;
   mbox: number;
   at: number;
+  /**
+   * When its row was first seen, which the wait counts from. A message's own date says nothing of how long Mail has had to write its file:
+   * after a sleep of hours the mail that came meanwhile is that old as soon as Mail syncs. Absent in a state kept before: its date then.
+   */
+  seenAt?: number;
 }
 
 interface State {
@@ -285,6 +290,8 @@ interface Row {
   mbox: number;
   at: number | null;
   deleted: boolean;
+  /** A row that waited before: when it was first seen. */
+  seenAt?: number;
 }
 
 export function createAppleMail(d: AppleMailDeps) {
@@ -302,7 +309,10 @@ export function createAppleMail(d: AppleMailDeps) {
     s = p && typeof p.start === "number"
       ? {
           start: p.start, mark: typeof p.mark === "number" ? p.mark : null, store: typeof p.store === "string" ? p.store : null,
-          waiting: Array.isArray(p.waiting) ? p.waiting.filter((w) => w && Number.isInteger(w.id) && Number.isInteger(w.mbox) && typeof w.at === "number") : [],
+          waiting: Array.isArray(p.waiting)
+            ? p.waiting.filter((w) => w && Number.isInteger(w.id) && Number.isInteger(w.mbox) && typeof w.at === "number")
+              .map((w): Waiting => ({ id: w.id, mbox: w.mbox, at: w.at, ...(typeof w.seenAt === "number" ? { seenAt: w.seenAt } : {}) }))
+            : [],
           access: p.access ?? null, lastRead: p.lastRead ?? null, lastError: p.lastError ?? null,
         }
       : { start: now(), mark: null, store: null, waiting: [], access: null, lastRead: null, lastError: null };
@@ -396,7 +406,8 @@ export function createAppleMail(d: AppleMailDeps) {
       db.close();
       db = null;
       const rowOf = (r: Record<string, unknown>): Row => ({ id: Number(r.id), mbox: Number(r.mbox), at: mailTime(r.received), deleted: Number(r.deleted) === 1 });
-      const retry = st.waiting.filter((w) => w.at >= now() - WAIT_MS).map((w): Row => ({ id: w.id, mbox: w.mbox, at: w.at, deleted: false }));
+      const retry = st.waiting.filter((w) => (w.seenAt ?? w.at) >= now() - WAIT_MS)
+        .map((w): Row => ({ id: w.id, mbox: w.mbox, at: w.at, deleted: false, seenAt: w.seenAt ?? w.at }));
       st.waiting = [];
       const searched = new Map<string, Map<string, string>>();
       let handed = 0;
@@ -407,9 +418,11 @@ export function createAppleMail(d: AppleMailDeps) {
         const at = Math.min(r.at ?? now(), now());
         if (at < st.start || at < now() - LATE_MS) continue;
         const path = emlxPath(box.dir, r.id, searched);
+        // A new row is first seen now; one that waited keeps the time it was first seen.
+        const seenAt = r.seenAt ?? now();
         if (!path) {
           // Mail lists a message before its file is written (or keeps only its headers until it is opened): looked for again a while.
-          if (at >= now() - WAIT_MS && st.waiting.length < WAIT_MAX) st.waiting.push({ id: r.id, mbox: r.mbox, at });
+          if (seenAt >= now() - WAIT_MS && st.waiting.length < WAIT_MAX) st.waiting.push({ id: r.id, mbox: r.mbox, at, seenAt });
           continue;
         }
         const source = readEmlx(path);
@@ -429,7 +442,7 @@ export function createAppleMail(d: AppleMailDeps) {
           // those after it, are read again at the next look (as IMAP does), never dropped.
           log.error(`a message could not be handed on (${(err as Error)?.name ?? "error"}): the next look tries it again`);
           if (i >= 0) st.mark = r.id - 1;
-          else if (st.waiting.length < WAIT_MAX) st.waiting.push({ id: r.id, mbox: r.mbox, at });
+          else if (st.waiting.length < WAIT_MAX) st.waiting.push({ id: r.id, mbox: r.mbox, at, seenAt });
           if (i >= 0) break;
         }
       }

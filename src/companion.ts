@@ -55,7 +55,8 @@ export interface CompanionDeps {
   moreHealth?: () => Promise<{ at: number; text: string }[]>;
   /**
    * Labs (PAKO_LABS=on): the health diary, learning and the weekly check-in. Off (false), none of them is answered, kept or offered, and the
-   * owner's words go to the assistant as any message; the red flag's emergency answer (`red`) and the birthdays stay on. Default on.
+   * owner's words go to the assistant as any message; the red flag's emergency answer (`red`), the birthdays and FORGET MY HEALTH stay on
+   * (the mood and health facts are kept whatever Labs says). Default on.
    */
   labs?: boolean;
   now?: () => number;
@@ -83,10 +84,12 @@ export function createCompanion(d: CompanionDeps) {
    * assistant starts the lesson). Null: not one of these.
    */
   const command = async (text: string, command: string): Promise<{ say: string; pass?: boolean } | null> => {
-    if (!labs) return null;
     const l = d.lang();
     const t = now();
     const h = healthCommand(text, command);
+    // Without Labs nothing is answered, except FORGET MY HEALTH: the assistant's turns still keep mood and health facts whatever Labs says
+    // (assistant/prompt.ts, src/door/reply.ts), so the owner must always be able to delete them, in the default install too.
+    if (!labs && h?.op !== "forget") return null;
     if (h) {
       const ht = healthTexts(l);
       try {
@@ -150,6 +153,8 @@ export function createCompanion(d: CompanionDeps) {
     try {
       const s = await learning.read();
       if (waitingAnswer(s, text, t)) {
+        // A "not now" to the quiz the check offered: let it go (the card stays due), said once, never graded as a miss.
+        if (await learning.decline(text, t)) return { say: learningTexts(l)("declined") };
         const r = await learning.answer(text, t);
         if (r) {
           const due = (await learning.read()).cards.filter((x) => x.due <= t && x.goal === r.card.goal).length;
@@ -222,7 +227,7 @@ export function createCompanion(d: CompanionDeps) {
     if (q) {
       out.push({
         topic: "learning", key: q.key, text: q.text,
-        claim: async () => (await learning.claimOffer(q.key.slice("learning:".length))) && !!(await learning.ask(t, q.topic)),
+        claim: async () => (await learning.claimOffer(q.key.slice("learning:".length))) && !!(await learning.ask(t, q.topic, { offered: true })),
         release: () => learning.releaseOffer(q.key.slice("learning:".length), t),
       });
     }

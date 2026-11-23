@@ -10,7 +10,7 @@ import { T } from "./texts.ts";
 import type { AfterLanguage } from "./parts.ts";
 
 export function mountMeetings(b: AfterLanguage) {
-  const { config, log, api, say, background, retryAt, hold, attempts, ownerLanguage, unsent, deliver } = b;
+  const { config, log, api, say, budget, background, retryAt, hold, attempts, ownerLanguage, unsent, deliver } = b;
   /** A meeting's transcript: summarized in a run of its own like an email (no tools, no conversation, tags dropped), kept by the server, told. */
   const handleMeeting = async (id: string, m: Meeting): Promise<boolean> => {
     const fence = `REUNION-${randomBytes(4).toString("hex")}`;
@@ -26,6 +26,12 @@ export function mountMeetings(b: AfterLanguage) {
       if ("skipped" in r) {
         if (r.skipped === "paused") {
           hold(id, r.until);
+          return false;
+        }
+        // Over the day's budget: the transcript is not "failed", it waits in the server's inbox for tomorrow's budget (not woken by Claude being
+        // back: that is not what it waits for). With no background runs at all (the cap set to 0) tomorrow brings none either: it is answered now.
+        if (budget.usage().perDay > 0) {
+          retryAt.set(id, r.until);
           return false;
         }
         summary = t("meetingFailed");

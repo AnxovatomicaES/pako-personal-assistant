@@ -11,8 +11,9 @@ import express from "express";
 import { createBridge, parseReply, type BridgeConfig } from "../assistant/bridge.ts";
 import { PROACTIVE_PROMPT, SYSTEM_PROMPT } from "../assistant/prompt.ts";
 import type { Kv } from "../src/kv.ts";
+import { createQuality } from "../src/quality.ts";
 import {
-  createProactive, emergencyOf, HEALTH_KEY, LIFE_KEY, likeness, loadProactiveConfig, topicOf,
+  createProactive, emergencyOf, forgetHealthStored, HEALTH_KEY, LIFE_KEY, likeness, loadProactiveConfig, topicOf,
   type EventSeen, type MailSeen, type ProactiveConfig,
 } from "../src/proactive.ts";
 import { loadMemory } from "../src/voice-memory.ts";
@@ -299,6 +300,144 @@ test("a health nudge's words go in its card only: the life store, the panel, the
   await engine.forgetHealth();
   assert.equal((await engine.view()).sent.length, 0, "after FORGET MY HEALTH not even that a health tip went");
   assert.ok(!(store.m.get(LIFE_KEY) ?? "").includes("health:"));
+});
+
+test("a suggestion made from the owner's mood is kept with neutral words and no why, and FORGET MY HEALTH drops it (and a job still out)", async () => {
+  const MOOD = "exhausted, cried at work, panic attacks again";
+  const store = memKv();
+  const cards: string[] = [];
+  const titles: string[] = [];
+  const logs: string[] = [];
+  const queued: Inbound[] = [];
+  const clock = { now: T0 };
+  const engine = createProactive({
+    config: { ...BASE, topics: ["bienestar", "comida"] }, kv: store.kv, timeZone: "Europe/Madrid", local: true, now: () => clock.now,
+    control: { log: (_k: string, t: string) => void logs.push(t) } as never,
+    enqueue: async (m) => (queued.push(m), true), card: async (body) => (cards.push(body), true), lastOwner: () => T0 - 2 * 3600_000, bridgeAlive: () => true,
+    quality: { ask: (x: { title: string }) => void titles.push(x.title), nudged: (x: { title: string }) => void titles.push(x.title) } as never,
+  });
+  await engine.learn([{ kind: "mood", key: "today", text: MOOD }], { outside: false });
+  assert.equal(await engine.tick(), "asked");
+  assert.match(queued[0]!.proactive!.text, /panic attacks/, "the job read the mood");
+  const words = "You said you had panic attacks at work. A short walk outside after lunch?";
+  assert.equal((await engine.result(queued[0]!.id, say({ say: words, topic: "bienestar", why: "owner shared panic attacks and crying at work" }))).outcome, "sent");
+  assert.equal(cards[0], words, "the owner reads the suggestion itself");
+  const kept = JSON.parse(store.m.get(LIFE_KEY)!).sent[0];
+  assert.deepEqual([kept.say, kept.why, kept.health], ["A health tip (its words are not kept)", "", true]);
+  assert.ok(!JSON.stringify(await engine.view()).includes("panic"), "nor the panel");
+  assert.ok(![...titles, ...logs].some((t) => /panic|walk/.test(t)), "nor quality's nudges or the action log");
+  clock.now += 3 * 3600_000;
+  assert.equal(await engine.tick(), "asked");
+  assert.ok(!/panic|walk/.test(queued.at(-1)!.proactive!.text.replace(/Mood or energy[^\n]*/, "")), "nor the next job's «already suggested»");
+  // The next job is still out, and its material had the mood: forgetting lets it go, so its late answer says nothing.
+  await engine.forgetHealth();
+  assert.equal((await engine.view()).sent.length, 0, "the suggestion made from the mood is gone");
+  assert.deepEqual(await engine.result(queued.at(-1)!.id, say({ say: "How about an early night, after the day you had?", topic: "bienestar", why: "mood" })), { ok: false, outcome: "unknown" });
+  assert.equal(cards.length, 1, "nothing more was said");
+  // A suggestion from a job with no mood in its material keeps its words (the next morning, with the mood forgotten).
+  clock.now += 15 * 3600_000;
+  assert.equal(await engine.tick(), "asked");
+  assert.doesNotMatch(queued.at(-1)!.proactive!.text, /Mood or energy/);
+  await engine.result(queued.at(-1)!.id, say({ say: "Hace una semana que no pruebas un sitio nuevo: ¿ramen esta noche?", topic: "comida", why: "ramen" }));
+  assert.match(JSON.parse(store.m.get(LIFE_KEY)!).sent[0].say, /ramen esta noche/);
+  assert.equal(JSON.parse(store.m.get(LIFE_KEY)!).sent[0].health, undefined);
+});
+
+test("FORGET MY HEALTH with the engine off also drops the suggestions made from the mood, and a job asked with it", async () => {
+  const store = memKv();
+  store.m.set(HEALTH_KEY, JSON.stringify([{ kind: "animo", key: "today", text: "exhausted", at: T0 }]));
+  store.m.set(LIFE_KEY, JSON.stringify({
+    sent: [
+      { id: "a1b2c3d4e5", at: T0, topic: "bienestar", say: "A health tip (its words are not kept)", why: "", health: true, status: "sent" },
+      { id: "b1b2c3d4e5", at: T0, topic: "comida", say: "Lunch?", why: "ramen", status: "sent" },
+    ],
+    job: { id: "c1b2c3d4e5", at: Date.now(), trips: [], health: true },
+  }));
+  await forgetHealthStored(store.kv);
+  const life = JSON.parse(store.m.get(LIFE_KEY)!);
+  assert.deepEqual(life.sent.map((x: { id: string }) => x.id), ["b1b2c3d4e5"]);
+  assert.equal(life.job, null);
+});
+
+test("getting in touch with someone the owner never named is dropped whatever the verb (contact, phone, get in touch); doses in words are doses; a stretched noun is not", async () => {
+  const r = rig({ config: { maxPerDay: 9 }, people: ["Ana"] });
+  const dropped = [
+    ["Contact Marta from Acme Travel to confirm your flight.", "getting in touch with someone the owner never named"],
+    ["Phone Marta from Acme Travel to confirm your flight.", "getting in touch with someone the owner never named"],
+    ["Get in touch with Marta from Acme Travel about your flight.", "getting in touch with someone the owner never named"],
+    ["Drop Marta from Acme Travel a line about your flight.", "getting in touch with someone the owner never named"],
+    ["Ponte en contacto con Marta, de la agencia, por el vuelo.", "getting in touch with someone the owner never named"],
+    ["For that headache, take two tablets of ibuprofen now.", "a dose"],
+    ["Para la migraña tómate una pastilla con la comida.", "a dose"],
+    ["For the cold, half a tablet at night helps.", "a dose"],
+  ] as const;
+  for (const [line, reason] of dropped) {
+    r.clock.now += 5 * MIN;
+    const out = await r.round(say({ say: line, topic: reason === "a dose" ? "bienestar" : "viajes", why: "x" }));
+    assert.equal(out.result?.reason, reason, line);
+  }
+  assert.equal(r.cards.length, 0);
+  // Someone the owner told Pako about is fine, and a phone or a contact list that is no verb is not "getting in touch".
+  for (const [line, topic] of [["Contact Ana to confirm your flight, since it leaves early.", "viajes"], ["Put your phone on silent for the film tonight.", "ocio"], ["A drop of lemon in warm water first thing helps you wake up.", "bienestar"]] as const) {
+    r.clock.now += 5 * MIN;
+    assert.equal((await r.round(say({ say: line, topic, why: "x" }))).result?.outcome, "sent", line);
+  }
+});
+
+test("an offer that could not be done goes back to sent: pressed again it is tried again, not «That's done already»", async () => {
+  let up = false;
+  const tried: string[] = [];
+  const queued: Inbound[] = [];
+  const store = memKv();
+  const engine = createProactive({
+    config: { ...BASE, maxPerDay: 9 }, kv: store.kv, timeZone: "Europe/Madrid", local: true, now: () => T0,
+    enqueue: async (m) => (queued.push(m), true), card: async () => true, lastOwner: () => 0, bridgeAlive: () => true,
+    addToList: async (name, item) => (tried.push(item), up ? { ok: true, list: name } : { ok: false, list: name, why: "the list is full" }),
+  });
+  assert.equal(await engine.tick(), "asked");
+  const out = await engine.result(queued[0]!.id, say({ say: "Buy something for the trip: a book for the flight?", topic: "viajes", why: "x", offer: { kind: "lista", list: "trip", item: "a book" } }));
+  assert.equal(out.outcome, "sent");
+  const sid = (await engine.read()).sent[0]!.id;
+  assert.match(await engine.press("1", sid), /couldn't do it: the list is full/);
+  assert.equal((await engine.read()).sent[0]!.status, "sent", "not accepted: nothing was done");
+  assert.match(await engine.press("1", sid), /couldn't do it: the list is full/, "pressed again: tried again");
+  up = true;
+  assert.match(await engine.press("1", sid), /^Done: “a book” on your trip list\./);
+  assert.deepEqual(tried, ["a book", "a book", "a book"]);
+  assert.equal(await engine.press("1", sid), "That's done already.", "once it is done, it is done");
+});
+
+test("a typed yes or no is a verdict only on a card that showed its Useful? line: with 👍/👎 buttons it is an ordinary message", async () => {
+  const NOT_USEFUL = "Noted 👎. If something like it isn't yours, press “Not mine” and I won't say it again.";
+  for (const lineShown of [false, true]) {
+    for (const path of ["suggestion", "companion offer"]) {
+      const clock = { now: T0 };
+      const quality = createQuality({ kv: null, timeZone: "Europe/Madrid", now: () => clock.now });
+      const queued: Inbound[] = [];
+      const engine = createProactive({
+        config: { ...BASE, topics: ["aficiones", "amigos"] }, kv: memKv().kv, timeZone: "Europe/Madrid", local: true, now: () => clock.now,
+        enqueue: async (m) => (queued.push(m), true),
+        // What the door's sendCard reports (src/door/api.ts): the line was under the text (WhatsApp) or the buttons were there instead.
+        card: async (_body, _buttons, feedback) => {
+          if (feedback) feedback.lineShown = lineShown;
+          return true;
+        },
+        quality: quality.followups, lastOwner: () => T0 - 2 * 3600_000, bridgeAlive: () => true,
+        ...(path === "companion offer"
+          ? { offers: async () => [{ topic: "friend" as const, key: "friend:birthday:a1:2026", text: "🎂 Tomorrow is Ana's birthday.", claim: async () => true }] }
+          : {}),
+      });
+      const label = `${path}, line ${lineShown ? "shown" : "not shown"}`;
+      if (path === "suggestion") {
+        assert.equal(await engine.tick(), "asked", label);
+        const out = await engine.result(queued.at(-1)!.id, say({ say: "Tienes la tarde libre: ¿un par de horas en el rocódromo?", topic: "aficiones", why: "tarde libre" }));
+        assert.deepEqual(out, { ok: true, outcome: "sent" }, label);
+      } else {
+        assert.equal(await engine.tick(), "offered", label);
+      }
+      assert.equal(await quality.answerText("no"), lineShown ? NOT_USEFUL : null, label);
+    }
+  }
 });
 
 test("a companion offer whose card could not go is given back to its role, as the day's budget is", async () => {

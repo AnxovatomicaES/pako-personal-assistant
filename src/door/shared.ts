@@ -31,6 +31,10 @@ export const FIRED_KEEP_MS = 7 * 24 * 3600_000;
 export const SNOOZE_MS = 10 * 60_000;
 export const REMINDERS_MAX = 20;
 export const HELD_NOTICES_MAX = 40;
+/** The longest a kept notice is. An answer is at most 8000 characters (src/door/reply.ts) and a line saying what it answers goes before it: it is kept whole. */
+export const HELD_TEXT_MAX = 9000;
+/** What a card's text may hold (WhatsApp's own limit is 1024 for the body of a card with buttons). */
+export const CARD_MAX = 1000;
 /** What fits in the notice template's one variable (Meta's limit is higher; this keeps a phone notification readable). */
 export const TEMPLATE_TEXT_MAX = 600;
 /** While the window is closed, ordinary notices (an email, Slack) ping at most this often; urgent ones (a meeting soon, the brief) always do. */
@@ -61,18 +65,28 @@ export function stampedNear(doc: unknown, t: number, ms: number): boolean {
 
 export const same = sameSecret;
 
+/**
+ * `s` cut to at most `max` characters, never in the middle of one that takes two (an emoji): half of one is refused by Meta, shown as a broken
+ * sign, or throws when a link is made of it. Every cut of a text goes through here, not `slice`.
+ */
+export function cut(s: string, max: number): string {
+  if (s.length <= max) return s;
+  const last = s.charCodeAt(max - 1);
+  return s.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 1 : max);
+}
+
 /** Splits long text for WhatsApp, preferably at a paragraph or line end. */
 export function chunkText(text: string, max = WHATSAPP_TEXT_MAX): string[] {
   const out: string[] = [];
   let rest = text.trim();
   while (rest.length > max) {
-    let cut = rest.lastIndexOf("\n\n", max);
-    if (cut < max / 2) cut = rest.lastIndexOf("\n", max);
-    if (cut < max / 2) cut = rest.lastIndexOf(" ", max);
+    let end = rest.lastIndexOf("\n\n", max);
+    if (end < max / 2) end = rest.lastIndexOf("\n", max);
+    if (end < max / 2) end = rest.lastIndexOf(" ", max);
     // Never between the two halves of one character (an emoji): half of one is refused, or shown as a broken sign.
-    if (cut < max / 2) cut = /[\uD800-\uDBFF]/.test(rest[max - 1]!) ? max - 1 : max;
-    out.push(rest.slice(0, cut).trim());
-    rest = rest.slice(cut).trim();
+    if (end < max / 2) end = /[\uD800-\uDBFF]/.test(rest[max - 1]!) ? max - 1 : max;
+    out.push(rest.slice(0, end).trim());
+    rest = rest.slice(end).trim();
   }
   if (rest) out.push(rest);
   return out;

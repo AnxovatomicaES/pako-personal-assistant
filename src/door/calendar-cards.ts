@@ -7,7 +7,7 @@ import { pausedText } from "../control.ts";
 import { texts } from "../i18n.ts";
 import { whyText, type OutsideSource } from "../quarantine.ts";
 import { whenText } from "../undo.ts";
-import { PENDING_CALL_MS } from "./shared.ts";
+import { PENDING_CALL_MS, cut } from "./shared.ts";
 import { localToEpoch } from "./time.ts";
 import type { Door } from "./door.ts";
 import type { CalendarWrite } from "../calendar-writes.ts";
@@ -60,7 +60,7 @@ export function mountCalendarCards(door: Door): Pick<Door, "proposeCalendar" | "
     let body: string;
     if (p.op === "create") {
       const end = (p.end ? localToEpoch(p.end, d.timeZone) : null) ?? start + 60 * 60_000;
-      write = { op: "create", start, end: Math.max(end, start + 15 * 60_000), title: p.title.slice(0, 200), ...(p.place ? { location: p.place.slice(0, 200) } : {}) };
+      write = { op: "create", start, end: Math.max(end, start + 15 * 60_000), title: cut(p.title, 200), ...(p.place ? { location: cut(p.place, 200) } : {}) };
       body = k()("create", { title: p.title, from: when(start), end: when(write.end!).slice(-5), place: p.place ? `, ${p.place}` : "" });
     } else {
       const e = await cw.find(p.title, start).catch(() => null);

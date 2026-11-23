@@ -734,12 +734,20 @@ export function createTeams(d: TeamsDeps) {
 
   /** At most this many finished meetings are looked up a round: one with no transcript yet does not hold back the others. */
   const MEETINGS_PER_ROUND = 3;
+  /**
+   * When each meeting was last looked up: the ones looked at longest ago (or never) go first, so three without a transcript yet do not take
+   * every round while a later meeting's transcript waits.
+   */
+  const tried = new Map<string, number>();
   const readTranscripts = async (s: State): Promise<number> => {
     if (!d.offer || s.transcriptsOff) return 0;
     const t = now();
-    const done = (await meetings()).filter((m) => m.end < t - 10 * 60_000 && m.end > t - 2 * 24 * 3600_000 && !s.meetings.includes(m.id));
+    const done = (await meetings()).filter((m) => m.end < t - 10 * 60_000 && m.end > t - 2 * 24 * 3600_000 && !s.meetings.includes(m.id))
+      .sort((a, b) => (tried.get(a.id) ?? 0) - (tried.get(b.id) ?? 0));
+    for (const id of tried.keys()) if (!done.some((m) => m.id === id)) tried.delete(id);
     let offered = 0;
     for (const m of done.slice(0, MEETINGS_PER_ROUND)) {
+      tried.set(m.id, t);
       try {
         offered += await transcriptOf(s, m, t);
       } catch (err) {

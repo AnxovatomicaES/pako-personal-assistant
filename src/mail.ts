@@ -17,7 +17,7 @@ import { rateLimit } from "express-rate-limit";
 import { createCodeVault, hideCodes } from "./codes.ts";
 import { mailThreadKey } from "./mail-body.ts";
 import {
-  CATEGORIES, CATEGORY_LABEL, categoryOf, cleanMessageId, notifyPrefsOf, preClassify, providerOf, rulesOf, RULES_MAX, senderAddress,
+  CATEGORIES, CATEGORY_LABEL, categoryOf, cleanMessageId, NEEDS_DAYS, notifyPrefsOf, preClassify, providerOf, rulesOf, RULES_MAX, senderAddress,
   shouldNotify, trustedSender, type MailAction, type MailCategory, type MailProvider, type NotifyKey, type NotifyPrefs, type SenderRule, type Verdict,
 } from "./mail-categories.ts";
 import type { Control } from "./control.ts";
@@ -172,8 +172,11 @@ export function isBulk(m: AgentMailMessage): boolean {
   return headerValues(m, ["precedence"]).some((v) => /\b(bulk|list|junk)\b/i.test(v));
 }
 
-/** The address of a From header: the LAST <...> pair (the display name comes first and may itself look like an address: "<ceo@x>" <evil@y>). */
-export const addressOf = (s: string): string => ([...s.matchAll(/<([^<>\s]+@[^<>\s]+)>/g)].at(-1)?.[1] ?? s.trim()).toLowerCase();
+/**
+ * The address of a From header: the LAST <...> pair outside any comment (the display name comes first and may itself look like an address:
+ * "<ceo@x>" <evil@y>; a comment may too: evil@y (<ceo@x>)). One reading for the whole of Pako: src/mail-categories.ts senderAddress.
+ */
+export const addressOf = senderAddress;
 
 /**
  * The same email whichever way it came (forwarded to Pako's inbox, read from the owner's mailbox by IMAP): its Message-ID and its sender's
@@ -229,6 +232,18 @@ const decodeEntities = (s: string): string =>
     return NAMED_ENTITIES[e] ?? NAMED_ENTITIES[e.toLowerCase()] ?? all;
   });
 
+/**
+ * Where the tag `needle` ("<head", "</head") next starts in `lower`, from `from`; -1 when none does. The name must end there: `<header` is
+ * another tag than `<head`, and `<head` alone is dropped with its content.
+ */
+function tagAt(lower: string, needle: string, from: number): number {
+  for (let a = lower.indexOf(needle, from); a >= 0; a = lower.indexOf(needle, a + 1)) {
+    const next = lower[a + needle.length] ?? "";
+    if (next === "" || next === ">" || /\s/.test(next)) return a;
+  }
+  return -1;
+}
+
 /** Removes `<tag ...> ... </tag>` blocks by scanning, never with a lazy pattern (those are quadratic on hostile input). An unclosed opener is dropped alone. */
 function dropBlocks(s: string, tag: string): string {
   const lower = s.toLowerCase();
@@ -237,10 +252,10 @@ function dropBlocks(s: string, tag: string): string {
   let out = "";
   let i = 0;
   for (;;) {
-    const a = lower.indexOf(open, i);
+    const a = tagAt(lower, open, i);
     if (a < 0) return out + s.slice(i);
     out += s.slice(i, a);
-    const b = lower.indexOf(close, a + open.length);
+    const b = tagAt(lower, close, a + open.length);
     if (b < 0) {
       const gt = lower.indexOf(">", a);
       i = gt < 0 ? s.length : gt + 1;
@@ -390,6 +405,22 @@ const keepSeen = (seen: string[]): string[] => {
   return out.reverse();
 };
 
+/**
+ * The records kept: the newest RECENT_KEEP of any kind, and besides them every Needs you or Waiting on others mail the owner has not dealt with
+ * (not marked done, not replied to) for the days the dashboard promises to show it (NEEDS_DAYS). The newest alone let 150 newer newsletters and
+ * notices push a mail that asks something of the owner out of the store: it left the dashboard, the panel and Done with its Undo.
+ */
+const keepRecent = (all: RecentMail[], nowMs: number): RecentMail[] => {
+  const sorted = [...all].sort((a, b) => a.at - b.at);
+  const cut = sorted.length - RECENT_KEEP;
+  if (cut <= 0) return sorted;
+  const owed = (r: RecentMail): boolean => {
+    const c = categoryOf(r);
+    return (c === "needs_you" || c === "waiting") && !r.handledAt && !r.repliedAt && nowMs - r.at <= NEEDS_DAYS * 24 * 3600_000;
+  };
+  return sorted.filter((r, i) => i >= cut || owed(r));
+};
+
 interface MailState {
   seen: string[];
   recent: RecentMail[];
@@ -502,12 +533,12 @@ export function createMailbox(kv: Kv | null, o: { showCodes?: boolean; lang?: ()
         await save({ ...s, seen: keepSeen([...s.seen, ...ids.filter((id) => !s.seen.includes(id))]), primed: true });
       }),
     /** Records an email as passed on, with `also` (sameMailKey: the same email by the other way in). False when either already was. */
-    record: (r: RecentMail, also = ""): Promise<boolean> =>
+    record: (r: RecentMail, also = "", nowMs: number = Date.now()): Promise<boolean> =>
       locked(async () => {
         const s = await load();
         if (s.seen.includes(r.id) || (also && s.seen.includes(also))) return false;
         const seen = keepSeen([...s.seen, r.id, ...(also ? [also] : [])]);
-        await save({ ...s, seen, recent: [...s.recent, r].sort((a, b) => a.at - b.at).slice(-RECENT_KEEP) });
+        await save({ ...s, seen, recent: keepRecent([...s.recent, r], nowMs) });
         return true;
       }),
     /** Undoes `record` when the email could not be queued, so a retry or the next listing passes it on. */
@@ -602,6 +633,13 @@ export function createMailbox(kv: Kv | null, o: { showCodes?: boolean; lang?: ()
         const s = await load();
         const r = s.recent.find((x) => x.id === id);
         if (!r) return null;
+        if (handled && r.handledAt) {
+          // Done again on a mail already done (a double click, a retry after a slow answer): the loops the first Done closed are what Undo
+          // reopens, so a second one that closed none must not wipe them. Nothing changes but loops this one closed that the first did not.
+          const closed = [...new Set([...(r.closedLoops ?? []), ...closedLoops])].slice(0, 5);
+          if (closed.length > (r.closedLoops?.length ?? 0)) await save({ ...s, recent: s.recent.map((x) => (x.id === id ? { ...r, closedLoops: closed } : x)) });
+          return { ...r };
+        }
         const { handledAt: _h, closedLoops: _c, ...rest } = r;
         const next: RecentMail = handled ? { ...rest, handledAt: nowMs, ...(closedLoops.length ? { closedLoops: closedLoops.slice(0, 5) } : {}) } : rest;
         await save({ ...s, recent: s.recent.map((x) => (x.id === id ? next : x)) });
@@ -747,6 +785,12 @@ export interface IntakeDeps {
   vip: string[];
   /** Where the owner's copy lives (src/imap.ts knows its host); without it, read from the addresses the mail was delivered to. */
   provider?: MailProvider | undefined;
+  /**
+   * The server of the owner's mailbox (its IMAP host): on a host that is not one of the big providers' an Authentication-Results header
+   * counts only when it names that server first (src/mail-categories.ts authenticated). Absent for a mailbox with no one server (Apple
+   * Mail, Pako's own inbox): the topmost counts.
+   */
+  authServer?: string | undefined;
   /** An email a sender rule filed with no run of Claude (src/mail-followups.ts inbox decides whether the follow-ups read it). */
   filed?: ((id: string, category: MailCategory) => Promise<unknown>) | undefined;
 }
@@ -813,21 +857,21 @@ export async function takeMail(
   // server vouched for (DKIM or DMARC aligned with From) and with no red flag: anything else, a look-alike "orders@" first of all, gets the
   // full read, the Suspicious check included.
   const trusted = !vip && trustedSender({
-    from, authResults: headerValues(m, ["authentication-results"]), replyTo: headerValues(m, ["reply-to"]), subject, text,
+    from, authResults: headerValues(m, ["authentication-results"]), server: d.authServer, replyTo: headerValues(m, ["reply-to"]), subject, text,
     ...(typeof m.html === "string" ? { html: m.html.slice(0, 200_000) } : {}),
   });
   const pre = trusted ? preClassify({ from, subject, bulk, listId: headerValues(m, ["list-id"])[0] ?? "" }, await box.rules().catch(() => [])) : null;
   // In a quiet catch-up (old mail, never told), a proven no-reply sender or receipt is not worth a run either: kept as Updates.
   const filed = pre ?? (trusted && o.quiet && cheapSkip(m) ? { category: "updates" as const, why: "A notice or receipt already in your mailbox when it was connected" } : null);
   if (filed) {
-    if (!(await box.record({ id, at, from, subject, preview, account, kind: "masivo", category: filed.category, why: filed.why, ...where }, also))) return "seen";
+    if (!(await box.record({ id, at, from, subject, preview, account, kind: "masivo", category: filed.category, why: filed.why, ...where }, also, now()))) return "seen";
     await box.keepBody(id, text);
     d.control?.log("mail", t("logBulk", { label: CATEGORY_LABEL[filed.category], from, subject: quoted }), at);
     // A sender the owner moved to Needs you, Waiting, Important or Personal is filed with no run of Claude: the follow-ups still read it.
     if (pre?.rule && d.filed) await d.filed(id, filed.category).catch((err: Error) => log.error(`a filed email could not reach the follow-ups: ${err.message}`));
     return "stored";
   }
-  if (!(await box.record({ id, at, from, subject, preview, account, kind: "pendiente", ...(vip ? { vip: true } : {}), ...where }, also))) return "seen";
+  if (!(await box.record({ id, at, from, subject, preview, account, kind: "pendiente", ...(vip ? { vip: true } : {}), ...where }, also, now()))) return "seen";
   await box.keepBody(id, text);
   try {
     const attachments = (m.attachments ?? []).map((a) => oneLine(a?.filename, 120)).filter(Boolean).slice(0, 10);

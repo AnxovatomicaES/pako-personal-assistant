@@ -37,9 +37,11 @@ kept. It says so in its log and takes over once the old one stops (src/kv-lease.
 ## Move from a server to your Mac
 
 If you ran Pako on a server (Render, WhatsApp, a bridge on another computer) and want everything on your Mac instead, move it like this.
-Nothing is lost: your notes, reminders, lists, people, routines, follow-ups and your 👍/👎 on them (the **Quality** card's week), meeting
-reviews, and what Pako already told you (mail, Zoom, Slack, calendar reminders, the day of the last brief) come along, so nothing is said
-twice. The server's own watchdog incidents and its last rehearsal stay there: the Mac watches and rehearses for itself.
+Nothing is lost: your notes, reminders, lists, people (and the ones you hid), routines, follow-ups and your 👍/👎 on them (the **Quality**
+card's week), meeting reviews, your mail choices, what you chose about what Pako does by itself, gentle mode and the switches around your
+day, what you told it about your health and what you are learning, the tables it asked for, and what Pako already told you (mail, Zoom,
+Slack, calendar reminders, the day of the last brief) come along, so nothing is said twice. The server's own watchdog incidents and its last
+rehearsal stay there: the Mac watches and rehearses for itself.
 
 1. **Install Pako on the Mac** ([Pako for Mac](desktop-mac.md), or [Install](../README.md#install)) and open its panel once (the welcome asks your
    language and name; you can skip the name, the file brings it).
@@ -48,8 +50,8 @@ twice. The server's own watchdog incidents and its last rehearsal stay there: th
 3. **Stop the server** right away, so it does not send a reminder the Mac sends too: on Render, the service's **Settings**, **Suspend
    Web Service** (you can resume it later). Stop the bridge on the other computer too (`bash assistant/install.sh --uninstall`).
 4. **On the Mac's panel**, in **Import from another Pako**, choose that file. Pako shows what comes in, what would replace something
-   already there, and what stays out and why (secrets, and the server's own state: its pause, its inbox, its Telegram pairing, its
-   watchdog). Nothing is
+   already there, and what stays out and why (secrets, the server's own state: its pause, its inbox, its Telegram pairing, its
+   watchdog, and short-lived notes). Nothing is
    written yet.
 5. Press **Import**. What it replaces is kept first in `~/.pako/import-backup-<time>.json`; then Pako starts again and reads it all.
 6. **Connect again what needs a secret** (the file never carries one), in the settings page (the gear): the Slack card (with Socket Mode:

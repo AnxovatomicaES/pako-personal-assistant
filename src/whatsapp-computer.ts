@@ -94,6 +94,11 @@ export interface SavedWhatsapp {
   appName?: string;
   tunnel?: boolean;
   repliedAt?: number;
+  /**
+   * The id Meta gave the owner's number when the test message was sent (its wa_id): not always the digits typed (Brazil's ninth digit,
+   * Mexico's 1), and it is what the owner's messages come from.
+   */
+  waId?: string;
 }
 
 const SHAPES: Record<"appId" | "appSecret" | "phoneNumberId" | "accessToken" | "ownerNumber", { re: RegExp; bad: Key }> = {
@@ -196,7 +201,7 @@ export function createComputerWhatsapp(o: ComputerWhatsappDeps) {
   // ---------- what the panel shows ----------
 
   /** Meta's side of things that went wrong, by kind (the tunnel's own trouble is read from the tunnel). */
-  const problems = new Map<"webhook", string>();
+  const problems = new Map<"webhook" | "token", string>();
   let webhook: "none" | "registering" | "verified" | "failed" = "none";
   let verifiedAt = 0;
   let registerGen = 0;
@@ -337,13 +342,23 @@ export function createComputerWhatsapp(o: ComputerWhatsappDeps) {
 
   // ---------- sending to the owner ----------
 
+  const tokenRefused = (a: GraphAnswer): boolean => !!a && (a.status === 401 || errorCode(a) === 190);
   const sendToOwner = async (body: Body): Promise<GraphAnswer> => {
     const s = saved;
     if (!s) return null;
-    return graph("POST", `/${s.phoneNumberId}/messages`, {
+    const a = await graph("POST", `/${s.phoneNumberId}/messages`, {
       token: s.accessToken,
       json: { messaging_product: "whatsapp", recipient_type: "individual", to: s.ownerNumber, ...body },
     });
+    // A token Meta no longer accepts (the temporary one lasts 24 hours) fails every send, and nothing else tells anyone: the setup card says so,
+    // and the watchdog hears of it, until a send is taken again.
+    if (tokenRefused(a)) {
+      problems.set("token", tx("tokenRefused"));
+      o.health?.(false, "Meta refused the access token");
+    } else if (a && a.status < 300 && problems.delete("token")) {
+      o.health?.(true);
+    }
+    return a;
   };
   const sendLine = async (text: string): Promise<void> => {
     await sendToOwner({ type: "text", text: { body: text, preview_url: false } });
@@ -369,7 +384,8 @@ export function createComputerWhatsapp(o: ComputerWhatsappDeps) {
   const handle = async (m: Body): Promise<string> => {
     const s = saved;
     if (!s) return "ignored";
-    if (String(m.from ?? "").replace(/\D/g, "") !== s.ownerNumber) return "ignored (not the owner)";
+    const from = String(m.from ?? "").replace(/\D/g, "");
+    if (from !== s.ownerNumber && !(s.waId && from === s.waId)) return "ignored (not the owner)";
     const id = typeof m.id === "string" ? m.id : "";
     if (!id || seen.has(id)) return "repeated";
     seen.add(id);
@@ -518,12 +534,14 @@ export function createComputerWhatsapp(o: ComputerWhatsappDeps) {
     // Another number or another owner: the test must be answered again before Pako writes there.
     const changed = !saved || saved.phoneNumberId !== s.phoneNumberId || saved.ownerNumber !== s.ownerNumber;
     const wabaId = (await findWaba(s)) ?? (changed ? undefined : saved?.wabaId);
-    const { repliedAt: _r, wabaId: _w, testNumber: _t, appName: _a, ...rest } = s;
+    const { repliedAt: _r, wabaId: _w, testNumber: _t, appName: _a, waId: _i, ...rest } = s;
     const kept: SavedWhatsapp = {
       ...rest, ...(shown ? { testNumber: shown } : {}), ...(name ? { appName: name } : {}), ...(wabaId ? { wabaId } : {}),
       ...(!changed && saved?.repliedAt ? { repliedAt: saved.repliedAt } : {}),
+      ...(!changed && saved?.waId ? { waId: saved.waId } : {}),
     };
     if (!keep(kept)) return { ok: false, error: tx("notKept") };
+    problems.delete("token"); // the token was just checked with Meta
     template = { name: templateName, status: "unknown", at: 0 };
     o.control?.log("whatsapp", tx("logSaved", { number: shown || s.phoneNumberId }));
     // The tunnel is already up: Meta hears of it with these values.
@@ -548,8 +566,10 @@ export function createComputerWhatsapp(o: ComputerWhatsappDeps) {
       if (code === 132001) return { ok: false, error: tx("noHello") };
       return { ok: false, error: tx("sendFailed", { code: code || a.status }) };
     }
-    const { repliedAt: _r, ...rest } = s;
-    if (!keep(rest)) return { ok: false, error: tx("notKept") };
+    const { repliedAt: _r, waId: _i, ...rest } = s;
+    // Meta says whose number that is, as it writes it: the owner's reply comes from this, which may not be the digits typed.
+    const given = String((a.json.contacts as { wa_id?: unknown }[] | undefined)?.[0]?.wa_id ?? "");
+    if (!keep({ ...rest, ...(SHAPES.ownerNumber.re.test(given) ? { waId: given } : {}) })) return { ok: false, error: tx("notKept") };
     awaitingSince = now();
     o.control?.log("whatsapp", tx("logTest"));
     return { ok: true };
@@ -570,7 +590,7 @@ export function createComputerWhatsapp(o: ComputerWhatsappDeps) {
       tunnel.stop();
       registerGen++;
       webhook = "none";
-      problems.clear();
+      problems.delete("webhook");
       o.control?.log("whatsapp", tx("logTunnelOff"));
       return { ok: true };
     }

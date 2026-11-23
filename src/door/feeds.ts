@@ -1,6 +1,7 @@
 // What the bridge hands back besides answers: meeting summaries and reviews, judgments, proactive offers, follow-ups.
 
 import type { Door } from "./door.ts";
+import { cut } from "./shared.ts";
 
 export function mountFeeds(door: Door): void {
   const { app, d, now, facts, failed, bridge, json } = door;
@@ -36,7 +37,7 @@ export function mountFeeds(door: Door): void {
       return;
     }
     try {
-      const r = await d.reviews.result(id, typeof b.text === "string" ? b.text.slice(0, 40_000) : "");
+      const r = await d.reviews.result(id, typeof b.text === "string" ? cut(b.text, 40_000) : "");
       res.status(r.ok ? 200 : 400).json(r);
     } catch (err) {
       res.status(503).json({ error: (err as Error).message });
@@ -52,7 +53,7 @@ export function mountFeeds(door: Door): void {
       return;
     }
     try {
-      const r = await facts.verdict(id, typeof b.text === "string" ? b.text.slice(0, 4000) : "", now());
+      const r = await facts.verdict(id, typeof b.text === "string" ? cut(b.text, 4000) : "", now());
       res.status(r.ok ? 200 : 400).json(r);
     } catch (err) {
       res.status(503).json({ error: (err as Error).message });
@@ -68,7 +69,7 @@ export function mountFeeds(door: Door): void {
       return;
     }
     try {
-      const r = await d.gentle.stepResult(id, typeof b.text === "string" ? b.text.slice(0, 2000) : "");
+      const r = await d.gentle.stepResult(id, typeof b.text === "string" ? cut(b.text, 2000) : "");
       res.status(r.ok ? 200 : 400).json(r);
     } catch (err) {
       res.status(503).json({ error: (err as Error).message });
@@ -84,7 +85,7 @@ export function mountFeeds(door: Door): void {
       return;
     }
     try {
-      const r = await d.life.result(id, typeof b.text === "string" ? b.text.slice(0, 8000) : "");
+      const r = await d.life.result(id, typeof b.text === "string" ? cut(b.text, 8000) : "");
       res.status(r.ok ? 200 : 400).json(r);
     } catch (err) {
       res.status(503).json({ error: (err as Error).message });
@@ -101,7 +102,7 @@ export function mountFeeds(door: Door): void {
     if (typeof b.id === "string" && /^rh:[0-9a-f]{10}$/.test(b.id)) {
       if (!d.rehearsal) return void res.status(400).json({ error: "No such job." });
       try {
-        res.json(await d.rehearsal.answer(b.id, typeof b.text === "string" ? b.text.slice(0, 20_000) : ""));
+        res.json(await d.rehearsal.answer(b.id, typeof b.text === "string" ? cut(b.text, 20_000) : ""));
       } catch (err) {
         res.status(503).json({ error: (err as Error).message });
       }
@@ -113,7 +114,7 @@ export function mountFeeds(door: Door): void {
       return;
     }
     try {
-      res.json(await d.followups.result(id, typeof b.text === "string" ? b.text.slice(0, 20_000) : ""));
+      res.json(await d.followups.result(id, typeof b.text === "string" ? cut(b.text, 20_000) : ""));
     } catch (err) {
       res.status(503).json({ error: (err as Error).message });
     }

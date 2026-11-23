@@ -93,5 +93,5 @@ export function wireBooking(ctx: AfterEngines) {
   }
   if (bookingOff && (env.GOOGLE_PLACES_API_KEY ?? "").trim()) logBooking.info("OFF (BOOKING=off)");
   if (booking) logBooking.info(`ON: Google Places, ${mail.config ? "email requests from the assistant's inbox" : "links only (no inbox to write from)"}`);
-  return { placesRef, maitreRef, booking };
+  return { placesRef, maitreRef, booking, maitreBrowser: maitreSetup?.browser ?? null };
 }

@@ -38,7 +38,10 @@ const ownLoop = { ...slackLoop(), id: "c000000003", kind: "owner_promise", title
 
 const asLoop = (v: Record<string, unknown>): Loop => v as unknown as Loop;
 
-function rig(o: { loops?: Record<string, unknown>[]; quiet?: { start: number; end: number } | null; mail?: { name: string; address: string; text: string } } = {}) {
+function rig(o: {
+  loops?: Record<string, unknown>[]; quiet?: { start: number; end: number } | null; mail?: { name: string; address: string; text: string };
+  chaseDraft?: NonNullable<Parameters<typeof createFollowups>[0]["chaseDraft"]>;
+} = {}) {
   const m = new Map<string, string>();
   const kv: Kv = { get: async (k) => m.get(k) ?? null, set: async (k, v) => void m.set(k, v) };
   m.set(FOLLOWUPS_KEY, JSON.stringify({ loops: o.loops ?? [slackLoop()] }));
@@ -54,7 +57,7 @@ function rig(o: { loops?: Record<string, unknown>[]; quiet?: { start: number; en
       { ts: "1763283100.000100", at: at("2026-11-16T08:52"), mine: true, who: "Alex", text: "Perfect, thanks" },
     ],
     mailOf: async () => ({ address: o.mail?.address ?? "ana@client.example", name: o.mail?.name ?? "Ana Ruiz", subject: "Q3 numbers", text: o.mail?.text ?? "Hi Alex, I will send you the Q3 numbers on Tuesday at 10:00. Best, Ana" }),
-    chaseDraft: async (x) => (asked.push({ tone: x.tone, title: x.title, facts: x.facts, request: x.request, loop: x.loop.id }), true),
+    chaseDraft: o.chaseDraft ?? (async (x) => (asked.push({ tone: x.tone, title: x.title, facts: x.facts, request: x.request, loop: x.loop.id }), true)),
   });
   const stored = (id = "c000000001"): Loop => JSON.parse(m.get(FOLLOWUPS_KEY)!).loops.find((l: Loop) => l.id === id);
   return { engine, clock, cards, asked, m, kv, stored };
@@ -131,6 +134,26 @@ test("Slack: both tones asked after the grace, in that person's language; the ca
   r.clock.now = at("2026-11-23T14:15");
   await r.engine.chaseTick();
   assert.equal(r.asked.length, 4, "and then it is chased again");
+});
+
+test("a promise made weeks before its time is kept until its chase, not dropped 14 days after it was made", async () => {
+  const DUE = at("2026-12-15T17:00"); // Tuesday
+  const r = rig({ loops: [slackLoop({ whenSaid: at("2026-11-20T10:00"), createdAt: at("2026-11-20T10:00"), dueAt: DUE })] });
+  assert.equal(chaseAt(asLoop(slackLoop({ dueAt: DUE })), TZ, QUIET), at("2026-12-16T12:30"), "its chase comes the next morning");
+  for (const t of ["2026-12-15T16:00", "2026-12-15T23:30", "2026-12-16T08:00", "2026-12-16T12:00"]) {
+    r.clock.now = at(t);
+    await r.engine.tick();
+    assert.equal((await r.engine.read()).loops.length, 1, `${t}: still in the store, though it was made 26 days ago`);
+  }
+  r.clock.now = at("2026-12-16T12:30");
+  assert.equal(await r.engine.chaseTick(), 1, "and chased when its time comes");
+  assert.deepEqual(r.asked.map((a) => a.tone), ["gentle", "firm"]);
+  // "Not needed" ends the chase: then it goes as any loop past its time does.
+  r.clock.now = at("2026-12-16T12:31");
+  await r.engine.chasePressed("3", "c000000001");
+  r.clock.now = at("2026-12-17T00:00");
+  await r.engine.tick();
+  assert.equal((await r.engine.read()).loops.length, 0);
 });
 
 test("no chase on a weekend, in the quiet hours or over the day's budget", async () => {
@@ -272,6 +295,43 @@ test("grounding: a chase's draft says no date or amount its facts lack, goes bac
   assert.doesNotMatch(back[0]!.text, /25\/11/, "no invented date");
   assert.doesNotMatch(back[0]!.text, /4,500/, "no invented amount");
   assert.deepEqual(told, [], "the card shows it, not a chat message");
+});
+
+test("a chase's draft that never comes back (timed out, or let go by an older bridge) is told to its loop: the card goes with the draft that was written", async () => {
+  for (const how of ["timeout", "older bridge"] as const) {
+    const queued: Inbound[] = [];
+    let v2: ReturnType<typeof createBriefV2>;
+    const r = rig({
+      chaseDraft: async (x) => {
+        const task = await v2.draftFor({ title: x.title, request: x.request, chase: { loop: x.loop.id, tone: x.tone }, facts: x.facts });
+        return !!task && task.status !== "failed";
+      },
+    });
+    r.clock.now = at("2026-11-17T14:30");
+    const m2 = new Map<string, string>();
+    v2 = createBriefV2({
+      config: { waitMs: 15 * MIN }, kv: { get: async (k) => m2.get(k) ?? null, set: async (k, v) => void m2.set(k, v) }, timeZone: TZ, now: () => r.clock.now,
+      sources: {}, enqueue: async (x) => (queued.push(x), true), plain: async () => undefined, notify: async () => undefined,
+      chaseWritten: (o) => r.engine.chaseWritten(o),
+    });
+    assert.equal(await r.engine.chaseTick(), 1);
+    assert.equal(queued.length, 2, "both tones asked of the run");
+    const id = (i: number): string => /^br:([0-9a-f]{10})$/.exec(queued[i]!.id)![1]!;
+    // The gentle one is written; the firm one never is.
+    await v2.result(id(0), "A message in Ana (private):\nHi Ana, are the Q3 numbers you promised for Tuesday at 10:00 still coming?");
+    assert.equal(r.cards.length, 0, "one tone is still waited for");
+    if (how === "timeout") {
+      r.clock.now += 20 * MIN;
+      await v2.tick();
+    } else {
+      await v2.acked([queued[1]!.id], false);
+    }
+    assert.equal(r.cards.length, 1, `${how}: the card goes with the draft that exists`);
+    assert.deepEqual(r.cards[0]!.buttons.map((b) => b.id), ["ch1:c000000001", "ch3:c000000001"], "only the gentle one to send or copy, and Not needed");
+    assert.match(r.cards[0]!.body, /Gentle:/);
+    assert.doesNotMatch(r.cards[0]!.body, /Firm:/);
+    assert.ok(r.stored().chase?.offeredAt, "offered, so the next chase waits its two working days");
+  }
 });
 
 const ENV = {

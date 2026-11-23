@@ -4,14 +4,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Kv } from "../src/kv.ts";
-import { browserCandidates, findBrowser, type Page, type PagePool } from "../src/maitre/cdp.ts";
+import { BrowserPool, browserCandidates, findBrowser, type BrowserLike, type Page, type PagePool } from "../src/maitre/cdp.ts";
 import { hhmm, nearest, policyOf, type BookResult, type Cartridge, type LookResult } from "../src/maitre/cartridge.ts";
 import { cartridgeFor } from "../src/maitre/cartridges/index.ts";
-import { freeTimes, hoursOf } from "../src/maitre/cartridges/covermanager.ts";
+import { freeTimes, hoursOf, phoneParts } from "../src/maitre/cartridges/covermanager.ts";
 import { forkLink } from "../src/maitre/cartridges/thefork.ts";
 import { tableLink } from "../src/maitre/cartridges/opentable.ts";
 import { confirmsBooking, createLedger, DuplicateBooking, ledgerKey } from "../src/maitre/ledger.ts";
 import { createMaitre, medianMs, nextLane, planLanes } from "../src/maitre/planner.ts";
+import { eventually } from "./helpers/wait.ts";
 
 function memoryKv(): Kv & { m: Map<string, string> } {
   const m = new Map<string, string>();
@@ -75,6 +76,48 @@ test("maitre ledger: the engine's confirmation email is recognised by the restau
   assert.ok(confirmsBooking({ at: 0, from: "x", subject: "Your reservation at Bar Mut", preview: "Friday, November 20 at 9 pm for 2" }, e));
   assert.ok(!confirmsBooking({ at: 0, from: "x", subject: "Your reservation at Bar Mut", preview: "Saturday, November 21" }, e), "another day");
   assert.ok(!confirmsBooking({ at: 0, from: "x", subject: "Newsletter from Cal Pep", preview: "20/11/2026 reserva" }, e), "another restaurant");
+});
+
+test("maitre ledger: a mail that says cancelled is not a confirmation, and a mail that shows another time is not this booking's", () => {
+  const e = { name: "Bar Mut", date: "2026-11-20", time: "21:00", engine: "CoverManager" };
+  const mail = (subject: string, preview: string) => ({ at: 0, from: "CoverManager <no-reply@covermanager.com>", subject, preview });
+  assert.ok(!confirmsBooking(mail("Your reservation at Bar Mut has been cancelled", "20/11/2026 at 21:00"), e), "cancelled");
+  assert.ok(!confirmsBooking(mail("Reserva cancelada en Bar Mut", "Tu reserva del 20/11/2026 a las 21:00"), e), "cancelada");
+  assert.ok(!confirmsBooking(mail("Reserva anulada en Bar Mut", "20/11/2026 21:00"), e), "anulada");
+  assert.ok(confirmsBooking(mail("Reserva confirmada en Bar Mut", "20/11/2026 a las 21:00"), e), "the same time");
+  assert.ok(confirmsBooking(mail("Your reservation at Bar Mut", "Friday, November 20 at 9 pm for 2"), e), "the same time, written as 9 pm");
+  assert.ok(!confirmsBooking(mail("Reserva confirmada en Bar Mut", "20/11/2026 a las 13:30"), e), "lunch is not dinner");
+  assert.ok(confirmsBooking(mail("Reserva confirmada en Bar Mut", "para el 20/11/2026"), e), "no time in the mail: the day is all there is to compare");
+  assert.ok(confirmsBooking(mail("Reserva confirmada en Bar Mut", "20/11/2026 a las 13:30"), { ...e, time: undefined as unknown as string }), "no time asked for");
+});
+
+test("maitre ledger: a mail from before the Undo of that restaurant's booking that day is not a confirmation of a new one", async () => {
+  let t = 1_000_000;
+  const old = { at: 1_000_500, from: "x", subject: "Reserva confirmada en Bar Mut", preview: "20/11/2026 21:00" };
+  const fresh = { ...old, at: 1_090_000 };
+  const ledger = createLedger({ kv: memoryKv(), now: () => t, recentMail: async () => [old, fresh] });
+  const ask = { placeId: "P1", name: "Bar Mut", date: "2026-11-20", time: "21:00", engine: "CoverManager" };
+  assert.equal(await ledger.inboxConfirmation(ask), old, "before any Undo it counts");
+  const a = await ledger.plan(ENTRY);
+  await ledger.submitting(a.id);
+  await ledger.confirm(a.id, { url: "u", text: "t" });
+  t += 60_000;
+  await ledger.cancel(a.id);
+  assert.equal(await ledger.inboxConfirmation(ask), fresh, "only a mail after the Undo counts");
+  assert.equal(await ledger.inboxConfirmation({ ...ask, placeId: "P2" }), old, "another restaurant's Undo changes nothing");
+  assert.equal(await ledger.inboxConfirmation({ ...ask, date: "2026-11-21" }), null, "another day");
+});
+
+test("maitre covermanager: the owner's country code is the select's longest option that starts the number; none is a hand-over, no select is the whole number", () => {
+  const options = ["44", "34", "1", "33", "351", "1242"];
+  assert.deepEqual(phoneParts(options, "34600111222"), { option: "34", number: "600111222" });
+  assert.deepEqual(phoneParts(options, "33612345678"), { option: "33", number: "612345678" }, "France is not left on the module's default");
+  assert.deepEqual(phoneParts(options, "351912345678"), { option: "351", number: "912345678" });
+  assert.deepEqual(phoneParts(options, "12125550123"), { option: "1", number: "2125550123" });
+  assert.deepEqual(phoneParts(options, "12425550123"), { option: "1242", number: "5550123" }, "the longest start wins");
+  assert.equal(phoneParts(options, "81312345678"), null, "no option for Japan: the code is not cut off a number that has none");
+  assert.deepEqual(phoneParts(["+33", "+34"], "33612345678"), { option: "+33", number: "612345678" }, "options written with a plus");
+  assert.deepEqual(phoneParts([], "81312345678"), { option: null, number: "+81312345678" }, "no select on the page: the whole number, with its plus");
 });
 
 // ---------- lanes, policy, pace ----------
@@ -250,4 +293,98 @@ test("maitre cdp: browsers are looked for where each system installs them; PAKO_
   assert.ok(browserCandidates("win32", { PROGRAMFILES: "C:\\Program Files", LOCALAPPDATA: "C:\\Users\\x\\AppData\\Local" }).some((p) => p.includes("msedge.exe")));
   assert.ok(browserCandidates("linux", { PATH: "/usr/bin:/snap/bin" }).includes("/usr/bin/chromium"));
   assert.equal(findBrowser({ PAKO_CHROME: "/nowhere/chrome" }), null);
+});
+
+test("maitre planner: a booking that ran past its deadline is stopped: its tab is closed and a late press is refused, with the Handoff's entry never submitted", async () => {
+  let release!: () => void;
+  const slow = new Promise<void>((res) => (release = res));
+  let late: string | undefined;
+  let closed = 0;
+  let runs = 0;
+  const { c } = fakeCartridge({
+    book: async (submitting) => {
+      // The Handoff that follows the deadline fills the form again (the second run): it is not the slow one.
+      if (++runs > 1) return { kind: "gate", gate: "captcha", detail: "", submitted: false };
+      await slow; // a step that is only slow: the deadline has passed by now
+      try {
+        await submitting();
+        late = "pressed";
+      } catch (err) {
+        late = `refused: ${(err as Error).message}`;
+      }
+      return { kind: "timeout", detail: "late", submitted: false };
+    },
+  });
+  const pool: PagePool = { ...fakePool, withPage: (fn) => fn({ close: async () => void closed++ } as unknown as Page) };
+  const m = createMaitre({ kv: memoryKv(), pool, cartridges: [c], sleep: async () => undefined, bookMs: 30 });
+  const out = await m.book({ placeId: "P1", name: "Bar Mut", url: ENTRY.url, date: "2026-11-20", time: "21:00", party: 2, guest: GUEST });
+  assert.equal(out.kind, "handoff", "the deadline hands it to the owner's window (nothing was pressed)");
+  assert.equal(closed, 1, "the losing run's tab was closed");
+  release();
+  await eventually(() => late !== undefined);
+  assert.match(late!, /^refused: the booking took too long/, "its late press never reached the ledger");
+  const entry = out.kind === "handoff" ? await m.ledger.get(out.entry.id) : undefined;
+  assert.equal(entry?.state, "planned", "still the Handoff's, not submitted by the run that lost");
+});
+
+// ---------- the browser pool: a browser that is working is never closed to change its mode ----------
+
+/** A pool over stand-in browsers: what was launched, in which mode, and whether it was closed. */
+function fakeBrowsers() {
+  const made: { headless: boolean; closed: boolean; tabs: number }[] = [];
+  const launch = async (o: { headless: boolean }): Promise<BrowserLike> => {
+    const b = { headless: o.headless, closed: false, tabs: 0 };
+    made.push(b);
+    return {
+      headless: b.headless,
+      get alive() {
+        return !b.closed;
+      },
+      newPage: async () => ({ close: async () => undefined }) as unknown as Page,
+      close: async () => void (b.closed = true),
+    } as BrowserLike;
+  };
+  const pool = new BrowserPool({ executable: "x", profileDir: "p", idleMs: 600_000, switchWaitMs: 400, launch });
+  return { pool, made };
+}
+
+test("maitre pool: a step is turned away while the owner's window is open, and the window stays", async () => {
+  const { pool, made } = fakeBrowsers();
+  const win = await pool.openWindow();
+  await assert.rejects(pool.withPage(async () => "ran"), /a window the owner is working in is open/);
+  assert.equal(made.length, 1, "no second browser");
+  assert.equal(made[0]!.closed, false, "the owner's window was not closed under them");
+  win.release();
+  assert.equal(await pool.withPage(async () => "ran"), "ran", "once the window is released the headless browser takes over");
+  assert.deepEqual(made.map((b) => [b.headless, b.closed]), [[false, true], [true, false]]);
+  await pool.close();
+});
+
+test("maitre pool: a window waits for the steps running in the headless browser to end, which are not cut off", async () => {
+  const { pool, made } = fakeBrowsers();
+  let finish!: () => void;
+  const step = pool.withPage(() => new Promise<string>((res) => (finish = () => res("done"))));
+  await eventually(() => made.length === 1);
+  let opened = false;
+  const win = pool.openWindow().then((w) => ((opened = true), w));
+  await new Promise((r) => setTimeout(r, 150));
+  assert.equal(opened, false, "the window waits while a step runs");
+  assert.equal(made[0]!.closed, false, "the step's browser is still open");
+  finish();
+  assert.equal(await step, "done");
+  await win;
+  assert.deepEqual(made.map((b) => [b.headless, b.closed]), [[true, true], [false, false]], "then the browser changes mode");
+  await pool.close();
+});
+
+test("maitre pool: a window that waits too long for a busy browser gives up instead of closing it", async () => {
+  const { pool, made } = fakeBrowsers();
+  let finish!: () => void;
+  const step = pool.withPage(() => new Promise<void>((res) => (finish = res)));
+  await eventually(() => made.length === 1);
+  await assert.rejects(pool.openWindow(), /stayed busy too long/);
+  assert.equal(made[0]!.closed, false);
+  finish();
+  await step;
+  await pool.close();
 });

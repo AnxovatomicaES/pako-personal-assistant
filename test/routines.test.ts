@@ -210,6 +210,42 @@ test("watch: a hit from the sender's address, never from a subject, a display na
   assert.equal(u.told.length, 1);
 });
 
+test("watch: the cap of ten hits is per day, counted from the first of the day: a watch hit three times a day never loses one, a burst is cut at ten and tells again a day after it began", async () => {
+  const HOUR = 3600_000;
+  const mine = { from: ["bank.example"], on: "mail" as const, once: false, text: "an email from my bank" };
+  // Three a day for twelve days (every 8 hours): far under the cap, all told.
+  const mail: MailSeen[] = [];
+  const clock = { now: T0 };
+  const u = unit({ clock, mail });
+  await u.r.addWatch(mine);
+  await u.r.tick();
+  for (let i = 1; i <= 36; i++) {
+    clock.now += 8 * HOUR;
+    mail.splice(0, mail.length, { id: `m${i}`, at: clock.now - 60_000, from: "Bank <alerts@bank.example>", subject: `Payment ${i}` });
+    await u.r.tick();
+  }
+  assert.equal(u.told.length, 36, "every one of them, not the first thirty");
+  // A burst: twelve in twelve hours; the tenth is the last told that day.
+  const burst: MailSeen[] = [];
+  const clock2 = { now: T0 };
+  const b = unit({ clock: clock2, mail: burst });
+  await b.r.addWatch(mine);
+  await b.r.tick();
+  const first = clock2.now + HOUR;
+  for (let i = 0; i < 12; i++) {
+    clock2.now = first + i * HOUR;
+    burst.splice(0, burst.length, { id: `b${i}`, at: clock2.now - 60_000, from: "Bank <alerts@bank.example>", subject: `Burst ${i}` });
+    await b.r.tick();
+  }
+  assert.equal(b.told.length, 10, "ten a day");
+  // The day began with the first hit: a day after it, the next is told (not a day after the tenth).
+  clock2.now = first + 24 * HOUR;
+  burst.splice(0, burst.length, { id: "after", at: clock2.now - 60_000, from: "Bank <alerts@bank.example>", subject: "A day on" });
+  await b.r.tick();
+  assert.equal(b.told.length, 11);
+  assert.equal((await b.r.read()).watches[0]!.hits, 1, "a new day's count");
+});
+
 test("watch: an idle look writes nothing to the store: no watch at all, or a watch with nothing new", async () => {
   const kv = memKv();
   let writes = 0;

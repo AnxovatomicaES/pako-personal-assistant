@@ -51,6 +51,24 @@ test("a timed event begun yesterday that runs into today is on the day, until it
   assert.match(chatText(doc, { name: "", timeZone: MADRID, url: null }), /• until 10:00 Vuelo nocturno a NY/);
 });
 
+test("two real events that start together are both on the day, whichever the run listed; a meeting that is a Zoom and a calendar event is one line", async () => {
+  const at = (s: string): number => Date.parse(`${s}Z`);
+  const ev = (id: string, title: string, start: string, end: string): CalEvent => ({ id, title, start: at(start), end: at(end), allDay: false, calendar: "" });
+  const g = await gatherFacts({
+    timeZone: MADRID, lang: "en", now: T0,
+    events: async () => [ev("e1", "Board review", "2026-11-16T10:00", "2026-11-16T11:00"), ev("e2", "Dentist", "2026-11-16T10:00", "2026-11-16T10:45"), ev("e3", "Weekly sync", "2026-11-16T13:00", "2026-11-16T14:00")],
+    zoom: async () => [{ topic: "Weekly sync", at: at("2026-11-16T13:00") }],
+  });
+  const E = (title: string) => g.facts.find((f) => f.kind === "event" && f.title === title)!.id;
+  for (const [what, day] of [
+    ["the run lists one of the two", [{ time: "10:00", title: "Board review", sources: [E("Board review")] }]],
+    ["the run gives no day", []],
+  ] as const) {
+    const doc = validateBrief(JSON.stringify({ opening: "A full morning.", day }), g, { now: T0, timeZone: MADRID, lang: "en", id: "x" })!;
+    assert.deepEqual(doc.dayItems.map((d) => `${d.time} ${d.title}`), ["11:00 Board review", "11:00 Dentist", "14:00 Weekly sync"], what);
+  }
+});
+
 test("a page left open on an older brief cannot tick a to-do of the newer one: its index would name another follow-up", async () => {
   const { kv } = memKv();
   let t = Date.parse("2026-11-16T06:30:00Z");

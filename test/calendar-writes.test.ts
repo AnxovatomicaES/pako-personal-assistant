@@ -104,6 +104,12 @@ test("the push says the app writes; the event a change means is found by title a
   assert.equal(pushOf({ calendars: ["C1"], events: [] }, { now: T0, timeZone: "Europe/London" })!.writes, undefined, "an older app does not");
 });
 
+test("the event a change means is named to the Mac by its EventKit identifier, without the start in seconds the app adds to its id", () => {
+  const secs = Math.floor((T0 + 60 * MIN) / 1000);
+  const k = pushOf({ writes: true, calendars: ["C1"], events: [{ id: `6F1A-AAAA:ABCDEF@${secs}`, calendarId: "C1", title: "Dentist", start: T0 + 60 * MIN, end: T0 + 90 * MIN }] }, { now: T0, timeZone: "Europe/London" })!;
+  assert.equal(findLocalEvent(k, "Dentist", T0 + 60 * MIN)!.eventId, "6F1A-AAAA:ABCDEF", "the Mac compares eventIdentifier alone");
+});
+
 test("the tool tells the model what happens: a card when the Mac writes, the change to make by hand otherwise", () => {
   assert.match(pendingText("propose_calendar_change", "h", toolDataOf("t", { calendarWrites: 1 })), /card to confirm/);
   assert.match(pendingText("propose_calendar_change", "h", toolDataOf("t", {})), /make in their calendar app/);

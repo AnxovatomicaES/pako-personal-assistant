@@ -68,6 +68,7 @@ export function mountCore(door: Door): Part {
   const paperSummaries: { at: number; name: string; summary: string }[] = [];
   // Starts "now": after a restart of the server the assistant's computer needs a moment to ask again, which is not an outage.
   door.lastPollAt = now();
+  door.polled = false;
   const seenPresses = new Set<string>();
   door.lastOfflineNoticeAt = 0;
   door.lastOtherNoticeAt = 0;
@@ -75,7 +76,10 @@ export function mountCore(door: Door): Part {
   door.lastOldBridgeNoticeAt = 0;
   door.lastBadSignatureLogAt = 0;
   // `typed`: the owner's very next message may answer it in words (yes or no); once any other message comes it can only be answered with its buttons.
+  // `n`: and only while it is the last thing Pako sent (door.sent has not moved since its card), whatever that was: after a notice or a reminder
+  // a "yes" is about that one.
   door.pendingCall = null;
+  door.sent = 0;
   const dayStamps: number[] = [];
   // A message from the assistant's own number to a friend: staged like a call, sent only on the owner's press (or typed yes).
   door.pendingSend = null;

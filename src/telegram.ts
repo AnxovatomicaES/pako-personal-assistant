@@ -244,17 +244,16 @@ export function createTelegram(d: TelegramDeps): TelegramChannel {
   const used = new Map<string, number>();
   const loadOwner = async (): Promise<Owner | null> => {
     if (owner !== undefined) return owner;
-    try {
-      const v = d.kv ? await readJsonRecord(d.kv, OWNER_KEY) : null;
-      const o = v ? (v as { userId?: unknown; chatId?: unknown; label?: unknown; bot?: unknown }) : null;
-      // A record kept before pairings named their bot has no `bot`: it stays good.
-      const ours = o?.bot === undefined || o.bot === botId;
-      owner = o && ours && Number.isSafeInteger(o.userId) && Number.isSafeInteger(o.chatId)
-        ? { userId: o.userId as number, chatId: o.chatId as number, ...(typeof o.label === "string" && o.label ? { label: o.label.slice(0, 90) } : {}) }
-        : null;
-    } catch { // the store did not answer: asked again next time
-      return null;
-    }
+    // A store that does not answer throws, it is not "no owner": the update being handled is then asked for again (the webhook answers 500, the
+    // poll tries it again), where reading it as no owner took the paired owner for a stranger and confirmed their message as handled.
+    // Nothing is kept on a failure, so the next look reads the store again. The panel's callers catch it (paired, account).
+    const v = d.kv ? await readJsonRecord(d.kv, OWNER_KEY) : null;
+    const o = v ? (v as { userId?: unknown; chatId?: unknown; label?: unknown; bot?: unknown }) : null;
+    // A record kept before pairings named their bot has no `bot`: it stays good.
+    const ours = o?.bot === undefined || o.bot === botId;
+    owner = o && ours && Number.isSafeInteger(o.userId) && Number.isSafeInteger(o.chatId)
+      ? { userId: o.userId as number, chatId: o.chatId as number, ...(typeof o.label === "string" && o.label ? { label: o.label.slice(0, 90) } : {}) }
+      : null;
     // A pinned owner (TELEGRAM_OWNER_ID) that changed: the account kept from before is not the owner any more.
     if (owner && d.config.ownerId !== null && owner.userId !== d.config.ownerId) owner = null;
     return owner;
@@ -347,7 +346,13 @@ export function createTelegram(d: TelegramDeps): TelegramChannel {
   };
   /** An account becomes the owner: the one it replaces is told first, then the owner hears it on their usual chat. */
   const takeOver = async (u: TgUser | undefined, userId: number, chatId: number): Promise<boolean> => {
-    const before = await loadOwner();
+    let before: Owner | null;
+    try {
+      before = await loadOwner();
+    } catch (err) { // the store does not answer: the account is not kept, and the person is told so, as when the write fails (the link is used)
+      log.warn(`the new owner could not be kept: ${(err as Error).message}`);
+      return false;
+    }
     const label = labelOf(u);
     try {
       await saveOwner({ userId, chatId, ...(label ? { label } : {}) });
@@ -403,7 +408,7 @@ export function createTelegram(d: TelegramDeps): TelegramChannel {
   };
 
   const deliver = async (body: Record<string, unknown>): Promise<boolean> => {
-    const o = await loadOwner();
+    const o = await loadOwner().catch(() => null); // the store did not answer: not sent here, so the door falls back to the other chat
     if (!o || unreachable) return false;
     if (body.type === "text") {
       const text = String((body.text as { body?: unknown } | undefined)?.body ?? "");

@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -19,7 +19,7 @@ import { createLocalChannel, createSettings, loadHome, localEnv } from "../src/l
 import {
   linuxStore, macStore, SECURITY, StoreError, winStore, WIN_SCRIPT, type RunResult, type Runner, type SecretStore, type StoreKind,
 } from "../src/secret-store.ts";
-import { encodeValue, folderAccount, readSecrets, secretMode, secretsProblem, secretsWhere, settleSecrets, useStoreForTests, writeSecrets } from "../src/secrets.ts";
+import { encodeValue, folderAccount, readSecrets, secretMode, secretsProblem, secretsUnopened, secretsWhere, settleSecrets, unreadableNotice, useStoreForTests, writeSecrets } from "../src/secrets.ts";
 import { sqliteKv } from "../src/sqlite-kv.ts";
 
 const root = new URL("../", import.meta.url);
@@ -375,6 +375,98 @@ test("a store that no longer answers: readSecrets says it cannot read, loadHome 
   // A folder copied from a Mac to Linux: its marker names a store this system does not have.
   writeFileSync(join(dir, "secrets.json"), marker.replace('"keychain"', '"libsecret"'));
   assert.equal(readSecrets(dir), null);
+});
+
+// A file that cannot be OPENED (permissions, a lock from an antivirus, a disk error) is not a damaged one: it may hold every secret. Made
+// again, it loses the Telegram bot, the connections and every browser's session. Two ways to make it unopenable: no permissions (not as
+// root, not on Windows), and a folder where the file should be (every system answers EISDIR).
+const asRoot = process.getuid?.() === 0 || process.platform === "win32";
+for (const how of ["no permissions", "a folder in its place"] as const) {
+  test(`secrets.json that cannot be opened (${how}) is never written over: temporary secrets, nothing saved, the owner told, and the file is as it was`, { skip: how === "no permissions" && asRoot && "run as root or on Windows, where a file always opens" }, () => {
+    const dir = home();
+    const env = { PAKO_HOME: dir, PAKO_SECRET_STORE: "file" };
+    const first = loadHome(env);
+    const path = join(dir, "secrets.json");
+    const kept = JSON.stringify({ ...file(dir), telegramBotToken: SAMPLE.telegramBotToken, settings: SAMPLE.settings });
+    writeFileSync(path, kept, { mode: 0o600 });
+    const hide = (): void => {
+      if (how === "no permissions") chmodSync(path, 0o000);
+      else {
+        renameSync(path, `${path}.aside`);
+        mkdirSync(path, { mode: 0o700 });
+      }
+    };
+    const show = (): void => {
+      if (how === "no permissions") chmodSync(path, 0o600);
+      else {
+        rmSync(path, { recursive: true });
+        renameSync(`${path}.aside`, path);
+      }
+    };
+    hide();
+    try {
+      assert.equal(readSecrets(dir), null);
+      assert.equal(secretsUnopened(dir), true);
+      const locked = loadHome(env);
+      assert.match(locked.secretsProblem ?? "", /cannot be opened/);
+      assert.equal(locked.secretsAt, "file", "the notice for a file, not for a store");
+      assert.equal(locked.firstRun, false, "not a first run: the store guard must not take this for a new home");
+      assert.notEqual(locked.bridgeToken, first.bridgeToken, "temporary, never the old ones guessed");
+      // Nothing is saved while it cannot be opened, whoever asks.
+      assert.equal(createSettings(dir, env).setTelegramToken!("123:abc"), false);
+      assert.equal(writeStored(dir, { AGENTMAIL_INBOX: "x@agentmail.to" }), false);
+      assert.throws(() => writeSecrets(dir, { bridgeToken: "n".repeat(48) }), StoreError);
+      assert.deepEqual(settleSecrets(dir, env).moved, []);
+    } finally {
+      show();
+    }
+    assert.equal(readFileSync(path, "utf8"), kept, "every byte is where it was");
+    const back = loadHome(env);
+    assert.equal(back.secretsProblem, undefined);
+    assert.equal(back.bridgeToken, first.bridgeToken, "the same secrets once it can be read again");
+    assert.equal(secretsUnopened(dir), false);
+    assert.equal(readSecrets(dir)!.telegramBotToken, SAMPLE.telegramBotToken);
+  });
+}
+
+test("a marker of the system's store that cannot be opened for one start stays, so the entries it names are not orphaned", { skip: asRoot && "run as root or on Windows, where a file always opens" }, () => {
+  const dir = home();
+  const env = { PAKO_HOME: dir, ...KEYCHAIN };
+  const s = stub();
+  useStoreForTests(s.store);
+  loadHome(env);
+  const path = join(dir, "secrets.json");
+  const marker = readFileSync(path, "utf8");
+  const items = new Map(s.items);
+  chmodSync(path, 0o000);
+  try {
+    const locked = loadHome(env);
+    assert.ok(locked.secretsProblem);
+    assert.equal(locked.firstRun, false);
+  } finally {
+    chmodSync(path, 0o600);
+  }
+  assert.equal(readFileSync(path, "utf8"), marker);
+  assert.deepEqual(s.items, items);
+  assert.equal(secretsWhere(dir), "keychain");
+});
+
+test("a secrets.json that is not JSON is still made again, as it always was (only one that cannot be opened is left alone)", () => {
+  const dir = home();
+  const env = { PAKO_HOME: dir, PAKO_SECRET_STORE: "file" };
+  writeFileSync(join(dir, "secrets.json"), "{ not json", { mode: 0o600 });
+  const made = loadHome(env);
+  assert.equal(made.secretsProblem, undefined);
+  assert.equal(secretsUnopened(dir), false);
+  assert.equal(file(dir).bridgeToken, made.bridgeToken);
+});
+
+test("the notice for a secrets file that cannot be opened says what happened and what to do, in plain English", () => {
+  const text = unreadableNotice("en", "file", "secrets.json cannot be opened (EACCES)");
+  assert.match(text, /couldn't use my secrets file: secrets\.json cannot be opened \(EACCES\)/);
+  assert.match(text, /temporary secrets/);
+  assert.match(text, /changed nothing in the file/);
+  assert.match(text, /restart Pako/);
 });
 
 test("the start tells the owner in the chat when the secrets cannot be read", async () => {

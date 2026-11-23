@@ -30,7 +30,7 @@ const LATE_MAX_MS = 12 * 3600_000;
 const MAX_REMINDERS = 500;
 
 export interface RelayReminder {
-  /** The occurrence: the reminder's id and its time ("ab12cd34@1763280000000"); a repeat's next one is another. */
+  /** The occurrence: the reminder's id and its time ("ab12cd34@1763280000000"); each time of a repeat in the week is another. */
   id: string;
   /** Changes when its text or time changes: a changed reminder is fired at its new version, never twice. */
   version: string;
@@ -91,25 +91,34 @@ export function createRelay(d: {
   const now = d.now ?? Date.now;
   let memory: State = { reminders: [], fired: [], syncedAt: 0 };
   let chain: Promise<unknown> = Promise.resolve();
+  /**
+   * What this process sent whose "sent" mark the store has not taken yet (a write that failed): kept here so the next tick does not send it
+   * again. Every change starts from the store's state with these added (withUnsent), and a write that goes through clears them.
+   */
+  const unsent: RelayFired[] = [];
+  /** The stored state. A store that cannot be read throws: reading it as "empty" and then saving would wipe every reminder and the fired history. */
   const load = async (): Promise<State> => {
     if (!d.kv) return structuredClone(memory);
-    try {
-      const v = ((await readJsonRecord(d.kv, RELAY_STATE_KEY)) ?? {}) as Partial<State>;
-      return { reminders: Array.isArray(v.reminders) ? v.reminders : [], fired: Array.isArray(v.fired) ? v.fired : [], syncedAt: Number(v.syncedAt) || 0 };
-    } catch (err) {
-      log.warn(`the relay's state could not be read, starting empty: ${err instanceof SyntaxError ? "not JSON" : (err as Error).message}`);
-      return { reminders: [], fired: [], syncedAt: 0 };
-    }
+    const v = ((await readJsonRecord(d.kv, RELAY_STATE_KEY)) ?? {}) as Partial<State>;
+    return { reminders: Array.isArray(v.reminders) ? v.reminders : [], fired: Array.isArray(v.fired) ? v.fired : [], syncedAt: Number(v.syncedAt) || 0 };
+  };
+  const withUnsent = (s: State): State => {
+    for (const f of unsent) if (!s.fired.some((x) => key(x) === key(f))) s.fired.push(f);
+    if (unsent.length) s.reminders = s.reminders.filter((r) => !unsent.some((f) => key(f) === key(r)));
+    return s;
   };
   const save = async (s: State): Promise<void> => {
     memory = s;
     if (d.kv) await d.kv.set(RELAY_STATE_KEY, JSON.stringify(s), 31 * 24 * 3600);
+    for (let i = unsent.length - 1; i >= 0; i--) if (s.fired.some((x) => key(x) === key(unsent[i]!))) unsent.splice(i, 1);
   };
-  const locked = <R>(fn: (s: State) => Promise<R>): Promise<R> => {
-    const run = chain.then(async () => fn(await load()));
+  /** One change at a time. */
+  const queued = <R>(fn: () => Promise<R>): Promise<R> => {
+    const run = chain.then(fn);
     chain = run.catch(() => undefined);
     return run;
   };
+  const locked = <R>(fn: (s: State) => Promise<R>): Promise<R> => queued(async () => fn(withUnsent(await load())));
 
   /** The laptop's sync: its whole list replaces the relay's; the answer is what fired since `since` (the laptop marks those sent). */
   const sync = (reminders: RelayReminder[], since: number): Promise<{ fired: RelayFired[] }> =>
@@ -124,7 +133,10 @@ export function createRelay(d: {
       return { fired: s.fired.filter((f) => f.at > since) };
     });
 
-  /** Fires what is due, each (id, version) once; one that could not go stays for the next tick. The number sent. */
+  /**
+   * Fires what is due, each (id, version) once; one that could not go stays for the next tick. The number sent. Each send is kept at once
+   * (in memory, then in the store): a store that cannot write must not make the next tick send the same reminder again.
+   */
   const tick = (): Promise<number> =>
     locked(async (s) => {
       const t = now();
@@ -137,16 +149,23 @@ export function createRelay(d: {
         }
         const late = t - r.at > 5 * 60_000;
         if (!(await d.send(`⏰ ${late ? "(late) " : ""}${r.text}`).catch(() => false))) continue;
-        s.fired.push({ id: r.id, version: r.version, at: t });
+        const f = { id: r.id, version: r.version, at: t };
+        s.fired.push(f);
+        unsent.push(f);
         s.reminders = s.reminders.filter((x) => key(x) !== key(r));
         sent++;
+        await save(s);
       }
       await save(s);
       return sent;
     });
 
-  /** Forgets everything the relay holds (the owner turned it off). */
-  const wipe = (): Promise<void> => locked(async () => save({ reminders: [], fired: [], syncedAt: 0 }));
+  /** Forgets everything the relay holds (the owner turned it off). Reads nothing: what it replaces does not matter. */
+  const wipe = (): Promise<void> =>
+    queued(async () => {
+      await save({ reminders: [], fired: [], syncedAt: 0 });
+      unsent.length = 0;
+    });
 
   return { sync, tick, wipe };
 }

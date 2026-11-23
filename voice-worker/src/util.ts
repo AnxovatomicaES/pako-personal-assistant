@@ -270,6 +270,22 @@ export function idleProcesses(raw: string | undefined): number {
 }
 
 /**
+ * How long the worker waits for the server to place a friend call (confirm_call). The server may first look the personal agent up at Retell
+ * (up to 30 s, Retell's own timeout in src/retell.ts) and then ask Retell to place the call (up to 30 s more): a worker that gave up sooner
+ * than the server could finish would tell the owner "that did not work" while the friend's phone rings.
+ */
+export const CONFIRM_CALL_MS = 90_000;
+
+/**
+ * Whether a post that failed may still have done its work on the server: no answer at all (the wait ran out, or the connection broke) or a
+ * server error. A refusal (4xx: not allowed, nothing waiting for a yes) placed nothing.
+ */
+export const mayHaveGoneOut = (r: { ok: boolean; status: number }): boolean => !r.ok && (r.status === 0 || r.status >= 500);
+
+/** What the model is told when confirm_call got no usable answer: the call may be ringing, so it is neither "done" nor "try again". */
+export const CALL_UNKNOWN = "I don't know whether the call went out: the server did not answer in time. Tell them briefly that you don't know whether it went out, that you will not try it again so their friend is not called twice, and that they can ask you to check in a few minutes. Do not call call_contact or confirm_call again for this.";
+
+/**
  * The main server's address, where results and asks are posted: PAKO_URL, else AI_BUYER_URL, its name from before Pako was called Pako, which a
  * worker set up then still has in its host's settings. No trailing slash.
  */

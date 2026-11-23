@@ -217,6 +217,7 @@ function rig(o: Omit<Partial<TimeToDoDeps>, "loops" | "events"> & { clock?: { no
     writes: () => writable === null ? null : {
       canWrite: async () => writable !== false,
       enqueue: async (w) => (enqueued.push(w), queue.enqueue(w)),
+      get: (id) => queue.get(id),
     },
     paused: async () => state.paused, stops: () => state.stops,
     card: async (body, buttons) => (cards.push({ body, buttons }), true),
@@ -261,6 +262,28 @@ test("engine: Block is the yes: the focus block goes into the calendar's queue o
   assert.equal(r.enqueued.length, 1);
   // Blocked: no longer at risk in the brief.
   assert.equal(await r.t.briefLine(), null);
+});
+
+test("engine: a block whose write failed (the Mac app was closed) is not blocked: back in the brief, and Block writes it anew", async () => {
+  const r = rig();
+  await r.t.sweep();
+  await r.t.pressed("b", "a1b2c3d4e5");
+  r.clock.now += 31 * MIN;
+  await r.queue.exchange([]); // nobody fetched the queue in half an hour: failed
+  assert.equal((await r.queue.get((r.enqueued[0] as { id: string }).id))?.status, "failed");
+  assert.match((await r.t.briefLine()) ?? "", /^⏳ At risk: “Send Ana the Q4 deck”/, "still at risk, said in the brief");
+  assert.match(await r.t.pressed("b", "a1b2c3d4e5"), /^OK: “Focus: Send Ana the Q4 deck”, Thu 10:00–11:00/);
+  assert.equal(r.enqueued.length, 2);
+  assert.notEqual((r.enqueued[1] as { id: string }).id, (r.enqueued[0] as { id: string }).id, "a new write, not the failed one's id");
+});
+
+test("engine: Block on an hour a meeting has taken since the card went writes nothing, and proposes the next free time", async () => {
+  const r = rig({ events: WEEK.filter((e) => e.title !== "Workshop") });
+  await r.t.findTime("deck");
+  r.state.events = [...r.state.events, ev("Board call", "2026-11-26T10:15:00Z", "2026-11-26T11:00:00Z")];
+  assert.equal(await r.t.pressed("b", "a1b2c3d4e5"), "");
+  assert.deepEqual(r.enqueued, []);
+  assert.match(r.cards.at(-1)!.body, /^That time is taken now, so I added nothing\. Here is the next free time I see:\n.*Fri 09:00–10:00/);
 });
 
 test("engine: Not needed and Another time never write; Another time proposes the next free time with a new id, then says it was the only one", async () => {
@@ -342,6 +365,25 @@ test("engine: none due in under two hours, none in the quiet hours, none past th
     ],
   });
   assert.equal(await others.t.sweep(), null);
+});
+
+test("engine: the cap is taken in the part's turn at the day's cap; gentle mode's cap never raises the standard one", async () => {
+  // The check against the others and the count are one turn (src/app/budget.ts): the room is what that turn says, whatever an earlier look read.
+  const rooms: number[] = [];
+  const noRoom = rig({ others: async () => 0, take: async (_cap, fn) => fn(0) });
+  assert.equal(await noRoom.t.sweep(), null, "no room at its turn: no card");
+  assert.equal(noRoom.cards.length, 0);
+  assert.equal(await noRoom.t.spentToday(), 0);
+  const oneLeft = rig({ take: async (cap, fn) => (rooms.push(cap), fn(1)) });
+  assert.equal(await oneLeft.t.sweep(), "a1b2c3d4e5");
+  assert.deepEqual(rooms, [6], "the standard cap, with gentle mode off");
+  assert.equal(await oneLeft.t.spentToday(), 1, "counted inside the turn");
+  // Gentle 10 over the standard 6: the standard cap holds (the lower of the two).
+  const gentleHigh = rig({ gentle: async () => ({ maxPerDay: 10 }), others: async () => 6 });
+  assert.equal(await gentleHigh.t.sweep(), null, "6 of 6");
+  const gentleLow = rig({ gentle: async () => ({ maxPerDay: 2 }), take: async (cap, fn) => (rooms.push(cap), fn(1)) });
+  assert.equal(await gentleLow.t.sweep(), "a1b2c3d4e5");
+  assert.equal(rooms.at(-1), 2, "gentle's lower cap");
 });
 
 test("engine: a card that could not go is not counted, and the next look tries again", async () => {

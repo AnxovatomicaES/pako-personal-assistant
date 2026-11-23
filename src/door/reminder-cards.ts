@@ -3,7 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { whenText } from "../undo.ts";
 import { localStamp, repeatAfter, localOrLater } from "./time.ts";
-import { REMINDERS_MAX, TEMPLATE_TEXT_MAX, FIRED_KEEP_MS, FIRED_KEEP, SNOOZE_MS } from "./shared.ts";
+import { CARD_MAX, REMINDERS_MAX, TEMPLATE_TEXT_MAX, FIRED_KEEP_MS, FIRED_KEEP, SNOOZE_MS, cut } from "./shared.ts";
 import type { Reminder, Fired, Door } from "./door.ts";
 import { createLog } from "../log.ts";
 import { readJsonRecord } from "../json-record.ts";
@@ -16,7 +16,7 @@ const FIRED_KEY = "assistant-reminders-fired";
 export function mountReminderCards(door: Door): Pick<Door, "sendReminderTemplate" | "repeatNext" | "sendReminderCard" | "answerReminder"> {
   const { d, config, now, lang, tx, hhmm, graph, sendText, graphTo, loadReminders, saveReminders, counted, remLock } = door;
   /** The text as a template variable: one line (Meta allows no line breaks there), cut at TEMPLATE_TEXT_MAX. */
-  const templateText = (text: string): string => text.replace(/\s+/g, " ").trim().slice(0, TEMPLATE_TEXT_MAX);
+  const templateText = (text: string): string => cut(text.replace(/\s+/g, " ").trim(), TEMPLATE_TEXT_MAX);
   const sendReminderTemplate = async (text: string): Promise<boolean> =>
     (await graphTo(config.ownerDigits, {
       type: "template",
@@ -68,7 +68,7 @@ export function mountReminderCards(door: Door): Pick<Door, "sendReminderTemplate
       type: "interactive",
       interactive: {
         type: "button",
-        body: { text: body.slice(0, 1000) },
+        body: { text: cut(body, CARD_MAX) },
         action: { buttons: buttons.map(([k, title]) => ({ type: "reply", reply: { id: `${k}:${f.id}`, title: tx(title) } })) },
       },
     });

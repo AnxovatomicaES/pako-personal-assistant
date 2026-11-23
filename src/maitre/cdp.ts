@@ -4,9 +4,9 @@
 //
 // Every call has a timeout: a page that hangs must turn into a typed "timeout" for the planner, never into a booking left half-done.
 
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
@@ -520,6 +520,60 @@ export interface BrowserOptions {
   launchTimeoutMs?: number;
 }
 
+/**
+ * The process holding a browser profile: Chrome's own lock in it is a link "host-pid" (macOS and Linux), and the process must be alive and be a
+ * browser started on this very profile (after a restart of the computer a number in an old lock may be anyone's). Null otherwise.
+ */
+function holderOf(profileDir: string): number | null {
+  let pid: number;
+  try {
+    pid = Number(/-(\d+)$/.exec(readlinkSync(join(profileDir, "SingletonLock")))?.[1]);
+  } catch {
+    /* no lock: nothing holds the profile (or Windows, which has none) */
+    return null;
+  }
+  if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) return null;
+  try {
+    process.kill(pid, 0);
+    return execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8", timeout: 3000 }).includes(`--user-data-dir=${profileDir}`) ? pid : null;
+  } catch {
+    /* not running, or not ours to look at */
+    return null;
+  }
+}
+
+const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    /* no such process (or not ours to signal): not running for this purpose */
+    return false;
+  }
+};
+
+/**
+ * A browser of an earlier Pako still running on this profile (that Pako ended without closing it) makes a new one stop at once: it hands its
+ * window to the old process and exits. The profile is Pako's own and one Pako runs per home, so such a browser is stale: asked to end, then killed.
+ */
+async function releaseProfile(profileDir: string): Promise<void> {
+  const pid = holderOf(profileDir);
+  if (pid === null) return;
+  const gone = async (ms: number): Promise<boolean> => {
+    const end = Date.now() + ms;
+    while (alive(pid) && Date.now() < end) await sleep(100);
+    return !alive(pid);
+  };
+  try {
+    process.kill(pid, "SIGTERM");
+    if (await gone(4000)) return;
+    process.kill(pid, "SIGKILL");
+  } catch {
+    /* gone meanwhile */
+  }
+  await gone(3000);
+}
+
 /** One running browser. */
 export class Browser {
   private proc: ChildProcess;
@@ -548,7 +602,13 @@ export class Browser {
       ...(o.headless ? ["--headless=new", "--window-size=1280,900"] : ["--new-window", "--window-size=1200,900"]),
       "about:blank",
     ];
+    await releaseProfile(o.profileDir);
     const proc = spawn(o.executable, args, { stdio: "ignore", detached: false });
+    // Whenever Pako ends (a stop, a restart in place, a crash with an exit), its browser ends with it: left running, it would keep the profile
+    // and every later booking would find it in use. Only a kill of Pako itself leaves one, and the next launch deals with that (releaseProfile).
+    const killWithPako = (): void => void proc.kill("SIGKILL");
+    process.on("exit", killWithPako);
+    proc.once("exit", () => process.off("exit", killWithPako));
     let failed: Error | null = null;
     proc.on("error", (err) => (failed = err));
     proc.on("exit", (code) => (failed ??= new Error(`the browser stopped at once (exit ${code}); is the profile in use by another Pako?`)));
@@ -604,8 +664,9 @@ export class Browser {
 }
 
 /**
- * The browser kept warm: started on first use, in the mode asked for (a Handoff needs a window, so a headless one is closed and a visible one
- * opened on the same profile, which only one process can hold), and closed after `idleMs` with nothing in use.
+ * The browser kept warm: started on first use, in the mode asked for (a Handoff needs a window, so an idle headless one is closed and a visible
+ * one opened on the same profile, which only one process can hold), and closed after `idleMs` with nothing in use. A browser that is working is
+ * never closed to change its mode: a window waits for the headless steps to end, and a step is turned away while a window is open.
  */
 /** What Maître needs from the browser: a tab for a step, and a visible tab for a Handoff (the tests give a stand-in). */
 export interface PagePool {
@@ -613,16 +674,19 @@ export interface PagePool {
   openWindow(): Promise<{ page: Page; release: () => void }>;
 }
 
+/** What the pool needs of a running browser (the tests give a stand-in for the real one). */
+export type BrowserLike = Pick<Browser, "alive" | "headless" | "newPage" | "close">;
+
 export class BrowserPool implements PagePool {
-  private browser: Browser | null = null;
-  private starting: Promise<Browser> | null = null;
+  private browser: BrowserLike | null = null;
+  private starting: Promise<BrowserLike> | null = null;
   private timer: NodeJS.Timeout | null = null;
   private inUse = 0;
   /** A Handoff holds the window open until it ends, whatever the idle clock says. */
   private holds = 0;
-  private o: Omit<BrowserOptions, "headless"> & { idleMs?: number };
+  private o: Omit<BrowserOptions, "headless"> & { idleMs?: number; switchWaitMs?: number; launch?: (o: BrowserOptions) => Promise<BrowserLike> };
 
-  constructor(o: Omit<BrowserOptions, "headless"> & { idleMs?: number }) {
+  constructor(o: Omit<BrowserOptions, "headless"> & { idleMs?: number; switchWaitMs?: number; launch?: (o: BrowserOptions) => Promise<BrowserLike> }) {
     this.o = o;
   }
 
@@ -638,20 +702,41 @@ export class BrowserPool implements PagePool {
     this.timer.unref?.();
   }
 
-  private async get(headless: boolean): Promise<Browser> {
-    if (this.starting) await this.starting.catch(() => undefined);
-    if (this.browser && this.browser.alive && this.browser.headless === headless) return this.browser;
-    if (this.browser) {
+  /**
+   * The browser in the mode asked for. The caller has counted itself in `inUse` (a step) or `holds` (a window) already. A browser of the other
+   * mode that is idle is closed for it; one that is working is not (closing it would take the owner's window from under them, or end a booking
+   * between its press and its confirmation): a step is refused while a window is open (it becomes a typed failure the planner handles), and a
+   * window waits for the steps running to end, each of which ends by its own deadline.
+   */
+  private async get(headless: boolean): Promise<BrowserLike> {
+    const giveUp = Date.now() + (this.o.switchWaitMs ?? 3 * 60_000);
+    for (;;) {
+      if (this.starting) await this.starting.catch(() => undefined);
       const old = this.browser;
-      this.browser = null;
-      await old.close().catch(() => undefined);
-    }
-    this.starting = Browser.launch({ ...this.o, headless });
-    try {
-      this.browser = await this.starting;
-      return this.browser;
-    } finally {
-      this.starting = null;
+      if (old && old.alive && old.headless === headless) return old;
+      if (old?.alive) {
+        if (headless && this.holds > 0) throw new CdpError("cdp: a window the owner is working in is open: not now");
+        if (!headless && this.inUse > 0) {
+          if (Date.now() >= giveUp) throw new CdpError("cdp: the browser stayed busy too long to open a window");
+          await sleep(100);
+          continue;
+        }
+      }
+      // The closing and the launch are one step others wait for (`starting`): two launches on one profile would stop each other.
+      const launch = this.o.launch ?? Browser.launch.bind(Browser);
+      this.starting = (async () => {
+        if (old) {
+          this.browser = null;
+          await old.close().catch(() => undefined);
+        }
+        return launch({ ...this.o, headless });
+      })();
+      try {
+        this.browser = await this.starting;
+        return this.browser;
+      } finally {
+        this.starting = null;
+      }
     }
   }
 

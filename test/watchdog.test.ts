@@ -284,6 +284,31 @@ test("after a restart, an incident of a part met later (the computer, once the s
   assert.deepEqual(JSON.parse(kv.map.get("watchdog")!), { zoom: { since: NOON - HOUR, told: true } }, "Zoom's waits for Zoom's next round");
 });
 
+test("a restart while the assistant's computer is still down: the door's start stamp is no request, so its incident stands, not 'works again', until it really asks", async () => {
+  const kv = memoryKv();
+  kv.map.set("watchdog", JSON.stringify({ bridge: { since: NOON - 2 * HOUR, told: true } }));
+  // The door starts with its last request at the start (src/door/core.ts: a restart is not an outage); nothing has asked since.
+  const door = { lastPoll: NOON, polled: false };
+  const r = rig({ kv, lastPoll: () => door.lastPoll, polled: () => door.polled });
+  r.clock.t = NOON + MIN;
+  await r.dog.tick();
+  await r.settle();
+  assert.deepEqual(r.said, [], "a minute after the start: no false \"works again\"");
+  assert.equal(r.dog.state().parts.find((p) => p.key === "bridge")?.status, "down", "still down");
+  r.clock.t = NOON + 16 * MIN;
+  await r.dog.tick();
+  await r.settle();
+  assert.deepEqual(r.said, [], "nor told again: it is the same incident, from before the restart");
+  assert.deepEqual(JSON.parse(kv.map.get("watchdog")!), { bridge: { since: NOON - 2 * HOUR, told: true } });
+  // The computer asks: now it is back, said once, since when it really began.
+  door.lastPoll = r.clock.t;
+  door.polled = true;
+  await r.dog.tick();
+  await r.settle();
+  assert.deepEqual(r.said, ["✅ Your assistant's computer works again (it was failing since 10:00)."]);
+  assert.equal(r.dog.state().parts.find((p) => p.key === "bridge")?.status, "ok");
+});
+
 test("the assistant's computer more than a day behind is told once, with why it does not update itself; up to date again in one line", async () => {
   const server = { sha: "a".repeat(40), committedAt: NOON - HOUR };
   const r = rig({ polling: true, serverVersion: () => server });

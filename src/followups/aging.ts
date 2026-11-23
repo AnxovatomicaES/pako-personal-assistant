@@ -17,7 +17,7 @@ export function owedUndated(l: Pick<Loop, "kind" | "dueAt" | "check" | "status">
 /**
  * When this loop's next aging nudge is due: its `nudges`-th step of AGING_DAYS working days after it was said, and, after the first, never
  * sooner than the steps' difference after the last one (a first nudge that came late, or an old loop at the upgrade, is not followed by the
- * second at the next tick). 0: none (not an owed undated loop, both said already, or no working time in the next two weeks).
+ * second at the next tick). 0: none (not an owed undated loop, both said already, or no working time in the weeks looked at: src/followups/chase.ts).
  */
 export function agingAt(l: Loop, tz: string, quiet: FollowupsConfig["quiet"], work: FollowupsConfig["work"]): number {
   if (!owedUndated(l)) return 0;

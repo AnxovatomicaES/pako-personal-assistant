@@ -11,6 +11,9 @@ import type { Kv } from "../src/kv.ts";
 import {
   createLessons, draftChanges, isSameMessage, LESSONS_HEAD, LESSONS_KEY, LESSONS_MAX, LESSONS_PER_RUN, mountLessonsPanel, safeField,
 } from "../src/lessons.ts";
+import { parseMessage } from "../src/imap.ts";
+import { createMailIntake } from "../src/mail-intake.ts";
+import { createMailbox } from "../src/mail.ts";
 import { createQuality } from "../src/quality.ts";
 import { lessonsOfUndo } from "../src/undo.ts";
 
@@ -83,6 +86,29 @@ test("bounded: at most LESSONS_MAX; the least reinforced, oldest go first", asyn
   assert.ok(list.some((x) => x.text.includes(`number ${LESSONS_MAX + 8} `)), "the newest stays");
 });
 
+test("bounded: a new correction is never the one dropped in the write that keeps it, even when every lesson was taught twice", async () => {
+  let now = T0;
+  const l = createLessons({ kv: memKv(), timeZone: TZ, now: () => now });
+  for (let i = 0; i < LESSONS_MAX; i++) {
+    for (let k = 0; k < 2; k++) {
+      now += 1000;
+      await l.notMine({ title: `task number ${i} zebra${i}`, who: `Person${i}`, where: `#room${i}` });
+    }
+  }
+  now += 1000;
+  const fresh = await l.notMine({ title: "book the offsite venue", who: "Dana", where: "#ops" });
+  assert.ok(fresh);
+  const list = await l.list();
+  assert.equal(list.length, LESSONS_MAX);
+  assert.ok(list.some((x) => x.id === (fresh as { id: string }).id), "the lesson just added is kept");
+  assert.ok(!list.some((x) => x.source.who === "Person0"), "the oldest of those taught twice went instead");
+  // The one reinforced in this write is kept too, whatever its count.
+  now += 1000;
+  const again = await l.notMine({ title: "book the offsite venue", who: "Dana", where: "#ops" });
+  assert.equal((again as { count: number }).count, 2);
+  assert.equal((await l.list()).length, LESSONS_MAX);
+});
+
 test("a run reads at most LESSONS_PER_RUN, of its kinds, the same person or place first, most recent first", async () => {
   let now = T0;
   const l = createLessons({ kv: null, timeZone: TZ, now: () => now });
@@ -137,6 +163,49 @@ test("a draft beside what the owner sent there: changed, a lesson; as written, n
   await l.drafted({ text: "To Tom by email\nHi Tom, the report is attached with the regional split.", who: "Tom", address: "tom@client.example" });
   const byMail = await l.ownSent({ to: ["tom@client.example"], text: "The report is attached with the regional split." });
   assert.match(byMail?.text ?? "", /Drafts to Tom: no greeting\./);
+});
+
+test("the owner's sent mail reaches the lessons whole: every recipient, and the reply they wrote between or under the quoted lines", async () => {
+  const l = createLessons({ kv: null, timeZone: TZ, now: () => T0 });
+  const intake = createMailIntake({ box: createMailbox(null), enqueue: async () => true, lang: () => "en", now: () => T0, vip: [], ownSent: (o) => l.ownSent(o) });
+  const sent = (to: string, body: string) => parseMessage(Buffer.from([
+    "From: Alex <alex@owner.example>", `To: ${to}`, "Subject: Re: Quote", "Message-ID: <r1@owner.example>", "In-Reply-To: <q1@client.example>",
+    "Content-Type: text/plain; charset=utf-8", "", body].join("\r\n")));
+  // A draft Pako wrote for Ana; the owner sent it to Ana and Bob, changed. Only the last recipient used to be seen.
+  await l.drafted({ text: "To Ana by email\nHi Ana! The quote is 4,500 EUR, valid until Friday, and the dates are 12-14 Dec. Thanks!", who: "Ana", address: "ana@client.example" });
+  await intake.sent(sent("Ana Ruiz <ana@client.example>, Bob Lee <bob@client.example>", "Quote: 4,500 EUR, valid until Friday. Dates: 12-14 Dec."), T0);
+  assert.equal((await l.list()).length, 1, "the draft for Ana, the first of two recipients, was found");
+  // A reply written under and between the quoted lines: only the quoted lines go, never what the owner wrote after the first one.
+  await l.drafted({ text: "To Bob by email\nHi Bob! The quote is 4,500 EUR, valid until Friday, and the dates are 12-14 Dec. Thanks!", who: "Bob", address: "bob@client.example" });
+  await intake.sent(sent("Bob Lee <bob@client.example>", "On Monday Bob wrote:\r\n> Can you send the quote?\r\nYes: 4,500 EUR, valid until Friday.\r\n> and the dates?\r\nDates: 12-14 Dec."), T0);
+  const list = await l.list();
+  assert.equal(list.length, 2, "the draft for Bob was matched with the owner's words under the quote");
+  assert.ok(list[1]!.sent?.includes("Dates: 12-14 Dec."), "their words after the first quoted line are kept");
+  assert.ok(!list[1]!.sent?.includes("Can you send the quote"), "the quoted lines are not");
+  // The lessons' own cut (a Slack post or any text handed to ownSent) is the same: the quote's lines only.
+  await l.drafted({ text: "To Cy by email\nHi Cy! The quote is 4,500 EUR, valid until Friday, and the dates are 12-14 Dec. Thanks!", who: "Cy", address: "cy@client.example" });
+  const direct = await l.ownSent({ to: ["cy@client.example"], text: "> Can you send the quote?\nYes: 4,500 EUR, valid until Friday.\n> and the dates?\nDates: 12-14 Dec.", at: T0 });
+  assert.equal(direct?.sent, "Yes: 4,500 EUR, valid until Friday.\n\nDates: 12-14 Dec.");
+});
+
+test("a short post of the owner's is no changed copy of a draft: «Will do» teaches nothing and the draft waits; a post in another thread does not answer a thread's draft", async () => {
+  let now = T0;
+  const l = createLessons({ kv: memKv(), timeZone: TZ, now: () => now });
+  const draft = "A reply in #sales to Stan\nHi Stan,\nThanks for the nudge. I will send the pricing sheet by Friday and loop in Ana from finance so she can confirm the discount.\nBest,\nAlex";
+  const thread = "1763000000.000100";
+  await l.drafted({ text: draft, who: "Stan", where: "#sales", channel: "C0SALES", thread });
+  now += 600_000;
+  for (const text of ["On it", "Will do", "Thanks!", "I will do it Friday"]) {
+    assert.equal(await l.ownSent({ channel: "C0SALES", thread, text, at: now }), null, `${text}: not an edit of the draft`);
+  }
+  assert.equal((await l.list()).length, 0, "nothing was learnt from them");
+  const edit = "Will send the pricing sheet Friday and loop Ana in from finance to confirm the discount.";
+  assert.equal(await l.ownSent({ channel: "C0SALES", thread: "1763999999.000200", text: edit, at: now }), null, "another thread of the channel");
+  assert.equal(await l.ownSent({ channel: "C0SALES", text: edit, at: now }), null, "the channel's own line, not the thread");
+  assert.ok(await l.ownSent({ channel: "C0SALES", thread, text: edit, at: now }), "the same thread, a real edit: learnt (the draft waited through all of that)");
+  // A draft for the channel itself (no thread) is answered by a real edit of it anywhere in that channel.
+  await l.drafted({ text: draft, who: "Stan", where: "#sales", channel: "C0SALES" });
+  assert.ok(await l.ownSent({ channel: "C0SALES", thread: "1763999999.000200", text: edit, at: now }));
 });
 
 test("an undo teaches what Pako did that the owner put back; a stopped email names whom it was to", async () => {
@@ -195,12 +264,13 @@ test("the extraction, the brief and the draft read the lessons under their headi
     lessons: async (q) => (asked.push(q), ["- 2026-11-15 · Drafts to Ana: no greeting."]),
     drafted: async (o) => void drafted.push(o),
   });
-  const task = await brief.draftFor({ title: "Send Ana the deck", facts: [{ label: "Slack", text: "Ana asked for the deck" }], about: { who: "Ana", channel: "D0ANA" } });
+  const task = await brief.draftFor({ title: "Send Ana the deck", facts: [{ label: "Slack", text: "Ana asked for the deck" }], about: { who: "Ana", channel: "D0ANA", thread: "1763000000.000100" } });
   assert.ok(task);
   assert.deepEqual(asked[0], { kinds: ["draft_edit", "undo"], about: ["draft", "email", "message"], who: "Ana", channel: "D0ANA" });
   assert.ok(texts[0]!.includes(`${LESSONS_HEAD}\n- 2026-11-15 · Drafts to Ana: no greeting.`));
   await brief.result(task.id, "A reply in your Slack conversation with Ana\nDeck coming shortly.");
-  assert.deepEqual(drafted, [{ text: "A reply in your Slack conversation with Ana\nDeck coming shortly.", about: { who: "Ana", channel: "D0ANA" } }]);
+  assert.deepEqual(drafted, [{ text: "A reply in your Slack conversation with Ana\nDeck coming shortly.", about: { who: "Ana", channel: "D0ANA", thread: "1763000000.000100" } }],
+    "a draft for a thread keeps its thread, to be compared with what the owner posts in it");
 });
 
 test("the panel: the lessons listed with the session; one deleted only with the x-pako header", async () => {

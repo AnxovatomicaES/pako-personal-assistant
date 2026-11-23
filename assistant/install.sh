@@ -61,10 +61,13 @@ if [ -z "$SERVER" ]; then
   read -r -p "Server: " SERVER || true
 fi
 SERVER="${SERVER%/}"
-case "$SERVER" in
-  https://*[!/]* | http://localhost* | http://127.0.0.1*) ;;
-  *) die "The server address must start with https:// (got: ${SERVER:-nothing})." ;;
-esac
+# Exactly what the bridge takes (assistant/bridge/config.ts): https:// and the host alone, or this computer over http. A panel address with a
+# path would be written, then refused by the bridge at every start; and http://localhost.<anything> is another computer, which must not get
+# the token over plain http in the check below.
+HTTPS_RE='^https://[^/[:space:]]+$'
+LOCAL_RE='^http://(localhost|127\.0\.0\.1)(:[0-9]+)?$'
+[[ $SERVER =~ $HTTPS_RE || $SERVER =~ $LOCAL_RE ]] ||
+  die "The server address must be https:// and the server's name only, nothing after it, like https://my-pako.onrender.com (got: ${SERVER:-nothing})."
 
 TOKEN="${ASSISTANT_BRIDGE_TOKEN:-}"
 if [ -z "$TOKEN" ] && [ -f "$ENV_FILE" ]; then

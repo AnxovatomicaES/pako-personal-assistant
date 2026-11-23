@@ -244,7 +244,7 @@ const VOICES = [
   { voice_id: "xai-Leo", voice_name: "Leo", provider: "xai", gender: "male", preview_audio_url: "https://voices.example/leo.mp3" },
 ];
 
-function retellWorld(opts: { rejectCalls?: boolean; rejectAgentCreate?: boolean; refuseFastTier?: boolean; refuseVoiceModel?: boolean; failCreateWith?: number } = {}) {
+function retellWorld(opts: { rejectCalls?: boolean; rejectAgentCreate?: boolean; refuseFastTier?: boolean; refuseVoiceModel?: boolean; failCreateWith?: number; unreadableAnswer?: boolean } = {}) {
   const base = fakeRetell({ voices: VOICES });
   const placed: Body[] = [];
   const calls = new Map<string, Body>();
@@ -267,6 +267,8 @@ function retellWorld(opts: { rejectCalls?: boolean; rejectAgentCreate?: boolean;
         if (opts.rejectCalls) return json({ message: "to_number is invalid" }, 400);
         if (opts.failCreateWith) return json({ message: "boom" }, opts.failCreateWith);
         placed.push(body);
+        // Retell took the request (2xx) but the body cannot be read: an empty one, or a proxy's page.
+        if (opts.unreadableAnswer) return new Response("<html>ok</html>", { status: 201 });
         const call = { call_id: `call_abc${placed.length}`, call_status: "registered", metadata: body.metadata };
         calls.set(call.call_id, call);
         return json(call, 201);
@@ -312,7 +314,7 @@ interface Rig {
 
 async function rig(
   extra: Record<string, string> = {},
-  worldOpts: { rejectCalls?: boolean; rejectAgentCreate?: boolean; refuseFastTier?: boolean; refuseVoiceModel?: boolean; failCreateWith?: number } = {},
+  worldOpts: { rejectCalls?: boolean; rejectAgentCreate?: boolean; refuseFastTier?: boolean; refuseVoiceModel?: boolean; failCreateWith?: number; unreadableAnswer?: boolean } = {},
   voice: VoiceBridge | null = null,
   control?: Control,
   /** How the owner's card fares: shown (the default), pressed before WhatsApp even answered, not shown (refused), or no way to ask at all. */
@@ -1561,7 +1563,7 @@ test("STOP: no call is placed while paused (owner or friend), it is logged, and 
 
 // ---------- bug hunt 2: regression tests ----------
 
-test("phone: a call whose outcome is unknown keeps its slots (a retry cannot ring the friend twice); a refusal gives them back; the same call asked twice has one idempotency key", async () => {
+test("phone: a call whose outcome is unknown keeps its slots (a retry cannot ring the friend twice); a refusal gives them back; each approved request has its own idempotency key", async () => {
   const r = await rig({ PERSONAL_PER_CONTACT_DAILY_CAP: "2" }, { failCreateWith: 500 });
   try {
     for (let i = 0; i < 2; i++) {
@@ -1583,11 +1585,39 @@ test("phone: a call whose outcome is unknown keeps its slots (a retry cannot rin
   const ok = await rig({ PERSONAL_PER_CONTACT_DAILY_CAP: "5" });
   try {
     await askAndPress(ok, { name: "Ana", message: "llego tarde" });
+    ok.clock.now += 5 * 60_000; // Ana did not pick up: the owner asks for the same call again, which is a wanted second call
     await askAndPress(ok, { name: "Ana", message: "llego tarde" });
     const keys = ok.world.placed.map((p) => p.idempotency_key);
-    assert.equal(keys[0], keys[1], "the same call within ten minutes is recognisable to Retell");
+    assert.equal(keys.length, 2);
+    assert.notEqual(keys[0], keys[1], "each approved request has its own key: Retell must not fold a wanted second call into the first");
   } finally {
     ok.close();
+  }
+});
+
+test("phone: a 2xx from Retell whose answer cannot be read is 'unknown' (the call may exist): slots kept, never 'could not be placed'", async () => {
+  const r = await rig({ PERSONAL_PER_CONTACT_DAILY_CAP: "2" }, { unreadableAnswer: true });
+  try {
+    const out = await askAndPress(r, { name: "Ana", message: "llego tarde" });
+    assert.equal(out.isError, true);
+    assert.match(out.text, /may or may not have been placed/, "not 'could not be placed'");
+    assert.doesNotMatch(out.text, /could not be placed/);
+    const again = await askAndPress(r, { name: "Ana", message: "llego tarde" });
+    assert.match(again.text, /may or may not have been placed/);
+    const third = await askAndPress(r, { name: "Ana", message: "llego tarde" });
+    assert.match(third.text, /limit|cap|too many|already/i, "both tries counted against Ana's slots: nothing was given back");
+  } finally {
+    r.close();
+  }
+  // The owner's own call_me: the same, and the owner's slot stays used.
+  const me = await rig({ PERSONAL_DAILY_CAP: "1" }, { unreadableAnswer: true });
+  try {
+    const out = await tool(me, "call_me", { message: "hola" });
+    assert.equal(out.isError, true);
+    assert.match(out.text, /may or may not have been placed/);
+    assert.match((await tool(me, "call_me", { message: "otra" })).text, /Daily cap reached/, "the slot was not given back");
+  } finally {
+    me.close();
   }
 });
 

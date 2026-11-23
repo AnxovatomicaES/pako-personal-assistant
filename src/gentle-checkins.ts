@@ -10,10 +10,13 @@
 // - Each ask is a durable slot (src/jobs.ts, "checkin:<id>@<time>"): a restart neither loses one nor sends one twice.
 // - No catch-up storm after a sleep: one more than two hours past its time is not sent (the brief says it, quietly), and of several that came
 //   due while the computer slept only the newest goes; the others go to the brief too.
-// - The day's cap: gentle mode's nudge cap (the standard one when it is off), shared with the follow-ups' nudges and Pako's own suggestions.
-//   Only a check-in's first ask counts; the looks after a "Not yet" are part of the same one.
+// - The day's cap: the lower of gentle mode's nudge cap and the standard one, shared with the follow-ups' nudges and Pako's own suggestions.
+//   Only a check-in's first ask counts; the looks after a "Not yet" are part of the same one. One asked for in the chat at a time (no
+//   follow-up behind it) is asked whatever the cap says, and still counts.
+// - One asked and never answered goes to the brief after two hours, and only the ones still to be asked count towards the ten waiting.
 
 import { randomBytes } from "node:crypto";
+import { cap, takeOf, type Take } from "./app/budget.ts";
 import type { CalEvent } from "./calendar.ts";
 import { zonedTime } from "./followups/time.ts";
 import { quietAt, type GentleConfig } from "./gentle.ts";
@@ -197,6 +200,8 @@ export interface CheckInsDeps {
   standardMax: number;
   /** Follow-up nudges and Pako's own suggestions sent today: the cap is shared. */
   others?: () => Promise<number>;
+  /** This part's turn at the day's cap (src/app/budget.ts): the check against the others and the count are one turn. Absent: `others`. */
+  take?: Take;
   quiet: { start: number; end: number } | null;
   /** The calendar (never during a meeting); absent or failing: no meeting is known. */
   events?: () => Promise<CalEvent[]>;
@@ -213,6 +218,7 @@ export interface CheckInsDeps {
 
 export function createCheckIns(d: CheckInsDeps) {
   const now = d.now ?? Date.now;
+  const take = takeOf(d.take, d.others);
   let memory = empty();
   // A store that does not answer throws (src/json-record.ts): an empty list in its place would be saved over every check-in waiting. What
   // changes the list then changes nothing (and says so); what only reads it (the brief's line, the day's count) gets nothing.
@@ -257,7 +263,8 @@ export function createCheckIns(d: CheckInsDeps) {
     } catch (err) {
       return { ok: false, say: unread(err) };
     }
-    const waiting = s.list.filter((c) => c.state === "waiting" || c.state === "asked");
+    // Only the ones still to be asked: one asked and never answered is the brief's after two hours (sweep), and holds no place meanwhile.
+    const waiting = s.list.filter((c) => c.state === "waiting");
     if (waiting.length >= CHECKINS_MAX) return { ok: false, say: CT()("full", { n: waiting.length }) };
     const thing = thingOf(o.thing);
     // One per follow-up: asked again from its nudge, the waiting one just moves.
@@ -323,8 +330,14 @@ export function createCheckIns(d: CheckInsDeps) {
   const sweep = (): Promise<string[]> => serial(async () => {
     const t = now();
     const s = await load();
+    // Asked and never answered for two hours: kept for the brief, like one that was never sent (it would hold its place for days otherwise).
+    const unanswered = s.list.filter((c) => c.state === "asked" && t - (c.askedAt ?? c.at) > CHECKIN_STALE_MS);
+    for (const c of unanswered) toBrief(c, t);
     const waiting = s.list.filter((c) => c.state === "waiting" && c.at <= t).sort((a, b) => a.at - b.at);
-    if (!waiting.length) return [];
+    if (!waiting.length) {
+      if (unanswered.length) await save(s);
+      return [];
+    }
     // A follow-up's check-in whose follow-up was parked or closed since: nothing to ask about, nor to carry to the brief. It ends quietly.
     // (A follow-up that cannot be read just now is taken as still open.)
     const due: CheckIn[] = [];
@@ -361,17 +374,34 @@ export function createCheckIns(d: CheckInsDeps) {
         else c.at = later;
         continue;
       }
+      // The first ask takes its place in the day's cap before the card goes (the check and the count are one turn, saved so the other
+      // parts' turns see it); a card that did not go gives the place back. A re-ask of one already counted costs nothing.
+      let reserved = false;
       if (!c.counted) {
-        const cap = g!.on ? g!.maxPerDay : d.standardMax;
-        const others = await (d.others?.() ?? Promise.resolve(0)).catch(() => 0);
-        if (s.n + others >= cap) {
+        reserved = await take(cap(d.standardMax, g!.on ? g!.maxPerDay : null), async (room) => {
+          // One the owner asked for in the chat at a time (no follow-up behind it) is asked whatever the day's cap says: it was never Pako's
+          // to hold back for the brief. It still counts, so the parts that speak on their own leave room for it.
+          if (c.loop && s.n >= room) return false;
+          s.n++;
+          c.counted = true;
+          await save(s);
+          return true;
+        });
+        if (!reserved) {
           toBrief(c, t);
           continue;
         }
       }
       const out = await send(c);
-      if (out !== "sent") continue; // the next look tries again, until it is two hours old
-      if (!c.counted) s.n++;
+      if (out !== "sent") {
+        // The next look tries again, until it is two hours old.
+        if (reserved) {
+          s.n = Math.max(0, s.n - 1);
+          c.counted = false;
+          await save(s);
+        }
+        continue;
+      }
       Object.assign(c, { state: "asked", askedAt: t, counted: true });
       d.log?.(CT()("logAsked", { thing: c.thing || CT()("briefNone") }));
       asked.push(c.id);

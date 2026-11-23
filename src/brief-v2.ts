@@ -505,6 +505,8 @@ export interface BriefDoc {
   dayItems: DayItem[];
   /** The source kinds read, for the footer. */
   sourcesUsed: SourceIcon[];
+  /** The source kinds connected but not read this time (a failed read): the chat says so instead of "nothing" for what it could not see. */
+  unread?: SourceIcon[];
   /** Every fact an item cites: its icon and label. */
   refs: SourceRef[];
 }
@@ -684,9 +686,11 @@ export function validateBrief(raw: unknown, g: Gathered, o: { now: number; timeZ
     if ((f.kind !== "event" && f.kind !== "zoom") || !onToday(f)) continue;
     if (dayItems.some((d) => d.sources.includes(f.id))) continue;
     const at = slot(f);
-    const title = f.title ?? f.label;
-    if (at.time && dayItems.some((d) => d.time === at.time && d.confirmed)) continue;
-    dayItems.push({ ...at, title: clean(title, 140), confirmed: true, note: "", sources: [f.id] });
+    const title = clean(f.title ?? f.label, 140);
+    // The same meeting (a Zoom meeting and its calendar event are two facts) is one line; two meetings that start together are two, whatever
+    // their start: only a line of the same time and title, which the page would show twice, stands for this one.
+    if (at.time && dayItems.some((d) => d.time === at.time && d.confirmed && d.title.toLowerCase() === title.toLowerCase())) continue;
+    dayItems.push({ ...at, title, confirmed: true, note: "", sources: [f.id] });
     used.add(f.id);
   }
   dayItems.sort((a, b) => a.time.localeCompare(b.time));
@@ -697,7 +701,7 @@ export function validateBrief(raw: unknown, g: Gathered, o: { now: number; timeZ
   const refs = g.facts.filter((f) => used.has(f.id)).map((f) => ({ id: f.id, icon: f.icon, label: f.label }));
   return {
     id: o.id, day: today, at: o.now, lang: o.lang, opening, focus, todos, updates, dayItems: dayItems.slice(0, 14),
-    sourcesUsed: g.read, refs,
+    sourcesUsed: g.read, unread: g.unread, refs,
   };
 }
 
@@ -717,6 +721,7 @@ const C = texts(
     linkComputer: "📰 The full brief is in Pako's panel on your computer.",
     linkPhone: "📰 The full brief, on your phone at home (same Wi-Fi): {url}",
     noDay: "📅 Nothing on your calendar today.",
+    calUnread: "📅 I couldn't read your calendar just now.",
     left: "📅 Still ahead today:",
     over: "✓ {n} already over today.",
     nothingLeft: "📅 Nothing left on your calendar today ({n} already over).",
@@ -779,10 +784,14 @@ export function chatText(
   const when = (d: DayItem): string =>
     (d.allDay ? say("allDay") : !d.time ? say("until", { end: d.end ? show(d.end) : "" }) : `${show(d.time)}${d.end ? `–${show(d.end)}` : ""}`);
   const lines = left.map((d) => `• ${when(d)} ${d.title}${d.confirmed ? "" : say("unconfirmed")}`).join("\n");
-  parts.push(!doc.dayItems.length ? say("noDay")
+  // "Nothing on your calendar" only when the calendar was read: one that failed is said so (it may well be full), and none connected is not
+  // spoken of. A day with items from other sources while the calendar failed says it too, under them.
+  const calendarFailed = !!doc.unread?.includes("calendar");
+  const dayLine = !doc.dayItems.length ? (doc.sourcesUsed.includes("calendar") ? say("noDay") : calendarFailed ? say("calUnread") : null)
     : !left.length ? say("nothingLeft", { n: over })
     : over ? `${say("left")}\n${lines}\n${say("over", { n: over })}`
-    : `${say("day")}\n${lines}`);
+    : `${say("day")}\n${lines}`;
+  if (dayLine) parts.push(doc.dayItems.length && calendarFailed ? `${dayLine}\n${say("calUnread")}` : dayLine);
   // A computer's own address (127.0.0.1) leads nowhere from the phone the chat is read on (Telegram): the phone's page when it is on, or
   // where the full brief is.
   const here = !!o.url && /^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?(?:\/|$)/i.test(o.url);
@@ -822,7 +831,7 @@ export interface BriefTask {
   chase?: { loop: string; tone: "gentle" | "firm" };
 }
 /** Whom a draft is for and where it goes: the loop's person, its place as the owner reads it, its Slack conversation. */
-export interface DraftAbout { who?: string; where?: string; channel?: string }
+export interface DraftAbout { who?: string; where?: string; channel?: string; thread?: string }
 interface Pending {
   id: string;
   day: string;
@@ -857,8 +866,12 @@ export interface BriefV2Deps {
   sources: Omit<GatherDeps, "timeZone" | "lang" | "now">;
   /** The assistant inbox (src/whatsapp.ts inbox.add). */
   enqueue: (m: Inbound) => Promise<boolean>;
-  /** The old brief, sent now (src/brief.ts sendPlain): what goes when the written one does not come. */
-  plain: () => Promise<void>;
+  /**
+   * The old brief, sent now (src/brief.ts fallback): what goes when the written one does not come. `began`: when the written one was begun,
+   * given when it is given up on at the end of its wait (not one overrun by a sleeping computer): the old one is as late as the written one
+   * was begun late, not as late as its wait ended.
+   */
+  plain: (o?: { began: number }) => Promise<void>;
   /** Whether the assistant's computer asked for messages lately: when it did not, the old brief goes at once. */
   bridgeAlive?: () => boolean;
   /** Tells the owner, urgent (the morning brief). */
@@ -904,6 +917,8 @@ const BRIEF_LESSONS: LessonQuery = {
 /** The lessons a draft reads: how the owner changed earlier drafts, and the messages and emails they stopped. */
 const DRAFT_LESSONS: LessonQuery = { kinds: ["draft_edit", "undo"], about: ["draft", "email", "message"] };
 export const briefInboxId = (id: string): string => `br:${id}`;
+/** How far past its wait a given-up brief may be and still count as given up when its wait ended (the half-minute look, a busy second). */
+const WAIT_SLACK_MS = 2 * 60_000;
 
 export function createBriefV2(d: BriefV2Deps) {
   const now = d.now ?? Date.now;
@@ -1025,7 +1040,7 @@ export function createBriefV2(d: BriefV2Deps) {
     if (!p) return;
     log.error(`the written brief did not come (${why})${p.quiet ? "" : ": today's brief goes as before"}`);
     if (p.quiet) return;
-    await d.plain();
+    await d.plain(now() - p.at <= d.config.waitMs + WAIT_SLACK_MS ? { began: p.at } : undefined);
     d.control?.log("brief", C(lang())("logOld"));
   };
 
@@ -1115,12 +1130,25 @@ export function createBriefV2(d: BriefV2Deps) {
       if (!id) continue;
       if (s.pending?.id === id) await giveUp(id, "the assistant's computer needs a git pull");
       else if (s.tasks.some((x) => x.id === id && x.status === "pending")) {
+        const lapsed: BriefTask[] = [];
         await mutate((x) => {
           const k = x.tasks.find((y) => y.id === id);
-          if (k) k.status = "old";
+          if (!k) return;
+          k.status = "old";
+          lapsed.push(k);
         });
+        await unwritten(lapsed);
       }
     }
+  };
+
+  /**
+   * A chase's draft that will never be written (its task timed out, or an older bridge let it go unread) is told to its loop as an empty
+   * one, as a draft the run could not write is (result): the other tone's card then goes, and the chase is not left half asked until its
+   * next window.
+   */
+  const unwritten = async (tasks: BriefTask[]): Promise<void> => {
+    for (const k of tasks) if (k.kind === "draft" && k.chase) await d.chaseWritten?.({ ...k.chase, text: "" }).catch(() => undefined);
   };
 
   /** Every half minute: a brief or a document waited for too long. */
@@ -1130,9 +1158,15 @@ export function createBriefV2(d: BriefV2Deps) {
     const t = now();
     if (s.pending && t - s.pending.at > d.config.waitMs) await giveUp(s.pending.id, "no answer in time");
     if (s.tasks.some((x) => x.status === "pending" && t - x.at > d.config.waitMs)) {
+      const lapsed: BriefTask[] = [];
       await mutate((x) => {
-        for (const k of x.tasks) if (k.status === "pending" && t - k.at > d.config.waitMs) k.status = "failed";
+        for (const k of x.tasks) {
+          if (k.status !== "pending" || t - k.at <= d.config.waitMs) continue;
+          k.status = "failed";
+          lapsed.push(k);
+        }
       });
+      await unwritten(lapsed);
     }
   };
 
@@ -1339,7 +1373,7 @@ export function createBriefV2(d: BriefV2Deps) {
     });
     const about: DraftAbout | null = o.about && (o.about.who || o.about.channel)
       ? { ...(o.about.who ? { who: o.about.who.slice(0, 80) } : {}), ...(o.about.where ? { where: o.about.where.slice(0, 120) } : {}),
-          ...(o.about.channel ? { channel: o.about.channel.slice(0, 40) } : {}) }
+          ...(o.about.channel ? { channel: o.about.channel.slice(0, 40) } : {}), ...(o.about.channel && o.about.thread ? { thread: o.about.thread.slice(0, 40) } : {}) }
       : null;
     const task: BriefTask = {
       id: newId(), kind: "draft", title, status: "pending", text: "", at: t, ...(o.mailRef ? { mailRef: o.mailRef.slice(0, 300) } : {}), ...(about ? { about } : {}),

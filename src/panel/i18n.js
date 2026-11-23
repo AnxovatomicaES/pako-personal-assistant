@@ -76,6 +76,9 @@ export const WORDS = {
   "toast.paused": "⏸ Pako paused",
   "toast.running": "▶️ Pako running",
   "toast.cantChange": "Couldn't change it right now",
+  // The chat's words for a STOP or RESUME the store could not keep (src/door/texts.ts stopNotKept, resumeNotKept), for the switch.
+  "stop.notKept": "I couldn't save the stop: if Pako restarts, press the switch again.",
+  "resume.notKept": "I couldn't save it: if Pako restarts, it may be paused again; press the switch again then.",
   "toast.updated": "Updated",
   "toast.loadFailed": "Couldn't refresh: trying again in a minute",
   "toast.sendFailed": "Couldn't send it: try again",

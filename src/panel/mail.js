@@ -172,10 +172,11 @@ function pickTab(c) {
   drawList();
 }
 
+/** What "Move to…" offers for a mail: every category but its own. */
+const moveOptions = (m) => [h("option", { value: "" }, "Move to…"), ...CATEGORIES.filter((c) => c !== m.category).map((c) => h("option", { value: c }, LABEL[c]))];
+
 function moveSelect(m) {
-  const sel = h("select", { class: "move-to", "aria-label": `Move the mail from ${senderName(m.from)} to another category` },
-    h("option", { value: "" }, "Move to…"),
-    ...CATEGORIES.filter((c) => c !== m.category).map((c) => h("option", { value: c }, LABEL[c])));
+  const sel = h("select", { class: "move-to", "aria-label": `Move the mail from ${senderName(m.from)} to another category` }, ...moveOptions(m));
   sel.addEventListener("click", (e) => e.stopPropagation());
   sel.addEventListener("change", async (e) => {
     e.stopPropagation();
@@ -185,11 +186,17 @@ function moveSelect(m) {
       await call("/panel/api/mail/move", { id: m.id, category: to });
       m.category = to;
       m.why = `You moved it to ${LABEL[to]}`;
+      // The list holds its own copies of the mails and the reader the server's answer for one: a move made from the reader must reach the
+      // list (its tabs and counts), and one made from the list the reader, if it shows that mail.
+      for (const x of st.items) if (x.id === m.id && x !== m) Object.assign(x, { category: to, why: m.why });
+      repaintReader(m);
+      sel.replaceChildren(...moveOptions(m));
       toast(`Moved to ${LABEL[to]}. Mail from ${senderName(m.from)} will go there from now on.`);
     } catch {
       /* offline or refused: said in a toast */
       toast("Couldn't move it right now");
     }
+    sel.value = "";
     drawList();
     void refreshView();
   });
@@ -241,6 +248,17 @@ export function setMail(items) {
 
 // ---------- the reader ----------
 
+/** The reader's line under the sender: the mail's category and why it is there. */
+const readerCat = (m) => h("p", { class: `reader-cat k-${m.category}` }, icon(ICON[m.category] ?? "mail"), LABEL[m.category], m.why ? ` · ${m.why}` : "");
+
+/** After a move: the category line of the reader, when it is open on that mail. */
+function repaintReader(m) {
+  const dlg = $("#mail-reader");
+  if (!dlg || dlg.dataset.id !== String(m.id)) return;
+  $(".reader-cat", dlg)?.replaceWith(readerCat(m));
+  paint();
+}
+
 async function openReader(id) {
   let dlg = $("#mail-reader");
   if (!dlg) {
@@ -258,6 +276,7 @@ async function openReader(id) {
     return;
   }
   const m = r.item;
+  dlg.dataset.id = String(m.id);
   const when = new Intl.DateTimeFormat(localeOf(), { dateStyle: "medium", timeStyle: "short" }).format(m.at);
   const link = showLink(r.link) ? h("a", { class: "btn primary", href: r.link.url, target: "_blank", rel: "noopener noreferrer" }, icon("external-link"), r.link.label) : null;
   dlg.replaceChildren(
@@ -265,7 +284,7 @@ async function openReader(id) {
       h("h2", { id: "mail-reader-subject" }, m.subject || "(no subject)"),
       h("button", { type: "button", class: "icon-btn", onclick: () => dlg.close(), "aria-label": "Close" }, icon("x"))),
     h("p", { class: "reader-meta" }, h("b", {}, m.from), " · ", when),
-    h("p", { class: `reader-cat k-${m.category}` }, icon(ICON[m.category] ?? "mail"), LABEL[m.category], m.why ? ` · ${m.why}` : ""),
+    readerCat(m),
     ...(r.loops ?? []).map((l) => h("p", { class: `loop${l.open ? " open" : ""}` }, icon(l.open ? "circle-dot" : "circle-check"), l.open ? `Open loop: ${l.title}` : `Loop closed: ${l.title}`)),
     // Plain text only: the words are put on the page as text, so no image, script or link in them can load.
     h("pre", { class: "reader-text" }, r.text || "(no text)"),

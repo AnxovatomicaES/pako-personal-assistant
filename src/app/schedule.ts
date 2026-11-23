@@ -4,6 +4,7 @@
 import { mountBriefPage } from "../brief-v2.ts";
 import { mountBriefPanel } from "../brief.ts";
 import { createBetaAudit } from "../beta-audit.ts";
+import { cap as dayCap } from "./budget.ts";
 import { createCheckIns } from "../gentle-checkins.ts";
 import { createWeeklyReset } from "../gentle-reset.ts";
 import { createLog } from "../log.ts";
@@ -29,7 +30,7 @@ export function wireSchedule(ctx: AfterBrief) {
   const meetings = calOn ? () => (calRef.reader ? calRef.reader.load() : Promise.reject(new Error("the calendar is not ready"))) : undefined;
   gentleRef.checkins = createCheckIns({
     kv, timeZone, settings: () => gentleSettings.read(), standardMax: followupsCfg.config?.maxPerDay ?? 6,
-    others: () => budget.others("checkins"),
+    take: (limit, fn) => budget.take("checkins", limit, fn),
     quiet: followupsCfg.config?.quiet ?? null,
     ...(meetings ? { events: meetings } : {}),
     jobs,
@@ -89,7 +90,7 @@ export function wireSchedule(ctx: AfterBrief) {
         return g ? { maxPerDay: g.maxPerDay } : null;
       },
       usually: (title) => (gentleRef.anchors ? gentleRef.anchors.usually(title) : Promise.resolve(null)),
-      others: () => budget.others("time"),
+      take: (limit, fn) => budget.take("time", limit, fn),
       writes: () => door.calendarWrites(),
       paused: async () => {
         const p = await control.state();
@@ -132,8 +133,8 @@ export function wireSchedule(ctx: AfterBrief) {
       timeRef.after = createAfterMeeting({
         kv, timeZone, on: (env.AFTER_MEETING ?? "").trim().toLowerCase() !== "off", hours: work.hours, quiet: followupsCfg.config.quiet ?? null,
         events: meetings, zoomReview: !!(ctx.zoom.config && ctx.reviewCfg.config), enabled: () => dayHelpers.on("afterMeeting"), self: () => myAddresses(),
-        cap: async () => (await gentleSettings.view())?.maxPerDay ?? followupsCfg.config!.maxPerDay,
-        others: () => budget.others("after"),
+        cap: async () => dayCap(followupsCfg.config!.maxPerDay, (await gentleSettings.view())?.maxPerDay),
+        take: (limit, fn) => budget.take("after", limit, fn),
         card: (body, buttons) => door.sendCard(body, buttons),
         log: (text) => control.log("followup", text),
       });

@@ -31,13 +31,13 @@ your WhatsApp ──► Meta ──► this server (src/whatsapp.ts) ◄── l
   your account, so nothing here sends as a bot and nothing can go out without your tap.
 - **A message from the assistant's own number is off** (`WHATSAPP_FRIEND_MESSAGES`, see "Terms" below). The owner tried it on, then chose chat only. With
   `WHATSAPP_FRIEND_MESSAGES=1` it needs your tap, and the prompt must offer `<send>` again (it did in PR 47). Ask it to send, write or message someone ("send Ana a message that I'm running late") and the
-  server shows you a card with the exact words and **Send** / **Cancel** (or type "yes" as the very next message). Only then does it go out, from the
+  server shows you a card with the exact words and **Send** / **Cancel** (or type "yes" as the very next message, while the card is the last thing Pako sent). Only then does it go out, from the
   assistant's WhatsApp number, to a contact from your list or to a +number you typed in this chat in the last six hours (an invented number is
   refused). The server writes the first line ("Message on behalf of <you>, sent by their AI assistant:"): a friend always knows it is an AI. At
   most 3 a day to one number and 10 a day in all. When the friend answers, the server passes the answer on to you for two days (anyone else who
   writes is still dropped). You are told when it is delivered, and when WhatsApp refuses, why, with the link to send it yourself instead.
 - **A call is never placed on Claude's say-so.** A proposed call comes to you as a message with the exact words, written by the server, and
-  buttons. Tap **Call**, or just type "yes" (it must be your very next message), and the call goes through the same checks as the voice line:
+  buttons. Tap **Call**, or just type "yes" (it must be your very next message, and the card the last thing Pako sent), and the call goes through the same checks as the voice line:
   approved contacts only, caps, quiet hours, your name. "No", "cancel" or any other message drops it. Buttons expire after five minutes. The
   server drops a greeting or "it's <your name>" from the message (the call opens by saying it is your AI assistant), then looks the call up every
   20 seconds and tells you how it ended; the assistant is given the same line, so "how did it go?" gets a real answer.

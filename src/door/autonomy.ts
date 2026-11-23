@@ -8,7 +8,7 @@ import {
 import type { Person } from "../people.ts";
 import type { Inbound } from "./inbox.ts";
 import type { OwnerChannel } from "./deps.ts";
-import { EVENT_KEEP_MS } from "./shared.ts";
+import { EVENT_KEEP_MS, cut } from "./shared.ts";
 import type { Turn, Door } from "./door.ts";
 
 /** The names this part adds to the door. */
@@ -27,7 +27,7 @@ export function mountAutonomy(door: Door): Part {
   /** The owner's own words by their message's id: what provenance is worked out from. A forwarded message is never theirs. */
   const ownerSaid = new Map<string, { text: string; at: number; audio: boolean }>();
   const saidByOwner = (id: string, text: string, audio = false): void => {
-    ownerSaid.set(id, { text: text.slice(0, 4000), at: now(), audio });
+    ownerSaid.set(id, { text: cut(text, 4000), at: now(), audio });
     while (ownerSaid.size > 50) ownerSaid.delete(ownerSaid.keys().next().value!);
   };
   /** Outside text this server put in front of the model (context lines, forwarded messages), for a day, with where it came from. */
@@ -36,7 +36,7 @@ export function mountAutonomy(door: Door): Part {
     const t = now();
     for (const x of Array.isArray(lines) ? lines : [lines]) {
       if (typeof x !== "string" || !x.trim()) continue;
-      const text = x.slice(0, 2000);
+      const text = cut(x, 2000);
       const old = outsideSeen.findIndex((o) => o.source === source && o.text === text);
       if (old >= 0) outsideSeen.splice(old, 1);
       outsideSeen.push({ source, text, at: t });
@@ -98,7 +98,7 @@ export function mountAutonomy(door: Door): Part {
   /** One line, nothing hidden, short: how the receipt shows the words. */
   const shortText = (s: string): string => {
     const one = s.replace(/\s+/g, " ").trim();
-    return one.length > 160 ? `${one.slice(0, 159)}…` : one;
+    return one.length > 160 ? `${cut(one, 159)}…` : one;
   };
 
   /** Inside the chat the answer went to (or, after a restart, where Pako would start one), as something Pako starts. */

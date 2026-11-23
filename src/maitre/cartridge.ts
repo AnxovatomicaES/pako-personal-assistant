@@ -171,6 +171,15 @@ export const COMMON_BLOCKS: BlockSign[] = [
   },
 ];
 
+/** What a confirmation says it is for when that is not what was asked ("date 2026-11-21, time 22:30"), or "": the planner and a finished Handoff warn the owner by it. */
+export function mismatchOf(said: Evidence["said"], asked: { date: string; time: string; party: number }): string {
+  return [
+    said?.date && said.date !== asked.date ? `date ${said.date}` : "",
+    said?.time && said.time !== asked.time ? `time ${said.time}` : "",
+    said?.party && said.party !== asked.party ? `party ${said.party}` : "",
+  ].filter(Boolean).join(", ");
+}
+
 /** The first gate showing on the page, or null. */
 export async function gateOn(page: Page, signs: GateSign[]): Promise<GateSign | null> {
   for (const s of signs) {
@@ -209,6 +218,16 @@ export function hhmm(s: string): string | null {
   return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 }
 
+/** Every time a text shows, as HH:MM, in the order shown: "21:00", "9:00 PM", "20h30", "9 PM". */
+export function timesIn(text: string): string[] {
+  const times: string[] = [];
+  for (const m of text.toLowerCase().matchAll(/(?<![\d:.])(\d{1,2})[:h](\d{2})\s*([ap]\.?\s?m\.?)?|(?<![\d:.])(\d{1,2})()\s*([ap]\.?\s?m\.?)(?![a-z])/g)) {
+    const time = hhmm(`${m[1] ?? m[4]}:${m[2] ?? "00"} ${m[3] ?? m[6] ?? ""}`);
+    if (time && !times.includes(time)) times.push(time);
+  }
+  return times;
+}
+
 /** Minutes between two HH:MM. */
 export const minutesApart = (a: string, b: string): number => {
   const m = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5));
@@ -226,4 +245,29 @@ export function failure(err: unknown, submitted: boolean): BookResult {
   const detail = why.slice(0, 200);
   // After the submit, whatever went wrong may have booked: it is a timeout (stop, never retried), not a changed page.
   return /timed out|time out|timeout/i.test(why) || submitted ? { kind: "timeout", detail, submitted } : { kind: "changed", detail };
+}
+
+/** The lines of a page's text that carry a sign, each trimmed. */
+const signLines = (text: string, sign: RegExp): Set<string> => new Set(text.split(/\n+/).map((l) => l.trim()).filter((l) => l && sign.test(l)));
+
+/**
+ * Presses a cancel button and says whether the page then shows a cancellation sign that was NOT there before the press. A policy line that
+ * already says "cancelled" ("reservations cancelled less than 24 hours before are charged") and the engine's own "are you sure?" step, which
+ * the press may only open, are not a cancellation: then it is false, and the owner is given the engine's cancel link instead.
+ */
+export async function pressCancel(page: Page, button: string, sign: RegExp, stepMs: number): Promise<boolean> {
+  const before = signLines(await page.text(), sign);
+  // The owner pressed Undo: the engine's own "are you sure?" dialog is answered yes for this one press.
+  page.acceptDialogs = true;
+  await page.click(button, stepMs);
+  const deadline = Date.now() + stepMs;
+  for (;;) {
+    try {
+      if ([...signLines(await page.text(), sign)].some((l) => !before.has(l))) return true;
+    } catch {
+      /* the page is moving (a navigation): look again */
+    }
+    if (Date.now() >= deadline) return false;
+    await new Promise((r) => setTimeout(r, 100));
+  }
 }

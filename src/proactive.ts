@@ -25,6 +25,7 @@ import { randomBytes } from "node:crypto";
 import { hhmm, minutesOfDay, quietSetting, windowOf, within } from "./day-time.ts";
 import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
+import { cap, takeOf, type Take } from "./app/budget.ts";
 import type { Control } from "./control.ts";
 import { clean, type CardFeedback, type FollowupsQuality, zonedTime } from "./followups.ts";
 import { locale, texts, type Lang } from "./i18n.ts";
@@ -57,7 +58,9 @@ export async function forgetHealthStored(kv: Kv | null): Promise<void> {
   const raw = await readJsonRecord(kv, LIFE_KEY);
   if (!raw) return;
   const s = lifeStateOf(raw);
-  s.sent = s.sent.filter((x) => !x.why.startsWith("health:"));
+  s.sent = s.sent.filter((x) => !fromHealth(x));
+  // A job asked with the mood in its material is let go: its answer would be a suggestion made from what was just forgotten.
+  if (s.job?.health) s.job = null;
   await kv.set(LIFE_KEY, JSON.stringify(s), TTL_SECONDS);
 }
 const TTL_SECONDS = 400 * 24 * 3600;
@@ -105,13 +108,23 @@ export interface Suggestion {
   status: "sent" | "accepted" | "declined" | "less";
   /** The trips it was about (travel only): each trip gets one suggestion at most. */
   trips?: string[];
+  /**
+   * Made from a job whose material held the mood or energy the owner shared: kept with neutral words and no `why`, and gone with FORGET MY
+   * HEALTH (a health nudge's `why` starts with "health:": the same).
+   */
+  health?: true;
 }
+
+/** A suggestion that is health data (a health nudge, or one made from the owner's mood): FORGET MY HEALTH drops it. */
+const fromHealth = (x: Suggestion): boolean => !!x.health || x.why.startsWith("health:");
 
 interface Job {
   id: string;
   at: number;
   /** The trips the job showed, by key. */
   trips: string[];
+  /** Its material held the owner's mood or energy: what it suggests is health data (Suggestion.health). */
+  health?: true;
 }
 
 export interface LifeState {
@@ -255,10 +268,16 @@ const CONTACT_DATA = /[\w.+-]+@[\w-]+\.[\w.]+|\+?\d[\d\s().-]{6,}\d|\bhttps?:\/\
 const CONTACT_VERB =
   new RegExp(
     "\\b(llama|llamale|llamar|llamarle|escribe|escribele|escribirle|envia|enviale|manda|mandale|contacta|contactar|whatsapp|email|correo a|mensaje a"
-    + "|call|text|write to|message|reach out|ring|transfier\\w*|transfer\\w*|paga|pay)\\b",
+    + "|telefonea|telefonear|ponte en contacto|pon(?:te)? en contacto|call|text|write to|message|reach out|ring|ping|transfier\\w*|transfer\\w*|paga|pay"
+    + "|get in touch|touch base|contact(?! (?:lens|lenses|list|details|info)\\b)|phone(?! (?:number|battery|charger|case|screen|bill|plan|on|off|in|at|is|and)\\b)"
+    + "|drop \\w+(?: \\w+){0,3} a (?:line|note|message))\\b",
   );
-/** A dose: never in a suggestion (Pako does not prescribe). */
-const DOSE = /\b\d+(?:[.,]\d+)?\s?(mg|ml|mcg|g\b|comprimidos?|pastillas?|capsulas?|pills?|tablets?|capsules?|gotas|drops)\b/;
+/** A dose, in digits or in words ("two tablets"): never in a suggestion (Pako does not prescribe). */
+const DOSE = new RegExp(
+  "\\b\\d+(?:[.,]\\d+)?\\s?(?:mg|ml|mcg|g\\b|comprimidos?|pastillas?|capsulas?|pills?|tablets?|capsules?|gotas|drops)\\b"
+  + "|\\b(?:an?|one|two|three|four|five|six|seven|eight|nine|ten|half|couple|un|una|uno|dos|tres|cuatro|cinco|seis|media|medio) (?:of )?"
+  + "(?:comprimidos?|pastillas?|capsulas?|pills?|tablets?|capsules?)\\b",
+);
 
 const WORDS_MIN = 4;
 const wordSet = (s: string): Set<string> => new Set(fold(s).replace(/[^\p{L}\p{N} ]/gu, " ").split(" ").filter((w) => w.length >= WORDS_MIN));
@@ -312,13 +331,16 @@ export function lifeStateOf(raw: unknown): LifeState {
     const trips = Array.isArray(v.trips) ? v.trips.filter((x): x is string => typeof x === "string").slice(0, 10) : [];
     return [{
       id: v.id, at: num(v.at)!, topic: v.topic as Topic, say: str(v.say, SAY_MAX), why: str(v.why, WHY_MAX), status,
-      ...(offer ? { offer } : {}), ...(trips.length ? { trips } : {}),
+      ...(offer ? { offer } : {}), ...(trips.length ? { trips } : {}), ...(v.health === true ? { health: true as const } : {}),
     }];
   });
   const b = isObject(o.budget) ? o.budget : {};
   const j = isObject(o.job) ? o.job : null;
   const job = j && typeof j.id === "string" && num(j.at) !== undefined
-    ? { id: j.id, at: num(j.at)!, trips: Array.isArray(j.trips) ? j.trips.filter((x): x is string => typeof x === "string").slice(0, 10) : [] }
+    ? {
+        id: j.id, at: num(j.at)!, trips: Array.isArray(j.trips) ? j.trips.filter((x): x is string => typeof x === "string").slice(0, 10) : [],
+        ...(j.health === true ? { health: true as const } : {}),
+      }
     : null;
   return {
     facts: (Array.isArray(o.facts) ? o.facts : []).map(factOf).filter((f): f is Fact => !!f),
@@ -411,6 +433,8 @@ export interface ProactiveDeps {
   fetch?: typeof fetch;
   /** Follow-ups' nudges today: the day's budget is shared. */
   othersToday?: () => Promise<number>;
+  /** This part's turn at the day's cap (src/app/budget.ts): the check against the others and the count are one turn. Absent: `othersToday`. */
+  take?: Take;
   /** Gentle mode's day (src/gentle.ts): all that Pako says on its own at most, when lower than the usual total; null when it is off. */
   cap?: () => Promise<number | null>;
   addToList?: (name: string, item: string) => Promise<{ ok: boolean; list: string; why?: string }>;
@@ -442,6 +466,7 @@ export function createProactive(d: ProactiveDeps) {
   const now = d.now ?? Date.now;
   const lang = d.lang ?? ((): Lang => "en");
   const { config } = d;
+  const take = takeOf(d.take, d.othersToday);
   let memory: LifeState = lifeStateOf({});
   let health: Fact[] = [];
   let healthLoaded = false;
@@ -532,11 +557,11 @@ export function createProactive(d: ProactiveDeps) {
     const day = today(t, d.timeZone);
     const own = s.budget.day === day ? s.budget.n : 0;
     const others = await (d.othersToday?.() ?? Promise.resolve(0)).catch(() => 0);
-    const gentle = await (d.cap?.() ?? Promise.resolve(null)).catch(() => null);
-    const total = gentle === null ? config.totalPerDay : Math.min(config.totalPerDay, gentle);
-    if (own >= config.maxPerDay || own + others >= total) return "budget";
+    if (own >= config.maxPerDay || own + others >= (await dayCap())) return "budget";
     return null;
   };
+  /** All that Pako says on its own today, at most: the standard total, or gentle mode's when lower. */
+  const dayCap = async (): Promise<number> => cap(config.totalPerDay, await (d.cap?.() ?? Promise.resolve(null)).catch(() => null));
 
   /** The weather from Open-Meteo (free, no key), for today and tomorrow; "" without a place or when it cannot be read. Kept for 3 hours. */
   let weather: { at: number; text: string } | null = null;
@@ -578,8 +603,11 @@ export function createProactive(d: ProactiveDeps) {
 
   const daysAgo = (t: number, at: number): number => Math.max(0, Math.floor((t - at) / (24 * 3600_000)));
 
-  /** What the job reads: the owner's own records first, then other people's text in a block of its own. */
-  const material = async (s: LifeState, t: number, trips: { key: string; line: string; outside: boolean }[]): Promise<string> => {
+  /**
+   * What the job reads: the owner's own records first, then other people's text in a block of its own. `health`: the mood or energy the
+   * owner shared is in it, so what the job suggests may come from it.
+   */
+  const material = async (s: LifeState, t: number, trips: { key: string; line: string; outside: boolean }[]): Promise<{ text: string; health: boolean }> => {
     const lines: string[] = [];
     const ownerLang = await (d.ownerLanguage?.() ?? Promise.resolve(lang())).catch(() => lang());
     lines.push(`Now: ${stamp(t)} (${new Intl.DateTimeFormat("en-GB", { timeZone: d.timeZone, weekday: "long" }).format(t)}), zone ${d.timeZone}`);
@@ -614,7 +642,7 @@ export function createProactive(d: ProactiveDeps) {
       for (const x of theirs) lines.push(`- ${x.line}`);
       lines.push("⟦/outside⟧");
     }
-    return lines.join("\n");
+    return { text: lines.join("\n"), health: mood.length > 0 };
   };
 
   /**
@@ -644,14 +672,15 @@ export function createProactive(d: ProactiveDeps) {
           st.sent = st.sent.filter((x) => x.id !== sid);
           if (st.budget.day === today(now(), d.timeZone) && st.budget.n > 0) st.budget.n--;
         });
-      const counted = await mutate((st) => {
+      // The check against what the others sent and the count are one turn at the day's cap: a look earlier may be stale by now.
+      const counted = await take(await dayCap(), (room) => mutate((st) => {
         const d2 = today(now(), d.timeZone);
         if (st.budget.day !== d2) st.budget = { day: d2, n: 0 };
-        if (st.budget.n >= config.maxPerDay) return false;
+        if (st.budget.n >= config.maxPerDay || st.budget.n >= room) return false;
         st.budget.n++;
         st.sent.push({ id: sid, at: now(), topic, say: kept, why: o.key, status: "sent" });
         return true;
-      });
+      }));
       if (!counted) return false;
       if (!(await o.claim().catch(() => false))) {
         await giveBack();
@@ -664,7 +693,7 @@ export function createProactive(d: ProactiveDeps) {
         await o.release?.().catch((err: Error) => logProactive.warn(`an offer could not be given back: ${err.message}`));
         return false;
       }
-      d.quality?.nudged({ id: sid, title: kept }, true);
+      d.quality?.nudged({ id: sid, title: kept }, !!feedback?.lineShown);
       // The log names the kind of offer only: a health nudge's words stay out of it.
       log(tl("logSuggested", { topic: topicName(topic, l), why: o.topic === "health" ? "—" : o.key }));
       return true;
@@ -688,10 +717,10 @@ export function createProactive(d: ProactiveDeps) {
       if (!d.bridgeAlive()) return "bridge";
       const done = new Set(s.sent.flatMap((x) => x.trips ?? []));
       const trips = (await tripsAhead(t)).filter((x) => !done.has(x.key));
-      const text = await material(s, t, trips);
+      const { text, health } = await material(s, t, trips);
       const id = randomBytes(5).toString("hex");
       await mutate((st) => {
-        st.job = { id, at: t, trips: trips.map((x) => x.key) };
+        st.job = { id, at: t, trips: trips.map((x) => x.key), ...(health ? { health: true as const } : {}) };
       });
       const ok = await d.enqueue({ id: jobInboxId(id), at: t, text: "", proactive: { text } });
       return ok ? "asked" : "failed";
@@ -796,22 +825,28 @@ export function createProactive(d: ProactiveDeps) {
       if (!job.trips.length && s0.sent.some((x) => x.trips?.length && t - x.at < 14 * 24 * 3600_000)) return drop("that trip had its suggestion");
     }
     const sid = randomBytes(5).toString("hex");
-    const kept = await mutate((s) => {
+    const tl = T(l);
+    // Made from the owner's mood (the job's material had it): the card says it, but what is kept (the life store, the panel, the next job's
+    // "already suggested", the quality nudges, the log) has neutral words and no why, and FORGET MY HEALTH drops it (Suggestion.health).
+    const said = job.health ? tl("healthKept") : say;
+    const kept = await take(await dayCap(), (room) => mutate((s) => {
       const d2 = today(now(), d.timeZone);
       if (s.budget.day !== d2) s.budget = { day: d2, n: 0 };
-      if (s.budget.n >= config.maxPerDay) return false;
+      if (s.budget.n >= config.maxPerDay || s.budget.n >= room) return false;
       if (s.sent.some((x) => x.topic === topic && today(x.at, d.timeZone) === d2)) return false;
       s.budget.n++;
-      s.sent.push({ id: sid, at: now(), topic, say, why, status: "sent", ...(offer ? { offer } : {}), ...(trips.length ? { trips } : {}) });
+      s.sent.push({
+        id: sid, at: now(), topic, say: said, why: job.health ? "" : why, status: "sent", ...(job.health ? { health: true as const } : {}),
+        ...(offer ? { offer } : {}), ...(trips.length ? { trips } : {}),
+      });
       return true;
-    });
+    }));
     if (!kept) return drop("budget");
-    const tl = T(l);
     const buttons = [
       ...(offer ? [{ id: `p1:${sid}`, title: offerLabel(offer, l) }, { id: `p2:${sid}`, title: tl("no") }] : []),
       { id: `p3:${sid}`, title: tl("less", { topic: topicName(topic, l) }) },
     ];
-    const feedback = d.quality?.ask({ id: sid, title: say }, l);
+    const feedback = d.quality?.ask({ id: sid, title: said }, l);
     const sent = await d.card(say, buttons, feedback).catch(() => false);
     if (!sent) {
       // Not said (the chat cannot be written to now): nothing kept for later, the budget given back.
@@ -821,8 +856,8 @@ export function createProactive(d: ProactiveDeps) {
       });
       return { ok: true, outcome: "unsent" };
     }
-    d.quality?.nudged({ id: sid, title: say }, true);
-    log(tl("logSuggested", { topic: topicName(topic, l), why: why || "—" }));
+    d.quality?.nudged({ id: sid, title: said }, !!feedback?.lineShown);
+    log(tl("logSuggested", { topic: topicName(topic, l), why: job.health ? "—" : why || "—" }));
     return { ok: true, outcome: "sent" };
   };
 
@@ -848,24 +883,28 @@ export function createProactive(d: ProactiveDeps) {
     if (claimed.was !== "sent") return tl("twice");
     const o = x.offer;
     if (!o) return tl("gone");
-    try {
-      if (o.kind === "lista") {
-        if (!d.addToList) return tl("actFailed", { why: "—" });
-        const r = await d.addToList(o.list, o.item);
-        return r.ok ? tl("listDone", { item: o.item, list: r.list }) : tl("actFailed", { why: r.why ?? "—" });
-      }
-      if (!d.remind) return tl("actFailed", { why: "—" });
-      const text = o.kind === "bloque" ? `${o.text} (→ ${o.until})` : o.text;
-      const r = await d.remind(stamp(o.at), text);
-      if (!r.ok) return tl("actFailed", { why: r.say });
-      return o.kind === "bloque" ? tl("blockDone", { when: human(o.at, l), text: o.text, until: o.until }) : tl("remindDone", { when: human(o.at, l) });
-    } catch (err) {
-      logProactive.error(`an offer failed: ${(err as Error).message}`);
+    // An offer that could not be done is not done: back to "sent", so the owner can press it again (it said "That's done already" before).
+    const failed = async (why: string): Promise<string> => {
       await mutate((s) => {
         const y = s.sent.find((z) => z.id === id);
         if (y) y.status = "sent";
       });
-      return tl("actFailed", { why: "—" });
+      return tl("actFailed", { why });
+    };
+    try {
+      if (o.kind === "lista") {
+        if (!d.addToList) return await failed("—");
+        const r = await d.addToList(o.list, o.item);
+        return r.ok ? tl("listDone", { item: o.item, list: r.list }) : await failed(r.why ?? "—");
+      }
+      if (!d.remind) return await failed("—");
+      const text = o.kind === "bloque" ? `${o.text} (→ ${o.until})` : o.text;
+      const r = await d.remind(stamp(o.at), text);
+      if (!r.ok) return await failed(r.say);
+      return o.kind === "bloque" ? tl("blockDone", { when: human(o.at, l), text: o.text, until: o.until }) : tl("remindDone", { when: human(o.at, l) });
+    } catch (err) {
+      logProactive.error(`an offer failed: ${(err as Error).message}`);
+      return await failed("—");
     }
   };
 
@@ -992,9 +1031,11 @@ export function createProactive(d: ProactiveDeps) {
       await writeHealth([]);
       if (d.local && d.kv) await d.kv.set(HEALTH_KEY, "[]", 60);
     });
-    // The health nudges sent go too (only their key and a neutral line were kept, but even that they were sent is health data).
+    // The health nudges sent go too (only their key and a neutral line were kept, but even that they were sent is health data), and the
+    // suggestions made from the mood; a job asked with the mood in its material is let go, so its late answer is not said.
     await mutate((s) => {
-      s.sent = s.sent.filter((x) => !x.why.startsWith("health:"));
+      s.sent = s.sent.filter((x) => !fromHealth(x));
+      if (s.job?.health) s.job = null;
     });
     log(T(lang())("logHealthForgot"));
   };

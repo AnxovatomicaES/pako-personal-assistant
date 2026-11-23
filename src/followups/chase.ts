@@ -8,6 +8,7 @@
 // at most once every two working days. "Not needed" stops it for good, and a parked loop is never chased. Whether the owner's own promise
 // depends on theirs ("I'll send the report once Ana sends the numbers") is not something the extraction says, so it plays no part here.
 
+import { cap, takeOf } from "../app/budget.ts";
 import { detectLanguage } from "../language.ts";
 import { fold, today } from "../lists.ts";
 import { isImessageChannel } from "../imessage.ts";
@@ -29,8 +30,12 @@ const gapMs = (w: Work): number => 2 * (w.end - w.start) * 60_000;
 const WEEKDAY: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 /** The step working time is counted in. */
 const STEP = 15 * 60_000;
-/** Two weeks of steps: past that, no working time was found (quiet hours over the whole working day). */
-const STEPS_MAX = 14 * 96;
+/**
+ * How far working time is looked for, in steps: two weeks of a five-day working week, and as many weeks' worth of working days for a shorter
+ * one (five working days of someone who works Monday and Tuesday are two and a half weeks away). Past that, no working time was found (quiet
+ * hours over the whole working day).
+ */
+const stepsMax = (w: Work): number => Math.ceil(14 * 96 * Math.max(1, 5 / Math.max(1, w.days.length)));
 /** A draft shown on the card, at most. */
 const DRAFT_MAX = 1200;
 
@@ -57,22 +62,23 @@ export function workingAt(t: number, tz: string, quiet: FollowupsConfig["quiet"]
   return true;
 }
 
-/** The moment `ms` of working time after `t`; null when there is none in two weeks. */
+/** The moment `ms` of working time after `t`; null when there is none in the weeks looked at (stepsMax). */
 export function afterWorking(t: number, ms: number, tz: string, quiet: FollowupsConfig["quiet"], w: Work = DEFAULT_WORK): number | null {
   let cur = t;
   let left = ms;
+  const max = stepsMax(w);
   for (let i = 0; left > 0; i++) {
-    if (i > STEPS_MAX) return null;
+    if (i > max) return null;
     if (workingAt(cur, tz, quiet, w)) left -= STEP;
     cur += STEP;
   }
   return cur;
 }
 
-/** The first working moment at or after `t`; null when there is none in two weeks. */
+/** The first working moment at or after `t`; null when there is none in the weeks looked at (stepsMax). */
 export function nextWorking(t: number, tz: string, quiet: FollowupsConfig["quiet"], w: Work = DEFAULT_WORK): number | null {
   let cur = t;
-  for (let i = 0; i <= STEPS_MAX; i++, cur += STEP) if (workingAt(cur, tz, quiet, w)) return cur;
+  for (let i = 0, max = stepsMax(w); i <= max; i++, cur += STEP) if (workingAt(cur, tz, quiet, w)) return cur;
   return null;
 }
 
@@ -163,6 +169,7 @@ export function mountChase(
     "mutate" | "read" | "runCheck" | "draftFacts" | "forDraft" | "quietNow" | "dueText"
   >,
 ): Chasing {
+  const take = takeOf(d.take, d.othersToday);
   /** That person's own words in the conversation, up to the promise (a Slack, Teams or Messages one): what the chase's language follows. */
   const theirWords = async (l: Loop): Promise<string> => {
     const ch = l.where.channel;
@@ -227,12 +234,12 @@ export function mountChase(
     });
     if (!due.length) return 0;
     const g = d.gentle ? await d.gentle().catch(() => null) : null;
-    const cap = g ? g.maxPerDay : config.maxPerDay;
+    const limit = cap(config.maxPerDay, g?.maxPerDay);
     let n = 0;
     for (const l of due) {
       const others = await (d.othersToday?.() ?? Promise.resolve(0)).catch(() => 0);
       const day = today(now(), d.timeZone);
-      if (st.budget.day === day && st.budget.n + others >= cap) break;
+      if (st.budget.day === day && st.budget.n + others >= limit) break;
       // Done after all (their invitation is on the calendar): closed as the round of nudges would, and no chase.
       const seen = l.reopened ? null : await runCheck(l).catch(() => null);
       if (seen?.done) {
@@ -244,17 +251,18 @@ export function mountChase(
         });
         continue;
       }
-      // Claimed, with the budget, in one write: two processes never both chase one loop, nor spend the last of the day twice.
-      const claimed = await mutate((s) => {
+      // Claimed, with the budget, in one write and one turn at the day's cap: two processes never both chase one loop, nor this and another
+      // part spend the last of the day twice.
+      const claimed = await take(limit, (room) => mutate((s) => {
         const x = s.loops.find((y) => y.id === l.id);
         const at = x ? chaseAt(x, d.timeZone, config.quiet, config.work) : null;
         if (!x || at === null || at > now()) return false;
         if (s.budget.day !== day) s.budget = { day, n: 0 };
-        if (s.budget.n + others >= cap) return false;
+        if (s.budget.n >= room) return false;
         s.budget.n++;
         x.chase = { askedAt: now(), ...(x.chase?.chasedAt ? { chasedAt: x.chase.chasedAt } : {}) };
         return true;
-      });
+      }));
       if (!claimed) continue;
       if (await ask(l)) n++;
       d.control?.log("followup", T(lang())("logChase", { title: l.title }));

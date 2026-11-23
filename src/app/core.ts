@@ -22,7 +22,8 @@ export function wireCore(ctx: AfterGuards) {
   const dogRef: {
     tell: ((text: string) => Promise<unknown>) | null;
     lastPoll: (() => number) | null;
-  } = { tell: null, lastPoll: null };
+    polled: (() => boolean) | null;
+  } = { tell: null, lastPoll: null, polled: null };
   // This server's version, read once when first asked (git, or Render's RENDER_GIT_COMMIT): only a server compares it with its computer's.
   let ownVersion: Version | null | undefined;
   // A server's Redis store has one writer (src/kv-lease.ts): during a deploy's overlap the second server waits, read only, until the first
@@ -47,6 +48,7 @@ export function wireCore(ctx: AfterGuards) {
         }
       : {
           lastPoll: () => (dogRef.lastPoll ? dogRef.lastPoll() : null),
+          polled: () => (dogRef.polled ? dogRef.polled() : false),
           serverVersion: () => (ownVersion === undefined ? (ownVersion = readServerVersion(env, fileURLToPath(new URL("..", import.meta.url)))) : ownVersion),
         }),
   });

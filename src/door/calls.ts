@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto";
 import type { BookingReply } from "../booking.ts";
 import { callWords } from "./format.ts";
 import { callOutcome } from "./texts.ts";
-import { CALL_ID, CALL_WATCH_POLLS } from "./shared.ts";
+import { CALL_ID, CALL_WATCH_POLLS, cut } from "./shared.ts";
 import type { Door, Turn } from "./door.ts";
 import { createLog } from "../log.ts";
 
@@ -60,9 +60,13 @@ export function mountCalls(door: Door): Pick<Door, "deliverBooking" | "startBook
       await sendText(tx("callNotReady", { why: a.say }));
       return;
     }
-    door.pendingCall = { id: randomBytes(5).toString("hex"), name: call.name, readback: a.say, at: now(), typed: true };
+    // `n` is the card's own number once it went out; until then nothing can answer it in words.
+    const p = { id: randomBytes(5).toString("hex"), name: call.name, readback: a.say, at: now(), typed: true, n: -1 };
+    door.pendingCall = p;
     if (door.pendingSend) door.pendingSend.typed = false;
-    await sendConfirm(why ? `${why}\n\n${a.say}` : a.say, door.pendingCall.id);
+    const shown: { n?: number } = {};
+    await sendConfirm(why ? `${why}\n\n${a.say}` : a.say, p.id, shown);
+    p.n = shown.n ?? -1;
   };
 
   const sleep = (ms: number): Promise<void> =>
@@ -90,7 +94,7 @@ export function mountCalls(door: Door): Pick<Door, "deliverBooking" | "startBook
           const status = String(info?.call_status ?? "");
           if (!info || !["ended", "error", "not_connected"].includes(status)) continue;
           const said = callOutcome(placed.name, info, lang());
-          const summary = typeof info.summary === "string" ? info.summary.replace(/\s+/g, " ").trim().slice(0, 300) : "";
+          const summary = typeof info.summary === "string" ? cut(info.summary.replace(/\s+/g, " ").trim(), 300) : "";
           note(tx("noteCallEnded", { name: placed.name, said, summary: summary ? tx("noteCallSummary", { summary }) : "" }), !!summary);
           await sendText(said);
           return;
@@ -110,6 +114,12 @@ export function mountCalls(door: Door): Pick<Door, "deliverBooking" | "startBook
     door.pendingCall = null;
     // Even a no goes through here, so the staged call is used up either way.
     const a = await d.tools.run({ callId: CALL_ID, tool: "confirm_call", args: {}, readbackText: p.readback, answerText: yes ? said : "no", trusted: true, now: now() });
+    // Another call was staged since this card (a call held for its window, say) or its minutes ran out: this card can place nothing now. What the
+    // tools answer is for the model ("Do not ring anyone…"), never for the owner.
+    if (yes && a.stale) {
+      await sendText(tx("expired"));
+      return;
+    }
     if (!yes) note(tx("noteCallCancelled", { name: p.name }));
     else if (a.placed) note(tx("noteCallPlaced", { name: a.placed.name }));
     else note(tx(a.unknown ? "noteCallUnknown" : a.simulated ? "noteCallSimulated" : "noteCallFailed", { name: p.name }));

@@ -77,6 +77,26 @@ test("the budget: the owner's runs never refused; background ones up to the cap,
   assert.deepEqual(again.usage().kinds, {});
 });
 
+test("the budget: a run that never reached Claude gives its count back (today's only); the cap's refusal says when tomorrow starts", () => {
+  const clock = { t: at("2026-11-18T23:50:00") };
+  const b = createBudget({ config: { perDay: 2, coalesceMs: 0, unchangedMs: 0 }, now: () => clock.t });
+  const giveBack = b.started("email");
+  b.started("email");
+  assert.equal(b.usage().background, 2);
+  assert.deepEqual(b.admit("meeting", "m"), { go: false, why: "cap", until: at("2026-11-19T00:00:00") }, "over the cap until the day ends");
+  giveBack();
+  assert.deepEqual([b.usage().background, b.usage().kinds.email], [1, 1]);
+  assert.equal(b.admit("meeting", "m").go, true, "the slot is there again");
+  b.started("message")(); // the owner's run that never reached Claude: not counted either
+  assert.deepEqual([b.usage().interactive, b.usage().kinds.message], [0, undefined], "a count that returns to zero leaves no empty entry");
+  // A run that began at 23:50 and failed after midnight: the new day's own count is not touched.
+  const old = b.started("email");
+  clock.t = at("2026-11-19T00:05:00");
+  b.started("email");
+  old();
+  assert.deepEqual([b.usage().day, b.usage().background], ["2026-11-19", 1]);
+});
+
 test("the budget: the same material within the window gets the same answer, the time-of-day lines aside; an unchanged NO_REPLY lasts longer", () => {
   const clock = { t: at("2026-11-18T10:00:00") };
   const b = createBudget({ config: { perDay: 40, coalesceMs: 10 * 60_000, unchangedMs: 120 * 60_000 }, now: () => clock.t });

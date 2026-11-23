@@ -2,8 +2,9 @@
 //
 // - Feedback: every follow-up nudge carries a quiet 👍/👎 (buttons after its three where the chat has room for them: Telegram, the panel's
 //   chat; on WhatsApp, three at most, a "Useful? yes/no" line instead, answered by text). The written brief says the same line on the chat,
-//   and its page has 👍/👎 on every to-do and update. A typed "yes"/"no" counts only as the very next thing after the card or the brief:
-//   anything Pako sends or the owner writes meanwhile and the question is gone (a "no" is never taken from another conversation).
+//   and its page has 👍/👎 on every to-do and update. A typed "yes"/"no" counts only as the very next thing after a card that showed the
+//   "Useful?" line (a card with the 👍/👎 buttons never asked for one) or the brief: anything Pako sends or the owner writes meanwhile and
+//   the question is gone (a "no" is never taken from another conversation).
 // - What is kept (FEEDBACK_KEY, 90 days): each verdict {what, verdict, when, source} and each nudge given with what the owner pressed on it.
 // - Read back as the panel's "Quality" card (the last 7 days: nudges sent, Done, Not mine, ignored, 👍/👎, the brief's 👍/👎) and, on a
 //   Monday only, ONE line in the brief when the nudges did poorly ("3 of 7 nudges weren't useful: tell me what to ignore"). Never more than that.
@@ -245,10 +246,10 @@ export function createQuality(d: QualityDeps) {
       buttons: [{ id: `g1:${loop.id}`, title: "👍" }, { id: `g0:${loop.id}`, title: "👎" }],
       line: T(lg)("line"),
     }),
-    nudged: (loop, sent) => {
+    nudged: (loop, asked) => {
       if (!HEX10.test(loop.id)) return;
       quietly(mutate((s) => void s.nudges.push({ at: now(), ref: loop.id, what: loop.title.slice(0, WHAT_MAX) })), "a nudge could not be counted");
-      asking = sent ? { source: "nudge", ref: loop.id, what: loop.title, at: now() } : null;
+      asking = asked ? { source: "nudge", ref: loop.id, what: loop.title, at: now() } : null;
     },
     pressed: (button, loop) => {
       const outcome = button === "1" ? "done" : button === "2" ? "snooze" : "notmine";

@@ -79,8 +79,10 @@ export interface Watch {
   once: boolean;
   at: number;
   paused?: boolean;
+  /** The hits told in the day that began at `dayAt` (the cap is per day: HITS_PER_DAY); `lastHit` is the latest. */
   hits: number;
   lastHit?: number;
+  dayAt?: number;
   cal?: CalSeen;
 }
 
@@ -121,6 +123,15 @@ const LATE_MS = 3 * 3600_000;
 /** An ongoing watch tells at most this many times a day: a busy sender must not become a flood. */
 const HITS_PER_DAY = 10;
 const DAY_MS = 24 * 3600_000;
+/**
+ * Whether `at` falls in the day (24 hours) that began with the watch's first hit counted: a day that began at its first hit, not one that
+ * slides with each hit (a watch hit three times a day would never see a count reset, and lose what came after its tenth). A record from before
+ * `dayAt` was kept counts from its last hit.
+ */
+const inDay = (w: Watch, at: number): boolean => {
+  const from = w.dayAt ?? w.lastHit;
+  return from !== undefined && at - from < DAY_MS;
+};
 const HEX10 = /^[0-9a-f]{10}$/;
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object";
@@ -159,6 +170,7 @@ const watchOf = (v: unknown): Watch | null => {
     at: typeof v.at === "number" ? v.at : 0, hits: typeof v.hits === "number" ? v.hits : 0,
     ...(v.paused === true ? { paused: true } : {}),
     ...(typeof v.lastHit === "number" ? { lastHit: v.lastHit } : {}),
+    ...(typeof v.dayAt === "number" ? { dayAt: v.dayAt } : {}),
     ...(isObject(v.cal) ? { cal } : {}),
   };
 };
@@ -690,7 +702,7 @@ export function createRoutines(d: RoutinesDeps) {
       }
       // Paused (the owner's, or STOP): what came is looked at and let go, so nothing pours out afterwards.
       if (!lines.length || w.paused || stopped) continue;
-      if (!w.once && w.lastHit && at - w.lastHit < DAY_MS && w.hits >= HITS_PER_DAY) continue;
+      if (!w.once && inDay(w, at) && w.hits >= HITS_PER_DAY) continue;
       told.push({ w, lines, keys });
     }
     // Sent before the record is written: a hit is claimed in the store, so a restart in between cannot send it twice.
@@ -711,7 +723,13 @@ export function createRoutines(d: RoutinesDeps) {
         const cal = calNext.get(w.id);
         if (cal) w.cal = cal;
         if (!sent.has(w.id)) continue;
-        w.hits = w.lastHit && at - w.lastHit < DAY_MS ? w.hits + 1 : 1;
+        if (inDay(w, at)) {
+          w.hits++;
+          w.dayAt ??= w.lastHit;
+        } else {
+          w.hits = 1;
+          w.dayAt = at;
+        }
         w.lastHit = at;
       }
       b.watches = b.watches.filter((w) => !(sent.has(w.id) && w.once));

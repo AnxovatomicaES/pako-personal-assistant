@@ -4,6 +4,7 @@ import type { Kv } from "../kv.ts";
 import type { InboundReview } from "../meeting-review.ts";
 import { createLog } from "../log.ts";
 import { readJsonRecord } from "../json-record.ts";
+import { cut } from "./shared.ts";
 
 const log = createLog("whatsapp");
 
@@ -159,21 +160,21 @@ export function createInbox(kv: Kv | null) {
         const kept: Inbound = {
           id: m.id,
           at: m.at,
-          text: m.text.slice(0, MSG_MAX),
+          text: cut(m.text, MSG_MAX),
           ...(m.audio ? { audio: m.audio } : {}),
           ...(m.forwarded === true ? { forwarded: true } : {}),
-          ...(m.routine ? { routine: { id: m.routine.id, text: m.routine.text.slice(0, MSG_MAX) } } : {}),
-          ...(m.paper ? { paper: { ...m.paper, name: m.paper.name.slice(0, 80), ...(m.paper.caption ? { caption: m.paper.caption.slice(0, MSG_MAX) } : {}) } } : {}),
-          ...(m.email ? { email: { ...m.email, text: m.email.text.slice(0, EMAIL_TEXT_MAX) } } : {}),
-          ...(m.meeting ? { meeting: { ...m.meeting, transcript: m.meeting.transcript.slice(0, TRANSCRIPT_MAX) } } : {}),
-          ...(m.followup ? { followup: { ...m.followup, label: m.followup.label.slice(0, 120), text: m.followup.text.slice(0, FOLLOWUP_MAX) } } : {}),
+          ...(m.routine ? { routine: { id: m.routine.id, text: cut(m.routine.text, MSG_MAX) } } : {}),
+          ...(m.paper ? { paper: { ...m.paper, name: cut(m.paper.name, 80), ...(m.paper.caption ? { caption: cut(m.paper.caption, MSG_MAX) } : {}) } } : {}),
+          ...(m.email ? { email: { ...m.email, text: cut(m.email.text, EMAIL_TEXT_MAX) } } : {}),
+          ...(m.meeting ? { meeting: { ...m.meeting, transcript: cut(m.meeting.transcript, TRANSCRIPT_MAX) } } : {}),
+          ...(m.followup ? { followup: { ...m.followup, label: cut(m.followup.label, 120), text: cut(m.followup.text, FOLLOWUP_MAX) } } : {}),
           ...(m.review
-            ? { review: { ...m.review, topic: m.review.topic.slice(0, 200), ...(m.review.text ? { text: m.review.text.slice(0, FOLLOWUP_MAX) } : {}) } }
+            ? { review: { ...m.review, topic: cut(m.review.topic, 200), ...(m.review.text ? { text: cut(m.review.text, FOLLOWUP_MAX) } : {}) } }
             : {}),
-          ...(m.brief ? { brief: { kind: m.brief.kind, label: m.brief.label.slice(0, 160), text: m.brief.text.slice(0, BRIEF_JOB_MAX) } } : {}),
-          ...(m.proactive ? { proactive: { text: m.proactive.text.slice(0, FOLLOWUP_MAX) } } : {}),
-          ...(m.judge ? { judge: { text: m.judge.text.slice(0, FOLLOWUP_MAX) } } : {}),
-          ...(m.step ? { step: { text: m.step.text.slice(0, FOLLOWUP_MAX) } } : {}),
+          ...(m.brief ? { brief: { kind: m.brief.kind, label: cut(m.brief.label, 160), text: cut(m.brief.text, BRIEF_JOB_MAX) } } : {}),
+          ...(m.proactive ? { proactive: { text: cut(m.proactive.text, FOLLOWUP_MAX) } } : {}),
+          ...(m.judge ? { judge: { text: cut(m.judge.text, FOLLOWUP_MAX) } } : {}),
+          ...(m.step ? { step: { text: cut(m.step.text, FOLLOWUP_MAX) } } : {}),
         };
         const msgs = [...s.msgs, kept];
         // Follow-up jobs (one per Slack conversation every few minutes) are capped, the oldest dropped: a night of Slack with the computer

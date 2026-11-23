@@ -96,14 +96,19 @@ export interface Door {
   readonly papers: PaperStore;
   readonly paperSummaries: { at: number; name: string; summary: string }[];
   lastPollAt: number;
+  /** The assistant's computer has asked for messages at least once since this start (`lastPollAt` starts at the start, which is not a poll). */
+  polled: boolean;
   readonly seenPresses: Set<string>;
   lastOfflineNoticeAt: number;
   lastOtherNoticeAt: number;
   lastOldBridgeNoticeAt: number;
   lastBadSignatureLogAt: number;
-  pendingCall: { id: string; name: string; readback: string; at: number; typed: boolean } | null;
+  /** `n`: what `sent` (below) said once the card went out, with the card in it; a typed answer counts only while nothing else has gone after it. */
+  pendingCall: { id: string; name: string; readback: string; at: number; typed: boolean; n: number } | null;
   readonly dayStamps: number[];
-  pendingSend: { id: string; digits: string; label: string; text: string; at: number; typed: boolean } | null;
+  pendingSend: { id: string; digits: string; label: string; text: string; at: number; typed: boolean; n: number } | null;
+  /** How many messages have gone to the owner (src/door/send.ts counts each one once it went): what a card's `n` is compared with to be the last thing shown. */
+  sent: number;
   readonly connectorCards: Map<string, { seq: number; at: number; ask: OwnerAsk; shown: boolean; }>;
   cardSeq: number;
   readonly cardEnds: Map<string, CardEnd>;
@@ -138,11 +143,11 @@ export interface Door {
   readonly chatLanguage: () => Promise<string | null>;
   // src/door/send.ts
   readonly sendHealth: (status: number) => void;
-  readonly graph: (body: Record<string, unknown>, out?: { on?: OwnerChannel; }, secret?: boolean) => Promise<boolean>;
+  readonly graph: (body: Record<string, unknown>, out?: { on?: OwnerChannel; n?: number }, secret?: boolean) => Promise<boolean>;
   readonly sendText: (text: string, o?: { secret?: boolean; }) => Promise<boolean>;
-  readonly sendButtons: (body: string, yesId: string, noId: string, yesTitle: string, out?: { on?: OwnerChannel; }) => Promise<boolean>;
+  readonly sendButtons: (body: string, yesId: string, noId: string, yesTitle: string, out?: { on?: OwnerChannel; n?: number }) => Promise<boolean>;
   readonly sendButton: (body: string, id: string, title: string) => Promise<boolean>;
-  readonly sendConfirm: (body: string, id: string) => Promise<boolean>;
+  readonly sendConfirm: (body: string, id: string, out?: { n?: number }) => Promise<boolean>;
   // src/door/calls.ts
   readonly deliverBooking: (r: BookingReply) => Promise<void>;
   /** `turn`: the owner's own turn (no outside text in it), which lets Maître book a restaurant they named at once. */

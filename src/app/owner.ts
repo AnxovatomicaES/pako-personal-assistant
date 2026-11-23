@@ -30,7 +30,7 @@ const logWhatsapp = createLog("whatsapp");
 function bookingOff(ctx: AfterEngines): ReturnType<typeof wireBooking> {
   const { env } = ctx;
   if ((env.BOOKING ?? "").trim().toLowerCase() === "off" && (env.GOOGLE_PLACES_API_KEY ?? "").trim()) logBooking.info("OFF (BOOKING=off)");
-  return { placesRef: { ok: false }, maitreRef: { deliver: null, remind: null, unremind: null, booking: null }, booking: null };
+  return { placesRef: { ok: false }, maitreRef: { deliver: null, remind: null, unremind: null, booking: null }, booking: null, maitreBrowser: null };
 }
 
 /**
@@ -67,7 +67,7 @@ export function wireOwner(ctx: AfterCore) {
   const { mobile, phoneLink } = wireMobile(c);
   // The door's late refs, now that it exists: the panel's window and Telegram reach it, Maître's news and reminders, the connector's
   // table booking and friend calls, and the chat's hello.
-  const { local, bookingRef, askRef, maitreRef, booking, doorRef, door, hello, panelLink } = c;
+  const { local, bookingRef, askRef, maitreRef, booking, maitreBrowser, doorRef, door, hello, panelLink } = c;
   doorRef.ingest = door.ingest;
   doorRef.tell = door.tellBase;
   maitreRef.deliver = door.deliverBooking;
@@ -88,5 +88,5 @@ export function wireOwner(ctx: AfterCore) {
   wireProactive(briefed);
   wireMail(briefed);
   const { tellOwner, tellAssistant, parts } = briefed;
-  return { tellOwner, tellAssistant, parts, panelLink, telegram, slackSocket, mobile };
+  return { tellOwner, tellAssistant, parts, panelLink, telegram, slackSocket, mobile, maitreBrowser };
 }

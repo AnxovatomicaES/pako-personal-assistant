@@ -5,6 +5,7 @@ import { waLink } from "../links.ts";
 import { T } from "./texts.ts";
 import type { Delivery, Door } from "./door.ts";
 import { createLog } from "../log.ts";
+import { cut } from "./shared.ts";
 
 const log = createLog("whatsapp");
 
@@ -22,7 +23,7 @@ export function mountDelivery(door: Door): Pick<Door, "graphTo" | "deliver" | "h
       const doc = (await res.json().catch(() => ({}))) as { messages?: { id?: string }[]; error?: { code?: number; message?: string; error_data?: { details?: string } } };
       sendHealth(res.status);
       if (res.ok) return { ok: true, id: doc.messages?.[0]?.id ?? "", code: 0, detail: "" };
-      const detail = (doc.error?.error_data?.details ?? doc.error?.message ?? `HTTP ${res.status}`).replace(/\s+/g, " ").slice(0, 200);
+      const detail = cut((doc.error?.error_data?.details ?? doc.error?.message ?? `HTTP ${res.status}`).replace(/\s+/g, " "), 200);
       log.error(`a message to a friend was refused (${res.status}), code ${doc.error?.code ?? "?"}: ${detail}`);
       return { ok: false, id: "", code: Number(doc.error?.code) || 0, detail };
     } catch (err) {
@@ -59,7 +60,7 @@ export function mountDelivery(door: Door): Pick<Door, "graphTo" | "deliver" | "h
       template: {
         name: config.templateName,
         language: { code: config.templateLang },
-        components: [{ type: "body", parameters: [{ type: "text", text: d.ownerName }, { type: "text", text: t.text.replace(/\s+/g, " ").trim().slice(0, 700) }] }],
+        components: [{ type: "body", parameters: [{ type: "text", text: d.ownerName }, { type: "text", text: cut(t.text.replace(/\s+/g, " ").trim(), 700) }] }],
       },
     });
 
@@ -128,7 +129,7 @@ export function mountDelivery(door: Door): Pick<Door, "graphTo" | "deliver" | "h
         return "status failed, template sent";
       }
     }
-    const detail = (err?.error_data?.details ?? err?.message ?? "").replace(/\s+/g, " ").slice(0, 200);
+    const detail = cut((err?.error_data?.details ?? err?.message ?? "").replace(/\s+/g, " "), 200);
     note(tx("noteNotDelivered", { label: info.label, code }));
     await door.notifyOwner(failureText(info.label, info.digits, info.text, code, detail));
     return "status failed";

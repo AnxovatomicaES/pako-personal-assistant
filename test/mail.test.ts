@@ -4,7 +4,8 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
 import express from "express";
-import { accountOf, bodyText, createMailbox, headerValues, htmlToText, isBulk, isVip, loadMailConfig, mountMail, verifySvix, type MailConfig } from "../src/mail.ts";
+import { authenticated } from "../src/mail-categories.ts";
+import { accountOf, addressOf, bodyText, createMailbox, headerValues, htmlToText, isBulk, isVip, loadMailConfig, mountMail, takeMail, verifySvix, type MailConfig, type RecentMail } from "../src/mail.ts";
 import { createInbox, type Inbound } from "../src/whatsapp.ts";
 
 const SECRET = `whsec_${Buffer.from("a-test-signing-key-0123456789").toString("base64")}`;
@@ -296,10 +297,42 @@ test("mail: a hostile body cannot freeze the server (the HTML is only read when 
   assert.equal(htmlToText("a < b and c > d"), "a < b and c > d", "a lone < is text");
 });
 
+test("mail: an HTML5 <header> is not a <head>: its words are kept; a real head, with or without attributes, is still dropped", () => {
+  const html = "<html><body><header><h1>Invoice 4471: payment due Friday</h1></header><p>Hello, see the details below.</p></body></html>";
+  assert.equal(htmlToText(html), "Invoice 4471: payment due Friday\nHello, see the details below.");
+  assert.equal(bodyText({ html }), "Invoice 4471: payment due Friday\nHello, see the details below.", "an email with only an HTML part");
+  assert.equal(htmlToText("<html><head><title>Hidden</title></head><body><p>Shown</p></body></html>"), "Shown");
+  assert.equal(htmlToText("<HEAD lang=en><meta charset=utf-8><title>Hidden</title></HEAD ><p>Shown</p>"), "Shown");
+  // A header inside a real head does not end it early, and a <header> after it is kept.
+  assert.equal(htmlToText("<head><header>Hidden</header><title>Hidden too</title></head><header>Shown</header><p>and this</p>"), "Shown and this");
+});
+
 test("mail: a display name that looks like an address does not make a VIP; invisible characters are removed from what reaches the phone", () => {
   assert.equal(isVip('"<ceo@jefe.example>" <attacker@evil.example>', ["@jefe.example"]), false);
   assert.equal(isVip('"Jefe" <ceo@jefe.example>', ["@jefe.example"]), true);
   assert.equal(bodyText({ text: "pagar‮ 100​€" }), "pagar 100€");
+});
+
+test("mail: an address inside a comment of the From line is not the sender: it makes no VIP and vouches for nothing", async () => {
+  // RFC 5322 comments, "(...)", may hold anything; the sender, and what the mail server checked, is the address outside them.
+  const boss = "pay@evil.example (Your boss <boss@jefe.example>)";
+  assert.equal(addressOf(boss), "pay@evil.example");
+  assert.equal(addressOf("a@evil.example (nested (<boss@jefe.example>) twice) <b@evil.example>"), "b@evil.example");
+  assert.equal(addressOf("a@evil.example (never closed <boss@jefe.example>"), "a@evil.example");
+  assert.equal(isVip(boss, ["boss@jefe.example"]), false);
+  assert.equal(isVip(boss, ["@jefe.example"]), false);
+  assert.equal(authenticated(boss, ["mx.owner.example; dkim=pass header.d=jefe.example"]), false, "signed for the real domain only");
+  assert.equal(authenticated(boss, ["mx.owner.example; dkim=pass header.d=evil.example"]), true);
+  // A real VIP with a comment, or with brackets in a quoted name, still is one.
+  assert.equal(isVip("Boss (the CEO) <boss@jefe.example>", ["boss@jefe.example"]), true);
+  assert.equal(addressOf('"Smith (CEO)" <smith@jefe.example>'), "smith@jefe.example");
+  // Through the intake: not marked VIP, so it is not told whatever the triage files it as.
+  const queued: Inbound[] = [];
+  const box = createMailbox(null);
+  const d = { box, enqueue: async (m: Inbound) => (queued.push(m), true), lang: () => "en" as const, now: () => 1_800_000_000_000, vip: ["boss@jefe.example"] };
+  await takeMail(d, "v1", { from: boss, subject: "Urgent wire", text: "Please pay the invoice today.", timestamp: new Date(1_800_000_000_000 - 3600_000).toISOString() }, "personal");
+  assert.equal(queued[0]!.email?.vip, false);
+  assert.equal((await box.get("v1"))?.vip, undefined);
 });
 
 test("mail: what the assistant itself sent is not announced as incoming mail, and a date in the future is today", async () => {
@@ -322,4 +355,33 @@ test("mail: what the assistant itself sent is not announced as incoming mail, an
   } finally {
     r.close();
   }
+});
+
+test("mailbox: the newest 150 records are kept, and with them every Needs you or Waiting on others mail not dealt with, for 30 days; done, replied and older ones give way", async () => {
+  const DAY = 24 * 3600_000;
+  const NOW = Date.UTC(2026, 10, 20, 10, 0, 0);
+  const box = createMailbox(null);
+  const mail = (id: string, at: number, o: Partial<RecentMail> = {}): RecentMail => ({ id, at, from: "Dana <dana@client.example>", subject: id, preview: "", kind: "aviso", ...o });
+  await box.record(mail("ask", NOW, { category: "needs_you" }), "", NOW);
+  await box.record(mail("owed", NOW, { category: "waiting" }), "", NOW);
+  await box.record(mail("done", NOW, { category: "needs_you", handledAt: NOW }), "", NOW);
+  await box.record(mail("replied", NOW, { category: "needs_you", repliedAt: NOW }), "", NOW);
+  await box.record(mail("fyi", NOW, { category: "important" }), "", NOW);
+  await box.record(mail("stale", NOW - 31 * DAY, { category: "needs_you" }), "", NOW);
+  // Three days of an ordinary inbox: 150 newsletters, offers and notices after them.
+  for (let i = 1; i <= 150; i++) await box.record(mail(`bulk${i}`, NOW + i * 28 * 60_000, { kind: "masivo", category: "promotions" }), "", NOW + i * 28 * 60_000);
+  const kept = async (id: string) => !!(await box.get(id));
+  assert.deepEqual([await kept("ask"), await kept("owed")], [true, true], "what the owner has not dealt with is kept past the newest 150");
+  assert.deepEqual([await kept("done"), await kept("replied"), await kept("fyi"), await kept("stale")], [false, false, false, false],
+    "done, replied to, only to read, or older than the 30 days the dashboard shows: they give way as before");
+  assert.equal((await box.items(Infinity)).length, 152, "the newest 150 and the two");
+  assert.equal(await kept("bulk1"), true);
+  assert.equal(await kept("bulk150"), true);
+  // Once the owner marks it done, the next record lets it go; after 30 days an untouched one goes too.
+  await box.handle("ask", true, NOW + 4 * DAY);
+  await box.record(mail("bulk151", NOW + 3 * DAY, { kind: "masivo", category: "promotions" }), "", NOW + 3 * DAY);
+  assert.equal(await kept("ask"), false, "done: no longer spared");
+  assert.equal(await kept("owed"), true);
+  await box.record(mail("bulk152", NOW + 31 * DAY, { kind: "masivo", category: "promotions" }), "", NOW + 31 * DAY);
+  assert.equal(await kept("owed"), false, "past the 30 days: no longer spared");
 });

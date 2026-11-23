@@ -105,7 +105,8 @@ const SPANISH_UI = new RegExp(
 const SPANISH_ALLOWED: Record<string, string[]> = {
   "src/door/format.ts": ["hola"], // the greeting a call's message is cleaned of
   "src/panel/app.js": ["correo", "calendario", "recordatorio", "salud"], // older log lines' kinds, mapped to icons
-  "src/followups/checks.ts": ["correo", "reunion"], // older loops' reasons and hints
+  "src/followups/checks.ts": ["correo"], // older loops' reasons
+  "src/followups/calendar-match.ts": ["reunion"], // older loops' hints: the words that name no meeting (shared with the checks)
   "assistant/prompt.ts": ["correo", "reunion", "seguimiento"], // the fences' names, which the bridge swaps for random ones: never shown
 };
 

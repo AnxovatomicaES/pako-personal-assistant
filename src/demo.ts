@@ -630,25 +630,37 @@ function personBlocks(people: Person[], words: string[]): { name: string; text: 
 
 // ---------- the panel's routes ----------
 
-/** POST routes that connect an account, take data in, write to the person's own apps or set up something lasting: "leave the demo first". */
-const BLOCKED = [
-  "/panel/api/connections", "/panel/api/google/", "/panel/api/slack/", "/panel/api/zoom/", "/panel/api/teams/", "/panel/api/telegram/",
-  "/panel/api/whatsapp/", "/panel/api/mail/connect", "/panel/api/mail/autoconfig", "/panel/api/mail/oauth", "/panel/api/calendar/local",
-  "/panel/api/discovery", "/panel/api/people/import", "/panel/api/move", "/panel/api/autostart",
-  // The Mac app's rounds that write to the person's own Apple Reminders and calendars: the invented week's follow-ups must never land there.
-  "/panel/api/reminders/local", "/panel/api/calendar/writes",
+/**
+ * The routes that change something which the demo week itself uses, and only those: the panel's own session and settings, the chat, the
+ * brief, the mail's Done and Move, the tasks, the notes, the people's edits, the routines and the switches of how Pako acts. They write to the
+ * demo's own folder and store. Any other change under /panel/api/ is refused (a list of what to refuse, as this once was, missed every route
+ * added since: the private calendar links, Apple Mail's and Messages' checks, pairing a phone). A new route is refused in the demo until it is
+ * named here. They are all POSTs: no other method is let through.
+ */
+const ALLOWED = [
+  "/panel/api/sessions/end", "/panel/api/link", "/panel/api/pause", "/panel/api/settings", "/panel/api/demo/start", "/panel/api/demo/leave",
+  "/panel/api/chat", "/panel/api/chat/press", "/panel/api/chat/paper",
+  "/panel/api/brief", "/panel/api/brief/ask", "/panel/api/brief/check", "/panel/api/brief/make", "/panel/api/quality/brief", "/panel/api/rehearsal",
+  "/panel/api/mail/done", "/panel/api/mail/undone", "/panel/api/mail/move", "/panel/api/mail/notify", "/panel/api/mail/rule/delete",
+  "/panel/api/tasks/item", "/panel/api/tasks/task", "/panel/api/memory/edit", "/panel/api/memory/delete", "/panel/api/lessons/delete",
+  "/panel/api/people/edit", "/panel/api/people/delete", "/panel/api/people/prep", "/panel/api/people/hide", "/panel/api/people/unhide",
+  "/panel/api/routines/remove", "/panel/api/proactive/topic",
+  "/panel/api/autonomy", "/panel/api/gentle", "/panel/api/gentle/unpark", "/panel/api/day-helpers", "/panel/api/labs", "/panel/api/beta-audit",
+  // Claude's own sign-in on this computer: the demo runs live once it is signed in.
+  "/panel/api/claude/connect", "/panel/api/claude/connect/cancel", "/panel/api/claude/signout",
 ];
 
 /**
- * Whether a request is one the demo refuses: a connection, an import, the export (nothing of the person's is here), and deleting everything
- * (it would empty the demo's folder only, and say the person's own data was gone).
+ * Whether a request is one the demo refuses: any change under /panel/api/ that is not in ALLOWED (a connection, an import, the Mac app's rounds
+ * into Reminders and calendars, a private calendar link, Apple Mail and Messages, pairing a phone, the Telegram bot), the export (nothing of the
+ * person's is here), and deleting everything (it would empty the demo's folder only, and say the person's own data was gone).
  */
 export function demoBlocks(method: string, raw: string): boolean {
   // As Express routes it: in any case of letters, with or without a slash at the end.
   const path = raw.toLowerCase().replace(/\/+$/, "");
   if (path === "/panel/api/export" || path === "/panel/api/move/export" || path === "/panel/api/delete-all") return true;
   if (method === "GET" || method === "HEAD") return false;
-  return BLOCKED.some((p) => path === p || path.startsWith(p.endsWith("/") ? p : `${p}/`) || path === p.replace(/\/$/, ""));
+  return path.startsWith("/panel/api/") && !(method === "POST" && ALLOWED.includes(path));
 }
 
 /** Guards the routes above while the demo runs; mounted before them. */

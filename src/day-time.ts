@@ -75,3 +75,20 @@ export function weekdayOf(day: string): number {
   const [y, m, d] = day.split("-").map(Number) as [number, number, number];
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 }
+
+/**
+ * The weekday (0 = Sunday) a working week starts on: the working day after the longest run of days off, the earliest of them in a Monday-first
+ * week when runs tie. Monday for Monday to Friday (and for seven days), Sunday for Sunday to Thursday, Friday for Friday to Sunday, so a week that
+ * runs over the weekend ends on its Sunday and one that starts on it ends on its Thursday.
+ */
+export function weekStartOf(days: readonly number[]): number {
+  let start = 1;
+  let longest = 0;
+  for (const d of [1, 2, 3, 4, 5, 6, 0]) {
+    if (!days.includes(d)) continue;
+    let gap = 1;
+    while (!days.includes((d - gap + 7) % 7)) gap++;
+    if (gap > longest) [start, longest] = [d, gap];
+  }
+  return start;
+}

@@ -75,7 +75,7 @@ export function wireMeetings(ctx: AfterSchedule) {
       observe: (m) => {
         void followupsRef.engine?.observeSlack(m);
         // The owner's own post beside a draft Pako wrote for that conversation: what they changed is learnt (src/lessons.ts).
-        if (m.mine) void lessons.ownSent({ channel: m.channel, text: m.text, at: m.at }).catch((err: Error) => logLessons.error(err.message));
+        if (m.mine) void lessons.ownSent({ channel: m.channel, ...(m.thread ? { thread: m.thread } : {}), text: m.text, at: m.at }).catch((err: Error) => logLessons.error(err.message));
         // The owner's own message is not a sighting of someone else.
         if (!m.mine) feedPeople(slackSightings(m));
       },

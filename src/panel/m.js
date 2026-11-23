@@ -137,8 +137,10 @@ async function load() {
     const kept = cache.read();
     statusLine.textContent = kept ? t("offline", { time: dateTime(kept.at) }) : t("offlineNone");
     statusLine.classList.add("warn");
+    // Whichever of these runs sets the next look (draw and drawOffline do it themselves): one failed refresh must never be the last.
     if (kept && !data) draw(kept.data);
     else if (!kept) drawOffline();
+    else schedule(30_000);
     return;
   }
   statusLine.classList.remove("warn");
@@ -150,6 +152,7 @@ async function load() {
   if (r.status !== 200 || !r.body) {
     statusLine.textContent = t("failed");
     statusLine.classList.add("warn");
+    schedule(30_000); // Pako answered with an error (it may be busy, or restarting): the page stays and asks again
     return;
   }
   cache.write(r.body);
@@ -343,12 +346,17 @@ function drawPairing(fromLink = "") {
 
 async function unpair() {
   if (!confirm(t("unpairAsk"))) return;
+  let r = null;
   try {
-    await api("/m/api/forget", {});
+    r = await api("/m/api/forget", {});
   } catch {
-    /* offline: the cookie stays until the next try; the kept copy goes now */
+    /* offline: said below */
   }
+  // Only Pako's word takes this phone out: 200 (forgotten) or 401 (it did not know this phone). With no answer, or an error, the cookie is
+  // still good and so is the pairing: the page stays as it is and says so, not a pairing form for a phone that is still paired.
+  if (!r || (r.status !== 200 && r.status !== 401)) return void toast(t("failed"));
   cache.clear();
+  data = null;
   drawPairing();
 }
 

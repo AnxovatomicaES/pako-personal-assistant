@@ -73,6 +73,8 @@ export interface Answer {
   unknown?: true;
   /** The phone line is in dry run: nobody was rung. */
   simulated?: true;
+  /** confirm_call found no call waiting, or another one than the read-back it was given: what was confirmed is no longer what is staged. */
+  stale?: true;
 }
 
 export interface VoiceTools {
@@ -188,13 +190,18 @@ export function loadVoiceTools(o: { memory: MemoryStore; actions: ToolActions; l
       }
       case "confirm_call": {
         const staged = pending.get(c.callId);
-        if (!staged) return { say: "There is nothing waiting for a yes. Do not ring anyone.", verbatim: false };
+        if (!staged) return { say: "There is nothing waiting for a yes. Do not ring anyone.", verbatim: false, stale: true };
         // Decided here from the owner's own words, never by the model: the worker must report that this exact read-back played out to the
         // end, and everything the owner said after it must be a plain yes (all of it: a "no" or any other word anywhere makes it not one).
         // A "yes" said before the read-back finished is not part of it. Any confirm attempt uses the staged call up.
         pending.delete(c.callId);
         const answered = !!staged.readback && c.readbackText === staged.readback && isYes(c.answerText ?? "");
-        if (!answered) return { say: "The owner has not clearly said yes to the read-back, so nothing was done. Do not ring anyone; offer to prepare it again.", verbatim: false };
+        if (!answered) {
+          return {
+            say: "The owner has not clearly said yes to the read-back, so nothing was done. Do not ring anyone; offer to prepare it again.", verbatim: false,
+            ...(c.readbackText !== staged.readback ? { stale: true as const } : {}),
+          };
+        }
         const r = await o.actions.callContact({ name: staged.name, message: staged.message, language: staged.language, direct: staged.direct });
         // The reason stays out of the spoken words (it is in English and may carry an id).
         log.info(`confirm_call ${c.callId}: ${r.ok ? "placed" : "not placed"}: ${r.text.slice(0, 60).replace(/\s+/g, " ")}`);

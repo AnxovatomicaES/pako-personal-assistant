@@ -149,9 +149,11 @@ const intake = async (door: Door, m: Record<string, unknown>, channel: OwnerChan
   // WhatsApp's 24-hour window opens only with a message on WhatsApp; the chat used last is where what Pako starts goes.
   if (channel === "base") touchOwner(at);
   setLastChannel(channel);
-  // A proposed call or message can be answered in words only by the very next message, whatever kind it is.
-  const waiting = door.pendingCall && door.pendingCall.typed && at - door.pendingCall.at < PENDING_CALL_MS ? door.pendingCall : null;
-  const waitingSend = door.pendingSend && door.pendingSend.typed && at - door.pendingSend.at < PENDING_CALL_MS ? door.pendingSend : null;
+  // A proposed call or message can be answered in words only by the very next message, whatever kind it is, and only while its card is the last
+  // thing Pako sent: after a notice, a reminder or another card, a "yes" is about that one (its buttons still work until it expires).
+  const last = (p: { typed: boolean; at: number; n: number } | null): boolean => !!p && p.typed && at - p.at < PENDING_CALL_MS && p.n === door.sent;
+  const waiting = last(door.pendingCall) ? door.pendingCall : null;
+  const waitingSend = last(door.pendingSend) ? door.pendingSend : null;
   if (door.pendingCall) door.pendingCall.typed = false;
   if (door.pendingSend) door.pendingSend.typed = false;
   // The same for a table card or list: taken here, whatever kind of message this is, so a later "yes" can never confirm it.
@@ -190,7 +192,14 @@ const notText = async (door: Door, m: Record<string, unknown>, channel: OwnerCha
     if (reply?.id && !seenPresses.has(id)) {
       seenPresses.add(id);
       if (seenPresses.size > MAX_SEEN) seenPresses.delete(seenPresses.values().next().value!);
-      await pressed(reply.id, id);
+      try {
+        await pressed(reply.id, id);
+      } catch (err) {
+        // One that failed half way is not marked: the webhook answers with an error, and Meta's delivery of the same press must be handled (a
+        // press takes its card before anything waits, so a press handled again finds it gone, never doing it twice).
+        seenPresses.delete(id);
+        throw err;
+      }
       return "button pressed";
     }
     return "button repeated";

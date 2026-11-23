@@ -9,6 +9,7 @@
 // Plan is time-to-do's own card (its Block is the only write); Done and Park are the follow-ups' own. Never in the quiet hours (the brief says
 // it then), at most three a day, to the owner only. The meeting's title is someone else's text: inline()d and quoted, never followed.
 
+import { takeOf, type Take } from "./app/budget.ts";
 import type { Loop } from "./followups/types.ts";
 import { dueAtMeeting, type MeetingChange } from "./followups/calendar-match.ts";
 import { quietAt } from "./gentle.ts";
@@ -97,12 +98,15 @@ export interface CalendarAlertsDeps {
   /** The day's shared cap (gentle mode's when it is on) and what the other parts sent today (src/app/budget.ts): none once it is spent. */
   cap?: () => Promise<number>;
   others?: () => Promise<number>;
+  /** This part's turn at the day's cap (src/app/budget.ts): the check against the others and the count are one turn. Absent: `others`. */
+  take?: Take;
   log?: (text: string) => void;
 }
 
 /** Tells the owner of the changes in `changes` that touch what they owe; call it before the follow-ups follow the change. */
 export function createCalendarAlerts(d: CalendarAlertsDeps) {
   const now = d.now ?? Date.now;
+  const take = takeOf(d.take, d.others);
   let day = "";
   let sent = 0;
   const tell = async (changes: readonly MeetingChange[]): Promise<number> => {
@@ -118,11 +122,15 @@ export function createCalendarAlerts(d: CalendarAlertsDeps) {
           sent = 0;
         }
         if (sent >= ALERTS_PER_DAY) break;
-        if (d.cap && d.others && sent + (await d.others().catch(() => 0)) >= (await d.cap().catch(() => 0))) break;
+        // Its place in the day's cap is taken before the alert goes (the check and the count are one turn), and given back if it did not go.
+        const placed = d.cap ? await take(await d.cap().catch(() => 0), async (room) => (sent >= room ? false : (sent++, true))) : (sent++, true);
+        if (!placed) break;
         const { body, buttons } = alertCard(a, t, d.timeZone);
         const ok = buttons.length ? await d.card(body, buttons).catch(() => false) : (await d.notify(body).then(() => true, () => false));
-        if (!ok) continue;
-        sent++;
+        if (!ok) {
+          sent--;
+          continue;
+        }
         n++;
         d.log?.(`Calendar change told: ${inline(a.change.title, 80)} (${a.change.kind})`);
       }

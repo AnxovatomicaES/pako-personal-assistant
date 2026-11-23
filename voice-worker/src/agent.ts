@@ -28,7 +28,7 @@ import { z } from "zod";
 import { AudioStream, ParticipantKind, type RemoteParticipant, type RemoteTrack, RoomEvent, TrackKind } from "@livekit/rtc-node";
 import { createGemini } from "./gemini.ts";
 import {
-  type CallMeta, LiveHearing, type TalkStats, VoiceMeter, cleanSecret, credentialShape, disclosesAi, idleProcesses, inboundRule, languageFor, type CallLanguage, mainServerUrl, parseMeta,
+  CALL_UNKNOWN, CONFIRM_CALL_MS, type CallMeta, LiveHearing, type TalkStats, VoiceMeter, cleanSecret, credentialShape, disclosesAi, idleProcesses, inboundRule, languageFor, type CallLanguage, mainServerUrl, mayHaveGoneOut, parseMeta,
   rmsDb, sensitivityOf, sign, signAsk,
 } from "./util.ts";
 import { createLog } from "./log.ts";
@@ -323,7 +323,8 @@ export default defineAgent({
     // enough here: with Gemini Live the owner's turn is only committed when the model's turn is over, and while a tool runs that turn is still
     // open, so the owner's "yes" is not a line yet. The live (partial) transcripts arrive as the owner speaks.
     const hearing = new LiveHearing();
-    const callServer = async (tool: string, args: Record<string, unknown>, heard?: { text: string; answer: string }): Promise<{ say: string; verbatim: boolean } | undefined> => {
+    /** `placing`: the tool places a call (confirm_call): it waits for the server's whole work, and an answer that did not come is "not known", not "failed". */
+    const callServer = async (tool: string, args: Record<string, unknown>, heard?: { text: string; answer: string }, placing = false): Promise<{ say: string; verbatim: boolean } | undefined> => {
       const r = await serverPost(
         "/personal-voice/tool",
         {
@@ -333,9 +334,10 @@ export default defineAgent({
           args,
           ...(heard ? { readback_text: heard.text, answer_text: heard.answer } : {}),
         },
-        20_000,
+        placing ? CONFIRM_CALL_MS : 20_000,
       );
       mark(`tool ${tool}: HTTP ${r.status}`);
+      if (placing && mayHaveGoneOut(r)) return { say: CALL_UNKNOWN, verbatim: false };
       if (!r.ok) return undefined;
       try {
         const a = JSON.parse(r.text) as { say?: unknown; verbatim?: unknown };
@@ -409,7 +411,7 @@ export default defineAgent({
                     last = answer;
                   }
                 }
-                return toModel(await callServer("confirm_call", {}, heard ? { text: heard.text, answer } : undefined));
+                return toModel(await callServer("confirm_call", {}, heard ? { text: heard.text, answer } : undefined, true));
               },
             }),
             check_call: llm.tool({

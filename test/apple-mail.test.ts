@@ -246,6 +246,39 @@ test("reading: from the moment it was turned on; inbox and Sent only; .partial.e
   f.w.close();
 });
 
+test("a file Mail writes a moment after its row is still read when the Mac slept for hours: the wait counts from when the row was first seen", async () => {
+  const f = fixture({ wal: true });
+  const { r, queued, clock, kv } = reader(f.root);
+  assert.equal(await r.round(), 0, "turned on at T0");
+  const write = (id: number, raw: string): void => {
+    const dir = dataDir(join(f.v, ICLOUD, "INBOX.mbox"), id);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${id}.emlx`), emlx(raw));
+  };
+  // The Mac sleeps three hours and two emails come meanwhile. On waking Mail syncs: the rows first, the files a moment later.
+  clock.now = T0 + 180 * MIN;
+  const early = f.add({ url: f.INBOX, at: T0 + 30 * MIN, from: CLIENT, noFile: true, raw: "" }); // 2 h 30 old by its date
+  const later = f.add({ url: f.INBOX, at: T0 + 150 * MIN, from: CLIENT, noFile: true, raw: "" });
+  assert.equal(await r.round(), 0, "no files yet");
+  assert.equal((JSON.parse(kv.data.get(APPLE_MAIL_KEY)!) as { waiting: unknown[] }).waiting.length, 2, "both still waited for, the older one too");
+  write(early.id, email({ mid: "c1@client.example", from: `Dana <${CLIENT}>`, subject: "Contract: need your answer", text: "Can you confirm the contract by Friday?", at: T0 + 30 * MIN }));
+  write(later.id, email({ mid: "c2@client.example", from: `Dana <${CLIENT}>`, subject: "Lunch?", text: "Lunch on Tuesday?", at: T0 + 150 * MIN }));
+  clock.now += 3 * MIN;
+  assert.equal(await r.round(), 2);
+  assert.deepEqual(queued.map((m) => m.email?.subject), ["Contract: need your answer", "Lunch?"], "the 2 h 30 old one too: Mail had not had two hours");
+  // A file that never comes is let go two hours after its row was first seen, not before.
+  const never = f.add({ url: f.INBOX, at: clock.now - MIN, from: CLIENT, noFile: true, raw: "" });
+  assert.equal(await r.round(), 0);
+  clock.now += 119 * MIN;
+  assert.equal(await r.round(), 0);
+  const waiting = () => (JSON.parse(kv.data.get(APPLE_MAIL_KEY)!) as { waiting: { id: number }[] }).waiting.map((w) => w.id);
+  assert.deepEqual(waiting(), [never.id], "119 minutes after it was first seen: still looked for");
+  clock.now += 2 * MIN;
+  await r.round();
+  assert.deepEqual(waiting(), [], "past the two hours: let go");
+  f.w.close();
+});
+
 test("paused (STOP): nothing is read, as IMAP does not log in; after RESUME the mail of the pause is read from the mark, none lost", async () => {
   const f = fixture({ wal: true });
   const control = createControl(memoryKv(), () => T0);

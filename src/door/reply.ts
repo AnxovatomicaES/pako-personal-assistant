@@ -1,5 +1,6 @@
 // The assistant's answer and what its tags ask for: done, held for the owner's yes when outside text asked, or refused.
 
+import type { Request, Response } from "express";
 import type { CalendarProposalIn } from "./calendar-cards.ts";
 import { isEvery, type Change } from "../undo.ts";
 import { hasActs, outsideOf, type HeldActs } from "../quarantine.ts";
@@ -10,6 +11,7 @@ import type { Door } from "./door.ts";
 import { dumpItemsOf } from "../gentle-dump.ts";
 import { checkinItemsOf } from "../gentle-checkins.ts";
 import { createLog } from "../log.ts";
+import { cut } from "./shared.ts";
 
 const logProactive = createLog("proactive");
 const logFacts = createLog("facts");
@@ -86,7 +88,7 @@ type ReplyBody = {
 /** The proposed calendar changes, field by field: one at most, each time "YYYY-MM-DD HH:MM" (the card reads it in the owner's zone). */
 const calendarOf = (v: unknown): CalendarProposalIn[] => {
   const STAMP = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
-  const s = (x: unknown, max: number): string => (typeof x === "string" ? x.replace(/\s+/g, " ").trim().slice(0, max) : "");
+  const s = (x: unknown, max: number): string => (typeof x === "string" ? cut(x.replace(/\s+/g, " ").trim(), max) : "");
   return (Array.isArray(v) ? v : []).slice(0, 1).flatMap((x): CalendarProposalIn[] => {
     if (!x || typeof x !== "object") return [];
     const p = x as Record<string, unknown>;
@@ -105,39 +107,39 @@ const readReply = (door: Door, b: ReplyBody) => {
   const { d, strings } = door;
   const book = d.booking && b.book && typeof b.book.what === "string" && typeof b.book.when === "string" && Number.isInteger(Number(b.book.party))
     ? {
-        what: b.book.what.replace(/\s+/g, " ").trim().slice(0, 200),
+        what: cut(b.book.what.replace(/\s+/g, " ").trim(), 200),
         when: b.book.when.trim().slice(0, 16),
         party: Number(b.book.party),
-        ...(typeof b.book.notes === "string" && b.book.notes.trim() ? { notes: b.book.notes.replace(/\s+/g, " ").trim().slice(0, 300) } : {}),
-        ...(typeof b.book.name === "string" && b.book.name.trim() ? { name: b.book.name.replace(/\s+/g, " ").trim().slice(0, 60) } : {}),
+        ...(typeof b.book.notes === "string" && b.book.notes.trim() ? { notes: cut(b.book.notes.replace(/\s+/g, " ").trim(), 300) } : {}),
+        ...(typeof b.book.name === "string" && b.book.name.trim() ? { name: cut(b.book.name.replace(/\s+/g, " ").trim(), 60) } : {}),
       }
     : null;
   const remind = (Array.isArray(b.remind) ? b.remind : []).slice(0, 2)
     .filter((r): r is Remind => !!r && typeof r.at === "string" && typeof r.text === "string")
-    .map((r) => ({ at: String(r.at).trim().slice(0, 16), text: String(r.text).replace(/\s+/g, " ").trim().slice(0, 200), every: isEvery(r.every) ? r.every : undefined }));
+    .map((r) => ({ at: String(r.at).trim().slice(0, 16), text: cut(String(r.text).replace(/\s+/g, " ").trim(), 200), every: isEvery(r.every) ? r.every : undefined }));
   const unremind = strings(b.unremind, 2, 3, 80);
   const listOps = (Array.isArray(b.lists) ? b.lists : []).slice(0, 2).flatMap((l: ListOp) => {
     if (!l || typeof l.name !== "string" || (l.op !== "add" && l.op !== "remove")) return [];
-    const name = l.name.replace(/\s+/g, " ").trim().slice(0, 40);
+    const name = cut(l.name.replace(/\s+/g, " ").trim(), 40);
     const items = strings(l.items, 10, 1, 120);
     return name && items.length ? [{ name, op: l.op as "add" | "remove", items }] : [];
   });
   const taskAdds = (Array.isArray(b.tasks) ? b.tasks : []).slice(0, 3).flatMap((x: TaskAdd) =>
     x && typeof x.text === "string" && x.text.trim().length >= 2
-      ? [{ text: x.text.replace(/\s+/g, " ").trim().slice(0, 200), due: typeof x.due === "string" ? x.due.trim().slice(0, 20) : "" }]
+      ? [{ text: cut(x.text.replace(/\s+/g, " ").trim(), 200), due: typeof x.due === "string" ? x.due.trim().slice(0, 20) : "" }]
       : []);
   const doneWords = strings(b.done, 3, 3, 80);
   const closedWords = strings(b.closed, 3, 2, 80);
   const promiseAdds = (Array.isArray(b.promises) ? b.promises : []).slice(0, 2).flatMap((x: unknown) => {
     const p = (x && typeof x === "object" ? x : {}) as Record<string, unknown>;
-    const text = typeof p.text === "string" ? p.text.replace(/\s+/g, " ").trim().slice(0, 200) : "";
+    const text = typeof p.text === "string" ? cut(p.text.replace(/\s+/g, " ").trim(), 200) : "";
     if (text.length < 3) return [];
-    const who = typeof p.who === "string" ? p.who.replace(/\s+/g, " ").trim().slice(0, 60) : "";
+    const who = typeof p.who === "string" ? cut(p.who.replace(/\s+/g, " ").trim(), 60) : "";
     const due = typeof p.due === "string" && /^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/.test(p.due.trim()) ? p.due.trim() : "";
     return [{ text, who, due }];
   });
   // Three people at most per answer, each field short: more would be a runaway or an injection.
-  const line = (v: unknown, max: number): string => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
+  const line = (v: unknown, max: number): string => (typeof v === "string" ? cut(v.replace(/\s+/g, " ").trim(), max) : "");
   const personAdds = (Array.isArray(b.people) ? b.people : []).slice(0, 3).flatMap((x: unknown): PersonInput[] => {
     const p = (x && typeof x === "object" ? x : {}) as Record<string, unknown>;
     const name = line(p.name, NAME_MAX);
@@ -150,11 +152,11 @@ const readReply = (door: Door, b: ReplyBody) => {
   });
   const routineAdds = (Array.isArray(b.routines) ? b.routines : []).slice(0, 1).flatMap((r) =>
     r && typeof r.at === "string" && typeof r.every === "string" && typeof r.text === "string"
-      ? [{ at: r.at.trim().slice(0, 16), every: r.every.trim().slice(0, 10), text: r.text.replace(/\s+/g, " ").trim().slice(0, 300) }]
+      ? [{ at: r.at.trim().slice(0, 16), every: r.every.trim().slice(0, 10), text: cut(r.text.replace(/\s+/g, " ").trim(), 300) }]
       : []);
   const watchAdds = (Array.isArray(b.watches) ? b.watches : []).slice(0, 1).flatMap((w) =>
     w && typeof w.on === "string" && typeof w.text === "string"
-      ? [{ on: w.on.slice(0, 10), from: w.from, words: w.words, once: w.once !== false, text: w.text.replace(/\s+/g, " ").trim().slice(0, 300) }]
+      ? [{ on: w.on.slice(0, 10), from: w.from, words: w.words, once: w.once !== false, text: cut(w.text.replace(/\s+/g, " ").trim(), 300) }]
       : []);
   const outside = outsideOf(b.outside);
   const context = outside.length ? [] : outsideOf(b.context);
@@ -178,24 +180,24 @@ const readReply = (door: Door, b: ReplyBody) => {
   // to /assistant/memory.
   const noteAdds = outside.length || context.length ? strings(b.remember, 3, 3, 300) : [];
   const noteDrops = outside.length || context.length ? strings(b.forget, 2, 4, 80) : [];
-  const text = typeof b.text === "string" ? b.text.trim().slice(0, 8000) : "";
+  const text = typeof b.text === "string" ? cut(b.text.trim(), 8000) : "";
   const call = b.call && typeof b.call.name === "string" && typeof b.call.message === "string"
-    ? { name: b.call.name.trim().slice(0, 40), message: b.call.message.replace(/\s+/g, " ").trim().slice(0, 300), direct: b.call.direct === true }
+    ? { name: cut(b.call.name.trim(), 40), message: cut(b.call.message.replace(/\s+/g, " ").trim(), 300), direct: b.call.direct === true }
     : null;
   const message = b.message && typeof b.message.to === "string" && typeof b.message.text === "string"
-    ? { to: b.message.to.trim().slice(0, 40), text: b.message.text.trim().slice(0, 700) }
+    ? { to: cut(b.message.to.trim(), 40), text: cut(b.message.text.trim(), 700) }
     : null;
   const send = b.send && typeof b.send.to === "string" && typeof b.send.text === "string"
-    ? { to: b.send.to.trim().slice(0, 40), text: b.send.text.trim().slice(0, 700) }
+    ? { to: cut(b.send.to.trim(), 40), text: cut(b.send.text.trim(), 700) }
     : null;
   const email = b.email && typeof b.email.to === "string" && typeof b.email.text === "string" && b.email.text.trim()
     ? {
-        to: b.email.to.replace(/\s+/g, " ").trim().slice(0, 120),
-        subject: typeof b.email.subject === "string" ? b.email.subject.replace(/\s+/g, " ").trim().slice(0, 150) : "",
-        text: b.email.text.trim().slice(0, 3000),
+        to: cut(b.email.to.replace(/\s+/g, " ").trim(), 120),
+        subject: typeof b.email.subject === "string" ? cut(b.email.subject.replace(/\s+/g, " ").trim(), 150) : "",
+        text: cut(b.email.text.trim(), 3000),
       }
     : null;
-  const heard = typeof b.heard === "string" ? b.heard.slice(0, 4000) : "";
+  const heard = typeof b.heard === "string" ? cut(b.heard, 4000) : "";
   const acts: HeldActs = {
     call, message, send, email, book, remind, unremind, lists: listOps, tasks: taskAdds, done: doneWords, remember: noteAdds, forget: noteDrops,
     ...(closedWords.length ? { closed: closedWords } : {}),
@@ -224,8 +226,11 @@ export function mountReply(door: Door): void {
     app, d, now, tx, companion, via, telegramReady, lastRoute, sendText, turnOf, windowOver, notifyOwner, replyKeys, remember, keyOf, routeOf,
     claimReceipt, replyReceipt, learnKnow, failed, bridge, json, act, holdReply,
   } = door;
-  /** The assistant's answer: text for the owner, and at most one proposed call (shown with buttons, placed only when the owner presses Confirm). */
-  app.post("/assistant/reply", failed, bridge, json, async (req, res) => {
+  /**
+   * The assistant's answer: text for the owner, and at most one proposed call (shown with buttons, placed only when the owner presses Confirm).
+   * True when its text went.
+   */
+  const handleReply = async (req: Request, res: Response): Promise<boolean> => {
     const b = (req.body ?? {}) as ReplyBody;
     const key = keyOf(b.key);
     const actionsDone = key !== "" && replyKeys.has(key);
@@ -235,7 +240,7 @@ export function mountReply(door: Door): void {
     if (!text && !hasActs(acts) && !routineAdds.length && !watchAdds.length && !lifeFacts.length && !roleCount && !knowAdds.length && !calendarOf(b.calendar).length
       && !dump.length && !checkins.length) {
       res.status(400).json({ error: "Nothing to send." });
-      return;
+      return false;
     }
     // An answer sent without its message's key ("Un momento…", a note that Claude failed, an older bridge) belongs to the owner's last message: on
     // a computer it goes where they last wrote, not to the phone as what Pako starts does. A notice (an email's summary) is started by Pako.
@@ -250,6 +255,7 @@ export function mountReply(door: Door): void {
       await notifyOwner(tx("lateAnswer", { text: t }));
       return true;
     };
+    let outcome = false;
     const answer = async (): Promise<void> => {
       // The receipt for this answer's notes goes with it, after its text and what it asks for: their own wait is over (even if the text is slow).
       if (!actionsDone) claimReceipt(key);
@@ -258,6 +264,7 @@ export function mountReply(door: Door): void {
       try {
         // A routine's run is started by Pako, not an answer to a message just written: it goes like a notice (kept while the window is closed).
         sent = !text ? true : b.notice === true || isRoutineKey(key) ? (await notifyOwner(text), true) : await replyText(text);
+        outcome = sent;
         if (actionsDone) {
           res.status(sent ? 200 : 502).json({ ok: sent, repeated: true });
           return;
@@ -299,6 +306,30 @@ export function mountReply(door: Door): void {
       await (route ? via.run(route, answer) : answer());
     } catch (err) {
       res.status(503).json({ error: (err as Error).message });
+    }
+    return outcome;
+  };
+  /** Answers being handled, by key: what a second copy of one of them waits for. */
+  const answering = new Map<string, Promise<boolean>>();
+  app.post("/assistant/reply", failed, bridge, json, async (req, res) => {
+    const key = keyOf(((req.body ?? {}) as ReplyBody).key);
+    // The bridge gives up on a slow answer after 30 s and sends the same one again (same key) while the first is still being handled: the copy
+    // waits for it and says how it went, so what the answer asks for is done once and its text goes once. (A copy that comes after it ended is
+    // told apart by the key the first one kept: replyKeys.)
+    const first = key ? answering.get(key) : undefined;
+    if (first) {
+      const sent = await first;
+      res.status(sent ? 200 : 502).json({ ok: sent, repeated: true });
+      return;
+    }
+    let settle: (sent: boolean) => void = () => undefined;
+    if (key) answering.set(key, new Promise<boolean>((resolve) => (settle = resolve)));
+    let sent = false;
+    try {
+      sent = await handleReply(req, res);
+    } finally {
+      if (key) answering.delete(key);
+      settle(sent);
     }
   });
 }

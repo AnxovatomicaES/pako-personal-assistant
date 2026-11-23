@@ -15,6 +15,7 @@ import type { Door, Turn } from "./door.ts";
 import type { Handler } from "./incoming.ts";
 import { createLog } from "../log.ts";
 import { readJsonRecord } from "../json-record.ts";
+import { CARD_MAX, cut } from "./shared.ts";
 
 const log = createLog("dump");
 
@@ -65,7 +66,7 @@ export function mountDump(door: Door): Pick<Door, "brainDump" | "dumpPressed" | 
       type: "interactive",
       interactive: {
         type: "button",
-        body: { text: dumpCardText(lines, o).slice(0, 1000) },
+        body: { text: cut(dumpCardText(lines, o), CARD_MAX) },
         action: {
           buttons: [
             { type: "reply", reply: { id: `dk:${r.id}`, title: DT()("btnKeep") } },

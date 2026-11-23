@@ -15,10 +15,11 @@ import { loadLabCode } from "./lab-code.ts";
 import { appServices } from "./app/services.ts";
 import { capLogs, lastingExitCode, runAutostartCli } from "./autostart.ts";
 import { appliedAtStart, applyStoredSettings } from "./connections.ts";
-import { createSettings, createLocalChannel, isLocalMode, loadEnvFiles, loadHome, localEnv, lockHome, openBrowser, pakoHome, superviseBridge } from "./local.ts";
+import { createSettings, createLocalChannel, isLocalMode, loadEnvFiles, loadHome, localEnv, lockHome, openBrowser, pakoHome, sessionGeneration, superviseBridge } from "./local.ts";
 import { demoDir, demoEnv, demoStart, demoStartedAt, demoWanted, seedDemo } from "./demo.ts";
 import { unreadableNotice } from "./secrets.ts";
-import { sqliteKv } from "./sqlite-kv.ts";
+import { tidyPapers } from "./papers.ts";
+import { sqliteKv, StoreUnavailable } from "./sqlite-kv.ts";
 import { createLog } from "./log.ts";
 
 const logPako = createLog("pako");
@@ -138,11 +139,24 @@ async function main(): Promise<void> {
     const settings = createSettings(home.dir, process.env, home.firstRun === true);
     home.name = settings.name() || STAND_IN_NAME;
     Object.assign(process.env, localEnv(process.env, home, port));
-    const kv = sqliteKv(home.dir);
+    let kv;
+    try {
+      kv = sqliteKv(home.dir);
+    } catch (err) {
+      if (!(err instanceof StoreUnavailable)) throw err;
+      // The store is there and cannot be opened now (busy, no permission, a disk error): it is not damaged, nothing was moved or emptied, and
+      // starting on an empty one beside it would hide the person's things. Not a lasting code: started again by launchd or systemd, a busy file may be free.
+      console.error(`\n  ${err.message}\n`);
+      process.exit(1);
+    }
     // The background Pako's own output (src/autostart.ts): capped now, then every hour, as the Mac app caps its app.log.
     const logs = join(home.dir, "logs");
     capLogs(logs);
     setInterval(() => void capLogs(logs), 3600_000).unref();
+    // The photos and PDFs sent to be read are kept 30 days at most: looked at now and then every day, not only when another one arrives.
+    const papers = join(home.dir, "papers");
+    tidyPapers(papers);
+    setInterval(() => tidyPapers(papers), 24 * 3600_000).unref();
     if (demo) {
       const timeZone = process.env.PERSONAL_TIMEZONE || Intl.DateTimeFormat().resolvedOptions().timeZone;
       const seeded = await seedDemo(kv, { now: Date.now(), timeZone, name: home.name, briefUrl: `http://127.0.0.1:${port}` });
@@ -150,6 +164,8 @@ async function main(): Promise<void> {
     }
     local = {
       demo: { on: demo, home: realHome },
+      // With the real folder's run secrets, not the demo's store: "Sign out everywhere" holds through the demo week and Delete everything.
+      sessionGeneration: sessionGeneration(realHome),
       kv,
       channel: createLocalChannel({ kv }),
       bridgeToken: home.bridgeToken,
@@ -162,9 +178,9 @@ async function main(): Promise<void> {
       storeStart: { firstRun: home.firstRun === true, lost: kv.lost },
       settings,
     };
-    // The secrets are in the system's store and it did not give them (src/local.ts loadHome): this start runs on temporary ones. The owner
-    // reads why in the chat (the Mac app shows it as a notice), not only in a log nobody opens.
-    if (home.secretsProblem && home.secretsAt && home.secretsAt !== "file") {
+    // The secrets are in the system's store and it did not give them, or secrets.json could not be opened (src/local.ts loadHome): this start
+    // runs on temporary ones. The owner reads why in the chat (the Mac app shows it as a notice), not only in a log nobody opens.
+    if (home.secretsProblem && home.secretsAt) {
       void local.channel.push("pako", unreadableNotice("en", home.secretsAt, home.secretsProblem), undefined, undefined, false, true);
     }
   }

@@ -5,6 +5,7 @@
 //   rehearsal) are never refused here. They are only counted, so the day's numbers say where the plan's quota went.
 // - A daily cap on background runs (ASSISTANT_BACKGROUND_PER_DAY, 40 by default), counted on this computer's own calendar day. The proactive
 //   checks and the judge are the least useful of them: they stop at half the cap, so the rest of it is kept for mail, meetings and the brief.
+//   A run that never reached Claude (signed out, the command missing) is not counted: started() gives its count back.
 // - Coalescing: a background job whose material is the same as one answered a few minutes ago (ASSISTANT_COALESCE_MIN, 10 by default) gets
 //   that answer again instead of a new run. Lines that only say what time it is ("Now: ...", "Ahora: ...") do not count as material.
 // - Nothing changed: a proactive check whose material is the same as the last one that found nothing to say gets "nothing to say" again
@@ -161,7 +162,14 @@ const localDay = (t: number): string => {
   const d = new Date(t);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
+/** The start of the next calendar day on this computer (a day of 23 or 25 hours at a clock change included). */
+const nextDay = (t: number): number => {
+  const d = new Date(t);
+  d.setHours(24, 0, 0, 0);
+  return d.getTime();
+};
 
+/** `until`: when the refusal ends (ms): Claude's reset for a pause, the start of tomorrow for the cap. */
 export type Admission = { go: true; key: string } | { go: false; why: "cap" | "paused"; until: number } | { go: false; why: "same"; text: string };
 
 export function createBudget(o: { config: BudgetConfig; stateDir?: string; now?: () => number; log?: (line: string) => void }) {
@@ -254,7 +262,7 @@ export function createBudget(o: { config: BudgetConfig; stateDir?: string; now?:
           capSaid.add(`${x.day}:${kind}`);
           log(`background budget: no more ${kind} runs today (${used} background runs of Claude so far, ${cap} allowed for this kind): answered without Claude`);
         }
-        return { go: false, why: "cap", until: 0 };
+        return { go: false, why: "cap", until: nextDay(t) };
       }
       return { go: true, key };
     },
@@ -262,11 +270,23 @@ export function createBudget(o: { config: BudgetConfig; stateDir?: string; now?:
     coalesced(): void {
       skip("same");
     },
-    /** A run started (owner's or background): counted whatever comes of it. */
-    started(kind: RunKind): void {
+    /**
+     * A run started (owner's or background): counted whatever comes of it, except a run that never reached Claude (signed out, the command
+     * missing): the function it returns takes that count back, so a lost login tried again every few minutes does not spend the day's cap.
+     */
+    started(kind: RunKind): () => void {
       const x = today();
+      const day = x.day;
       x.kinds[kind] = (x.kinds[kind] ?? 0) + 1;
       save();
+      return () => {
+        const y = today();
+        const n = y.kinds[kind] ?? 0;
+        if (y.day !== day || n === 0) return; // a new day began meanwhile: the run was counted in a day that is gone
+        if (n === 1) delete y.kinds[kind];
+        else y.kinds[kind] = n - 1;
+        save();
+      };
     },
     /** The model that answered a run: counted for the day's numbers. */
     answeredBy(model: string): void {

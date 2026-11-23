@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openForeignReadOnly, sqlite, sqliteKv } from "../src/sqlite-kv.ts";
+import { openForeignReadOnly, SET_ASIDE_COPY, sqlite, sqliteKv, StoreUnavailable } from "../src/sqlite-kv.ts";
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), "pako-sqlite-"));
 
@@ -111,6 +111,134 @@ test("sqliteKv: a damaged kv.db is kept aside as kv.db.bad and Pako starts with 
   writeFileSync(join(b, "kv.json"), '{"a":{"v":"x","exp":0},');
   assert.equal(sqliteKv(b).lost, "damaged");
   assert.ok(existsSync(join(b, "kv.json.bad")));
+});
+
+// A store that is only busy, or that this process cannot open, is not a damaged one: it stays where it is with its journal, nothing starts on
+// an empty store beside it, and a later damage never writes over an older copy.
+const asRoot = process.getuid?.() === 0 || process.platform === "win32" ? "run as root or on Windows, where a file always opens" : false;
+const noWarn = (): (() => void) => {
+  const errors = console.error;
+  console.error = () => undefined;
+  return () => void (console.error = errors);
+};
+
+test("sqliteKv: a kv.db another process is in the middle of writing is busy, not damaged: nothing moves, its journal stays, and it opens when the write is done", async () => {
+  const dir = tmp();
+  const first = sqliteKv(dir);
+  await first.set("assistant-reminders", JSON.stringify([{ text: "call mum" }]), 0);
+  await first.set("owner-memory", "notes", 0);
+  const Db = sqlite();
+  const holder = new Db(join(dir, "kv.db"));
+  holder.exec("BEGIN EXCLUSIVE");
+  holder.prepare("INSERT INTO kv (k, v, exp) VALUES (?, ?, 0) ON CONFLICT(k) DO UPDATE SET v = excluded.v").run("owner-memory", "written during the lock");
+  const files = (): string => readdirSync(dir).sort().join(" ");
+  const before = files();
+  assert.ok(existsSync(join(dir, "kv.db-journal")), "the holder's journal is there (a write in the middle)");
+  const done = noWarn();
+  try {
+    assert.throws(() => sqliteKv(dir, Date.now, 0), (err: unknown) => err instanceof StoreUnavailable && /another program is using it/.test(err.message) && /Nothing was changed/.test(err.message));
+    // And again: the second failure must not have anything left to destroy.
+    assert.throws(() => sqliteKv(dir, Date.now, 0), StoreUnavailable);
+  } finally {
+    done();
+  }
+  assert.equal(files(), before, "no kv.db.bad, no journal removed, no new file");
+  holder.exec("COMMIT");
+  holder.close();
+  const again = sqliteKv(dir);
+  assert.equal(again.lost, null, "not lost, not damaged: no pause, no 'damaged' notice");
+  assert.deepEqual(again.entries().map((e) => [e.key, e.value]), [["assistant-reminders", JSON.stringify([{ text: "call mum" }])], ["owner-memory", "written during the lock"]]);
+  assert.ok(!existsSync(join(dir, "kv.db.bad")));
+});
+
+test("sqliteKv: a kv.db that is busy for a moment is waited for when it opens, and opens with everything in it", async () => {
+  const dir = tmp();
+  const first = sqliteKv(dir);
+  await first.set("owner-memory", "notes", 0);
+  // Another process holds the file and lets go 300 ms after saying so; this one is blocked inside sqliteKv while it waits (the open is synchronous).
+  const CHILD = `import { DatabaseSync } from "node:sqlite";
+const db = new DatabaseSync(process.argv[1]);
+db.exec("BEGIN EXCLUSIVE");
+db.prepare("INSERT INTO kv (k, v, exp) VALUES (?, ?, 0) ON CONFLICT(k) DO UPDATE SET v = excluded.v").run("owner-memory", "written during the lock");
+console.log("holding");
+setTimeout(() => { db.exec("COMMIT"); db.close(); }, 300);`;
+  const child = spawn(process.execPath, ["--disable-warning=ExperimentalWarning", "--input-type=module", "-e", CHILD, join(dir, "kv.db")], { stdio: ["ignore", "pipe", "inherit"] });
+  await new Promise((r) => child.stdout.once("data", r));
+  const kv = sqliteKv(dir, Date.now, 20_000);
+  assert.equal(kv.lost, null);
+  assert.equal(await kv.get("owner-memory"), "written during the lock", "the write that held it was waited for, not cut off");
+  assert.ok(!existsSync(join(dir, "kv.db.bad")));
+  await new Promise((r) => child.once("exit", r));
+  await kv.set("after", "1", 0);
+  assert.equal(await kv.get("after"), "1", "and a write afterwards fails at once as it did, not after the wait: the wait was for opening");
+});
+
+test("sqliteKv: a kv.db this process has no permission to open is not damaged: nothing moves, and it opens again when it can", { skip: asRoot }, async () => {
+  const dir = tmp();
+  const first = sqliteKv(dir);
+  await first.set("owner-memory", "notes", 0);
+  const before = readFileSync(join(dir, "kv.db"));
+  chmodSync(join(dir, "kv.db"), 0o000);
+  const done = noWarn();
+  try {
+    assert.throws(() => sqliteKv(dir), (err: unknown) => err instanceof StoreUnavailable && /no permission/.test(err.message));
+  } finally {
+    done();
+    chmodSync(join(dir, "kv.db"), 0o600);
+  }
+  assert.ok(!existsSync(join(dir, "kv.db.bad")), "not set aside");
+  assert.deepEqual(readFileSync(join(dir, "kv.db")), before, "not emptied");
+  const again = sqliteKv(dir);
+  assert.equal(again.lost, null);
+  assert.equal(await again.get("owner-memory"), "notes");
+});
+
+test("sqliteKv: server.ts says why the store cannot be opened and stops, without starting on an empty one", () => {
+  const server = readFileSync(new URL("../src/server.ts", import.meta.url), "utf8");
+  assert.match(server, /kv = sqliteKv\(home\.dir\);[\s\S]{0,200}err instanceof StoreUnavailable[\s\S]{0,600}console\.error\([\s\S]{0,40}process\.exit\(1\)/);
+});
+
+test("sqliteKv: a second damage never writes over the first kv.db.bad: the older copies keep a dated name", () => {
+  const dir = tmp();
+  const done = noWarn();
+  try {
+    let t = Date.UTC(2026, 10, 1, 9);
+    for (const word of ["first", "second", "third", "fourth"]) {
+      writeFileSync(join(dir, "kv.db"), `${word}: not a database, just text that is long enough to have a header`.repeat(20));
+      // "fourth" damages at the very same instant as "third": the dated name must still be a new one.
+      if (word !== "fourth") t += 3600_000;
+      assert.equal(sqliteKv(dir, () => t).lost, "damaged");
+      rmSync(join(dir, "kv.db"));
+      rmSync(join(dir, "kv.db.made"), { force: true });
+    }
+  } finally {
+    done();
+  }
+  const copies = readdirSync(dir).filter((f) => SET_ASIDE_COPY.test(f)).sort();
+  const text = (f: string): string => readFileSync(join(dir, f), "utf8").slice(0, 7);
+  assert.equal(text("kv.db.bad"), "fourth:", "the newest damage is kv.db.bad");
+  const dated = copies.filter((f) => f !== "kv.db.bad");
+  assert.deepEqual(dated.map(text).sort(), ["first: ", "second:", "third: "], "every older one is still there, under a name with the day and time it was displaced");
+  assert.ok(dated.every((f) => /^kv\.db\.bad\.2026-11-01T\d\d-00-00-000Z(-\d+)?$/.test(f)), dated.join(" "));
+});
+
+test("sqliteKv: a damaged kv.json never writes over an older kv.json.bad either", () => {
+  const dir = tmp();
+  const done = noWarn();
+  try {
+    writeFileSync(join(dir, "kv.json"), '{"a":{"v":"x","exp":0},');
+    assert.equal(sqliteKv(dir, () => Date.UTC(2026, 10, 1)).lost, "damaged");
+    rmSync(join(dir, "kv.db"));
+    rmSync(join(dir, "kv.db.made"), { force: true });
+    writeFileSync(join(dir, "kv.json"), '{"b":{"v":"y","exp":0},');
+    assert.equal(sqliteKv(dir, () => Date.UTC(2026, 10, 2)).lost, "damaged");
+  } finally {
+    done();
+  }
+  assert.equal(readFileSync(join(dir, "kv.json.bad"), "utf8"), '{"b":{"v":"y","exp":0},');
+  const older = readdirSync(dir).filter((f) => /^kv\.json\.bad\./.test(f) && SET_ASIDE_COPY.test(f));
+  assert.equal(older.length, 1);
+  assert.equal(readFileSync(join(dir, older[0]!), "utf8"), '{"a":{"v":"x","exp":0},');
 });
 
 test("sqliteKv: wipe keeps only the given line, and the store takes no more writes until the next start", async () => {

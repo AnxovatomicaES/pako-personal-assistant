@@ -2,7 +2,7 @@
 
 import { hidePaperCodes, paperName, PAPER_ID } from "../papers.ts";
 import { TELEGRAM_MEDIA_ID } from "./deps.ts";
-import { MEDIA_HOST, MEDIA_MAX } from "./shared.ts";
+import { MEDIA_HOST, MEDIA_MAX, cut } from "./shared.ts";
 import type { Door } from "./door.ts";
 import { createLog } from "../log.ts";
 
@@ -93,7 +93,7 @@ export function mountMedia(door: Door): Pick<Door, "downloadMedia"> {
    */
   app.post("/assistant/paper-summary", failed, bridge, json, async (req, res) => {
     const b = (req.body ?? {}) as { name?: unknown; summary?: unknown };
-    const summary = typeof b.summary === "string" ? hidePaperCodes(b.summary.replace(/\s+/g, " ").trim(), lang()).slice(0, 600) : "";
+    const summary = typeof b.summary === "string" ? cut(hidePaperCodes(b.summary.replace(/\s+/g, " ").trim(), lang()), 600) : "";
     if (!summary) {
       res.status(400).json({ error: "No summary." });
       return;

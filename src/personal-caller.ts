@@ -505,25 +505,25 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
     deps.control?.log("call", t("logCall", { who: whoText(who), engine, dry: config.live ? "" : t("dry"), status: status ? `: ${status}` : "" }));
   };
 
-  const place = async (to: string, kind: "owner" | "friend", vars: Record<string, string>): Promise<{ call_id: string; call_status?: string }> => {
+  const place = async (to: string, kind: "owner" | "friend", vars: Record<string, string>, requestId: string): Promise<{ call_id: string; call_status?: string }> => {
     const who: Who = kind === "owner" ? { owner: true } : { name: vars.contact_name ?? "" };
     await stopIfPaused(who);
-    const placed = await placeRetell(to, kind, vars, who);
+    const placed = await placeRetell(to, kind, vars, requestId, who);
     logCall(who, "Retell", placed.call_status);
     return placed;
   };
   const placeRetell = async (
-    to: string, kind: "owner" | "friend", vars: Record<string, string>, who: Who = { name: "" },
+    to: string, kind: "owner" | "friend", vars: Record<string, string>, requestId: string, who: Who = { name: "" },
   ): Promise<{ call_id: string; call_status?: string }> => {
     if (!config.live) return { call_id: `dryrun_${randomUUID().slice(0, 8)}`, call_status: "dry_run" };
     const agent = await agentId(); // can take a while (the agent may have to be made first): STOP is looked at again right after it
     await stopIfPaused(who);
-    // The same call asked twice within ten minutes has the same key, so Retell can recognise it: a retry after an answer that never came must not ring twice.
-    const bucket = Math.floor((deps.now?.() ?? Date.now()) / 600_000);
-    const idempotency_key = createHash("sha256").update(`${kind}|${to}|${JSON.stringify(vars)}|${bucket}`).digest("hex").slice(0, 32);
+    // The key belongs to one approved request, not to a clock: the same request sent again (whatever the time) is recognised by Retell, and a
+    // second call the owner wants with the very same words, minutes later (the friend did not pick up), is a request of its own and rings.
+    const idempotency_key = createHash("sha256").update(`${kind}|${to}|${requestId}`).digest("hex").slice(0, 32);
     const { call: retellCall, RetellError } = await retellApi();
     try {
-      return (await retellCall(f, retell.apiKey, "POST", "/v2/create-phone-call", {
+      const placed = (await retellCall(f, retell.apiKey, "POST", "/v2/create-phone-call", {
         from_number: retell.fromNumber,
         to_number: to,
         override_agent_id: agent,
@@ -531,7 +531,10 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
         ...(kind === "friend" ? { honor_internal_dnc: true } : {}),
         metadata: { source: "personal-caller", kind },
         idempotency_key,
-      })) as { call_id: string; call_status?: string };
+      })) as { call_id?: unknown; call_status?: string } | undefined;
+      // A 2xx whose body is empty or not JSON (a proxy's page) still means Retell took the request: the call may exist. It is "unknown", below.
+      if (typeof placed?.call_id !== "string" || !placed.call_id) throw new Error("Retell accepted the request but its answer had no call_id");
+      return { call_id: placed.call_id, ...(typeof placed.call_status === "string" ? { call_status: placed.call_status } : {}) };
     } catch (err) {
       // A refusal (4xx) means no call exists. A timeout, a server error or an answer that could not be read may mean it does.
       const refused = err instanceof RetellError && err.status >= 400 && err.status < 500;
@@ -582,9 +585,12 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
     return { ok: true, key, entry };
   };
 
-  /** One friend call, placed now: the same way after the owner's press on the connector's card and after the voice line's spoken yes. */
+  /**
+   * One friend call, placed now: the same way after the owner's press on the connector's card and after the voice line's spoken yes.
+   * `requestId` names the approved request (the card's id); the voice line's yes uses the staged call, which one confirm uses up, so a fresh id.
+   */
   const callContact = async (
-    a: { name: string; message: string; language: "es" | "en"; direct: boolean; say?: string; on_behalf_of?: string },
+    a: { name: string; message: string; language: "es" | "en"; direct: boolean; say?: string; on_behalf_of?: string; requestId?: string },
   ): Promise<{ ok: boolean; text: string; unknown?: boolean; wait?: number }> => {
     const checked = checkFriend(a);
     if (!checked.ok) return checked;
@@ -607,7 +613,7 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
         opening: buildOpening({ kind: "friend", language: a.language, contactName: entry.name, ownerName: caller, direct: a.direct, say: say || undefined }),
         style: a.direct || say ? "direct" : "normal",
         message: cleanCallMessage(clean(a.message), caller),
-      });
+      }, a.requestId ?? randomUUID());
       logPersonalCaller.info(`call_contact ok call_id=${call.call_id} status=${call.call_status} live=${config.live}`);
       return { ok: true, text: `Call to ${entry.name} started: call_id=${call.call_id}, status=${call.call_status}. Use get_call with this call_id after a few minutes for the outcome.` };
     } catch (err) {
@@ -667,7 +673,7 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
         if (used || (state && state.status !== "waiting")) return { ok: false, text: "This call request was already answered." };
         used = true;
         if (state) state.status = "approving";
-        const r = await callContact({ name: entry.name, message, language: a.language, direct: a.direct, ...(say ? { say } : {}) });
+        const r = await callContact({ name: entry.name, message, language: a.language, direct: a.direct, ...(say ? { say } : {}), requestId: id });
         if (r.wait && r.wait * 1000 <= PENDING_CALL_MS - 30_000) {
           // Too soon after another friend call: nothing was used up. The owner gets a fresh card with its full minutes (src/whatsapp.ts), so this
           // request's clock starts again too, and get_call says "waiting" for as long as that card can be pressed.
@@ -844,7 +850,7 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
           const mode: OwnerMode = message ? { kind: "message", message: clean(message) } : { kind: "open", inbound: false };
           const call: { call_id: string; call_status?: string; done?: Promise<string | null> } = useLivekit
             ? await placeLivekit(config.ownerNumber, mode, language)
-            : await place(config.ownerNumber, "owner", ownerVars);
+            : await place(config.ownerNumber, "owner", ownerVars, randomUUID());
           logPersonalCaller.info(`call_me ok call_id=${call.call_id} status=${call.call_status} live=${config.live}`);
           // The LiveKit worker may have to wake first: a start that fails there gives the owner's slot back.
           // A wait that fails gives it back too (audit finding: a rejection kept the owner's call slot taken).
@@ -852,8 +858,13 @@ export function createPersonalCaller(deps: PersonalDeps): PersonalCaller {
           const wait = call.done ? " The voice server may need up to a minute to wake before the phone rings." : "";
           return text(`Call started: call_id=${call.call_id}, status=${call.call_status}.${wait} Use get_call with this call_id after about a minute for the outcome.`);
         } catch (err) {
-          owner.release(slot.id);
           logPersonalCaller.error(`call_me failed: ${(err as Error).message}`);
+          // An answer that could not be read may mean the phone is ringing: the slot stays used (a retry's key is its own now, so Retell cannot
+          // fold it into the first call), and the words say it is not known.
+          if ((err as { outcomeUnknown?: boolean }).outcomeUnknown) {
+            return fail("The call may or may not have been placed: Retell did not answer clearly. Do not try again for now; check get_call or ask the owner.");
+          }
+          owner.release(slot.id);
           return fail(`The call could not be placed: ${(err as Error).message}`);
         }
       },

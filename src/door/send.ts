@@ -2,7 +2,7 @@
 
 import { threeButtons, plainWhatsapp } from "./format.ts";
 import type { OwnerChannel } from "./deps.ts";
-import { chunkText } from "./shared.ts";
+import { CARD_MAX, chunkText, cut } from "./shared.ts";
 import type { Door } from "./door.ts";
 import { createLog } from "../log.ts";
 
@@ -22,7 +22,7 @@ export function mountSend(door: Door): Pick<Door, "sendHealth" | "graph" | "send
     if (status >= 200 && status < 300) d.health?.(true);
     else if (status === 401 || status === 403 || status === 429 || status >= 500) d.health?.(false, `Meta answered ${status}`);
   };
-  const graph = async (body: Record<string, unknown>, out?: { on?: OwnerChannel }, secret?: boolean): Promise<boolean> => {
+  const toOwner = async (body: Record<string, unknown>, out?: { on?: OwnerChannel }, secret?: boolean): Promise<boolean> => {
     // Anything sent: a card's or a brief's "Useful?" is no longer the last thing the owner read (src/quality.ts).
     d.quality?.clearAsk();
     const given = via.getStore();
@@ -80,17 +80,29 @@ export function mountSend(door: Door): Pick<Door, "sendHealth" | "graph" | "send
     }
     return false;
   };
+  /**
+   * One message to the owner, counted once it went: `door.sent` says how many have, and `out.n` is the count with this one in it. A card to answer
+   * in words is the last thing shown only while the count has not moved since (a card Meta refuses was never shown, and counts for nothing).
+   */
+  const graph = async (body: Record<string, unknown>, out?: { on?: OwnerChannel; n?: number }, secret?: boolean): Promise<boolean> => {
+    const went = await toOwner(body, out, secret);
+    if (went) {
+      door.sent++;
+      if (out) out.n = door.sent;
+    }
+    return went;
+  };
   const sendText = async (text: string, o: { secret?: boolean } = {}): Promise<boolean> => {
     let ok = true;
     for (const part of chunkText(plainWhatsapp(text))) ok = (await graph({ type: "text", text: { body: part, preview_url: false } }, undefined, o.secret)) && ok;
     return ok;
   };
-  const sendButtons = (body: string, yesId: string, noId: string, yesTitle: string, out?: { on?: OwnerChannel }): Promise<boolean> =>
+  const sendButtons = (body: string, yesId: string, noId: string, yesTitle: string, out?: { on?: OwnerChannel; n?: number }): Promise<boolean> =>
     graph({
       type: "interactive",
       interactive: {
         type: "button",
-        body: { text: body.slice(0, 1000) },
+        body: { text: cut(body, CARD_MAX) },
         action: {
           buttons: [
             { type: "reply", reply: { id: yesId, title: yesTitle } },
@@ -103,9 +115,9 @@ export function mountSend(door: Door): Pick<Door, "sendHealth" | "graph" | "send
   const sendButton = (body: string, id: string, title: string): Promise<boolean> =>
     graph({
       type: "interactive",
-      interactive: { type: "button", body: { text: body.slice(0, 1000) }, action: { buttons: [{ type: "reply", reply: { id, title } }] } },
+      interactive: { type: "button", body: { text: cut(body, CARD_MAX) }, action: { buttons: [{ type: "reply", reply: { id, title } }] } },
     });
-  const sendConfirm = (body: string, id: string): Promise<boolean> => sendButtons(body, `c1:${id}`, `c0:${id}`, tx("btnCall"));
+  const sendConfirm = (body: string, id: string, out?: { n?: number }): Promise<boolean> => sendButtons(body, `c1:${id}`, `c0:${id}`, tx("btnCall"), out);
 
   return { sendHealth, graph, sendText, sendButtons, sendButton, sendConfirm };
 }

@@ -5,6 +5,7 @@
 import { isImessageChannel } from "../imessage.ts";
 import { isFocusBlock } from "../time-to-do.ts";
 import { fold } from "../lists.ts";
+import { meetingWords } from "./calendar-match.ts";
 import type { Base, Checks } from "./parts.ts";
 import { CREATED_SLACK_MS, NEAR_TIME_MS, SAME_TIME_MS } from "./limits.ts";
 import { T } from "./texts.ts";
@@ -17,8 +18,7 @@ const log = createLog("followups");
 export type Seen = { done: boolean | null; what: string; said: string; replied?: boolean };
 
 export function mountChecks({ d, lang }: Base): Checks {
-  const hintWords = (hints: string[]): string[] =>
-    [...new Set(hints.flatMap((h) => fold(h).split(/[^\p{L}\p{N}]+/u)).filter((w) => w.length >= 4 && !/^(meeting|reunion|call|llamada|with|para|zoom|https?)$/.test(w)))];
+  const hintWords = (hints: string[]): string[] => meetingWords(hints.join(" "));
   /**
    * Whether a meeting is the one asked for. A repeating one (the weekly standup) never is. One that starts at the time asked counts whatever
    * its topic only when it was set up after the ask (or Zoom does not say when); otherwise its topic must name them: one hint word (not the

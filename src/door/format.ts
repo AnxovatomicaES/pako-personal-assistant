@@ -9,17 +9,26 @@ export function threeButtons(body: Record<string, unknown>): Record<string, unkn
   return { ...body, interactive: { ...i, action: { ...i.action, buttons: i.action.buttons.slice(0, 3) } } };
 }
 
+// Code the assistant writes, which WhatsApp shows as it is (``` for a block, ` for a few words): nothing in it is turned into anything.
+const CODE = /```[\s\S]*?```|`[^`\n]+`/g;
+// Where the code was, while the rest is turned (private-use characters: the text's own are dropped first).
+const KEPT = /\uE000(\d+)\uE001/g;
+
 /**
  * WhatsApp shows plain text, not markdown: a [label](link) arrives as raw brackets, **bold** as asterisks and a heading as hashes. Turns what the
- * assistant tends to write into what WhatsApp renders (*bold*, a bare link it makes clickable).
+ * assistant tends to write into what WhatsApp renders (*bold*, a bare link it makes clickable). Code is left as it is, and so is a ** that is
+ * not a pair of bold marks: they start a word and touch the text between them (a**2 + b**2, 2 ** 3, **kwargs).
  */
 export function plainWhatsapp(text: string): string {
-  return text
+  const code: string[] = [];
+  const plain = text
+    .replace(/[\uE000\uE001]/g, "")
+    .replace(CODE, (c) => `\uE000${code.push(c) - 1}\uE001`)
     .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, (_m, label: string, url: string) => (label.trim() === url ? url : `${label.trim()}: ${url}`))
-    .replace(/\*\*([^*\n]+)\*\*/g, "*$1*")
+    .replace(/(?<=^|[\s\p{P}\p{S}])\*\*(?!\s)([^*\n]*[^\s*])\*\*(?=$|[\s\p{P}\p{S}])/gu, "*$1*")
     .replace(/~~([^~\n]+)~~/g, "~$1~")
-    .replace(/^#{1,6}[ \t]+/gm, "")
-    .trim();
+    .replace(/^#{1,6}[ \t]+/gm, "");
+  return plain.replace(KEPT, (_m, i: string) => code[Number(i)]!).trim();
 }
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -89,7 +98,8 @@ export function callWords(s: string, ownerName: string, orEmpty = true): string 
 export function cleanCallMessage(message: string, ownerName: string, orEmpty = false): string {
   const owner = escapeRe(ownerName.trim());
   if (!owner) return message;
-  const me = new RegExp(`^(?:soy|me llamo|habla|i'?m|i am|this is|it'?s)\\s+(?:el |la )?${owner}\\b\\s*[,.:;!-]?\\s*`, "i");
+  // The name ends the phrase: "It's Marta's birthday", "I'm Marta-Luisa's friend" and "Soy Martina" are not the owner saying who they are.
+  const me = new RegExp(`^(?:soy|me llamo|habla|i'?m|i am|this is|it'?s)\\s+(?:el |la )?${owner}(?![\\p{L}\\p{N}'’-])\\s*[,.:;!-]?\\s*`, "iu");
   // "Hola," / "Hola Belen," / "Hey Ana!": a greeting, at most one name, and the punctuation that ends it (so "hola que tal" is left alone).
   // Spanish too: the message is the owner's own words, in whatever language they write it.
   const hello = /^(?:hola|hey|buenas|hello|hi)\b(?:\s+[\p{L}'’-]{1,20})?\s*[,.!;:]\s*/iu;

@@ -122,7 +122,7 @@ export function wireBrief(ctx: AfterCalendar) {
       enqueue: (m) => door.inbox.add(m),
       // The computer asked for messages in the last three minutes: otherwise the old brief goes at once rather than after the wait.
       bridgeAlive: () => Date.now() - door.lastPoll() < 3 * 60_000,
-      plain: () => (briefRef.reader ? briefRef.reader.plain() : Promise.resolve()),
+      plain: (o) => (briefRef.reader ? briefRef.reader.plain(o) : Promise.resolve()),
       // What changed since the last brief (src/memory-facts.ts): its line under the written brief, as under the old one.
       changes: (since) => door.changesBrief(since),
       notify: briefSent,

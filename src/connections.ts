@@ -37,6 +37,8 @@ interface FieldDef {
   optional?: true;
   /** A password the person chose or was given in full (no recognisable prefix): no tail of it ever leaves the server. */
   password?: true;
+  /** An on/off switch ("on", or "off" kept as the value): "off" is the same as nothing set. */
+  switch?: true;
 }
 
 interface ConnectionDef {
@@ -44,6 +46,11 @@ interface ConnectionDef {
   /** A Lucide icon name for the card. */
   icon: string;
   fields: FieldDef[];
+  /**
+   * For a connection with two ways to sign in, where no single field is required: the sets of fields, one of which must be all set for it to be
+   * on (any field set without that is half done).
+   */
+  signIn?: string[][];
   /**
    * The values this connection would start with, checked as its own module checks them at start: the keys that are wrong. Only the shape:
    * whether the service accepts them is a live check (src/connections-panel.ts), where one is cheap.
@@ -119,6 +126,9 @@ const ZOOM: FieldDef[] = [
   { key: "ZOOM_POLL_MINUTES", optional: true },
 ];
 
+/** Zoom works with the person's own app (its Client ID and the refresh token of their Allow) or a Server-to-Server one: a lone Client ID is half done. */
+const ZOOM_SIGN_IN = [["ZOOM_CLIENT_ID", "ZOOM_REFRESH_TOKEN"], ["ZOOM_ACCOUNT_ID", "ZOOM_CLIENT_ID", "ZOOM_CLIENT_SECRET", "ZOOM_USER"]];
+
 // Microsoft Teams, connected with one button (src/teams-connect.ts, src/teams.ts): the sign-in, the app it was made with, and who it is.
 const TEAMS: FieldDef[] = [
   { key: "TEAMS_REFRESH_TOKEN", password: true },
@@ -132,13 +142,13 @@ const TEAMS: FieldDef[] = [
 
 // Mail on this Mac (src/apple-mail.ts): one switch, turned on in its card; read only, from what Apple Mail already downloaded. No password.
 const APPLE_MAIL: FieldDef[] = [
-  { key: "APPLE_MAIL" },
+  { key: "APPLE_MAIL", switch: true },
   { key: "APPLE_MAIL_POLL_MINUTES", optional: true },
 ];
 
 // Messages on this Mac (src/imessage.ts): one switch, turned on in its card; read only, from the history macOS keeps for Messages.
 const IMESSAGE: FieldDef[] = [
-  { key: "IMESSAGE" },
+  { key: "IMESSAGE", switch: true },
   { key: "IMESSAGE_POLL_MINUTES", optional: true },
 ];
 
@@ -162,7 +172,7 @@ export const CATALOGUE: readonly ConnectionDef[] = [
   { id: "applemail", icon: "mail", fields: APPLE_MAIL, check: (env) => blame(loadAppleMailConfig(env).problems, APPLE_MAIL) },
   { id: "resend", icon: "send", fields: RESEND, check: (env) => blame(loadResendConfig(env).problems, RESEND) },
   { id: "slack", icon: "hash", fields: SLACK, check: (env) => blame(loadSlackConfig(env).problems, SLACK) },
-  { id: "zoom", icon: "video", fields: ZOOM, check: (env) => blame(loadZoomConfig(env).problems, ZOOM) },
+  { id: "zoom", icon: "video", fields: ZOOM, signIn: ZOOM_SIGN_IN, check: (env) => blame(loadZoomConfig(env).problems, ZOOM) },
   { id: "teams", icon: "users", fields: TEAMS, check: (env) => blame(loadTeamsConfig(env).problems, TEAMS) },
   { id: "imessage", icon: "message-square", fields: IMESSAGE, check: (env) => blame(loadImessageConfig(env).problems, IMESSAGE) },
   { id: "tables", icon: "utensils", fields: [{ key: "GOOGLE_PLACES_API_KEY" }], check: shaped("GOOGLE_PLACES_API_KEY", /^AIza[0-9A-Za-z_-]{35}$/) },
@@ -436,19 +446,21 @@ export function connectionStates(o: {
         label: w(f.key as WordKey),
         hint: w(`${f.key}.hint` as WordKey),
         optional: !!f.optional,
-        set: !!value,
+        set: !!value && !(f.switch && value.trim().toLowerCase() === "off"),
         ...(tail ? { tail } : {}),
         from: outside ? "outside" : value ? "panel" : null,
       };
     });
     const required = fields.filter((f) => !f.optional);
     const set = required.filter((f) => f.set).length;
+    const anySet = fields.some((f) => f.set);
+    const complete = c.signIn ? c.signIn.some((keys) => keys.every((k) => fields.find((f) => f.key === k)?.set)) : set === required.length;
     return {
       id: c.id,
       name: w(`${c.id}.name` as WordKey),
       icon: c.icon,
       how: w(`${c.id}.how` as WordKey),
-      state: c.card ? "off" : set === required.length ? "on" : set || fields.some((f) => f.set) ? "partial" : "off",
+      state: c.card ? "off" : complete ? "on" : anySet ? "partial" : "off",
       fields,
       ...(c.card ? { card: c.card } : {}),
       ...(o.problems?.[c.id] ? { problem: o.problems[c.id]! } : {}),

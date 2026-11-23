@@ -112,6 +112,16 @@ export function pushOf(raw: unknown, o: { now: number; timeZone: string; titles?
     const organizer = line(e.organizer, 60);
     // Who the owner meets, for People and meeting prep: the app sends at most 30, kept as addresses that look like one (src/calendar.ts).
     const attendees = attendeesOf(Array.isArray(e.attendees) ? e.attendees : []);
+    // The same meeting in two calendars picked on this Mac (the owner's and a shared team calendar): one UID at one start, kept once (else
+    // it shows twice, overlaps itself and is reminded of twice), with the link, the place and the owner's answer either copy has.
+    const twin = uid ? events.find((x) => x.uid === uid && x.allDay === allDay && Math.abs(x.start - start) <= 60_000) : undefined;
+    if (twin) {
+      if (!twin.join && join) twin.join = join;
+      if (!twin.location && location) twin.location = location;
+      const rank = { declined: 3, tentative: 2, needs: 1 } as const;
+      if (response && (!twin.response || rank[response] > rank[twin.response])) twin.response = response;
+      continue;
+    }
     events.push({
       id: key, calendarId, title: line(e.title, 200), start, end, allDay, ...(uid ? { uid } : {}), ...(response ? { response } : {}),
       ...(organizer ? { organizer } : {}), ...(location ? { location } : {}), ...(join ? { join } : {}),
@@ -130,9 +140,13 @@ export function findLocalEvent(k: Kept, title: string, start: number): { eventId
     && (fold(e.title) === want || fold(e.title).includes(want) || want.includes(fold(e.title))));
   if (hits.length !== 1) return null;
   const e = hits[0]!;
-  // Its key is "mac:<EventKit id>@<start>": the Mac finds the occurrence by both.
+  // Its key is "mac:<EventKit id>@<start>": the Mac finds the occurrence by both. The app's own id has the start in seconds after the
+  // EventKit identifier ("<id>@1795421280", src/../desktop/mac/DiscoveryCore.swift shapeEvents): the Mac compares the identifier alone.
   const m = /^mac:(.+)@(-?\d+)$/.exec(e.id);
-  return m ? { eventId: m[1]!, at: e.start, start: e.start, end: e.end, title: e.title, calendarId: e.calendarId } : null;
+  if (!m) return null;
+  const app = /^(.+)@(-?\d+)$/.exec(m[1]!);
+  const eventId = app && Math.abs(Number(app[2]) * 1000 - e.start) <= DAY ? app[1]! : m[1]!;
+  return { eventId, at: e.start, start: e.start, end: e.end, title: e.title, calendarId: e.calendarId };
 }
 
 export interface LocalCalendar {

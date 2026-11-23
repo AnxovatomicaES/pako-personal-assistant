@@ -47,7 +47,7 @@ export function wireChat(ctx: AfterBooking) {
       health: dog.reporter("telegram"),
     });
   const tgRef: { channel: TelegramChannel | null } = { channel: tg.config ? makeTelegram(tg.config) : null };
-  void tgRef.channel?.paired(); // read the paired account now, for the panel
+  void tgRef.channel?.paired().catch(() => false); // read the paired account now, for the panel
   // The panel's sign-in link needs the server's public https address: PUBLIC_URL, else Render's own variables, else the host that Meta's
   // webhook reached. That last one is learnt only from a request Meta signed (src/whatsapp.ts, onSigned), never before the signature is
   // checked: anyone can send an unsigned request with any Host header, and every later link would then hand the owner's one-time sign-in to

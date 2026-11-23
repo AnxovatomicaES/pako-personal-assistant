@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { childEnv, claudeCommand, type ClaudeHealth } from "../assistant/bridge.ts";
 import type { Kv } from "./kv.ts";
 import type { StoreKind } from "./secret-store.ts";
-import { readSecrets, renameRetry, SECRETS_FILE, secretsProblem, secretsWhere, settleSecrets, writeSecrets } from "./secrets.ts";
+import { readSecrets, renameRetry, SECRETS_FILE, secretsProblem, secretsUnopened, secretsWhere, settleSecrets, writeSecrets } from "./secrets.ts";
 import type { StoreLost } from "./store-guard.ts";
 import { createLog } from "./log.ts";
 import { readJsonRecord } from "./json-record.ts";
@@ -63,7 +63,8 @@ export interface LocalHome {
   secretsAt?: "file" | StoreKind;
   /**
    * Set when the secrets are in the system's store and it does not give them (a keychain still locked, a folder copied from another
-   * computer): this start runs on tokens of its own that are written nowhere, so nothing kept is overwritten, and the owner is told why.
+   * computer), or secrets.json cannot be opened (permissions, a lock, a disk error): this start runs on tokens of its own that are written
+   * nowhere, so nothing kept is overwritten, and the owner is told why.
    */
   secretsProblem?: string;
 }
@@ -122,12 +123,16 @@ export function loadHome(env: Env): LocalHome {
   const config = readJson(join(dir, "config.json"));
   const name = String(env.PAKO_NAME ?? config.name ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 40);
   const read = readSecrets(dir);
-  if (read === null && secretsWhere(dir) !== "file") {
-    // The secrets are in the system's store and it does not give them. New ones written down would lose the real ones for good (the
-    // Telegram bot, the connections, every browser's session): this start runs on its own, written nowhere, and the owner is told why.
+  // Asked once: a file that cannot be opened for a moment (a lock, an antivirus) must not read as "not there" at the second look.
+  const unopened = read === null && secretsUnopened(dir);
+  const at = unopened ? "file" : secretsWhere(dir);
+  if (read === null && (unopened || at !== "file")) {
+    // The secrets are in the system's store and it does not give them, or secrets.json cannot be opened (permissions, a lock, a disk error:
+    // it may hold every one of them). New ones written down would lose the real ones for good (the Telegram bot, the connections, every
+    // browser's session): this start runs on its own, written nowhere, and the owner is told why.
     const why = secretsProblem(dir) ?? "the store did not answer";
-    logPako.error(`could not read Pako's secrets from the ${secretsWhere(dir)} store (${why}): running on temporary ones until it can`);
-    return { dir, ...fresh, name, firstRun: false, secretsAt: secretsWhere(dir), secretsProblem: why };
+    logPako.error(`could not read Pako's secrets${at === "file" ? "" : ` from the ${at} store`} (${why}): running on temporary ones until it can`);
+    return { dir, ...fresh, name, firstRun: false, secretsAt: at, secretsProblem: why };
   }
   // A damaged file (not JSON) is made again, as it always was: the three secrets the server runs with are new then.
   const saved = read ?? {};
@@ -235,6 +240,26 @@ export function createSettings(dir: string, env: Env, _firstRun = false): LocalS
         logPako.error(`could not save ${secretsPath} (${(err as NodeJS.ErrnoException).code ?? "error"}): the WhatsApp settings were not kept`);
         return false;
       }
+    },
+  };
+}
+
+/**
+ * The panel's sessions' generation (src/dashboard.ts SessionGeneration), kept with the run secrets of Pako's own folder: Delete everything
+ * keeps those, and the demo week (a store of its own, the same secrets) reads them too, so a "Sign out everywhere" is never undone by either.
+ */
+export function sessionGeneration(dir: string): { read: () => number | null; write: (gen: number) => void } {
+  return {
+    read: () => {
+      const now = readSecrets(dir);
+      if (!now) return null; // unreadable: no session made before can be told from one made after, and the temporary tokens of that start end them anyway
+      const g = now.panelSessions;
+      return typeof g === "number" && Number.isInteger(g) && g >= 0 ? g : 0;
+    },
+    write: (gen) => {
+      const now = readSecrets(dir);
+      if (!now) throw new Error("the secrets cannot be read, so the sign-out was not kept");
+      writeSecrets(dir, { ...now, panelSessions: gen });
     },
   };
 }

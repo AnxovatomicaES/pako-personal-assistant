@@ -9,6 +9,7 @@ import type { Door } from "./door.ts";
 import { whoCommand } from "../people-graph.ts";
 import type { Handler } from "./incoming.ts";
 import { createLog } from "../log.ts";
+import { CARD_MAX, cut } from "./shared.ts";
 
 const logFacts = createLog("facts");
 const logPeopleGraph = createLog("people-graph");
@@ -19,7 +20,7 @@ export function mountFacts(door: Door): Pick<Door, "withRecall" | "learnKnow" | 
 
   const fw = () => factWords(lang());
   const gw = () => graphWords(lang());
-  const clip = (s: string, max: number): string => (s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s);
+  const clip = (s: string, max: number): string => (s.length > max ? `${cut(s, max - 1).trimEnd()}…` : s);
   /**
    * The assistant's context, from the people's own: each person's record gets the told facts that hold now (the newest five), a person known
    * only by told facts gets a record of their own, and each trusted alias names the same record (the bridge gives a record when the message
@@ -101,8 +102,8 @@ export function mountFacts(door: Door): Pick<Door, "withRecall" | "learnKnow" | 
       type: "interactive",
       interactive: {
         type: "button",
-        body: { text: questionText(q.a, q.b, lang()).slice(0, 1000) },
-        action: { buttons: buttons.map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } })) },
+        body: { text: cut(questionText(q.a, q.b, lang()), CARD_MAX) },
+        action: { buttons: buttons.map((b) => ({ type: "reply", reply: { id: b.id, title: cut(b.title, 20) } })) },
       },
     });
   };

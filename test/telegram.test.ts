@@ -14,6 +14,7 @@ import { createTelegram, loadTelegramConfig, telegramHtml } from "../src/telegra
 import { loadMemory } from "../src/voice-memory.ts";
 import { loadVoiceTools } from "../src/voice-tools.ts";
 import { loadWhatsappConfig, mountWhatsapp, type OwnerAsk } from "../src/whatsapp.ts";
+import { eventually } from "./helpers/wait.ts";
 
 // A made-up token in the shape @BotFather gives: it opens nothing.
 const TOKEN = `123456789:${"A".repeat(35)}`;
@@ -726,6 +727,73 @@ test("webhook: an update the door could not take answers 500, so Telegram sends 
     server.close();
     server.closeAllConnections();
   }
+});
+
+test("a store that does not answer is not 'no owner': the paired owner's message is asked for again, never dropped and answered as a stranger's", async () => {
+  const stored = new Map([["telegram-owner", JSON.stringify({ userId: OWNER_TG, chatId: OWNER_TG, bot: 123456789 })]]);
+  let failGets = 0;
+  const kv: Kv = {
+    get: async (k) => {
+      if (failGets > 0) {
+        failGets--;
+        throw new Error("ECONNRESET");
+      }
+      return stored.get(k) ?? null;
+    },
+    set: async (k, v) => void stored.set(k, v),
+  };
+  const tg = fakeTelegram();
+  const got: string[] = [];
+  const make = () => createTelegram({
+    config: { token: TOKEN, ownerId: null, api: "https://tg.test" }, kv, fetch: tg.f, pollSeconds: 0, pauseMs: 2,
+    ingest: async (m) => (got.push(String((m.text as { body?: string } | undefined)?.body)), "ok"),
+  });
+  const said = (id: number, text: string) => ({ update_id: id, message: { message_id: id, from: { id: OWNER_TG }, chat: { id: OWNER_TG, type: "private" }, text } });
+
+  // Polling, after a restart (the owner is not read yet): the first read fails, the same update is taken on the second.
+  failGets = 1;
+  const polled = make();
+  tg.queue(said(700, "remind me to call the doctor at 5"));
+  const p = polled.poll();
+  try {
+    await eventually(() => got.length > 0, { ms: 3000, then: 50 });
+  } finally {
+    p.stop();
+  }
+  assert.deepEqual(got, ["remind me to call the doctor at 5"], "taken once, on the retry");
+  assert.deepEqual(tg.texts(), [], "the owner was never told the bot is private");
+
+  // The webhook: 500 while the store is down (Telegram sends it again), then the owner is known and it is taken.
+  const hooked = make();
+  const app = express();
+  hooked.mountWebhook(app, "/telegram/webhook");
+  const server = createServer(app);
+  await new Promise<void>((res) => server.listen(0, "127.0.0.1", () => res()));
+  try {
+    const secret = createHmac("sha256", TOKEN).update("pako-telegram-webhook").digest("hex");
+    const send = (text: string) => fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/telegram/webhook`, {
+      method: "POST", headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": secret }, body: JSON.stringify(said(710, text)),
+    });
+    failGets = 1;
+    assert.equal((await send("buy milk")).status, 500);
+    assert.deepEqual(tg.texts(), [], "not answered as a stranger's");
+    assert.equal((await send("buy milk")).status, 200);
+    assert.equal(got.at(-1), "buy milk");
+  } finally {
+    server.close();
+    server.closeAllConnections();
+  }
+
+  // What the panel and the door ask of it: paired() says so (they catch it), deliver() is a send that did not go (the door tries the other chat).
+  const panel = make();
+  failGets = 1;
+  await assert.rejects(panel.paired(), /ECONNRESET/);
+  assert.equal(await panel.paired(), true, "read again, not remembered as 'not paired'");
+  const door = make();
+  failGets = 1;
+  assert.equal(await door.deliver({ type: "text", text: { body: "your reminder" } }), false);
+  assert.equal(await door.deliver({ type: "text", text: { body: "your reminder" } }), true);
+  assert.deepEqual(tg.texts(), ["your reminder"]);
 });
 
 // ---------- chat and meeting bugs: regression tests ----------

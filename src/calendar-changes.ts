@@ -85,19 +85,40 @@ export function diffEvents(prev: Snap[], next: Snap[], t: number): CalChange[] {
   const before = new Map(prev.map((e) => [e.id, e]));
   const now = new Map(next.map((e) => [e.id, e]));
   const out: CalChange[] = [];
-  // An event whose id carries its start gets a new id when it moves: gone under the old one, new under the other. Paired by meeting (the
-  // nearest start of the same one: anywhere for a single event, within the week for a series, whose new ones come into the window), that is a
-  // move, never a cancellation and a new event.
   const fresh = next.filter((e) => !before.has(e.id));
-  const count = (list: Snap[], k: string): number => list.filter((x) => seriesOf(x) === k).length;
+  const gone = prev.filter((x) => !now.has(x.id) && x.start > t);
   const movedTo = new Map<string, Snap>();
-  for (const e of prev.filter((x) => !now.has(x.id) && x.start > t)) {
+  const paired = new Set<string>();
+  // The same meeting at the same time under another id: two sources hold it (this Mac's calendar and a calendar link, Zoho and a link) and
+  // the copy the reading kept changed (a link that reads fewer days ahead, a source that failed once). Nothing happened to it. The same as
+  // the reading's own rule (src/calendar.ts): its UID, or its title, within a minute.
+  const sameTitle = (a: Snap, b: Snap): boolean => a.title.trim().toLowerCase() === b.title.trim().toLowerCase();
+  for (const e of gone) {
+    const same = fresh.find((n) => !movedTo.has(n.id) && Math.abs(n.start - e.start) < SAME_MS && ((!!e.uid && e.uid === n.uid) || sameTitle(e, n)));
+    if (same) {
+      movedTo.set(same.id, e);
+      paired.add(e.id);
+    }
+  }
+  // An event whose id carries its start gets a new id when it moves: gone under the old one, new under the other. Paired by meeting, the
+  // nearest pairs first (two changes in one series are each paired with their own), that is a move, never a cancellation and a new event: a
+  // single event anywhere; a series' occurrence within the week, or anywhere before the last one the snapshot had (one after it may be the
+  // next one only coming into the window).
+  const count = (list: Snap[], k: string): number => list.filter((x) => seriesOf(x) === k).length;
+  const last = new Map<string, number>();
+  for (const e of prev) last.set(seriesOf(e), Math.max(last.get(seriesOf(e)) ?? -Infinity, e.start));
+  const pairs: { e: Snap; n: Snap; d: number }[] = [];
+  for (const e of gone.filter((x) => !paired.has(x.id))) {
     const k = seriesOf(e);
     const single = count(prev, k) === 1 && count(next, k) === 1;
-    const twin = fresh
-      .filter((n) => seriesOf(n) === k && !movedTo.has(n.id) && (single || n.start < t + ADDED_MS))
-      .sort((a, b) => Math.abs(a.start - e.start) - Math.abs(b.start - e.start))[0];
-    if (twin) movedTo.set(twin.id, e);
+    for (const n of fresh) {
+      if (seriesOf(n) === k && !movedTo.has(n.id) && (single || n.start < t + ADDED_MS || n.start <= last.get(k)!)) pairs.push({ e, n, d: Math.abs(n.start - e.start) });
+    }
+  }
+  for (const { e, n } of pairs.sort((a, b) => a.d - b.d)) {
+    if (paired.has(e.id) || movedTo.has(n.id)) continue;
+    movedTo.set(n.id, e);
+    paired.add(e.id);
   }
   for (const e of next) {
     const old = before.get(e.id) ?? movedTo.get(e.id);
@@ -108,7 +129,6 @@ export function diffEvents(prev: Snap[], next: Snap[], t: number): CalChange[] {
       out.push({ kind: "moved", id: e.id, title: e.title, start: e.start, end: e.end, was: old.start, at: t });
     }
   }
-  const paired = new Set([...movedTo.values()].map((e) => e.id));
   for (const e of prev) {
     if (!now.has(e.id) && !paired.has(e.id) && e.start > t) out.push({ kind: "cancelled", id: e.id, title: e.title, start: e.start, end: e.end, at: t });
   }

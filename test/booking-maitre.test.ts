@@ -10,10 +10,12 @@ import { createBooking, type BookingReply } from "../src/booking.ts";
 import { createControl } from "../src/control.ts";
 import type { Kv } from "../src/kv.ts";
 import type { Page, PagePool } from "../src/maitre/cdp.ts";
-import type { BookResult, Cartridge } from "../src/maitre/cartridge.ts";
+import type { BookResult, Cartridge, Evidence } from "../src/maitre/cartridge.ts";
+import type { MailLine } from "../src/maitre/ledger.ts";
 import { createMaitre } from "../src/maitre/planner.ts";
 import { directOrder } from "../src/door/calls.ts";
-import { fakeEngine } from "./helpers/booking-fixtures.ts";
+import type { Place } from "../src/restaurants/places.ts";
+import { coverManagerSites, EVERY_DAY, fakeEngine } from "./helpers/booking-fixtures.ts";
 
 const NOW = Date.parse("2026-11-14T12:00:00Z");
 const WHEN = "2026-11-20 21:00";
@@ -25,6 +27,12 @@ function memoryKv(): Kv {
 
 function rig(o: {
   book?: (slot: { time: string }) => BookResult; confirmFirst?: boolean; control?: ReturnType<typeof createControl>; cancelFails?: boolean;
+  /** Other restaurants than the fixtures' (each with a website, which is a CoverManager module). */
+  places?: Place[];
+  /** What the engine's page confirms when the Handoff window is looked at (null: nothing yet). */
+  verify?: () => Evidence | null;
+  /** The recent mail Maître reads for the engine's confirmations. */
+  mail?: () => MailLine[];
 } = {}) {
   const calls = { book: [] as string[], cancel: 0, submits: 0, reminders: [] as string[], unreminded: [] as string[] };
   const cart: Cartridge = {
@@ -43,7 +51,7 @@ function rig(o: {
       calls.submits++;
       return { kind: "confirmed", evidence: { url: "https://barmut.com/gracias-por-su-reserva?date=20-11-2026&time=21:00&pax=2", text: "ok", confirmationId: "CM1X", cancelUrl: "https://www.covermanager.com/cancel/CM1X", said: { date: slot.date, time: slot.time, party: slot.party } } };
     },
-    verify: async () => null,
+    verify: async () => o.verify?.() ?? null,
     cancel: async () => {
       calls.cancel++;
       if (o.cancelFails) throw new Error("net::ERR_INTERNET_DISCONNECTED");
@@ -55,8 +63,9 @@ function rig(o: {
     openWindow: async () => ({ page: { goto: async () => ({ status: 200 }) } as unknown as Page, release: () => undefined }),
   };
   const kv = memoryKv();
-  const maitre = createMaitre({ kv, pool, cartridges: [cart], now: () => NOW, sleep: async () => undefined });
-  const { engine } = fakeEngine();
+  const clock = { now: NOW };
+  const maitre = createMaitre({ kv, pool, cartridges: [cart], now: () => clock.now, sleep: async () => undefined, ...(o.mail ? { recentMail: async () => o.mail!() } : {}) });
+  const { engine } = o.places ? fakeEngine(o.places, coverManagerSites(o.places)) : fakeEngine();
   const control = o.control ?? createControl(null);
   const booking = createBooking({
     engine, kv, control, maitre,
@@ -65,7 +74,7 @@ function rig(o: {
     remind: async (when, text) => (calls.reminders.push(`${when} ${text}`), "rem0000001"),
     unremind: async (id) => void calls.unreminded.push(id),
   });
-  return { booking, calls, maitre, control };
+  return { booking, calls, maitre, control, clock };
 }
 
 /** What the owner sees, in order, the way the door delivers a reply (its text or card, the receipt with Undo, then what comes after). */
@@ -213,4 +222,87 @@ test("booking maitre: an Undo whose cancel could not run says the booking still 
   const said = await r.booking.undo(s.undo!.id);
   assert.doesNotMatch(said, /can't be undone from here any more/);
   assert.match(said, /the booking still stands\. Press Undo again in a moment/);
+});
+
+// ---------- who counts as "named by the owner": whole words, and not a food word or the place of the request ----------
+
+const place = (id: string, name: string, rating: number): Place => ({ id, name, address: `1 Test St, ${name}`, rating, ratingCount: 500, website: `https://${id.toLowerCase()}.example/`, periods: EVERY_DAY });
+
+test("booking maitre: a result called like a food word or the place of the request ('Thai', 'Soho') is not 'named': the owner gets the list", async () => {
+  for (const [what, owner, odd] of [
+    ["thai in Soho, London", "book me a thai in soho for 2 on friday at 9pm", place("ChIJthai", "Thai", 3.9)],
+    ["pizza in Roma, Madrid", "una pizza en Roma para 2 el viernes a las 21", place("ChIJroma", "Roma", 4.0)],
+    ["somewhere to eat in Soho, London", "find me somewhere to eat in soho on friday at 9pm for 2", place("ChIJeat", "Eat", 3.8)],
+  ] as const) {
+    const r = rig({ places: [place("ChIJrosas", "Rosa's Place", 4.7), odd, place("ChIJbusaba", "Busaba", 4.4)] });
+    const reply = await r.booking.start({ what, when: WHEN, party: 2 }, { direct: true, owner: [owner] });
+    assert.ok(!reply.after && !reply.card, `${what}: nothing is booked, no card: a list`);
+    assert.match(reply.say, /^For 2, Friday 20 November at 21:00 \(from Google Maps/);
+    assert.equal(r.calls.book.length, 0, `${what}: no cartridge run before the owner picks`);
+    // The pick is then the order.
+    assert.ok((await seen(r.booking.answer("1")!)).undo);
+    assert.equal(r.calls.book.length, 1);
+  }
+});
+
+test("booking maitre: a name must be in the request as whole words ('Cal Pep' is not 'Cal Pepito'); a real name still books at once", async () => {
+  const places = [place("ChIJcalpep", "Cal Pep", 4.6), place("ChIJpepito", "Casa Pepito", 4.5), place("ChIJmut", "Bar Mut", 4.5)];
+  const r = rig({ places });
+  const reply = await r.booking.start({ what: "Cal Pepito, Barcelona", when: WHEN, party: 2 }, { direct: true, owner: ["resérvame mesa en Cal Pepito el viernes a las 21:00 para 2"] });
+  assert.ok(!reply.after, "Cal Pep is a different restaurant: not booked");
+  assert.equal(r.calls.book.length, 0);
+  const ok = rig({ places });
+  const named = await seen(await ok.booking.start({ what: "Bar Mut, Barcelona", when: WHEN, party: 2 }, { direct: true, owner: OWNER_WORDS }));
+  assert.equal(ok.calls.book.length, 1, "a restaurant named in full, in the request and in the owner's words, is booked at once");
+  assert.ok(named.undo);
+});
+
+test("booking maitre: a booking finished in the Handoff window follows what the confirmation says (day, time, party): receipt, warning, saved booking and reminder", async () => {
+  let page: Evidence | null = null;
+  const r = rig({ book: () => ({ kind: "gate", gate: "captcha", detail: "reCAPTCHA", submitted: false }), verify: () => page });
+  await seen(await r.booking.start({ what: "Bar Mut, Barcelona", when: WHEN, party: 2 }, { direct: true, owner: OWNER_WORDS }));
+  // In the window the asked time was gone: the owner took Saturday 22:30 for 4, and the page says so.
+  page = { url: "https://barmut.com/gracias?date=21-11-2026&time=22:30&pax=4", text: "Gracias por su reserva", confirmationId: "CM9", said: { date: "2026-11-21", time: "22:30", party: 4 } };
+  const done = r.booking.resolve(r.booking.take(), "done");
+  const s = await seen((done as { reply: BookingReply }).reply);
+  const text = s.undo?.body ?? s.texts.join("\n");
+  assert.match(text, /^✅ Booked: Bar Mut, 4 people, Saturday 21 November at 22:30 \(CoverManager, confirmation CM9\)\./);
+  assert.match(text, /⚠️ The confirmation says date 2026-11-21, time 22:30, party 4: please check it\./);
+  assert.deepEqual(r.calls.reminders, ["2026-11-21 19:30 Table at Bar Mut at 22:30 for 4 (CM9)"], "the reminder is for the booked time, not the asked one");
+  assert.match(await r.booking.list(), /Saturday 21 November at 22:30 · Bar Mut · 4 people · confirmed/);
+
+  // A confirmation that says what was asked has no warning, and the asked slot stands.
+  const ok = rig({ book: () => ({ kind: "gate", gate: "captcha", detail: "reCAPTCHA", submitted: false }), verify: () => ({ url: "https://barmut.com/gracias", text: "Gracias", confirmationId: "CM1", said: { date: "2026-11-20", time: "21:00", party: 2 } }) });
+  await seen(await ok.booking.start({ what: "Bar Mut, Barcelona", when: WHEN, party: 2 }, { direct: true, owner: OWNER_WORDS }));
+  const same = await seen((ok.booking.resolve(ok.booking.take(), "done") as { reply: BookingReply }).reply);
+  assert.match(same.undo?.body ?? same.texts.join("\n"), /^✅ Booked: Bar Mut, 2 people, Friday 20 November at 21:00 /);
+  assert.doesNotMatch(same.undo?.body ?? same.texts.join("\n"), /⚠️/);
+  assert.deepEqual(ok.calls.reminders, ["2026-11-20 18:00 Table at Bar Mut at 21:00 for 2 (CM1)"]);
+});
+
+test("booking maitre: after Undo the same restaurant can be booked again for that day: the old confirmation and the cancellation mail do not count as 'already booked'", async () => {
+  let mail: MailLine[] = [];
+  const r = rig({ mail: () => mail });
+  const s1 = await seen(await r.booking.start({ what: "Bar Mut, Barcelona", when: WHEN, party: 2 }, { direct: true, owner: OWNER_WORDS }));
+  // The engine's confirmation arrives right after the booking; the owner presses Undo a minute later; the cancellation mail follows.
+  mail = [{ at: NOW + 1000, from: "CoverManager <no-reply@covermanager.com>", subject: "Reserva confirmada en Bar Mut", preview: "Tu reserva para el 20/11/2026 a las 21:00 para 2 personas" }];
+  r.clock.now = NOW + 60_000;
+  assert.match(await r.booking.undo(s1.undo!.id), /↩️ Cancelled the booking at Bar Mut/);
+  mail = [{ at: NOW + 61_000, from: "CoverManager <no-reply@covermanager.com>", subject: "Your reservation at Bar Mut has been cancelled", preview: "Your reservation for 20/11/2026 at 21:00 for 2 people was cancelled." }, ...mail];
+  r.clock.now = NOW + 120_000;
+  const again = await seen(await r.booking.start({ what: "Bar Mut, Barcelona", when: "2026-11-20 21:30", party: 2 }, { direct: true, owner: ["y otra en Bar Mut a las 21:30"] }));
+  assert.doesNotMatch(again.texts.join(" "), /already in the mail/);
+  assert.ok(again.undo, "booked again");
+  assert.deepEqual(r.calls.book.map((b) => b.slice(0, 16)), ["2026-11-20 21:00", "2026-11-20 21:30"]);
+});
+
+test("booking maitre: a confirmation mail for another time that day (lunch) does not stop a dinner; one for the same time still does", async () => {
+  const lunch: MailLine = { at: NOW - 3600_000, from: "CoverManager <no-reply@covermanager.com>", subject: "Reserva confirmada en Bar Mut", preview: "Tu reserva para el 20/11/2026 a las 13:30 para 2 personas" };
+  const r = rig({ mail: () => [lunch] });
+  const dinner = await seen(await r.booking.start({ what: "Bar Mut, Barcelona", when: WHEN, party: 2 }, { direct: true, owner: OWNER_WORDS }));
+  assert.ok(dinner.undo, "dinner booked");
+  const same = rig({ mail: () => [{ ...lunch, preview: "Tu reserva para el 20/11/2026 a las 21:00 para 2 personas" }] });
+  const blocked = await seen(await same.booking.start({ what: "Bar Mut, Barcelona", when: WHEN, party: 2 }, { direct: true, owner: OWNER_WORDS }));
+  assert.match(blocked.texts.join(" "), /confirmation for that day is already in the mail/);
+  assert.equal(same.calls.book.length, 0);
 });

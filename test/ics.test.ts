@@ -208,6 +208,28 @@ test("a long series with a COUNT that started years ago still shows today", () =
   assert.ok(ev.every((e) => e.title === "Diario"));
 });
 
+test("a changed occurrence named by its day (RECURRENCE-ID;VALUE=DATE) replaces it; RANGE=THISANDFUTURE changes every one from there on", () => {
+  const w = { from: at("2026-11-16T00:00:00Z"), to: at("2026-11-22T00:00:00Z"), timeZone: ZONE };
+  const hm = (e: CalEvent) => new Intl.DateTimeFormat("sv-SE", { timeZone: ZONE, dateStyle: "short", timeStyle: "short" }).format(e.start);
+  const byDay = icsEvents(parseFeed(cal(
+    "BEGIN:VEVENT", "UID:a", "DTSTART;TZID=Europe/Madrid:20261116T100000", "DTEND;TZID=Europe/Madrid:20261116T110000", "RRULE:FREQ=DAILY;COUNT=5", "SUMMARY:Daily", "END:VEVENT",
+    "BEGIN:VEVENT", "UID:a", "RECURRENCE-ID;VALUE=DATE:20261118", "DTSTART;TZID=Europe/Madrid:20261118T150000", "DTEND;TZID=Europe/Madrid:20261118T160000", "SUMMARY:Daily (moved)", "END:VEVENT",
+  )), w, "Work");
+  assert.deepEqual(byDay.map((e) => `${hm(e)} ${e.title}`), [
+    "2026-11-16 10:00 Daily", "2026-11-17 10:00 Daily", "2026-11-18 15:00 Daily (moved)", "2026-11-19 10:00 Daily", "2026-11-20 10:00 Daily",
+  ], "the 18th's 10:00 is gone, not left beside its new time");
+  assert.equal(byDay[2]!.id, `a@${at("2026-11-18T09:00:00Z")}`, "its id is the occurrence's");
+  const future = icsEvents(parseFeed(cal(
+    "BEGIN:VEVENT", "UID:b", "DTSTART;TZID=Europe/Madrid:20261116T100000", "DTEND;TZID=Europe/Madrid:20261116T110000", "RRULE:FREQ=DAILY;COUNT=5", "SUMMARY:Daily", "END:VEVENT",
+    "BEGIN:VEVENT", "UID:b", "RECURRENCE-ID;RANGE=THISANDFUTURE;TZID=Europe/Madrid:20261118T100000", "DTSTART;TZID=Europe/Madrid:20261118T150000",
+    "DTEND;TZID=Europe/Madrid:20261118T160000", "SUMMARY:Daily (later)", "END:VEVENT",
+  )), w, "Work");
+  assert.deepEqual(future.map((e) => `${hm(e)} ${e.title}`), [
+    "2026-11-16 10:00 Daily", "2026-11-17 10:00 Daily", "2026-11-18 15:00 Daily (later)", "2026-11-19 15:00 Daily (later)", "2026-11-20 15:00 Daily (later)",
+  ]);
+  assert.equal(new Set(future.map((e) => e.id)).size, 5, "each keeps an id of its own");
+});
+
 // ---------- the source and the core ----------
 
 interface Served {

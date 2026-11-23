@@ -12,6 +12,8 @@ export const WORDS = {
   meetings: "Today's meetings",
   needsYou: "Needs you in mail",
   allClear: "all clear",
+  /** Under a count above zero when none of it is due today (later, or with no day): never "all clear" there. */
+  noneDue: "none due today",
   dueToday: "{n} due today",
   overdue: "{n} overdue",
   /** Gentle mode's words for the same count: no "overdue", never in red (src/gentle.ts, no shame). */
@@ -112,7 +114,7 @@ export function kpiTiles(data, now, timeZone = "UTC") {
   const left = events.filter((e) => e.end > now).sort((a, b) => a.start - b.start);
   // The mail that needs the owner is not a tile: the "Needs you" preview block mounts under the row (#needs-you-mail).
   return {
-    owe: loops ? { n: owe.length, foot: parts.join(" · ") || WORDS.allClear, warn: overdue > 0 && !gentle, href: "#loops" } : null,
+    owe: loops ? { n: owe.length, foot: parts.join(" · ") || (owe.length ? WORDS.noneDue : WORDS.allClear), warn: overdue > 0 && !gentle, href: "#loops" } : null,
     waiting: loops ? { n: waiting.length, foot: waiting.length ? waiting[0].who || "" : WORDS.allClear, warn: false, href: "#loops" } : null,
     meetings: data.calendarOn ? { n: events.length, foot: left[0] ? fill(WORDS.nextAt, { title: left[0].title }) : WORDS.noneLeft, warn: false, href: "#h-agenda" } : null,
   };

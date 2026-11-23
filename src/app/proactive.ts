@@ -34,6 +34,7 @@ export function wireProactive(ctx: AfterFollowups) {
       people: async () => (await door.people.store.read()).map((p) => p.name),
       fetch: globalThis.fetch,
       othersToday: () => budget.others("life"),
+      take: (limit, fn) => budget.take("life", limit, fn),
       // Gentle mode's day: fewer in all, follow-ups' nudges and these together.
       cap: async () => (await gentleSettings.view())?.maxPerDay ?? null,
       addToList: async (name, item) => {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createControl } from "../src/control.ts";
-import { createCalendar, joinLink, loadCalendarConfig, overlaps, parseZohoTime, type CalendarConfig, type CalEvent } from "../src/calendar.ts";
+import { clashes, createCalendar, joinLink, loadCalendarConfig, overlaps, parseZohoTime, type CalendarConfig, type CalEvent } from "../src/calendar.ts";
 import type { Kv } from "../src/kv.ts";
 
 const ENV = { ZOHO_CLIENT_ID: "1000.ABCDEFGHIJ1234567890", ZOHO_CLIENT_SECRET: "0123456789abcdef0123456789abcdef01234567", ZOHO_GRANT_CODE: "1000.grant.code" };
@@ -35,6 +35,13 @@ test("parseZohoTime: on a day whose clocks change at midnight (Chile in Septembe
 test("overlaps: timed events that cross; all-day ones never", () => {
   const e = (id: string, h1: number, h2: number, allDay = false): CalEvent => ({ id, title: id, start: h1 * 3600_000, end: h2 * 3600_000, allDay, calendar: "" });
   assert.deepEqual([...overlaps([e("a", 9, 10), e("b", 9.5, 11), e("c", 11, 12), e("d", 0, 24, true)])].sort(), ["a", "b"]);
+});
+
+test("overlaps: a timed event with no length (a marker inside a meeting) overlaps nothing, never “by 0 min”", () => {
+  const e = (id: string, h1: number, h2: number): CalEvent => ({ id, title: id, start: h1 * 3600_000, end: h2 * 3600_000, allDay: false, calendar: "" });
+  const day = [e("Board meeting", 10, 11), e("Submit expenses", 10.5, 10.5)];
+  assert.deepEqual([...clashes(day).keys()], []);
+  assert.deepEqual([...overlaps(day)], []);
 });
 
 function fakeKv() {

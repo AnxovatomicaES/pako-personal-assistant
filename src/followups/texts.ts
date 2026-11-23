@@ -45,6 +45,7 @@ export const T = texts(
     held: "{text}\n(Type OPEN to see everything open.)",
     pressedDone: "Done: “{title}”. Off your open list.",
     pressedSnooze: "OK, I'll look again in an hour.",
+    pressedSnoozeSoon: "OK, I'll look again just before it's due.",
     pressedNotMine: "Got it: “{title}” isn't yours. I'll remember that next time.",
     pressedGone: "That is no longer on your open list.",
     pressedAlready: "That was answered already.",

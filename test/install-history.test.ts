@@ -92,3 +92,25 @@ test("install: an ordinary fast-forward is still just a pull", () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("install: origin out of reach (offline, GitHub down) is not taken for a rewrite: it fails, saying so, and the copy is as it was", () => {
+  const root = mkdtempSync(join(tmpdir(), "pako-history-"));
+  try {
+    const origin = join(root, "origin");
+    execFileSync("mkdir", ["-p", origin]);
+    git(origin, "init", "-q", "-b", "main");
+    commit(origin, "a.txt", "one\n", "v1");
+    git(root, "clone", "-q", origin, "copy");
+    const copy = join(root, "copy");
+    commit(origin, "a.txt", "two\n", "v2");
+    execFileSync("mv", [origin, join(root, "gone")]);
+    const before = git(copy, "rev-parse", "HEAD");
+    const r = catchUp(copy);
+    assert.equal(r.ok, false, r.out);
+    assert.doesNotMatch(r.out, /rewritten/);
+    assert.match(r.out, /Couldn't reach Pako/);
+    assert.equal(git(copy, "rev-parse", "HEAD"), before);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

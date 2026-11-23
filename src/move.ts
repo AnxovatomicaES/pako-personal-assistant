@@ -8,7 +8,8 @@
 //                                        what it replaces is kept first in ~/.pako/import-backup-<time>.json, and Pako starts again.
 //
 // The file is checked, not trusted: a size cap, the "pako-export" format, and an allow-list of keys (the person's things: notes, reminders,
-// lists, people, routines, follow-ups and their 👍/👎, meetings, the brief's day, what was already told), each with the kind of value it must hold. Never a
+// lists, people, routines, follow-ups and their 👍/👎, meetings, the brief's day, what was already told, and the person's own choices and records: life, health,
+// learning, mail choices, hidden people, autonomy, gentle mode, bookings), each with the kind of value it must hold. Never a
 // secret (the export carries none, and the keys that hold them are not on the list), never this computer's own state (its pause, its inbox,
 // its store's marks, its Telegram pairing: a pairing from a file would let whoever wrote it talk to this Pako). The settings come in only
 // where nothing is set here yet; those the panel cannot set are listed for the person to copy. Nothing is written without a confirm.
@@ -35,9 +36,11 @@ type Env = Record<string, string | undefined>;
 export const IMPORT_MAX_BYTES = 8 * 1024 * 1024;
 const VALUE_MAX = 2 * 1024 * 1024;
 const ENTRIES_MAX = 200;
+/** The largest count taken (STOPs said): far above any real one. */
+const COUNT_MAX = 1_000_000;
 
-/** The keys a move carries, each with the kind of value it must hold. Everything else in a file is left out. */
-export const MOVE_KEYS: Readonly<Record<string, "json" | "text">> = {
+/** The keys a move carries, each with the kind of value it must hold (a count is a whole number). Everything else in a file is left out. */
+export const MOVE_KEYS: Readonly<Record<string, "json" | "text" | "count">> = {
   "owner-memory": "json",
   "assistant-reminders": "json",
   "assistant-reminders-fired": "json", // so a reminder the server already sent is not sent again
@@ -58,6 +61,21 @@ export const MOVE_KEYS: Readonly<Record<string, "json" | "text">> = {
   "assistant-imap": "json",
   "memory-facts": "json", // the dated facts the owner told, with their history (src/memory-facts.ts)
   "people-identities": "json", // the same-person answers and identities (src/people-graph.ts): not asked again
+  // What else is the person's own, each under the key its module writes (src/data.ts lists them all):
+  "life": "json", // what the proactive nudges (src/proactive.ts) have said and learned, so they do not start over
+  "life-health": "json", // what the owner told about health and mood (src/proactive.ts): apart, on a computer
+  "health": "json", // the health diary (src/health.ts)
+  "learning": "json", // what the owner is learning (src/learning.ts)
+  "friend": "json", // the friend check-ins (src/friend.ts)
+  "mail-prefs": "json", // the sender rules taught with Move to…, and which categories notify (src/mail.ts)
+  "people-hidden": "json", // the people hidden from the People list (src/people-directory.ts): they stay hidden
+  "assistant-autonomy-settings": "json", // what Pako does at once and what it asks first (src/autonomy.ts)
+  "gentle-settings": "json", // gentle mode's choices (src/gentle.ts)
+  "day-helpers": "json", // the switches around the day (src/day-helpers.ts)
+  "after-meeting": "json", // the questions after meetings and the titles not to ask after (src/after-meeting.ts)
+  "assistant-stops": "count", // how many times STOP was said (src/door/stop-resume.ts): a number, kept as text
+  "pako-bookings": "json", // the tables Pako asked a restaurant for (src/booking.ts): not asked twice
+  "maitre-ledger": "json", // the bookings made on a restaurant's website (src/maitre/ledger.ts): nothing is booked twice
 };
 
 /** Keys left out because they hold a secret (never in a file, and never taken from one). */
@@ -84,7 +102,8 @@ const T = texts(
     half: "I couldn't finish: part of it is in already. What was replaced is kept in {file}, in Pako's folder. Try again.",
     noBackup: "I couldn't keep a copy of what would be replaced, so I changed nothing. Check that Pako's folder can be written.",
     secret: "A secret: never imported",
-    own: "It belongs to that Pako (its pause, its inbox, its Telegram, its watchdog, its last rehearsal): this one has its own",
+    own: "Not carried over: it is that Pako's own state (its pause, inbox, Telegram link and timers), a short-lived note (meeting preparations, "
+      + "invitations, the action log, the chat window), or something this Pako does not use. This one has its own",
     badValue: "It does not have the expected shape",
     log: "Imported from another Pako: {n} thing(s)",
     restart: "Start Pako again to finish (quit it and open it).",
@@ -136,6 +155,7 @@ export function readMoveFile(body: unknown): MoveFile | "notExport" | "version" 
     const value = item && typeof item === "object" && !Array.isArray(item) ? (item as { value?: unknown }).value : undefined;
     let raw: string | null = null;
     if (kind === "text") raw = plainText(value, 100);
+    else if (kind === "count") raw = typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= COUNT_MAX ? String(value) : null;
     else if (value && typeof value === "object") {
       const s = JSON.stringify(value);
       raw = s.length <= VALUE_MAX ? s : null;

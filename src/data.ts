@@ -25,6 +25,7 @@ import type { Kv } from "./kv.ts";
 import type { FileKv } from "./local.ts";
 import { readSecrets, secretsWhere, writeSecrets } from "./secrets.ts";
 import { createLog } from "./log.ts";
+import { SET_ASIDE_COPY } from "./sqlite-kv.ts";
 
 const log = createLog("data");
 
@@ -271,7 +272,7 @@ const T = texts(
     hidden: "[hidden]",
     logLine: "Everything deleted from the panel: notes, reminders, lists, chat, log, Telegram and connections",
     keptSecrets: "{where} keeps the three secrets Pako needs to run (the bridge's to Claude, the phone line's and the one that "
-      + "signs your panel session): they say nothing about you.",
+      + "signs your panel session) and the count of your \"Sign out everywhere\"s: they say nothing about you.",
     keptEnv: "~/.pako/.env is left alone: it's your file, Pako never writes it. If you put keys there, delete them yourself.",
     keptClaude: "Claude Code keeps its own history of the conversations in {path}: it belongs to Claude Code, and Pako doesn't delete it.",
     keptShell: "Settings given in the terminal or in ./.env still apply.",
@@ -287,7 +288,7 @@ const T = texts(
     "file.env": "Your own settings and keys, if you wrote any (Pako never writes this file)",
     "file.kv": "The store: everything in the list below",
     "file.made": "A mark: this store existed, so if it goes missing Pako starts paused and says so",
-    "file.bad": "A copy of a damaged store, if there ever was one",
+    "file.bad": "A copy of a damaged store, if there ever was one (an older one keeps its date in its name)",
     "file.migrated": "The earlier store (a JSON file), only if its copy into kv.db did not check out",
     "file.lock": "That Pako is running (its process number and port)",
     "file.state": "The conversation in progress with Claude (its id)",
@@ -377,11 +378,33 @@ function writeObject(path: string, value: unknown): void {
   }
 }
 
-/** The secrets Pako needs to run (src/local.ts loadHome): the only things delete-all leaves in secrets.json. */
+/** The secrets Pako needs to run (src/local.ts loadHome): the only things delete-all leaves in secrets.json (and the panel's sessions' generation). */
 const RUN_SECRETS = ["bridgeToken", "callerToken", "panelSecret"] as const;
 
 /** Settings whose value is a secret, by their name: a token, a key, a password, or an address that carries one (an ICS link, a store URL). */
 const SECRET_NAME = /TOKEN|SECRET|KEY|PASSWORD|_URL$/;
+
+/** Names that look like a secret's but hold a plain word: how the secrets are kept (file, keychain or auto), not one of them. */
+const PLAIN_SETTINGS = new Set(["PAKO_SECRET_STORE"]);
+
+/**
+ * Whether a setting's value is a secret to hide in the export. By its name (SECRET_NAME), except the plain ones; and an address only when it
+ * carries something: credentials, a query, or a path (an ICS link's private token, a store's password). A bare address (https://host,
+ * http://127.0.0.1:8819) is no secret, and hiding it would mask the same words wherever the person wrote them (a note, the chat).
+ */
+function secretSetting(name: string, value: unknown): boolean {
+  const n = name.toUpperCase();
+  if (PLAIN_SETTINGS.has(n) || !SECRET_NAME.test(n)) return false;
+  if (!n.endsWith("_URL") || /TOKEN|SECRET|KEY|PASSWORD/.test(n)) return true;
+  if (typeof value !== "string") return true;
+  try {
+    const u = new URL(value.trim());
+    return !!(u.username || u.password || u.search || u.hash || (u.pathname !== "" && u.pathname !== "/"));
+  } catch {
+    /* not an address Pako can read: hidden, as before */
+    return true;
+  }
+}
 
 /** The folder the claude command runs from (src/local.ts localEnv sets it in ~/.pako), and where Claude Code keeps its history of it. */
 const stateDir = (dir: string, env: Env): string => (env.ASSISTANT_STATE_DIR ?? "").trim() || join(dir, "assistant");
@@ -402,14 +425,14 @@ function secretValues(dir: string, env: Env): string[] {
     // A connection kept as one object (whatsappComputer: Meta's app secret, access token, webhook token, set up in the panel): its secret
     // fields by their names, in any case (appSecret, accessToken). Defence in depth: the store should never hold them anyway.
     if (v && typeof v === "object" && !Array.isArray(v)) {
-      for (const [f, x] of Object.entries(v as Record<string, unknown>)) if (SECRET_NAME.test(f.toUpperCase())) add(x);
+      for (const [f, x] of Object.entries(v as Record<string, unknown>)) if (secretSetting(f, x)) add(x);
     }
   }
   const settings = secrets.settings;
   if (settings && typeof settings === "object" && !Array.isArray(settings)) {
-    for (const [k, v] of Object.entries(settings as Record<string, unknown>)) if (SECRET_NAME.test(k)) add(v);
+    for (const [k, v] of Object.entries(settings as Record<string, unknown>)) if (secretSetting(k, v)) add(v);
   }
-  for (const [k, v] of Object.entries(env)) if (SECRET_NAME.test(k)) add(v);
+  for (const [k, v] of Object.entries(env)) if (secretSetting(k, v)) add(v);
   // The longest first: one secret that contains another is replaced whole.
   return [...found].sort((a, b) => b.length - a.length);
 }
@@ -565,6 +588,8 @@ export async function deleteEverything(d: DeleteDeps): Promise<DeleteResult> {
   const secrets = readSecrets(d.dir);
   if (secrets) {
     const keep = Object.fromEntries(RUN_SECRETS.filter((k) => typeof secrets[k] === "string").map((k) => [k, secrets[k]]));
+    // The panel's sessions' generation (src/local.ts sessionGeneration) stays too: a "Sign out everywhere" must not be undone by deleting.
+    if (Number.isInteger(secrets.panelSessions)) keep.panelSessions = secrets.panelSessions;
     if (Object.keys(secrets).some((k) => !Object.hasOwn(keep, k))) {
       try {
         writeSecrets(d.dir, keep);
@@ -591,7 +616,13 @@ export async function deleteEverything(d: DeleteDeps): Promise<DeleteResult> {
       log.error(`could not delete ${path} (${(err as NodeJS.ErrnoException).code ?? "error"})`);
     }
   };
-  for (const f of ["kv.db.bad", "kv.json.bad", "kv.json.migrated", "kv.json"]) gone(join(d.dir, f), f);
+  for (const f of ["kv.json.migrated", "kv.json"]) gone(join(d.dir, f), f);
+  // A damaged store kept aside, and the older ones a later damage displaced (kv.db.bad.<time>), with their journals.
+  try {
+    for (const f of readdirSync(d.dir)) if (SET_ASIDE_COPY.test(f)) gone(join(d.dir, f), f);
+  } catch {
+    /* no folder */
+  }
   gone(join(d.dir, "papers"), "papers"); // the photos and PDFs sent to be read (src/papers.ts)
   // Maître's confirmation screenshots and its browser profile (the owner's sign-ins to booking sites): the person's things too.
   gone(join(d.dir, "maitre"), "maitre");

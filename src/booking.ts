@@ -19,7 +19,7 @@ import type { Kv } from "./kv.ts";
 import { PLATFORM_NAMES } from "./restaurants/booking-links.ts";
 import { type LiveRestaurant, type RestaurantEngine } from "./restaurants/engine.ts";
 import { localStamp, localToEpoch } from "./whatsapp.ts";
-import type { Evidence, Guest, Slot } from "./maitre/cartridge.ts";
+import { mismatchOf, type Evidence, type Guest, type Slot } from "./maitre/cartridge.ts";
 import type { HandoffEnd } from "./maitre/handoff.ts";
 import type { LedgerEntry } from "./maitre/ledger.ts";
 import type { BookOutcome, Maitre } from "./maitre/planner.ts";
@@ -282,6 +282,31 @@ const oneLine = (s: string, max: number): string => {
 };
 const people = (n: number, l: Lang): string => (n === 1 ? T(l)("person") : T(l)("people", { n }));
 const fold = (s: string): string => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+
+// A restaurant whose whole name is a kind of food, a meal or a kind of place ("Thai", "Tapas", "Eat") is not one the owner named by asking
+// for that food: "a thai in soho" is a request for a kind of place, whatever one of the results is called.
+const GENERIC_NAME = new Set([
+  "thai", "sushi", "tapas", "pizza", "pizzeria", "pasta", "italian", "indian", "chinese", "japanese", "korean", "mexican", "french", "spanish", "greek", "turkish",
+  "lebanese", "vegan", "vegetarian", "burger", "burgers", "steak", "steakhouse", "seafood", "ramen", "tacos", "kebab", "bbq", "brunch", "breakfast", "lunch",
+  "dinner", "supper", "eat", "food", "restaurant", "restaurante", "bar", "cafe", "bistro", "grill", "pub", "diner", "cocina", "comida", "cena", "comer", "cenar",
+]);
+/** Where a request turns from what to where: "sushi in Shoreditch, London" (the first comma, or " in "/" en "/" near "). */
+const WHERE = /,|\s(?:in|en|near|nearby|dans)\s/u;
+const squash = (s: string): string => fold(s).replace(/\s+/g, " ").trim();
+/** Whether `name` (folded) stands in `text` (folded) as whole words, and where: -1 if not ("thai" is not in "thailand"). */
+const wholeWordAt = (text: string, name: string): number =>
+  new RegExp(`(?<![\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "u").exec(text)?.index ?? -1;
+/**
+ * Whether `what` (the request: "Bar Mut, Barcelona", "sushi in Shoreditch, London") names this restaurant: its whole name is there as whole words
+ * ("Cal Pep" is not in "Cal Pepito"), it starts before the place part ("Soho" in "thai in soho" is where, not who), and it is more than food words.
+ */
+const namedIn = (what: string, name: string): boolean => {
+  const n = squash(name);
+  if (n.length < 3 || n.split(/[^\p{L}\p{N}]+/u).filter(Boolean).every((w) => GENERIC_NAME.has(w))) return false;
+  const text = squash(what);
+  const at = wholeWordAt(text, n);
+  return at >= 0 && at < (WHERE.exec(text)?.index ?? Infinity);
+};
 /** "★4.6 (3200)". */
 const stars = (o: Pick<Option, "rating" | "ratingCount">, l: Lang): string =>
   o.rating ? T(l)("rating", { rating: String(o.rating), count: o.ratingCount ? ` (${o.ratingCount})` : "" }) : T(l)("noRatings");
@@ -645,13 +670,21 @@ export function createBooking(d: BookingDeps) {
     const h = handoffsOpen.get(end.entry.id);
     handoffsOpen.delete(end.entry.id);
     const name = h?.option.name ?? end.entry.name;
-    if (end.kind === "confirmed" && h) return receipt(end.entry, end.evidence, h.option, h.req, h.slot);
     if (end.kind === "confirmed") {
-      // A Handoff from before a restart: what the ledger knows is enough for the receipt.
+      // In the window the owner may have taken another time, day or party than the one asked: the confirmation page says what was booked, and
+      // the receipt, the saved booking and the reminder follow it (with the warning the cartridge lane gives for the same case).
       const e = end.entry;
+      const said = end.evidence.said;
+      const mismatch = mismatchOf(said, e);
+      const date = said?.date ?? e.date;
+      const time = said?.time ?? e.time;
+      const party = said?.party ?? e.party;
+      if (h) return receipt(end.entry, end.evidence, h.option, { ...h.req, party }, localToEpoch(`${date} ${time}`, d.timeZone) ?? h.slot, mismatch || undefined);
+      // A Handoff from before a restart: what the ledger knows is enough for the receipt.
       return {
         say: t("booked", {
-          name, people: people(e.party, l), when: `${e.date} ${e.time}`, zone: "", engine: e.engine, pending: "", mismatch: "", url: end.evidence.url, reminder: "",
+          name, people: people(party, l), when: `${date} ${time}`, zone: "", engine: e.engine, pending: "", url: end.evidence.url, reminder: "",
+          mismatch: mismatch ? t("bookedMismatch", { what: mismatch }) : "",
           id: end.evidence.confirmationId ? t("bookedId", { id: end.evidence.confirmationId }) : "", cancel: t("cancelMail", { engine: e.engine }),
         }),
       };
@@ -761,8 +794,7 @@ export function createBooking(d: BookingDeps) {
     }
     const all = found.map(toOption);
     // Google's own order (its relevance to what was asked) counts, and a restaurant the owner NAMED is pinned: a better rated stranger must not push it out.
-    const wanted = fold(req.what);
-    const hint = new Map(all.map((o, i) => [o.placeId, (fold(o.name).length >= 4 && wanted.includes(fold(o.name)) ? 3 : 0) + Math.max(0, 1 - i * 0.15)]));
+    const hint = new Map(all.map((o, i) => [o.placeId, (fold(o.name).length >= 4 && namedIn(req.what, o.name) ? 3 : 0) + Math.max(0, 1 - i * 0.15)]));
     const byScore = (a: Option, b: Option): number => rank(a, b) + ((hint.get(b.placeId) ?? 0) - (hint.get(a.placeId) ?? 0));
     const bookable = all.filter((o) => o.route !== "walkin");
     // Restaurants that take no bookings are shown only when nothing else is: a walk-in place is still a place to go.
@@ -784,8 +816,8 @@ export function createBooking(d: BookingDeps) {
     const r = await find(req);
     if ("say" in r) return { say: r.say };
     // Named by the owner: the restaurant's name is in what the assistant asked for AND in the owner's own words (not taken from an email).
-    const said = fold((o.owner ?? []).join(" "));
-    const named = r.options.filter((x) => fold(x.name).length >= 3 && fold(req.what).includes(fold(x.name)) && (!o.owner || said.includes(fold(x.name))));
+    const said = squash((o.owner ?? []).join(" "));
+    const named = r.options.filter((x) => namedIn(req.what, x.name) && (!o.owner || wholeWordAt(said, squash(x.name)) >= 0));
     const direct = !!o.direct && (!o.owner || o.owner.length > 0);
     if (direct && named.length === 1) return proceed(named[0]!, req, r.slot, true);
     if (r.options.length === 1) return proceed(r.options[0]!, req, r.slot, direct && named.length === 1);

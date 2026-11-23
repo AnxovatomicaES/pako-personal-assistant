@@ -269,6 +269,11 @@ export interface WatchdogDeps {
    * up). Absent on a computer, where the bridge runs beside the server.
    */
   lastPoll?: () => number | null;
+  /**
+   * A server on the internet: that computer has really asked at least once since this start (the door's `lastPoll` starts at the start, which
+   * is not a poll: src/door/core.ts). Without it the watchdog takes every poll as real. Absent on a computer.
+   */
+  polled?: () => boolean;
   /** On a computer: Claude's state as the bridge supervisor sees it. On a server it comes from the bridge's reports (bridgeReport). */
   claude?: () => ClaudeState | null;
   /** This server's own version, for the comparison with the assistant's computer (a server on the internet only; read once, when asked). */
@@ -548,12 +553,19 @@ export function createWatchdog(d: WatchdogDeps) {
     const last = d.lastPoll?.() ?? null;
     if (last !== null) {
       const p = part("bridge");
-      if (last > 0 && t - last <= BRIDGE_DOWN_MS) {
+      const polled = d.polled?.() ?? true;
+      // An incident kept from before this start, with nothing yet asked since: the start's own stamp is not the computer asking, so the
+      // incident stands as it is (not closed as "works again", not opened anew) until a real request comes.
+      const held = polled ? undefined : incidents.get("bridge");
+      if (held) {
+        p.failSince = held.since;
+        p.detail = "no poll";
+      } else if (last > 0 && t - last <= BRIDGE_DOWN_MS) {
         p.okAt = last;
         p.failSince = null;
         p.detail = "";
-        // Back only once it really asks again (a request in the last two minutes), not merely under the threshold.
-        if (t - last < 2 * 60_000) close("bridge");
+        // Back only once it really asks again (a request in the last two minutes, since this start), not merely under the threshold.
+        if (polled && t - last < 2 * 60_000) close("bridge");
       } else {
         p.failSince = last > 0 ? last : t;
         p.detail = "no poll";

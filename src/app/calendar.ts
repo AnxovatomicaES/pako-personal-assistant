@@ -1,6 +1,7 @@
 // Wires the calendar's reader from its sources (Zoho, ICS links, this Mac, Google, the demo's), its changes every ten minutes, and the
 // people graph fed from the mail and the calendar.
 
+import { cap as dayCap } from "./budget.ts";
 import { createCalendarAlerts } from "../calendar-alerts.ts";
 import { createCalendarChanges } from "../calendar-changes.ts";
 import { calendarLog, createCalendarCore, createZohoSource } from "../calendar.ts";
@@ -49,8 +50,8 @@ export function wireCalendar(ctx: AfterConnect) {
           if (!(await door.writable())) throw new Error("the chat cannot be written to now");
           if ((await door.notifyOwner(text)) !== "sent") throw new Error("held");
         },
-        cap: async () => (await gentleSettings.view())?.maxPerDay ?? followupsCfg.config!.maxPerDay,
-        others: () => budget.others("alerts"),
+        cap: async () => dayCap(followupsCfg.config!.maxPerDay, (await gentleSettings.view())?.maxPerDay),
+        take: (limit, fn) => budget.take("alerts", limit, fn),
         enabled: () => dayHelpers.on("alerts"),
         log: (text) => control.log("followup", text),
       })

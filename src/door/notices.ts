@@ -1,7 +1,7 @@
 // Notices for the owner: sent when they can arrive, otherwise kept and given the next time the owner writes.
 
 import { localStamp } from "./time.ts";
-import { TEMPLATE_TEXT_MAX, HELD_NOTICES_MAX, PING_EVERY_MS } from "./shared.ts";
+import { TEMPLATE_TEXT_MAX, HELD_NOTICES_MAX, HELD_TEXT_MAX, PING_EVERY_MS, cut } from "./shared.ts";
 import type { HeldNotice, Door } from "./door.ts";
 import { createLog } from "../log.ts";
 import { readJsonRecord } from "../json-record.ts";
@@ -54,7 +54,9 @@ export function mountNotices(door: Door): Pick<Door, "hold" | "notifyOwner" | "f
   const hold = (text: string, undo?: string): Promise<number> =>
     heldLock(async () => {
       try {
-        const list = [...(await loadHeldNotices()), { text: text.slice(0, 1500), ...(undo ? { undo } : {}) }];
+        // Never cut without saying so: a late answer is the owner's own question's answer, and half of it would read as all of it.
+        const kept = text.length > HELD_TEXT_MAX ? `${cut(text, HELD_TEXT_MAX - 1)}…` : text;
+        const list = [...(await loadHeldNotices()), { text: kept, ...(undo ? { undo } : {}) }];
         await saveHeldNotices(list);
         return list.length;
       } catch (err) {
@@ -87,7 +89,7 @@ export function mountNotices(door: Door): Pick<Door, "hold" | "notifyOwner" | "f
     }
     const waiting = await hold(text);
     if (o.urgent || t - lastPingAt >= PING_EVERY_MS) {
-      const preview = flat.length > 280 ? `${flat.slice(0, 277).replace(/\s+\S*$/, "")}…` : flat;
+      const preview = flat.length > 280 ? `${cut(flat, 277).replace(/\s+\S*$/, "")}…` : flat;
       const more = waiting > 1 ? tx(waiting > 2 ? "moreNotices" : "moreNotice", { n: waiting - 1 }) : "";
       if (await sendReminderTemplate(`${preview}${more}`)) lastPingAt = t;
     }
@@ -128,8 +130,10 @@ export function mountNotices(door: Door): Pick<Door, "hold" | "notifyOwner" | "f
         const i = list.indexOf(r);
         if (i >= 0) list.splice(i, 1);
         note(tx("noteReminderLate", { text: r.text }));
+        // Saved with each one that went, not once at the end: a card Meta refuses stops the rest here, and the ones already given must not be
+        // in the store when the server restarts (they would come again).
+        await saveReminders(list);
       }
-      await saveReminders(list);
     } catch (err) {
       log.error(`could not give the held reminders: ${(err as Error).message}`);
     }

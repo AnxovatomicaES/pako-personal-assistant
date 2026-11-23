@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { LiveHearing, VoiceMeter, cleanSecret, credentialShape, disclosesAi, e164, idleProcesses, languageFor, latencyStat, parseMeta, inboundRule, percentile, sensitivityOf, rmsDb, sign, signAsk, verify, wordCount } from "../src/util.ts";
+import { CALL_UNKNOWN, CONFIRM_CALL_MS, LiveHearing, VoiceMeter, cleanSecret, credentialShape, disclosesAi, e164, idleProcesses, languageFor, latencyStat, parseMeta, inboundRule, mayHaveGoneOut, percentile, sensitivityOf, rmsDb, sign, signAsk, verify, wordCount } from "../src/util.ts";
 
 test("languageFor: a call starts in English; only a plainly Spanish greeting (an older server's opening) starts in Spanish", () => {
   assert.equal(languageFor("Hi Marta, it's your assistant. Quick one for you."), "en-US");
@@ -260,4 +260,15 @@ test("sensitivityOf: low or high, anything else gives the default", () => {
   assert.equal(sensitivityOf(undefined, "low"), "low");
   assert.equal(sensitivityOf("medium", "high"), "high");
   assert.equal(sensitivityOf("", "low"), "low");
+});
+
+test("confirm_call: the worker waits longer than the server's own work (a lookup and a call at Retell, 30 s each), and a failed wait is 'not known', not 'failed'", () => {
+  assert.ok(CONFIRM_CALL_MS > 2 * 30_000, "longer than the server's agent lookup and Retell's call together");
+  assert.equal(mayHaveGoneOut({ ok: false, status: 0 }), true, "no answer: the wait ran out or the connection broke");
+  assert.equal(mayHaveGoneOut({ ok: false, status: 502 }), true, "a server error");
+  assert.equal(mayHaveGoneOut({ ok: false, status: 400 }), false, "a refusal placed nothing");
+  assert.equal(mayHaveGoneOut({ ok: false, status: 401 }), false);
+  assert.equal(mayHaveGoneOut({ ok: true, status: 200 }), false);
+  assert.match(CALL_UNKNOWN, /don't know whether the call went out/);
+  assert.doesNotMatch(CALL_UNKNOWN, /try again\.|did not work/i, "never the old 'offer to try again'");
 });

@@ -11,17 +11,33 @@ import { instructsPako } from "./brief-support.ts";
 /** The most of one email's words an extraction reads. */
 export const MAIL_BODY_MAX = 4000;
 
-/** "On Mon, 16 Nov 2026 at 09:30, Ana <ana@x.com> wrote:" and its translations: where the quoted history starts. */
+/**
+ * "On Mon, 16 Nov 2026 at 09:30, Ana <ana@x.com> wrote:" and its translations: where the quoted history starts. It ends with the colon, and
+ * it names when or who: a date (a digit, or a day or month name) or an address (an @). "On Monday I read what the lawyer wrote" is a sentence,
+ * not a header.
+ */
 const ATTRIBUTION = new RegExp(
   "^(on\\b.{0,200}\\bwrote|el\\b.{0,200}\\bescribi[oó]|le\\b.{0,200}\\ba [ée]crit|am\\b.{0,200}\\bschrieb|il\\b.{0,200}\\bha scritto"
-    + "|em\\b.{0,200}\\bescreveu|op\\b.{0,200}\\bschreef)\\s*:?\\s*$",
+    + "|em\\b.{0,200}\\bescreveu|op\\b.{0,200}\\bschreef)\\s*:\\s*$",
   "i",
 );
+const WHEN_OR_WHO = /[\d@]|\b(?:mon|tue|wed|thu|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/i;
+const attribution = (line: string): boolean => ATTRIBUTION.test(line) && WHEN_OR_WHO.test(line);
 /** Outlook's and others' separators above a copied message, which they do not mark with ">". */
 const SEPARATOR = /^(-{2,}\s*(original message|mensaje original|message d'origine|urspr[üu]ngliche nachricht|messaggio originale)\s*-{2,}|_{10,})\s*$/i;
-/** An Outlook header block: "From: …" then, within the next lines, "Sent:"/"Date:" and "To:"/"Subject:". */
+/**
+ * An Outlook header block: "From: …" then, within the next lines, "Sent:" or "Date:", and "To:", and "Subject:" (all three: a trip's own
+ * "From: Madrid / To: Lisbon / Date: 12 December" is the mail's words).
+ */
 const HEADER_FROM = /^\*?(from|de|von|da|van)\s*:\*?\s+\S/i;
-const HEADER_NEXT = /^\*?(sent|date|enviado|fecha|envoy[ée]|gesendet|datum|inviato|data|to|para|[àa]|an|a|subject|asunto|objet|betreff|oggetto)\s*:\*?/i;
+const HEADER_DATE = /^\*?(sent|date|enviado|fecha|envoy[ée]|gesendet|datum|inviato|data)\s*:\*?/i;
+const HEADER_TO = /^\*?(to|para|[àa]|an|a)\s*:\*?/i;
+const HEADER_SUBJECT = /^\*?(subject|asunto|objet|betreff|oggetto)\s*:\*?/i;
+/** Whether the lines after a "From:" line are the rest of a copied header. */
+const headerBlock = (next: string[]): boolean => {
+  const lines = next.map((x) => x.trim());
+  return [HEADER_DATE, HEADER_TO, HEADER_SUBJECT].every((h) => lines.some((x) => h.test(x)));
+};
 /** Where a signature or a footer starts: the "-- " line, a phone's tag line, a legal notice. */
 const SIGNATURE = new RegExp(
   "^(--\\s*|sent from my \\w+.*|get outlook for .*|enviado desde mi .*|envoy[ée] de mon .*|von meinem .* gesendet"
@@ -49,12 +65,12 @@ export function cleanMailBody(text: string, max: number = MAIL_BODY_MAX): string
     if (/^>/.test(t)) continue;
     // "On Mon … Ana" / "<ana@x.com> wrote:" broken over two lines: the pair read as one.
     const pair = `${t} ${(lines[i + 1] ?? "").trim()}`;
-    if (ATTRIBUTION.test(t)) {
+    if (attribution(t)) {
       // Above quoted lines (Gmail, Apple Mail): only the header goes, a reply below the quote stays. Above an unquoted copy: the rest goes.
       if (quotedNext(lines, i + 1)) continue;
       break;
     }
-    if (t && ATTRIBUTION.test(pair) && i + 1 < lines.length) {
+    if (t && attribution(pair) && i + 1 < lines.length) {
       if (quotedNext(lines, i + 2)) {
         i++;
         continue;
@@ -62,11 +78,12 @@ export function cleanMailBody(text: string, max: number = MAIL_BODY_MAX): string
       break;
     }
     if (SEPARATOR.test(t)) break;
-    if (HEADER_FROM.test(t) && lines.slice(i + 1, i + 5).filter((x) => HEADER_NEXT.test(x.trim())).length >= 2) break;
+    if (HEADER_FROM.test(t) && headerBlock(lines.slice(i + 1, i + 5))) break;
     if (SIGNATURE.test(t)) break;
     out.push(instructsPako(t) ? LEFT_OUT : line);
   }
-  const body = out.join("\n").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  // Each line was trimmed at its end above: a pattern for blanks before a newline would only be quadratic on a long run of them.
+  const body = out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   if (body.length <= max) return body;
   const cut = body.slice(0, max - 1);
   const space = cut.lastIndexOf(" ");

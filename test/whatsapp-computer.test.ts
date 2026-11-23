@@ -84,7 +84,7 @@ const runFake = (bin: string, args: string[]) => spawn(process.execPath, [bin, .
 /** Meta's Graph API, as far as the setup uses it. Its webhook check calls the address it was given, through the tunnel, as Meta does. */
 function fakeMeta(port: () => number) {
   const calls: { method: string; path: string; query: URLSearchParams; body: Body; auth: string }[] = [];
-  const state = { ownerAllowed: true, subscribeOk: true };
+  const state = { ownerAllowed: true, subscribeOk: true, tokenExpired: false, waId: "" };
   const json = (status: number, doc: unknown) => new Response(JSON.stringify(doc), { status, headers: { "content-type": "application/json" } });
   const f = (async (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
@@ -118,9 +118,10 @@ function fakeMeta(port: () => number) {
     if (method === "POST" && path === `/${WABA}/subscribed_apps`) return json(200, { success: true });
     if (method === "GET" && path === `/${WABA}/message_templates`) return json(200, { data: [{ name: "pako_notice", status: "PENDING" }] });
     if (method === "POST" && path === `/${NUMBER_ID}/messages`) {
-      if (!bearerOk) return json(401, { error: { code: 190 } });
+      if (!bearerOk || state.tokenExpired) return json(401, { error: { code: 190 } });
       if (!state.ownerAllowed) return json(400, { error: { code: 131030 } });
-      return json(200, { messages: [{ id: `wamid.out${calls.length}` }] });
+      // Meta says how it writes the number the message went to (wa_id), which is not always the digits it was given.
+      return json(200, { ...(state.waId ? { contacts: [{ input: body.to, wa_id: state.waId }] } : {}), messages: [{ id: `wamid.out${calls.length}` }] });
     }
     return json(404, { error: { code: 0 } });
   }) as typeof fetch;
@@ -428,6 +429,72 @@ test("Send me a hi: a test message to the owner, their reply puts the ✓, and f
     assert.equal(await s.c.line.deliver({ type: "text", text: { body: "Tienes dentista a las 5." } }), true);
     assert.deepEqual(s.meta.sent().at(-1), { messaging_product: "whatsapp", recipient_type: "individual", to: OWNER, type: "text", text: { body: "Tienes dentista a las 5." } });
     assert.ok(s.logged.some((l) => /connected/.test(l)));
+  } finally {
+    s.close();
+  }
+});
+
+test("Meta refusing the token on a send (the temporary one lasts 24 hours) is said on the setup card and to the watchdog, until a send is taken again", async () => {
+  const s = await setupServer();
+  try {
+    await s.post("saveMeta", VALUES);
+    await s.post("tunnelOn");
+    assert.ok(await until(async () => (await s.get()).meta.webhook === "verified"));
+    const host = new URL((await s.get()).tunnel.url).host;
+    await s.post("sendTest");
+    await s.deliver(host, [{ from: OWNER, id: "wamid.hi", type: "text", text: { body: "hi" } }]);
+    assert.equal((await s.get()).step, "done");
+    assert.deepEqual((await s.get()).problems, []);
+
+    s.meta.state.tokenExpired = true;
+    assert.equal(await s.c.line.deliver({ type: "text", text: { body: "your reminder" } }), false);
+    const card = await s.get();
+    assert.equal(card.step, "done", "the card still shows the setup as done, with the problem beside it");
+    assert.match(card.problems.join("\n"), /Meta doesn't accept that token/);
+    assert.deepEqual(s.health.at(-1), [false, "Meta refused the access token"]);
+
+    // A line the owner is answered with (a voice note is not taken here) fails the same way, and does not add the problem twice.
+    await s.deliver(host, [{ from: OWNER, id: "wamid.v2", type: "audio", audio: { id: "123456" } }]);
+    assert.equal((await s.get()).problems.length, 1);
+
+    s.meta.state.tokenExpired = false;
+    assert.equal(await s.c.line.deliver({ type: "text", text: { body: "your reminder" } }), true);
+    assert.deepEqual((await s.get()).problems, [], "taken again: the problem is gone");
+    assert.deepEqual(s.health.at(-1), [true]);
+  } finally {
+    s.close();
+  }
+});
+
+test("the owner's number as Meta writes it (wa_id) is kept when the test is sent: the reply from it finishes the setup, and a number that changes forgets it", async () => {
+  const s = await setupServer();
+  try {
+    // Brazil's mobile numbers: typed with the ninth digit, written by WhatsApp without it.
+    const typed = "5531988887777";
+    const waId = "553188887777";
+    s.meta.state.waId = waId;
+    await s.post("saveMeta", { ...VALUES, ownerNumber: "+55 31 98888 7777" });
+    await s.post("tunnelOn");
+    assert.ok(await until(async () => (await s.get()).meta.webhook === "verified"));
+    const host = new URL((await s.get()).tunnel.url).host;
+    assert.equal((await s.post("sendTest")).body.ok, true);
+    assert.equal(s.stored()?.waId, waId);
+    assert.equal(s.stored()?.ownerNumber, typed, "what was typed is still what Pako writes to");
+
+    await s.deliver(host, [{ from: "553100000000", id: "wamid.s1", type: "text", text: { body: "hi" } }]);
+    assert.equal((await s.get()).step, "test", "someone else's number: nothing");
+    assert.equal((await s.deliver(host, [{ from: waId, id: "wamid.hi", type: "text", text: { body: "hi" } }])).status, 200);
+    assert.equal((await s.get()).step, "done");
+    // Either spelling is the owner from then on.
+    await s.deliver(host, [{ from: waId, id: "wamid.m1", type: "text", text: { body: "one" } }]);
+    await s.deliver(host, [{ from: typed, id: "wamid.m2", type: "text", text: { body: "two" } }]);
+    assert.deepEqual(s.ingested.map((i) => (i.m.text as { body: string }).body), ["one", "two"]);
+
+    // The same details saved again (a new token): the reply and the id stay. Another number: both are forgotten, the test is asked again.
+    await s.post("saveMeta", { accessToken: TOKEN });
+    assert.deepEqual([s.stored()?.waId, !!s.stored()?.repliedAt], [waId, true]);
+    await s.post("saveMeta", { ownerNumber: "+55 31 98888 6666" });
+    assert.deepEqual([s.stored()?.waId, s.stored()?.repliedAt], [undefined, undefined]);
   } finally {
     s.close();
   }

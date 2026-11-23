@@ -4,7 +4,7 @@
 # A test about "this computer's own zone" sets the zone it means (test/helpers/zone.ts withSystemZone). Run from the repository's root.
 set -e
 FILES="autonomy brief-day-shape brief-later-and-overlaps brief-people brief-support brief-us-clock brief-v2 brief calendar-changes calendar-local
-  calendar-sources calendar-writes calendar companion door-late-answers evals followups-close-chat followups-door-proxy followups-draft-send
+  calendar-sources calendar-writes calendar companion door-hunt-fixes door-late-answers evals followups-close-chat followups-door-proxy followups-draft-send
   followups-drafts followups-loop-lifetime followups-loops followups-matching followups-own-promises followups-rehearse-rules followups
   gentle-checkins gentle-robust gentle google-calendar held-action-after-sleep i18n-door i18n-modules i18n ics jobs-claim-atomic jobs lock-start-time-zone-free
   mac-calendar-feed meeting-agreements meeting-prep memory-time-and-people panel-agenda-days panel-i18n personal-caller proactive region

@@ -100,7 +100,6 @@ export const T = texts(
     noTaskFound: "I didn't find any open task with those words.",
     draftWorking: "✍️ Writing a draft for “{title}”. It comes in a moment; nothing is sent.",
     draftFailed: "I couldn't ask for the draft just now. Is the assistant's computer on?",
-    draftNone: "I don't see an open follow-up with “{words}”. OPEN lists them.",
     draftNoneAny: "There's no open follow-up to write a draft for.",
     draftMany: "Which one?\n{list}\nWrite DRAFT and a few words of it.",
     noLoopFound: "I didn't find an open follow-up with “{words}”, so nothing was closed. OPEN lists them.",

@@ -14,6 +14,8 @@ export interface MaitreSetup {
   why: string;
   /** PAKO_BOOKING_CONFIRM=1: a card even for the owner's own order. */
   confirmFirst: boolean;
+  /** The browser as a part of the app's lifecycle (src/app/services.ts): stopping Pako closes it. Null when there is no Maître. */
+  browser: { start(): void; stop(): Promise<void> } | null;
 }
 
 export function loadMaitre(
@@ -21,10 +23,10 @@ export function loadMaitre(
   o: { local: boolean; home: string; kv: Kv | null; recentMail?: () => Promise<MailLine[]>; onHandoffEnd?: (end: HandoffEnd) => void | Promise<void> },
 ): MaitreSetup {
   const confirmFirst = /^(1|on|true|yes)$/i.test((env.PAKO_BOOKING_CONFIRM ?? "").trim());
-  if (/^(0|off|false|no)$/i.test((env.PAKO_MAITRE ?? "").trim())) return { maitre: null, why: "PAKO_MAITRE=off", confirmFirst };
-  if (!o.local) return { maitre: null, why: "not on a computer", confirmFirst };
+  if (/^(0|off|false|no)$/i.test((env.PAKO_MAITRE ?? "").trim())) return { maitre: null, why: "PAKO_MAITRE=off", confirmFirst, browser: null };
+  if (!o.local) return { maitre: null, why: "not on a computer", confirmFirst, browser: null };
   const exe = findBrowser(env);
-  if (!exe) return { maitre: null, why: "no Chrome, Edge, Brave or Chromium found (PAKO_CHROME names one)", confirmFirst };
+  if (!exe) return { maitre: null, why: "no Chrome, Edge, Brave or Chromium found (PAKO_CHROME names one)", confirmFirst, browser: null };
   const idle = Number(env.PAKO_BROWSER_IDLE_MIN ?? "");
   const pool = new BrowserPool({ executable: exe, profileDir: join(o.home, "browser"), idleMs: (Number.isFinite(idle) && idle >= 1 && idle <= 120 ? idle : 10) * 60_000 });
   const maitre = createMaitre({
@@ -34,5 +36,6 @@ export function loadMaitre(
     ...(o.recentMail ? { recentMail: o.recentMail } : {}),
     ...(o.onHandoffEnd ? { onHandoffEnd: o.onHandoffEnd } : {}),
   });
-  return { maitre, why: "", confirmFirst };
+  // Started on first use, so there is nothing to start; stopped with Pako, so the browser (with the owner's sign-ins) is not left running on its profile.
+  return { maitre, why: "", confirmFirst, browser: { start: () => undefined, stop: () => pool.close() } };
 }

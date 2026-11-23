@@ -64,23 +64,80 @@ export function sqlite(): new (path: string, o?: { readOnly?: boolean; timeout?:
   return DatabaseSync;
 }
 
-/** Opens the file and checks it is a sound SQLite database with the store's table; throws when it is not. */
-function open(path: string): Database {
-  // Made empty first with the folder's private mode: SQLite keeps an existing file's mode, and gives its journal the same one.
-  if (!existsSync(path)) writeFileSync(path, "", { mode: 0o600 });
-  const Db = sqlite();
-  const db = new Db(path);
+/** The file itself is bad: SQLite says it is not a database or is malformed, or its own check found a fault. The only thing that moves it aside. */
+class StoreDamaged extends Error {}
+
+/**
+ * The file cannot be opened now, and nothing says it is bad: another process is in the middle of a write, a program holds it, the folder or
+ * the file has no permission for us, the disk gave an error. It stays exactly where it is, with its journal; the message is a sentence for the
+ * owner (src/server.ts prints it).
+ */
+export class StoreUnavailable extends Error {}
+
+/** SQLite's own words for a bad file: SQLITE_CORRUPT (11) and SQLITE_NOTADB (26), whatever the extended code. Anything else is not about the file. */
+const damageOf = (err: unknown): boolean => {
+  const code = (err as { errcode?: unknown } | null)?.errcode;
+  return typeof code === "number" && ((code & 0xff) === 11 || (code & 0xff) === 26);
+};
+
+/** Why a file could not be opened, in plain words (a busy file is the one everybody meets: a second Pako, or a backup program, at that moment). */
+function whyNotOpened(err: unknown): string {
+  const e = err as NodeJS.ErrnoException & { errcode?: number };
+  const base = typeof e.errcode === "number" ? e.errcode & 0xff : -1;
+  if (base === 5 || base === 6 || e.code === "EBUSY") return "another program is using it";
+  if (e.code === "ENOSPC" || base === 13) return "the disk is full";
+  if (base === 3 || base === 8 || base === 14 || base === 23 || e.code === "EACCES" || e.code === "EPERM" || e.code === "EROFS") return "Pako has no permission to open it";
+  return `a disk error (${e.code ?? e.message})`.slice(0, 120);
+}
+
+/**
+ * Opens the file and checks it is a sound SQLite database with the store's table. Throws StoreDamaged when it is not one, StoreUnavailable when
+ * it cannot be opened for any other reason (waited for `busyMs` first when another process holds it: its write takes a few milliseconds).
+ */
+function open(path: string, busyMs: number): Database {
   try {
-    db.exec("PRAGMA synchronous = FULL");
-    // What is deleted (an expired transcript, everything at "delete everything") is overwritten in the file, not left in free pages.
-    db.exec("PRAGMA secure_delete = ON");
-    const check = db.prepare("PRAGMA quick_check").get();
-    if (!check || Object.values(check)[0] !== "ok") throw new Error("quick_check failed");
-    db.exec("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL, exp INTEGER NOT NULL) WITHOUT ROWID");
-    return db;
+    // Made empty first with the folder's private mode: SQLite keeps an existing file's mode, and gives its journal the same one.
+    if (!existsSync(path)) writeFileSync(path, "", { mode: 0o600 });
+    const Db = sqlite();
+    const db = new Db(path, { timeout: busyMs });
+    try {
+      db.exec("PRAGMA synchronous = FULL");
+      // What is deleted (an expired transcript, everything at "delete everything") is overwritten in the file, not left in free pages.
+      db.exec("PRAGMA secure_delete = ON");
+      const check = db.prepare("PRAGMA quick_check").get();
+      if (!check || Object.values(check)[0] !== "ok") throw new StoreDamaged("quick_check failed");
+      db.exec("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL, exp INTEGER NOT NULL) WITHOUT ROWID");
+      // The wait was for the opening only: a write that finds the file held fails at once, as it always did (and is told, see `failing`).
+      db.exec("PRAGMA busy_timeout = 0");
+      return db;
+    } catch (err) {
+      db.close();
+      throw err;
+    }
   } catch (err) {
-    db.close();
-    throw err;
+    if (err instanceof StoreDamaged) throw err;
+    if (damageOf(err)) throw new StoreDamaged((err as Error).message);
+    throw new StoreUnavailable(`Pako cannot open its store (${path}): ${whyNotOpened(err)}. Nothing was changed. Close whatever is using it, then start Pako again.`);
+  }
+}
+
+/** The names a damaged store's copies go by: kv.db.bad or kv.json.bad, an older one with the time it was displaced (kv.db.bad.2026-…Z), a journal beside its file. */
+export const SET_ASIDE_COPY = /^kv\.(db|json)\.bad(\.\d{4}-\d{2}-\d{2}T[\d-]+Z(-\d+)?)?(-journal)?$/;
+
+/**
+ * Puts a damaged file aside as `to`, with the journal beside it (a journal belongs to its file: left next to a new store, SQLite would roll its
+ * pages into it). A copy already at `to` is never written over: it is renamed with the time first, since it may be all that is left of what the
+ * person kept. A move that fails leaves the files where they are: the next start sees them again.
+ */
+function setAside(from: string, to: string, at: number): void {
+  try {
+    const stamp = new Date(at).toISOString().replace(/[:.]/g, "-");
+    let older = `${to}.${stamp}`;
+    for (let n = 2; existsSync(older) || existsSync(`${older}-journal`); n++) older = `${to}.${stamp}-${n}`;
+    for (const tail of ["-journal", ""]) if (existsSync(`${to}${tail}`)) renameSync(`${to}${tail}`, `${older}${tail}`);
+    for (const tail of ["-journal", ""]) if (existsSync(`${from}${tail}`)) renameSync(`${from}${tail}`, `${to}${tail}`);
+  } catch {
+    /* left where it is: the next start sees it again */
   }
 }
 
@@ -124,7 +181,7 @@ export function openForeignReadOnly(path: string): Database {
   return db;
 }
 
-export function sqliteKv(dir: string, now: () => number = Date.now): FileKv {
+export function sqliteKv(dir: string, now: () => number = Date.now, busyMs = 3000): FileKv {
   const p = (name: keyof typeof STORE_FILES): string => join(dir, STORE_FILES[name]);
   let lost: StoreLost | null = null;
   let legacy: Record<string, { v: string; exp: number }> | null = null;
@@ -142,17 +199,19 @@ export function sqliteKv(dir: string, now: () => number = Date.now): FileKv {
   let unfinished = false;
   if (existsSync(p("db"))) {
     try {
-      const db = open(p("db"));
+      const db = open(p("db"), busyMs);
       try {
         unfinished = existsSync(p("legacy")) && !db.prepare("SELECT 1 FROM kv LIMIT 1").get();
       } finally {
         db.close();
       }
     } catch (err) {
+      // Only a file SQLite calls bad moves. One that is busy, or that this process cannot open, is not damaged: it stays as it is, with its
+      // journal, and Pako does not start on an empty store over it (StoreUnavailable says why).
+      if (!(err instanceof StoreDamaged)) throw err;
       lost = "damaged";
-      log.error(`${p("db")} is damaged (${(err as Error).message}): kept as ${p("bad")}, starting with an empty one`);
-      move(p("db"), p("bad"));
-      rmSync(`${p("db")}-journal`, { force: true });
+      log.error(`${p("db")} is damaged (${err.message}): kept as ${p("bad")}, starting with an empty one`);
+      setAside(p("db"), p("bad"), now());
     }
   }
   if (lost) {
@@ -164,11 +223,11 @@ export function sqliteKv(dir: string, now: () => number = Date.now): FileKv {
       /* not JSON: logged, set aside, and an empty store */
       lost = "damaged";
       log.error(`${p("legacy")} is not valid JSON: kept as ${p("legacyBad")}, starting with an empty store`);
-      move(p("legacy"), p("legacyBad"));
+      setAside(p("legacy"), p("legacyBad"), now());
     }
   } else if (!existsSync(p("db")) && (existsSync(p("made")) || existsSync(p("legacyMade")))) lost = "missing";
 
-  const db = open(p("db"));
+  const db = open(p("db"), busyMs);
   const live = (exp: number): boolean => !(exp > 0 && exp < now());
   const q = {
     get: db.prepare("SELECT v, exp FROM kv WHERE k = ?"),

@@ -46,8 +46,20 @@ case "$FEED" in https://*|file://*) ;; *) die "PAKO_FEED_URL must be an https://
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/pako-install.XXXXXX")
 MNT="$WORK/mnt"
 MOUNTED=0
+TARGET=""
+STAGE=""
+ASIDE=""
+GONE=""
 cleanup() {
   if [ "$MOUNTED" = 1 ]; then hdiutil detach -quiet "$MNT" 2>/dev/null || hdiutil detach -quiet -force "$MNT" 2>/dev/null || true; fi
+  # Stopped half way (Ctrl+C, a failed step): no hidden copy is left in the applications folder, and an old Pako set aside goes back to its
+  # place, or to the Trash when the new one is already there.
+  if [ -n "$STAGE" ]; then rm -rf "$STAGE"; fi
+  if [ -n "$ASIDE" ] && [ -e "$ASIDE" ]; then
+    if [ ! -e "$TARGET" ]; then mv "$ASIDE" "$TARGET" 2>/dev/null || true
+    else mv "$ASIDE" "$GONE" 2>/dev/null || true
+    fi
+  fi
   rm -rf "$WORK"
 }
 trap cleanup EXIT
@@ -146,7 +158,15 @@ NEW="$MNT/Pako.app"
 codesign --verify --deep --strict "$NEW" 2>/dev/null || die "The app's code signature does not verify: nothing installed."
 msg "    Pako $VERSION, code signature intact"
 
-if pgrep -f "$TARGET/Contents/MacOS/Pako" >/dev/null 2>&1; then
+# Is a Pako running from there? Each process called Pako is compared by its program's file (-ef: the same file), not by a pattern on the
+# path: a folder spelled with a trailing slash, brackets or a plus (all special in a pattern) must not hide the running app.
+running() {
+  for p in $(pgrep -x Pako 2>/dev/null); do
+    [ "$(ps -o comm= -p "$p" 2>/dev/null)" -ef "$TARGET/Contents/MacOS/Pako" ] && return 0
+  done
+  return 1
+}
+if running; then
   die "Pako is running. Quit it first (the Pako menu in the menu bar, then Quit Pako), then run this again."
 fi
 
@@ -155,19 +175,28 @@ mkdir -p "$APPS"
 if [ -e "$TARGET" ] && [ "$(plutil -extract CFBundleIdentifier raw -o - "$TARGET/Contents/Info.plist" 2>/dev/null)" != "$BUNDLE_ID" ]; then
   die "$TARGET is there and is not Pako: left as it is, nothing installed. Move it away, or set PAKO_APP_DIR."
 fi
-# Copied next to its place first, then swapped in, so a failed copy never leaves half an app.
+# Copied next to its place first, then swapped in, so a failed copy never leaves half an app. The swap is two renames in the same folder,
+# one right after the other (the old app set aside, the new one in its place): the Trash, perhaps on another disk, comes after.
 STAGE="$APPS/.Pako-installing.app"
 rm -rf "$STAGE"
-ditto "$NEW" "$STAGE" || { rm -rf "$STAGE"; die "Could not copy Pako into $APPS."; }
+ditto "$NEW" "$STAGE" || die "Could not copy Pako into $APPS."
 xattr -dr com.apple.quarantine "$STAGE" 2>/dev/null || true
+OLD=""
 if [ -e "$TARGET" ]; then
   OLD=$(plutil -extract CFBundleShortVersionString raw -o - "$TARGET/Contents/Info.plist" 2>/dev/null || echo old)
   GONE="$HOME/.Trash/Pako $OLD $(date +%Y%m%d-%H%M%S).app"
-  if mv "$TARGET" "$GONE" 2>/dev/null; then msg "    Pako $OLD moved to the Trash"
-  else rm -rf "$TARGET"; msg "    Pako $OLD removed"
-  fi
+  rm -rf "$APPS/.Pako-replaced.app"
+  ASIDE="$APPS/.Pako-replaced.app"
+  mv "$TARGET" "$ASIDE"
 fi
 mv "$STAGE" "$TARGET"
+STAGE=""
+if [ -n "$ASIDE" ]; then
+  if mv "$ASIDE" "$GONE" 2>/dev/null; then msg "    Pako $OLD moved to the Trash"
+  else rm -rf "$ASIDE"; msg "    Pako $OLD removed"
+  fi
+  ASIDE=""
+fi
 msg "    Installed: $TARGET"
 
 if [ "${PAKO_NO_OPEN:-0}" != 1 ]; then

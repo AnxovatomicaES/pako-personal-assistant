@@ -84,7 +84,26 @@ test("a day item is over once its end has passed; one without an end an hour aft
   assert.equal(dayItemOver({ time: "15:00" }, "16:00"), true);
   assert.equal(dayItemOver({ time: "", allDay: true }, "23:59"), false);
   assert.equal(dayItemOver({ time: "", end: "10:00" }, "10:00"), true, "begun yesterday, until 10:00");
-  const g = { facts: [], read: [], unread: [] };
+  const g = { facts: [], read: ["calendar" as const], unread: [] };
   const doc = validateBrief(JSON.stringify({ opening: "x" }), g, { now: EIGHT, timeZone: MADRID, lang: "en", id: "x" })!;
   assert.match(chatText(doc, { name: "", timeZone: MADRID, url: null, now: LATE }), /📅 Nothing on your calendar today\./);
+});
+
+test("the chat never says \"Nothing on your calendar\" of a calendar it could not read: it says so, and says nothing when none is connected", async () => {
+  const raw = JSON.stringify({ opening: "Una mañana tranquila.", todos: [] });
+  const written = async (events: (() => Promise<CalEvent[]>) | undefined) =>
+    validateBrief(raw, await gatherFacts({ timeZone: MADRID, lang: "en", now: EIGHT, ...(events ? { events } : {}) }), { now: EIGHT, timeZone: MADRID, lang: "en", id: "x" })!;
+  const chat = (doc: Awaited<ReturnType<typeof written>>) => chatText(doc, { name: "", timeZone: MADRID, url: null });
+  // Read, and empty: nothing on it.
+  assert.match(chat(await written(async () => [])), /📅 Nothing on your calendar today\./);
+  // The read failed: the doc keeps that, and the chat says it could not look.
+  const failed = await written(async () => { throw new Error("401 from the calendar"); });
+  assert.deepEqual(failed.unread, ["calendar"]);
+  assert.match(chat(failed), /📅 I couldn't read your calendar just now\./);
+  assert.doesNotMatch(chat(failed), /Nothing on your calendar/);
+  // Not connected: no line about a calendar at all.
+  assert.doesNotMatch(chat(await written(undefined)), /calendar/i);
+  // Items from another source with a calendar that failed: shown, with the same note under them.
+  const doc = { ...failed, dayItems: [{ time: "11:00", title: "Call con Samir", confirmed: false, note: "", sources: [] }] };
+  assert.match(chat(doc), /📅 Your day:\n• 11:00 Call con Samir \(time unconfirmed\)\n📅 I couldn't read your calendar just now\./);
 });

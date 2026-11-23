@@ -13,7 +13,7 @@ import { PROACTIVE_BUTTON } from "../proactive.ts";
 import { AFTER_BUTTON } from "../after-meeting.ts";
 import { SHUTDOWN_BUTTON } from "../shutdown.ts";
 import { TIME_BUTTON } from "../time-to-do.ts";
-import { PENDING_CALL_MS } from "./shared.ts";
+import { PENDING_CALL_MS, cut } from "./shared.ts";
 import { CALENDAR_BUTTON } from "./calendar-cards.ts";
 import type { Door } from "./door.ts";
 
@@ -57,7 +57,7 @@ export function mountButtons(door: Door): Pick<Door, "pressed" | "NO" | "SEND_YE
       if (ask) {
         // And a check-in (src/gentle-checkins.ts) as its third: "Check in 30 min", for when the owner is about to start.
         const ck = d.gentle?.checkinButton ? await d.gentle.checkinButton(fu[2]!).catch(() => null) : null;
-        const buttons = [...ask.buttons, ...(ck ? [ck] : [])].map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } }));
+        const buttons = [...ask.buttons, ...(ck ? [ck] : [])].map((b) => ({ type: "reply", reply: { id: b.id, title: cut(b.title, 20) } }));
         if (await door.graph({ type: "interactive", interactive: { type: "button", body: { text: ask.body }, action: { buttons } } })) return;
       }
       await sendText(d.followups ? await d.followups.press(fu[1] as PressButton, fu[2]!) : tx("expired"));
@@ -127,7 +127,7 @@ export function mountButtons(door: Door): Pick<Door, "pressed" | "NO" | "SEND_YE
       if (!r) return void (await sendText(tx("expired")));
       await sendText(r.say);
       if (r.card) {
-        const buttons = r.card.buttons.map((b) => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } }));
+        const buttons = r.card.buttons.map((b) => ({ type: "reply", reply: { id: b.id, title: cut(b.title, 20) } }));
         await door.graph({ type: "interactive", interactive: { type: "button", body: { text: r.card.body }, action: { buttons } } });
       }
       return;

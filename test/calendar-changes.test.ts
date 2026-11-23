@@ -82,6 +82,28 @@ test("follow-ups: a deliverable due at a meeting moves with it; an agreed meetin
   assert.equal(loops.c000000004!.dueAt, T0 + 26 * H, "the same time, but nothing ties it to the review: untouched");
 });
 
+test("follow-ups: a meeting of another name at the same time, sharing only \"with\" or \"call\", neither closes an agreed meeting nor moves a to-do", async () => {
+  const { kv, m } = memKv();
+  m.set(FOLLOWUPS_KEY, JSON.stringify({
+    loops: [
+      loop("c000000006", "agreed_meeting", "Call with Samir about the SOW", "Samir", T0 + 5 * H, { calendarEvent: { around: T0 + 5 * H, hints: ["Samir"] } }),
+      loop("c000000007", "owner_promise", "Send Ana the deck with the Q4 numbers", "Ana", T0 + 5 * H, { none: { reason: "email" } }),
+    ],
+  }));
+  const fu = createFollowups({
+    config: { delayMs: 600_000, maxPerDay: 6, batchMs: 60_000, quiet: null },
+    kv, timeZone: "Europe/London", now: () => T0, enqueue: async () => true, card: async () => true, notify: async () => undefined,
+  });
+  assert.equal(await fu.calendarChanged([{ kind: "cancelled", title: "Lunch with Bob", start: T0 + 5 * H }]), 0, "another meeting cancelled");
+  assert.equal(await fu.calendarChanged([{ kind: "moved", title: "1:1 with Tom", start: T0 + 53 * H, was: T0 + 5 * H }]), 0, "another meeting moved");
+  assert.equal(await fu.calendarChanged([{ kind: "cancelled", title: "Weekly call", start: T0 + 5 * H }]), 0, "only filler in common");
+  const loops = (JSON.parse(m.get(FOLLOWUPS_KEY)!).loops as { id: string; status: string; dueAt: number; lastCheck?: string }[]);
+  assert.deepEqual(loops.map((l) => [l.status, l.dueAt - T0, l.lastCheck]), [["open", 5 * H, undefined], ["open", 5 * H, undefined]]);
+  // What names the meeting still does: the person, or a distinctive word.
+  assert.equal(await fu.calendarChanged([{ kind: "cancelled", title: "SOW review with Samir", start: T0 + 5 * H }]), 1, "the person's name");
+  assert.equal(await fu.calendarChanged([{ kind: "moved", title: "Q4 numbers", start: T0 + 53 * H, was: T0 + 5 * H }]), 1, "a word of the to-do itself");
+});
+
 test("follow-ups: one a server can check, due at a meeting moved earlier, is looked at before its new time (not at the old one)", async () => {
   const { kv, m } = memKv();
   const l = loop("c000000005", "owner_promise", "Answer Ana about the Q4 review agenda", "Ana", T0 + 26 * H, { slackReply: { channel: "D0ANA", afterTs: "1.0" } });
@@ -159,4 +181,45 @@ test("a partial reading (one calendar could not be read) cancels nothing: what i
   assert.deepEqual(await cc.tick(), [], "back again: nothing new either");
   reading = { events: [{ ...both[1]!, start: T0 + 9 * H, end: T0 + 10 * H }, ev("n", "Call with Stan", T0 + 30 * H)], partial: false };
   assert.deepEqual((await cc.tick()).map((c) => [c.kind, c.id]), [["cancelled", "m"]], "a full reading still finds what is gone");
+});
+
+test("the same meeting kept from another source (another id, same time) is no change: a link read fewer days ahead, a source that failed once", async () => {
+  const D = 24 * H;
+  // A daily meeting on this Mac's calendar and in a calendar link (one UID): the reading keeps the link's copy where it has one (nine days).
+  const mac = (s: number) => ({ id: `mac:EK1@${s / 1000}@${s}`, title: "Daily standup", start: s, end: s + H, uid: "standup-1" });
+  const link = (s: number) => ({ id: `standup-1@${s}`, title: "Daily standup", start: s, end: s + H, uid: "standup-1" });
+  const day = (i: number) => T0 + 2 * H + i * D;
+  const before = Array.from({ length: 14 }, (_, i) => (i < 9 ? link(day(i)) : mac(day(i))));
+  const after = Array.from({ length: 14 }, (_, i) => (i < 10 ? link(day(i)) : mac(day(i))));
+  assert.deepEqual(diffEvents(before, after, T0 + 17 * H), [], "at midnight the link's ninth day came into its window: not a cancellation");
+
+  // Zoho (no UID) and a link hold one meeting; Zoho fails for one reading (a partial one), then answers again.
+  const clock = { now: T0 };
+  const zoho = ev("zoho-77@" + (T0 + 30 * H), "Bluefin review", T0 + 30 * H);
+  const ics = ev("review-1@" + (T0 + 30 * H), "Bluefin review", T0 + 30 * H, { uid: "review-1" });
+  let reading: { events: CalEvent[]; partial: boolean } = { events: [zoho], partial: false };
+  const seen: unknown[] = [];
+  const cc = createCalendarChanges({ kv: memKv().kv, now: () => clock.now, read: async () => reading, onChange: async (c) => void seen.push(c) });
+  await cc.tick();
+  clock.now += 600_000;
+  reading = { events: [ics], partial: true };
+  assert.deepEqual(await cc.tick(), [], "not new");
+  clock.now += 600_000;
+  reading = { events: [zoho], partial: false };
+  assert.deepEqual(await cc.tick(), [], "not cancelled");
+  assert.equal(seen.length, 0, "nothing passed on to the owner's alerts");
+});
+
+test("diffEvents: a series' occurrence moved more than a week ahead is a move; two changes in one series are each paired with their own", () => {
+  const D = 24 * H;
+  const occ = (s: number) => ({ id: `mac:EK1@${s}`, title: "Weekly review", start: s, end: s + H });
+  const daily = Array.from({ length: 14 }, (_, i) => occ(T0 + 3 * H + i * D));
+  const moved9 = daily.map((e, i) => (i === 9 ? occ(e.start + 5 * H) : e));
+  assert.deepEqual(diffEvents(daily, moved9, T0).map((c) => [c.kind, c.start - T0, c.was === undefined ? null : c.was - T0]), [["moved", 9 * D + 8 * H, 9 * D + 3 * H]]);
+  // Tuesday's deleted and Thursday's an hour later, seen in one reading.
+  const next = daily.filter((_, i) => i !== 1).map((e, i) => (e === daily[3] ? occ(e.start + H) : e));
+  assert.deepEqual(diffEvents(daily, next, T0).map((c) => [c.kind, c.start - T0]).sort(), [["cancelled", D + 3 * H], ["moved", 3 * D + 4 * H]]);
+  // The next occurrence only coming into the window (after the last one known) is still never taken for a moved one.
+  const rolled = [...daily.slice(1), occ(T0 + 3 * H + 14 * D)].filter((_, i) => i !== 9);
+  assert.deepEqual(diffEvents(daily, rolled, T0 + 4 * H).map((c) => [c.kind, c.start - T0]), [["cancelled", 10 * D + 3 * H]]);
 });

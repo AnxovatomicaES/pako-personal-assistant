@@ -1,6 +1,7 @@
 // The follow-ups' shapes: a loop and where it was said, how it is checked, the stored record, the configuration, what the engine is given
 // (FollowupsDeps), what it reads from Slack, Zoom and the calendar, and what the door and the rehearsal get back.
 
+import type { Take } from "../app/budget.ts";
 import type { Control } from "../control.ts";
 import type { Lang } from "../i18n.ts";
 import type { Kv } from "../kv.ts";
@@ -335,6 +336,8 @@ export interface FollowupsDeps {
   who?: (name: string) => string;
   /** What else Pako said on its own today (src/proactive.ts suggestions): the day's budget is shared. */
   othersToday?: () => Promise<number>;
+  /** The nudges' and the chases' turn at the day's cap (src/app/budget.ts): the check against the others and the count are one turn. Absent: `othersToday`. */
+  take?: Take;
   /** How many STOPs the door has seen (src/door/stop-resume.ts): a chase card shown before a STOP sends or copies nothing after it. */
   stops?: () => number;
   /** What Pako learned from the owner's corrections (src/lessons.ts): "Not mine" kept as a lesson, and the lessons each extraction reads. */
@@ -386,12 +389,20 @@ export interface GentleRound {
 export interface CardFeedback {
   buttons: { id: string; title: string }[];
   line: string;
+  /**
+   * Set by the card's send (src/door/api.ts sendCard) once the card went: true when `line` was under its text (a chat with no room for
+   * the buttons), false when the buttons were there instead. Only a card that showed the line can be answered by a typed yes or no.
+   */
+  lineShown?: boolean;
 }
 
 export interface FollowupsQuality {
   ask(loop: { id: string; title: string }, lg: Lang): CardFeedback;
-  /** `sent`: the card went (a "yes"/"no" typed next can answer it); false: it was kept as a notice for later. */
-  nudged(loop: { id: string; title: string }, sent: boolean): void;
+  /**
+   * `asked`: the card went with its "Useful? Reply yes or no." line (CardFeedback.lineShown), so a "yes"/"no" typed next can answer it; false:
+   * it went with 👍/👎 buttons instead (a typed no is then an ordinary message), or it was kept as a notice for later.
+   */
+  nudged(loop: { id: string; title: string }, asked: boolean): void;
   pressed(button: "1" | "2" | "3", loop: { id: string; title: string }): void;
 }
 

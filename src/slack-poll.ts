@@ -9,7 +9,11 @@
 //   for the quiet ones, and more busy ones than fit are read in turn too). With hundreds of DMs, a quiet one is read every few minutes and a
 //   busy one every minute or two, well inside the limits of an app made by its own workspace (Slack's Tier 3, 50+ a minute). One
 //   conversation Slack will not show is passed by; its rate limit ends the round's DMs, and that one is read first next round.
-// - Mentions of the owner in channels, from search.messages (one call every other round), after the last one seen.
+//   A conversation with more new messages than one call gives (Slack's own page, or the project's app's one call a minute) is read newest
+//   first, and what is left unread is kept as a span (`backlog`: after what, before what) that is read before anything newer next time.
+// - Mentions of the owner in channels, from search.messages (one call every other round), after a mark kept a few minutes behind the
+//   newest one seen: Slack's search shows each channel's messages when it has indexed them, so one can show up after a newer one from
+//   another channel. The ones taken in that stretch are remembered (channel and ts), so none is taken twice.
 //
 // Only what came after Slack was connected is taken: the first round marks where to start and nothing older is looked at, so a new
 // connection never floods the follow-ups with last year's DMs. Where each conversation stands is kept in the store, so a restart picks up
@@ -25,16 +29,31 @@ const log = createLog("slack");
 const STATE_KEY = "slack-poll";
 const HOT_MS = 2 * 24 * 3600_000;
 const KEEP_DAYS = 60;
+/** How far behind the newest mention the mark stays: search shows a channel's message late, and one late behind a newer one is still found. */
+const MENTION_LAG_MS = 10 * 60_000;
+/** The most mentions remembered as taken (those behind the mark are forgotten as it moves, so this is only a bound). */
+const SEEN_MAX = 200;
 
 interface PollState {
   /** Slack ts of the moment this started: no conversation is read from before it. */
   start: string;
   /** The last message ts seen in each DM or group DM. */
   after: Record<string, string>;
-  /** The last mention ts seen. */
+  /** The mark for mentions: those after it are looked at. It stays MENTION_LAG_MS behind the newest one taken, never before `start`. */
   mentions: string;
+  /** The mentions taken since the mark, "channel:ts": the stretch behind the newest one is looked at again, and these are not taken twice. */
+  seen: string[];
   /** When each conversation last had something new (ms): those read every round. */
   active: Record<string, number>;
+  /**
+   * The older messages of a conversation that a look could not reach (a later page Slack, or Pako's own gate, did not give): the span after
+   * `oldest` and before `latest` (Slack ts, both left out), read first next time. One span a conversation: nothing newer is read until it is.
+   */
+  backlog: Record<string, Gap>;
+}
+interface Gap {
+  oldest: string;
+  latest: string;
 }
 
 export interface SlackPollDeps {
@@ -63,6 +82,16 @@ export const threadOf = (permalink: unknown): string | undefined => {
   return m?.[1];
 };
 
+/** The spans kept, read field by field (a value kept by an older version, or damaged, is left out). */
+const gapsOf = (v: Record<string, unknown>): Record<string, Gap> => {
+  const out: Record<string, Gap> = {};
+  for (const [id, g] of Object.entries(v)) {
+    const x = g as Partial<Gap> | null;
+    if (/^[CDG][A-Z0-9]{2,30}$/.test(id) && typeof x?.oldest === "string" && typeof x.latest === "string" && later(x.latest, x.oldest)) out[id] = { oldest: x.oldest, latest: x.latest };
+  }
+  return out;
+};
+
 export function createSlackPoll(d: SlackPollDeps) {
   const now = d.now ?? Date.now;
   const perRound = d.perRound ?? 15;
@@ -85,7 +114,9 @@ export function createSlackPoll(d: SlackPollDeps) {
           start: p.start,
           after: p.after && typeof p.after === "object" ? (p.after as Record<string, string>) : {},
           mentions: typeof p.mentions === "string" ? p.mentions : p.start,
+          seen: Array.isArray(p.seen) ? p.seen.filter((k): k is string => typeof k === "string").slice(-SEEN_MAX) : [],
           active: p.active && typeof p.active === "object" ? (p.active as Record<string, number>) : {},
+          backlog: p.backlog && typeof p.backlog === "object" ? gapsOf(p.backlog as Record<string, unknown>) : {},
         };
       }
     } catch (err) {
@@ -95,7 +126,7 @@ export function createSlackPoll(d: SlackPollDeps) {
       throw err;
     }
     const start = slackTs(now());
-    state = s ?? { start, after: {}, mentions: start, active: {} };
+    state = s ?? { start, after: {}, mentions: start, seen: [], active: {}, backlog: {} };
     return state;
   };
   const save = async (): Promise<void> => {
@@ -103,6 +134,8 @@ export function createSlackPoll(d: SlackPollDeps) {
     // A conversation quiet for two months is forgotten: it is read from the start mark again, which is still before anything new in it.
     const cut = now() - KEEP_DAYS * 24 * 3600_000;
     for (const [id, at] of Object.entries(state.active)) if (at < cut) delete state.active[id];
+    // The same for a span that old: it is not news any more, and one that can never be read must not stay for ever.
+    for (const [id, g] of Object.entries(state.backlog)) if (Number(g.latest) * 1000 < cut) delete state.backlog[id];
     await d.kv.set(STATE_KEY, JSON.stringify(state), KEEP_DAYS * 24 * 3600).catch((err: Error) => log.error(`could not keep the poll's place: ${err.message}`));
   };
 
@@ -159,36 +192,66 @@ export function createSlackPoll(d: SlackPollDeps) {
 
   type Msg = SlackEvent & { bot_id?: string };
   /**
-   * A conversation's messages after `after`. Slack gives the newest first, a page at a time: the pages after the first are followed too, so a
-   * busy conversation (or one not read for a while) loses none of its older new messages. A later page Slack refuses (its rate limit) leaves
-   * what was read: the newest ones are not held back for it.
+   * A conversation's messages after `after` (and before `latest`, when given). Slack gives the newest first, a page at a time: the pages after
+   * the first are followed too. A later page Slack refuses (its rate limit, or Pako's own gate for the project's app), and a conversation of
+   * more pages than are followed, leave what was read, so the newest ones are not held back for it; the span still unread comes back as `gap`
+   * (after `after`, before the oldest message read), for the next look.
    */
-  const historyAfter = async (channel: string, after: string): Promise<Msg[]> => {
+  const historyAfter = async (channel: string, after: string, latest?: string): Promise<{ msgs: Msg[]; gap: Gap | null }> => {
     const out: Msg[] = [];
     let cursor = "";
     for (let page = 0; page < 5; page++) {
       let j: Record<string, unknown>;
       try {
-        j = await d.api("conversations.history", { channel, oldest: after, limit: "200", ...(cursor ? { cursor } : {}) });
+        j = await d.api("conversations.history", { channel, oldest: after, ...(latest ? { latest } : {}), limit: "200", ...(cursor ? { cursor } : {}) });
       } catch (err) {
         if (!page) throw err;
-        log.error(`the older messages of a conversation could not be read: ${(err as Error).message}`);
+        log.error(`the older messages of a conversation could not be read yet: ${(err as Error).message}`);
         break;
       }
       out.push(...((Array.isArray(j.messages) ? j.messages : []) as Msg[]));
       cursor = j.has_more === true ? String((j.response_metadata as { next_cursor?: unknown } | undefined)?.next_cursor ?? "") : "";
-      if (!cursor) break;
+      if (!cursor) return { msgs: out, gap: null };
     }
-    return out;
+    const oldestRead = out.reduce<string | null>((min, m) => (typeof m.ts === "string" && (min === null || later(min, m.ts)) ? m.ts : min), null);
+    return { msgs: out, gap: oldestRead && later(oldestRead, after) ? { oldest: after, latest: oldestRead } : null };
+  };
+  /** Hands the messages on, oldest first as they were written; how many were someone else's. */
+  const handOn = async (c: (typeof convs)[number], msgs: Msg[], self: string): Promise<number> => {
+    msgs.sort((a, b) => Number(a.ts) - Number(b.ts));
+    let found = 0;
+    for (const m of msgs) {
+      // The owner's own messages go too: src/slack.ts never tells them back, but reads them for what the owner promises.
+      await d.deliver({ ...m, type: "message", channel: c.id, channel_type: c.type }).catch((err: Error) => log.error(`a message could not be handled: ${err.message}`));
+      if (m.user !== self) found++;
+    }
+    return found;
   };
   const readDms = async (s: PollState, self: string): Promise<number> => {
     let found = 0;
     const { chosen, back } = pick(s);
     for (const c of chosen) {
-      const after = s.after[c.id] ?? s.start;
-      let read: Msg[];
       try {
-        read = await historyAfter(c.id, after);
+        // What an earlier look could not reach comes first, and nothing newer is read until all of it is: a second span would have to be kept.
+        const gap = s.backlog[c.id];
+        if (gap) {
+          const r = await historyAfter(c.id, gap.oldest, gap.latest);
+          const older = r.msgs.filter((m) => typeof m.ts === "string" && later(m.ts, gap.oldest) && later(gap.latest, m.ts));
+          found += await handOn(c, older, self);
+          if (r.gap) s.backlog[c.id] = r.gap;
+          else delete s.backlog[c.id];
+          if (older.length) s.active[c.id] = now();
+          if (r.gap) continue;
+        }
+        const after = s.after[c.id] ?? s.start;
+        const r = await historyAfter(c.id, after);
+        const msgs = r.msgs.filter((m) => typeof m.ts === "string" && later(m.ts, after));
+        // Only the newest were read: the rest is kept to read next time, and the place moves to the newest as ever.
+        if (r.gap) s.backlog[c.id] = r.gap;
+        if (!msgs.length) continue;
+        s.after[c.id] = msgs.reduce((newest, m) => (later(m.ts!, newest) ? m.ts! : newest), msgs[0]!.ts!);
+        s.active[c.id] = now();
+        found += await handOn(c, msgs, self);
       } catch (err) {
         const why = (err as Error).message;
         // Slack's rate limit: no more DMs this round, and this one first next round; the mentions are still looked at.
@@ -200,21 +263,11 @@ export function createSlackPoll(d: SlackPollDeps) {
         // One conversation this token may not read (closed, gone) is that one's: the others and the mentions go on.
         if (/\b(channel_not_found|not_in_channel|missing_scope|is_archived)\b/.test(why)) {
           log.error(`a conversation could not be read: ${why}`);
+          delete s.backlog[c.id];
           continue;
         }
         throw err;
       }
-      const msgs = read.filter((m) => typeof m.ts === "string" && later(m.ts, after));
-      if (!msgs.length) continue;
-      // Oldest first, as they were written.
-      msgs.sort((a, b) => Number(a.ts) - Number(b.ts));
-      for (const m of msgs) {
-        // The owner's own messages go too: src/slack.ts never tells them back, but reads them for what the owner promises.
-        await d.deliver({ ...m, type: "message", channel: c.id, channel_type: c.type }).catch((err: Error) => log.error(`a message could not be handled: ${err.message}`));
-        if (m.user !== self) found++;
-      }
-      s.after[c.id] = msgs.at(-1)!.ts!;
-      s.active[c.id] = now();
     }
     return found;
   };
@@ -222,8 +275,9 @@ export function createSlackPoll(d: SlackPollDeps) {
   const readMentions = async (s: PollState, self: string): Promise<number> => {
     const j = await d.api("search.messages", { query: `<@${self}>`, count: "20", sort: "timestamp", sort_dir: "desc" });
     type Match = { ts?: string; text?: string; user?: string; permalink?: string; type?: string; channel?: { id?: string; is_im?: boolean; is_mpim?: boolean } };
+    const taken = new Set(s.seen);
     const matches = ((j.messages as { matches?: Match[] } | undefined)?.matches ?? [])
-      .filter((m) => typeof m.ts === "string" && later(m.ts, s.mentions) && typeof m.channel?.id === "string")
+      .filter((m) => typeof m.ts === "string" && later(m.ts, s.mentions) && typeof m.channel?.id === "string" && !taken.has(`${m.channel.id}:${m.ts}`))
       // DMs are read on their own; a search result is only a channel's mention, and only one that really names the owner.
       .filter((m) => m.type !== "im" && !m.channel!.is_im && !m.channel!.is_mpim && (m.text ?? "").includes(`<@${self}>`) && m.user !== self)
       .sort((a, b) => Number(a.ts) - Number(b.ts));
@@ -231,9 +285,15 @@ export function createSlackPoll(d: SlackPollDeps) {
       const thread = threadOf(m.permalink);
       await d.deliver({ type: "message", channel: m.channel!.id!, channel_type: "channel", user: m.user!, text: m.text ?? "", ts: m.ts!, ...(thread ? { thread_ts: thread } : {}) })
         .catch((err: Error) => log.error(`a mention could not be handled: ${err.message}`));
+      s.seen.push(`${m.channel!.id}:${m.ts}`);
     }
     const newest = matches.at(-1)?.ts;
-    if (newest) s.mentions = newest;
+    if (newest) {
+      // Behind the newest, so a mention that search shows later than a newer one is still after the mark; the mark never goes back.
+      const mark = slackTs(Number(newest) * 1000 - MENTION_LAG_MS);
+      if (later(mark, s.mentions)) s.mentions = mark;
+      s.seen = s.seen.filter((k) => later(k.slice(k.lastIndexOf(":") + 1), s.mentions)).slice(-SEEN_MAX);
+    }
     return matches.length;
   };
 

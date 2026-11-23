@@ -16,6 +16,7 @@ import { createMailbox, takeMail, type RecentMail } from "../src/mail.ts";
 import { loadMemory } from "../src/voice-memory.ts";
 import { loadVoiceTools } from "../src/voice-tools.ts";
 import { loadWhatsappConfig, mountWhatsapp, type Inbound } from "../src/whatsapp.ts";
+import { eventually } from "./helpers/wait.ts";
 
 const MIN = 60_000;
 const T0 = Date.parse("2026-11-16T09:00:00Z"); // Mon 09:00 London
@@ -253,7 +254,7 @@ const ENV = {
   ASSISTANT_BRIDGE_TOKEN: "b".repeat(48),
 };
 
-async function doorRig(cfg: Partial<FollowupsConfig> = {}) {
+async function doorRig(cfg: Partial<FollowupsConfig> = {}, o: { notifies?: boolean } = {}) {
   const r = engineRig(cfg);
   const records = new Map<string, RecentMail & { category: MailCategory }>();
   const mf = createMailFollowups({
@@ -270,21 +271,24 @@ async function doorRig(cfg: Partial<FollowupsConfig> = {}) {
     config, tools, memory, kv, control: createControl(kv, () => T0), ownerName: "Alex", timeZone: "Europe/London", contacts: () => [], fetch: fetchStub,
     now: () => r.clock.now, followups: followupsProxy(() => r.engine),
     mail: {
-      address: "alex@acme.example", recent: async () => [], annotate: async () => true, notifies: async () => false,
+      address: "alex@acme.example", recent: async () => [], annotate: async () => true, notifies: async () => o.notifies ?? false,
       get: async (id) => records.get(id) ?? null, followups: (id, o) => mf.inbox(id, o),
     },
   });
   const server: Server = createServer(app);
   await new Promise<void>((ok) => server.listen(0, "127.0.0.1", () => ok()));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  const post = async (body: unknown) => (await fetch(`${base}/assistant/mail-summary`, {
+  const send = (body: unknown) => fetch(`${base}/assistant/mail-summary`, {
     method: "POST", headers: { authorization: `Bearer ${config.bridgeToken}`, "content-type": "application/json" }, body: JSON.stringify(body),
-  })).status;
+  });
+  const post = async (body: unknown) => (await send(body)).status;
+  /** The route's answer: what the bridge reads (ok, and whether the owner is told now). */
+  const answer = async (body: unknown) => (await send(body)).json() as Promise<{ ok: boolean; notify?: boolean }>;
   const close = () => {
     server.close();
     server.closeAllConnections();
   };
-  return { ...r, records, post, close };
+  return { ...r, records, post, answer, close };
 }
 
 const settle = () => new Promise((ok) => setTimeout(ok, 50));
@@ -308,6 +312,43 @@ test("door: a Needs you verdict sends the email's own words to the follow-ups an
     assert.match(r.queued.at(-1)!.followup!.text, /Could you approve the budget by Friday\?/);
   } finally {
     r.close();
+  }
+});
+
+test("door: a mail the owner answered before its summary came is not told, opens no loop, and reaches the follow-ups as answered", async () => {
+  // The owner replies from their phone while the Mac is asleep: the reply marks the record (repliedAt) before there is a summary to read.
+  const r = await doorRig({}, { notifies: true });
+  const state = async () => (await r.engine.read()).mailBatches.flatMap((b) => b.mails);
+  try {
+    r.records.set("m1", { id: "m1", at: T0, from: "Ana Ruiz <ana@client.example>", subject: "Budget", preview: "", category: "needs_you", thread: T1, repliedAt: T0 + MIN });
+    r.records.set("m2", { id: "m2", at: T0, from: "Bo Lin <bo@client.example>", subject: "Deck", preview: "", category: "needs_you", thread: T2 });
+    const replied = await r.answer({ id: "mail:m1", summary: "Ana asks you to approve the budget.", verdict: verdict("needs_you") });
+    const open = await r.answer({ id: "mail:m2", summary: "Bo asks you to send the deck.", verdict: verdict("needs_you") });
+    assert.equal(replied.notify, false, "already answered: nothing to tell the owner");
+    assert.equal(open.notify, true, "an unanswered one is told as before");
+    let mails: { ref: string; closed?: boolean }[] = [];
+    await eventually(() => {
+      void state().then((m) => (mails = m));
+      return mails.length === 2;
+    });
+    assert.equal(mails.find((m) => m.ref === "m1")!.closed, true, "read as answered: known, never a nudge");
+    assert.equal(mails.find((m) => m.ref === "m2")!.closed, undefined);
+  } finally {
+    r.close();
+  }
+  // With no email jobs left the triage's own loop line is kept: for an answered mail it is made closed.
+  const q = await doorRig({ mailPerDay: 0 }, { notifies: true });
+  try {
+    q.records.set("m1", { id: "m1", at: T0, from: "Ana Ruiz <ana@client.example>", subject: "Budget", preview: "", category: "needs_you", thread: T1, repliedAt: T0 + MIN });
+    await q.answer({ id: "mail:m1", summary: "Ana asks you to approve the budget.", verdict: verdict("needs_you") });
+    let loops: { title: string; status: string }[] = [];
+    await eventually(() => {
+      void q.engine.read().then((s) => (loops = s.loops));
+      return loops.length === 1;
+    });
+    assert.deepEqual(loops.map((l) => [l.title, l.status]), [["Approve the budget", "done"]], "no open loop for a mail the owner already answered");
+  } finally {
+    q.close();
   }
 });
 
@@ -378,6 +419,38 @@ test("restart mid-flush: an email thread's due batch stays in the store until it
   const st = await a.read();
   assert.equal(st.mailBatches.length, 0);
   assert.equal(st.mailBudget.n, 2, "each counted once");
+});
+
+test("body: a sentence or a block of the mail's own words is not taken for a reply header; real headers still cut", () => {
+  // "El … escribió" and "On … wrote" with no colon and no date or address: a sentence, and the words after it are the mail's.
+  const es = "Hola Ana,\n\nEl viernes te mando el contrato firmado.\nMarta ya me escribió\ny dice que el precio final es 4.500 €.\n¿Puedes confirmarme la fecha antes del martes?\n\nGracias,\nLuis";
+  assert.equal(cleanMailBody(es), es);
+  const en = "Hi,\n\nOn Monday I read what the lawyer wrote\nand I agree. Please send me the signed copy by Thursday.\n\nThanks";
+  assert.equal(cleanMailBody(en), en);
+  const colon = "Hi,\n\nOn the contract the lawyer wrote:\nsend the signed copy by Thursday.";
+  assert.equal(cleanMailBody(colon), colon, "a colon alone, with no date and no address, is not a header");
+  // A From/To/Date block that is the mail's own content (a trip, a shift, a transfer) has no Subject: it stays.
+  const trip = "Hi Alex, here are the details you asked for:\n\nFrom: Madrid\nTo: Lisbon\nDate: 12 December\n\nPlease confirm by Wednesday so I can book it.";
+  assert.equal(cleanMailBody(trip), trip);
+  // The real ones, in several languages: the colon, and a date or an address.
+  assert.equal(cleanMailBody("Yes.\n\nOn Mon, 16 Nov 2026 at 09:00, Ana <ana@x.com> wrote:\nthe quote, not marked with >"), "Yes.");
+  assert.equal(cleanMailBody("Sí.\n\nEl lun, 16 nov 2026 a las 9:00, Ana Ruiz <ana@x.com> escribió:\nel texto citado"), "Sí.");
+  assert.equal(cleanMailBody("Oui.\n\nLe 16 nov. 2026 à 09:00, Ana <ana@x.com> a écrit :\nle texte cité"), "Oui.");
+  assert.equal(cleanMailBody("Ok.\n\nOn Mon, Ana <ana@x.com> wrote:\n> quoted\n\nMy reply below."), "Ok.\n\nMy reply below.", "a quote under its header: only the header goes");
+  assert.equal(cleanMailBody("Ok.\n\nOn Mon, Dana wrote:\n> quoted"), "Ok.", "a short header with its day");
+  assert.equal(cleanMailBody("Hecho.\n\nDe: Ana Ruiz <ana@x.com>\nEnviado: lunes, 16 de noviembre de 2026 9:00\nPara: Alex\nAsunto: Presupuesto\n\nAprueba el presupuesto."), "Hecho.");
+});
+
+test("mail body: a long run of blanks inside a line costs linear time, wherever the line is", () => {
+  // `/[ \t]+\n/` on a run of blanks that no newline follows tried every start: 199,000 of them took 18 seconds of CPU. CPU time, not the wall clock.
+  const t0 = process.cpuUsage();
+  const inside = cleanMailBody(`Thanks.\n\na${" ".repeat(100_000)}b\n\n${"\t ".repeat(25_000)}c`);
+  const used = process.cpuUsage(t0);
+  const ms = (used.user + used.system) / 1000;
+  assert.ok(ms < 1000, `took ${ms} ms of CPU`);
+  assert.ok(inside.startsWith("Thanks."));
+  assert.ok(inside.length <= MAIL_BODY_MAX);
+  assert.equal(cleanMailBody("a\n \n\t\n\n\n\nb"), "a\n\nb", "blank lines still fold to one");
 });
 
 test("mail body: a line of blanks cannot freeze the server (trailing space is cut in linear time)", () => {

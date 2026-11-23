@@ -11,7 +11,7 @@
 
 import { randomBytes } from "node:crypto";
 import type { Kv } from "../kv.ts";
-import type { Evidence } from "./cartridge.ts";
+import { timesIn, type Evidence } from "./cartridge.ts";
 import { readJsonRecord } from "../json-record.ts";
 
 export type LedgerState = "planned" | "submitted" | "confirmed" | "failed" | "cancelled";
@@ -65,11 +65,18 @@ export interface MailLine {
 
 const fold = (s: string): string => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
 
-/** Whether an email reads like the engine's confirmation of this booking: the restaurant named, a confirmation word, and the day. */
-export function confirmsBooking(m: MailLine, e: Pick<LedgerEntry, "name" | "date" | "engine">): boolean {
+/** An email that says a booking was cancelled ("has been cancelled", "reserva cancelada", "anulada"): the engine's word that it is NOT booked any more. */
+const CANCELLED = /\b(?:cancell?ed|cancelad[oa]s?|anulad[oa]s?|annulee?s?)\b/;
+
+/**
+ * Whether an email reads like the engine's confirmation of this booking: the restaurant named, a confirmation word, the day, and the time when
+ * the mail shows one (lunch and dinner the same day are two bookings). A mail that says "cancelled" is the opposite of a confirmation.
+ */
+export function confirmsBooking(m: MailLine, e: Pick<LedgerEntry, "name" | "date" | "engine"> & { time?: string }): boolean {
   const text = fold(`${m.from} ${m.subject} ${m.preview}`);
   const name = fold(e.name).replace(/^(restaurante?|bar)\s+/, "");
   if (name.length < 3 || !text.includes(name)) return false;
+  if (CANCELLED.test(text)) return false;
   if (!/confirm|reserva|booking|reservation|r[eé]servation/.test(text)) return false;
   const [y, mo, d] = e.date.split("-");
   const day = String(Number(d));
@@ -79,8 +86,10 @@ export function confirmsBooking(m: MailLine, e: Pick<LedgerEntry, "name" | "date
     ["may", "mayo", "maig", "mai"], ["june", "junio", "juny", "juin"], ["july", "julio", "juliol", "juillet"], ["august", "agosto", "agost", "aout"],
     ["september", "septiembre", "setembre", "septembre"], ["october", "octubre", "octobre"], ["november", "noviembre", "novembre"], ["december", "diciembre", "desembre", "decembre"],
   ][Number(mo) - 1] ?? [];
-  if (forms.some((f) => text.includes(f))) return true;
-  return months.some((mn) => new RegExp(`\\b${day}\\b[^\\d]{0,6}(de )?${mn.slice(0, 3)}|${mn.slice(0, 3)}[a-z]*\\.? ${day}\\b`).test(text));
+  const sameDay = forms.some((f) => text.includes(f)) || months.some((mn) => new RegExp(`\\b${day}\\b[^\\d]{0,6}(de )?${mn.slice(0, 3)}|${mn.slice(0, 3)}[a-z]*\\.? ${day}\\b`).test(text));
+  if (!sameDay) return false;
+  const shown = timesIn(text);
+  return !e.time || !shown.length || shown.includes(e.time);
 }
 
 export interface LedgerDeps {
@@ -142,11 +151,17 @@ export function createLedger(d: LedgerDeps) {
     list: async (): Promise<LedgerEntry[]> => [...(await load())],
     get: async (id: string): Promise<LedgerEntry | undefined> => (await load()).find((e) => e.id === id),
 
-    /** The engine's confirmation already in the inbox for this booking, if the mail shows one. */
-    inboxConfirmation: async (e: Pick<LedgerEntry, "name" | "date" | "engine">): Promise<MailLine | null> => {
+    /**
+     * The engine's confirmation already in the inbox for this booking, if the mail shows one. A mail from before the Undo of an earlier booking
+     * of this restaurant on this day is that booking's own confirmation, not this one's (`placeId` names the restaurant).
+     */
+    inboxConfirmation: async (e: Pick<LedgerEntry, "name" | "date" | "engine"> & { placeId?: string; time?: string }): Promise<MailLine | null> => {
       if (!d.recentMail) return null;
       try {
-        return (await d.recentMail()).find((m) => confirmsBooking(m, e)) ?? null;
+        const undone = e.placeId
+          ? Math.max(-1, ...(await load()).filter((x) => x.state === "cancelled" && x.placeId === e.placeId && x.date === e.date).map((x) => x.updated))
+          : -1;
+        return (await d.recentMail()).find((m) => m.at > undone && confirmsBooking(m, e)) ?? null;
       } catch {
         /* the mail could not be read: no confirmation */
         return null;

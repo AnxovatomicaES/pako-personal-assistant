@@ -68,10 +68,22 @@ const otSlots = (covers: string, dateTime: string): string =>
       ["8:30 PM", "9:00 PM", "9:30 PM"].map((t) => `<a data-test="time-slot" href="/booking/details?covers=${covers}&dateTime=${encodeURIComponent(dateTime.slice(0, 11))}${encodeURIComponent(t)}">${t}</a> `).join(""),
   );
 
+/** "Friday, December 5": a day as OpenTable's English pages write it. */
+const longDay = (iso: string): string => new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" });
+/** The day after a YYYY-MM-DD (what a page offers when the asked day is full). */
+const nextDay = (iso: string): string => new Date(Date.parse(`${iso}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+
+/** A restaurant page whose asked day has no table: it offers the NEXT day's 9:00 PM instead, as a link to the booking details (`withDateTime`: its address says that day too). */
+const otNextDay = (covers: string, dateTime: string, withDateTime: boolean): string => {
+  const day = nextDay(dateTime.slice(0, 10));
+  const link = withDateTime ? `/booking/details?covers=${covers}&dateTime=${encodeURIComponent(`${day}T9:00 PM`)}` : `/booking/details?covers=${covers}&shown=${day}`;
+  return page("Fixture Grill | OpenTable", `<h1>Fixture Grill</h1><p>Nothing free on ${longDay(dateTime.slice(0, 10))}. Next available:</p><a data-test="time-slot" href="${link}">9:00 PM</a>`);
+};
+
 const otDetails = (q: URLSearchParams, otp: boolean): string =>
   page(
     "Complete your reservation | OpenTable",
-    `<h1>Fixture Grill</h1><p>${q.get("covers")} people · ${(q.get("dateTime") ?? "").slice(11)}</p>` +
+    `<h1>Fixture Grill</h1><p>${longDay(q.get("shown") ?? (q.get("dateTime") ?? "").slice(0, 10))} · ${q.get("covers")} people · ${(q.get("dateTime") ?? "").slice(11) || "9:00 PM"}</p>` +
       (otp
         ? `<p>Enter the verification code we sent to your phone</p><input inputmode="numeric" autocomplete="one-time-code">`
         : `<form id="f"><input id="firstName"><input id="lastName"><input id="phoneNumber"><input id="email"><textarea id="specialRequest"></textarea>
@@ -81,7 +93,7 @@ const otDetails = (q: URLSearchParams, otp: boolean): string =>
       const f = (id) => document.getElementById(id).value;
       const r = await fetch('/ot/submit', { method: 'POST', body: new URLSearchParams({ first: f('firstName'), last: f('lastName'), phone: f('phoneNumber'), email: f('email'), when: ${JSON.stringify(q.get("dateTime") ?? "")}, covers: ${JSON.stringify(q.get("covers") ?? "")} }) });
       const j = await r.json();
-      location.href = '/booking/view?confirmationNumber=' + j.id;
+      location.href = '/booking/view?confirmationNumber=' + j.id + '&day=' + ${JSON.stringify(q.get("shown") ?? (q.get("dateTime") ?? "").slice(0, 10))} + '&covers=' + ${JSON.stringify(q.get("covers") ?? "")} + '&time=' + encodeURIComponent(${JSON.stringify((q.get("dateTime") ?? "").slice(11) || "9:00 PM")});
     });`,
   );
 
@@ -135,6 +147,7 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     if (p.startsWith("/geo.captcha-delivery.com/")) return send(200, page("challenge", "<p>Slide to the right</p>"));
     // ---------- OpenTable ----------
     if (p === "/r/akamai-grill") return send(403, page("Access Denied", `<h1>Access Denied</h1><p>You don't have permission to access this server.</p><p>Reference #18.4f2a1b2c.1700000000.abcdef</p>`));
+    if (p === "/r/nextday-grill" || p === "/r/textonly-grill") return send(200, otNextDay(url.searchParams.get("covers") ?? "2", url.searchParams.get("dateTime") ?? "", p === "/r/nextday-grill"));
     if (p === "/r/fixture-grill" || p === "/r/otp-grill") return send(200, otSlots(url.searchParams.get("covers") ?? "2", url.searchParams.get("dateTime") ?? ""));
     if (p === "/booking/details") {
       const otp = (req.headers.referer ?? "").includes("/r/otp-grill");
@@ -147,7 +160,9 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     }
     if (p === "/booking/view") {
       const id = url.searchParams.get("confirmationNumber") ?? "";
-      return send(200, page("Reservation confirmed", `<h1>You're all set</h1><p>Confirmation #${id}</p><a href="/booking/cancel?id=${id}">Cancel reservation</a>`));
+      const day = url.searchParams.get("day");
+      const facts = day ? `<p>${longDay(day)} · ${url.searchParams.get("time")} · ${url.searchParams.get("covers")} people</p>` : "";
+      return send(200, page("Reservation confirmed", `<h1>You're all set</h1>${facts}<p>Confirmation #${id}</p><a href="/booking/cancel?id=${id}">Cancel reservation</a>`));
     }
     if (p === "/booking/cancel") {
       const id = url.searchParams.get("id") ?? "";

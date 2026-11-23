@@ -62,6 +62,24 @@ test("set up: the watchdog's incident is an error, its failures need a look, a p
   assert.equal(partial.zoom!.state, "needsAction");
 });
 
+test("a switch kept as off is not set, and Zoom needs one of its two sign-ins: a lone Client ID is half done, not connected", () => {
+  const status = (env: Record<string, string>) => by(connectionsStatus({ env, stored: {}, fromStore: new Set(), lang: "en", now: NOW }));
+  const off = status({ IMESSAGE: "off", APPLE_MAIL: "Off" });
+  assert.equal(off.imessage!.state, "notSet");
+  assert.equal(off.applemail!.state, "notSet");
+  const on = status({ IMESSAGE: "on", APPLE_MAIL: "on" });
+  assert.equal(on.imessage!.state, "connected");
+  assert.equal(on.applemail!.state, "connected");
+  assert.equal(status({ ZOOM_CLIENT_ID: "abcdefghij1234" }).zoom!.state, "needsAction");
+  assert.equal(status({ ZOOM_CLIENT_ID: "abcdefghij1234", ZOOM_REFRESH_TOKEN: "r".repeat(40) }).zoom!.state, "connected", "the person's own app");
+  assert.equal(
+    status({ ZOOM_ACCOUNT_ID: "acct12345678", ZOOM_CLIENT_ID: "abcdefghij1234", ZOOM_CLIENT_SECRET: "s".repeat(32), ZOOM_USER: "ana@example.com" }).zoom!.state,
+    "connected", "a Server-to-Server app",
+  );
+  assert.equal(status({ ZOOM_ACCOUNT_ID: "acct12345678", ZOOM_CLIENT_ID: "abcdefghij1234", ZOOM_CLIENT_SECRET: "s".repeat(32) }).zoom!.state, "needsAction", "no email yet");
+  assert.equal(status({}).zoom!.state, "notSet");
+});
+
 test("the status route answers the panel and the Mac app, even when a piece cannot be read; a server answers 404", async () => {
   const dir = mkdtempSync(join(tmpdir(), "pako-st-"));
   const p = await serve((app) => mountConnectionsStatus(app, {

@@ -230,7 +230,7 @@ export function wireDoor(ctx: AfterChat) {
     self: () => [givenName(), mail.config?.inbox, imap.config?.user].filter((x): x is string => !!x),
   });
   if (relayClientCfg.config) {
-    relayRef.c = labCode("relay").createRelayClient({ config: relayClientCfg.config, reminders: () => door.relayReminders() });
+    relayRef.c = labCode("relay").createRelayClient({ config: relayClientCfg.config, reminders: (until) => door.relayReminders(until) });
     relayRef.c.start();
     logRelay.info(`ON: reminders synced to ${new URL(relayClientCfg.config.url).host} every 2 min`);
   }
@@ -258,6 +258,7 @@ export function wireDoor(ctx: AfterChat) {
   };
   if (!local) {
     dogRef.lastPoll = () => door.lastPoll();
+    dogRef.polled = () => door.polled();
     dog.watch("whatsapp");
     // The assistant's computer says how Claude is doing and which version it runs (on a computer the panel's own route takes it).
     mountBridgeHealth(app, { token: wa.config.bridgeToken, watchdog: dog });

@@ -8,7 +8,7 @@ import { test } from "node:test";
 import express from "express";
 import { createControl } from "../src/control.ts";
 import type { Kv } from "../src/kv.ts";
-import { createRelay, loadRelayConfig, mountRelay, remindersOf } from "../src/relay.ts";
+import { createRelay, loadRelayConfig, mountRelay, RELAY_STATE_KEY, remindersOf } from "../src/relay.ts";
 import { createRelayClient, loadRelayClientConfig, occurrence } from "../src/relay-client.ts";
 import { loadMemory } from "../src/voice-memory.ts";
 import { loadVoiceTools } from "../src/voice-tools.ts";
@@ -246,5 +246,136 @@ test("routes: turning the relay off answers ok only once its copy is gone; a sto
     assert.equal(r.status, 503);
   } finally {
     server.close();
+  }
+});
+
+test("relay: a store that cannot be read changes nothing (no reminder or fired mark is lost); it is read again at the next tick", async () => {
+  const { kv: inner, m } = memKv();
+  let failGet = false;
+  const kv: Kv = { get: async (k) => (failGet ? Promise.reject(new Error("ECONNRESET")) : inner.get(k)), set: (k, v, ttl) => inner.set(k, v, ttl) };
+  const clock = { now: T0 };
+  const sent: string[] = [];
+  const relay = createRelay({ kv, now: () => clock.now, send: async (t) => (sent.push(t), true) });
+  await relay.sync([occurrence({ id: "aa", at: T0 + 10 * MIN, text: "Take the pills" }), occurrence({ id: "bb", at: T0 + 20 * MIN, text: "Call Ana" })], 0);
+  clock.now = T0 + 11 * MIN;
+  assert.equal(await relay.tick(), 1);
+  const before = m.get(RELAY_STATE_KEY);
+  failGet = true;
+  clock.now = T0 + 12 * MIN;
+  await assert.rejects(relay.tick(), /ECONNRESET/);
+  await assert.rejects(relay.sync([], 0), /ECONNRESET/, "a sync cannot replace what it could not read either");
+  assert.equal(m.get(RELAY_STATE_KEY), before, "nothing was written over the stored state");
+  failGet = false;
+  clock.now = T0 + 21 * MIN;
+  assert.equal(await relay.tick(), 1, "the second reminder was still there");
+  assert.deepEqual(sent, ["⏰ Take the pills", "⏰ Call Ana"]);
+  assert.deepEqual((await relay.sync([], 0)).fired.map((f) => f.id), [`aa@${T0 + 10 * MIN}`, `bb@${T0 + 20 * MIN}`], "the fired history survived for the laptop's wake");
+});
+
+test("relay: a store that reads but cannot write does not make the same reminder go at every tick", async () => {
+  const { kv: inner, m } = memKv();
+  let failSet = false;
+  const kv: Kv = { get: (k) => inner.get(k), set: async (k, v, ttl) => (failSet ? Promise.reject(new Error("OOM command not allowed")) : inner.set(k, v, ttl)) };
+  const clock = { now: T0 };
+  const sent: string[] = [];
+  const relay = createRelay({ kv, now: () => clock.now, send: async (t) => (sent.push(t), true) });
+  await relay.sync([occurrence({ id: "aa", at: T0 + MIN, text: "Take the pills" }), occurrence({ id: "bb", at: T0 + 10 * MIN, text: "Call Ana" })], 0);
+  failSet = true;
+  for (let i = 1; i <= 4; i++) {
+    clock.now = T0 + MIN + i * 30_000;
+    await relay.tick().catch(() => undefined);
+  }
+  assert.deepEqual(sent, ["⏰ Take the pills"], "sent once, though the store never took the mark");
+  // The store comes back: the mark is written, and the other reminder still goes at its time, once.
+  failSet = false;
+  clock.now = T0 + 10 * MIN;
+  assert.equal(await relay.tick(), 1);
+  assert.equal(await relay.tick(), 0);
+  assert.deepEqual(sent, ["⏰ Take the pills", "⏰ Call Ana"]);
+  assert.deepEqual((JSON.parse(m.get(RELAY_STATE_KEY)!) as { fired: { id: string }[] }).fired.map((f) => f.id), [`aa@${T0 + MIN}`, `bb@${T0 + 10 * MIN}`]);
+  // A restart that forgets memory (a new relay on the same store) sends neither again.
+  const again = createRelay({ kv, now: () => clock.now, send: async (t) => (sent.push(t), true) });
+  assert.equal(await again.tick(), 0);
+});
+
+test("relay: turning it off wipes the copy even when the stored state cannot be read", async () => {
+  const { kv: inner, m } = memKv();
+  const kv: Kv = { get: async () => Promise.reject(new Error("ECONNRESET")), set: (k, v, ttl) => inner.set(k, v, ttl) };
+  m.set(RELAY_STATE_KEY, JSON.stringify({ reminders: [{ id: "a@1", version: "v", at: T0, text: "x" }], fired: [], syncedAt: 1 }));
+  await createRelay({ kv, now: () => T0, send: async () => true }).wipe();
+  assert.deepEqual(JSON.parse(m.get(RELAY_STATE_KEY)!), { reminders: [], fired: [], syncedAt: 0 });
+});
+
+test("the laptop: a repeating reminder is sent to the relay as each of its times in the week, the relay fires every one it sleeps through, and the wake sends none again", async () => {
+  const clock = { now: T0 };
+  const relaySent: string[] = [];
+  const relayKv = memKv();
+  const relay = createRelay({ kv: relayKv.kv, now: () => clock.now, send: async (t) => (relaySent.push(t), true) });
+  const relayApp = express();
+  mountRelay(relayApp, { relay, token: TOKEN });
+  const relayServer: Server = createServer(relayApp);
+  await new Promise<void>((r) => relayServer.listen(0, "127.0.0.1", () => r()));
+  const relayUrl = `http://127.0.0.1:${(relayServer.address() as AddressInfo).port}`;
+  const sent: Body[] = [];
+  const meta = (async (_u: string | URL | Request, init?: RequestInit) => {
+    sent.push(JSON.parse(String(init?.body)) as Body);
+    return new Response(JSON.stringify({ messages: [{ id: `wamid.out${sent.length}` }] }), { status: 200 });
+  }) as typeof fetch;
+  const { kv } = memKv();
+  const memory = loadMemory(kv);
+  const tools = loadVoiceTools({ memory, actions: { contacts: () => [], callContact: async () => ({ ok: true, text: "started" }), lookupCall: async () => "ok" } });
+  const config = loadWhatsappConfig(ENV, "+447700900123").config!;
+  const ref: { c: ReturnType<typeof createRelayClient> | null } = { c: null };
+  const app = express();
+  const door = mountWhatsapp(app, {
+    config, tools, memory, kv, control: createControl(kv, () => clock.now), ownerName: "Alex", timeZone: "Europe/London", contacts: () => [], fetch: meta,
+    now: () => clock.now, callCheckMs: 5, receiptWaitMs: 60_000,
+    relay: { sync: () => (ref.c ? ref.c.sync() : Promise.resolve(false)), firedByRelay: (r) => ref.c?.firedByRelay(r) ?? false },
+  });
+  ref.c = createRelayClient({ config: { url: relayUrl, token: TOKEN }, reminders: (until) => door.relayReminders(until), now: () => clock.now });
+  const server: Server = createServer(app);
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const raw = JSON.stringify({ object: "whatsapp_business_account", entry: [{ id: "1", changes: [{ field: "messages", value: {
+    messaging_product: "whatsapp", metadata: { phone_number_id: config.phoneNumberId },
+    messages: [{ from: "447700900123", id: `wamid.r${T0}`, timestamp: String(T0 / 1000), type: "text", text: { body: "remind me every day at 09:10 to take the pills" } }],
+  } }] }] });
+  const signature = `sha256=${createHmac("sha256", config.appSecret).update(raw).digest("hex")}`;
+  const DAY = 24 * 3600_000;
+  const texts = () => sent.map((b) => (b.type === "text" ? b.text.body : b.interactive?.body?.text ?? "") as string);
+  try {
+    await fetch(`${base}/whatsapp/webhook`, { method: "POST", headers: { "content-type": "application/json", "x-hub-signature-256": signature }, body: raw });
+    await fetch(`${base}/assistant/reply`, {
+      method: "POST", headers: { authorization: `Bearer ${config.bridgeToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ text: "Done.", remind: [{ at: "2026-11-16 09:10", every: "day", text: "Take the pills" }], key: `wamid.r${T0}` }),
+    });
+    // The relay holds a week of it, one occurrence a day (not only the next); another week's worth is not sent.
+    assert.equal(await ref.c.sync(), true);
+    const held = (JSON.parse(relayKv.m.get(RELAY_STATE_KEY)!) as { reminders: { at: number; text: string }[] }).reminders;
+    assert.deepEqual(held.map((x) => x.at), Array.from({ length: 7 }, (_, i) => T0 + 10 * MIN + i * DAY));
+    assert.ok(held.every((x) => x.text === "Take the pills"));
+    // The lid shuts: the relay is ticking, and fires each time as it comes (three days).
+    for (let i = 0; i < 3; i++) {
+      clock.now = T0 + 11 * MIN + i * DAY;
+      await relay.tick();
+    }
+    assert.deepEqual(relaySent, ["⏰ Take the pills", "⏰ Take the pills", "⏰ Take the pills"]);
+    // The laptop wakes on the third evening: it sends none of them again, and the repeat goes on at its next time.
+    clock.now = T0 + 2 * DAY + 8 * 3600_000;
+    const before = texts().length;
+    await door.runReminders();
+    await door.runReminders();
+    assert.ok(!texts().slice(before).some((t) => /Take the pills/.test(t)), `sent again: ${JSON.stringify(texts().slice(before))}`);
+    const next = (await door.relayReminders()).filter((x) => x.text === "Take the pills");
+    assert.deepEqual(next.map((x) => x.at), [T0 + 3 * DAY + 10 * MIN], "the series itself is kept, at its next time");
+    // And the relay does not send tomorrow's again either: that one is the laptop's own sync's.
+    assert.equal(await ref.c.sync(), true);
+    clock.now = T0 + 2 * DAY + 9 * 3600_000;
+    assert.equal(await relay.tick(), 0);
+  } finally {
+    server.close();
+    server.closeAllConnections();
+    relayServer.close();
+    relayServer.closeAllConnections();
   }
 });

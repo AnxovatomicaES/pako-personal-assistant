@@ -35,8 +35,11 @@ export function occurrence(r: { id: string; at: number; text: string }): RelayRe
 
 export function createRelayClient(d: {
   config: RelayClientConfig;
-  /** The reminders as the laptop keeps them now (held ones are the owner's next message's, never the relay's). */
-  reminders: () => Promise<{ id: string; at: number; text: string; held?: boolean }[]>;
+  /**
+   * The reminders as the laptop keeps them now (held ones are the owner's next message's, never the relay's). Asked for the occurrences before
+   * `until`: a repeating reminder is each of its times in that stretch (one id each, its time in it), not only its next.
+   */
+  reminders: (until: number) => Promise<{ id: string; at: number; text: string; held?: boolean }[]>;
   fetch?: typeof fetch;
   now?: () => number;
 }) {
@@ -52,7 +55,7 @@ export function createRelayClient(d: {
     // What is due now is left out: this computer is awake and sends it itself (src/door/reminders-due.ts, right after this sync). Sent
     // to the relay, it would fire there too (its sync runs a tick at once, and another comes within 30 s) before the next sync takes it
     // back: the owner would get it twice. One the relay already fired comes back in this answer, and the laptop marks it sent instead.
-    const list = (await d.reminders()).filter((r) => !r.held && r.at > t && r.at < t + WEEK_MS).map(occurrence);
+    const list = (await d.reminders(t + WEEK_MS)).filter((r) => !r.held && r.at > t && r.at < t + WEEK_MS).map(occurrence);
     try {
       const r = await f(`${d.config.url}/relay/sync`, {
         method: "POST",

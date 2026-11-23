@@ -79,6 +79,7 @@ export function wirePanel(ctx: AfterDoor) {
   const panel = mountDashboard(app, {
     secret: wa.config.bridgeToken,
     kv: ctx.kv,
+    ...(local?.sessionGeneration ? { generation: local.sessionGeneration } : {}),
     publicUrl,
     ...(local ? { demo: { on: !!demo, live: claudeLive } } : {}),
     get ownerName() {

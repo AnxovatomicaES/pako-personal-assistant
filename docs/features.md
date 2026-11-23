@@ -575,8 +575,9 @@ Parked list). The rules:
 - kept in Pako's store and asked as a durable job, so a restart neither loses one nor sends one twice;
 - no catch-up storm after the computer slept: one more than two hours past its time is not sent (the brief mentions it, quietly), and of
   several that came due while it slept only the newest goes;
-- the day's cap is the nudge cap (Gentle mode's, or the standard one), shared with follow-up nudges and Pako's own suggestions; only a
-  check-in's first ask counts.
+- the day's cap is the lower of Gentle mode's nudge cap and the standard one, shared with follow-up nudges and Pako's own suggestions;
+  only a check-in's first ask counts, and one you ask for in the chat at a time goes whatever the cap says;
+- one you never answer goes to the brief after two hours.
 Only your own ask in the chat sets one: a forwarded message, an email or a web page never does.
 
 **Brain dump** (always on): write *"dump: …"*, or send a long message or a voice note with several things at once, and Pako sorts it into

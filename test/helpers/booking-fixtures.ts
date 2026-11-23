@@ -27,6 +27,18 @@ const SITES: Record<string, string> = {
   "https://www.covermanager.com/reservation/module_restaurant/restaurante-barmut/english": `<html><body>${"Reserva tu mesa en Bar Mut. ".repeat(20)}</body></html>`,
 };
 
+/** A homepage with a CoverManager booking module for every place that has a website, and the module's own page (text enough to count as a page). */
+export function coverManagerSites(places: Place[]): Record<string, string> {
+  const sites: Record<string, string> = {};
+  for (const p of places) {
+    if (!p.website) continue;
+    const module = `https://www.covermanager.com/reservation/module_restaurant/${p.id.toLowerCase()}/english`;
+    sites[p.website] = `<html><body><iframe src="${module}"></iframe><p>${`${p.name}, cocina de mercado. `.repeat(12)}</p></body></html>`;
+    sites[module] = `<html><body>${"Reserva tu mesa. ".repeat(30)}</body></html>`;
+  }
+  return sites;
+}
+
 export class FakePlaces implements PlaceDirectory {
   readonly name = "fake";
   queries: string[] = [];
@@ -45,7 +57,7 @@ export class FakePlaces implements PlaceDirectory {
 
 export const fakePages: PageFetcher = { fetchHomepage: async (url) => SITES[url] };
 
-export function fakeEngine(places: Place[] = PLACES): { engine: RestaurantEngine; places: FakePlaces } {
+export function fakeEngine(places: Place[] = PLACES, extraSites: Record<string, string> = {}): { engine: RestaurantEngine; places: FakePlaces } {
   const fake = new FakePlaces(places);
-  return { engine: new RestaurantEngine(fake, fakePages), places: fake };
+  return { engine: new RestaurantEngine(fake, { fetchHomepage: async (url) => extraSites[url] ?? (await fakePages.fetchHomepage(url)) }), places: fake };
 }

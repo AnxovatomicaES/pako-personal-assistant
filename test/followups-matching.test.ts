@@ -184,13 +184,14 @@ test("finding 3: the owner answered in the DM (\"Done, invite sent\", hosted by 
   assert.equal(r.cards.length, 1);
 });
 
-test("finding 4: a re-ping worded differently is the same loop (no twin, no second nudge); so is one the run names with \"same\"", async () => {
+test("finding 4: a re-ping the run names with \"same\" is the same loop, however it is worded (no twin, no second nudge)", async () => {
   const T = Date.parse("2026-11-16T08:00:00Z");
   const r = rig({ at: T });
   await r.say(SETUP());
   await r.at(T + 13 * MIN);
   r.clock.now = T + 30 * MIN;
-  await r.say(SETUP({ title: "Montar la reunión con Samir, Michael y Stan" }), { text: "any news on the setup?" });
+  const first = r.stored().loops[0]!.id;
+  await r.say(SETUP({ title: "Montar la reunión con Samir, Michael y Stan", same: first }), { text: "any news on the setup?" });
   assert.equal((await r.engine.open()).length, 1, "merged");
   assert.equal(r.stored().loops[0]!.sources.length, 2, "with both messages as its sources");
   await r.at(T + 45 * MIN);
@@ -201,6 +202,22 @@ test("finding 4: a re-ping worded differently is the same loop (no twin, no seco
     { text: "ping" },
   );
   assert.equal((await r.engine.open()).length, 1, "the id the run gave");
+});
+
+test("a second, different ask from the same person in the same conversation is kept, whether or not either has a time (only \"same\" merges)", async () => {
+  const T = Date.parse("2026-11-16T08:00:00Z");
+  // No time on either: the same person, kind and check say nothing of the ask itself.
+  const a = rig({ at: T });
+  const deck = (title: string) => JSON.stringify({ loops: [{ kind: "request_to_owner", title, who: "Ana", check: "slackReply" }] });
+  await a.say(deck("Send Ana the Q4 deck"), { who: "Ana", where: "Ana (private)", text: "can you send me the Q4 deck?" });
+  await a.say(deck("Tell Ana whether you approve the Lisbon budget"), { who: "Ana", where: "Ana (private)", text: "also, do you approve the Lisbon budget?" });
+  assert.deepEqual((await a.engine.open()).map((l) => l.title).sort(), ["Send Ana the Q4 deck", "Tell Ana whether you approve the Lisbon budget"]);
+  // The same time on both: still two asks.
+  const b = rig({ at: T });
+  const timed = (title: string) => JSON.stringify({ loops: [{ kind: "request_to_owner", title, who: "Ana", due: "2026-11-17 17:00", check: "slackReply" }] });
+  await b.say(timed("Send Ana the Q4 deck"), { who: "Ana", where: "Ana (private)", text: "send me the Q4 deck by 5 tomorrow" });
+  await b.say(timed("Tell Ana whether you approve the Lisbon budget"), { who: "Ana", where: "Ana (private)", text: "and say if you approve the budget by 5" });
+  assert.equal((await b.engine.open()).length, 2);
 });
 
 test("finding 5: a standing meeting at the time asked, or one set up before the ask, or a weekly with a colleague's name, is not the one", async () => {
@@ -437,12 +454,30 @@ test("the same ask said in two places (Slack, then email) is one loop; another p
   assert.ok(sameAsk(a, { ...a, who: "Dana", title: "Send the signed NDA to Dana Whitlock" }, 15 * MIN));
   assert.ok(sameAsk(a, { ...a, who: "Dana", title: "Send the signed NDA to Dana", dueAt: at + 10 * MIN }, 15 * MIN));
   assert.ok(!sameAsk(a, { ...a, who: "Mira", title: "Send Mira the signed NDA" }, 15 * MIN), "another person");
-  assert.ok(!sameAsk(a, { ...a, kind: "owner_promise" }, 15 * MIN), "another kind");
+  assert.ok(sameAsk(a, { ...a, kind: "owner_promise", title: "Send the signed NDA to Dana" }, 15 * MIN), "asked, then promised: what the owner owes either way");
+  assert.ok(!sameAsk(a, { ...a, kind: "other_promise" }, 15 * MIN), "another kind: what they owe the owner");
+  assert.ok(!sameAsk(a, { ...a, kind: "agreed_meeting" }, 15 * MIN), "another kind: a meeting");
   assert.ok(!sameAsk(a, { ...a, dueAt: at + 2 * HOUR }, 15 * MIN), "another time");
   assert.ok(!sameAsk(a, { ...a, dueAt: undefined }, 15 * MIN), "a time on one only");
   assert.ok(!sameAsk(a, { ...a, title: "Send Dana Whitlock the unsigned NDA" }, 15 * MIN), "another thing");
   assert.ok(!sameAsk({ ...a, title: "Send report 1" }, { ...a, title: "Send report 2" }, 15 * MIN), "a number tells them apart");
   assert.ok(!sameAsk({ ...a, title: "Call Dana" }, { ...a, title: "Call Dana Whitlock" }, 15 * MIN), "one word is too little to go on");
+});
+
+test("a promise made in the chat for what was already asked on Slack is that loop, not a second one", async () => {
+  const T = Date.parse("2026-11-16T08:00:00Z");
+  const r = rig({ at: T });
+  await r.say(JSON.stringify({ loops: [{ kind: "request_to_owner", title: "Send Ana the Q4 deck", who: "Ana", due: "2026-11-18 17:00", check: "slackReply" }] }), {
+    who: "Ana", where: "Ana (private)", text: "can you send me the Q4 deck by Wednesday 5pm?",
+  });
+  assert.equal((await r.engine.open()).length, 1);
+  const again = await r.engine.fromChat({ title: "Send the Q4 deck to Ana", who: "Ana", due: "2026-11-18 17:00" });
+  assert.equal(again, null, "kept already: no second loop to undo");
+  assert.equal((await r.engine.open()).length, 1);
+  assert.equal(r.stored().loops[0]!.sources.length, 2, "the chat is one more place it was said");
+  // Another thing for the same person is its own loop.
+  assert.ok(await r.engine.fromChat({ title: "Call Ana about the budget", who: "Ana", due: "2026-11-18 17:00" }));
+  assert.equal((await r.engine.open()).length, 2);
 });
 
 test("Pako's own focus block (time to do it) at a meeting's time is not taken for the meeting asked for", async () => {

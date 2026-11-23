@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createFollowups } from "../src/followups.ts";
 import { agingAt, owedUndated } from "../src/followups/aging.ts";
+import { afterWorking, chaseAt, nextWorking } from "../src/followups/chase.ts";
+import type { Loop } from "../src/followups/types.ts";
 import type { Kv } from "../src/kv.ts";
 import { loopFromVerdict, readVerdict } from "../src/mail-categories.ts";
 
@@ -127,4 +129,29 @@ test("aging: a first nudge sent by the ordinary path after a cap-full day still 
   await runTo(r, Date.parse("2026-11-27T10:30:00Z"));
   assert.equal(count(/venue/) + count(/menu/), 3, "Fri: Tuesday's second, three working days later");
   assert.equal(Math.max(count(/venue/), count(/menu/)), 2);
+});
+
+test("a short working week still reaches its second aging nudge and a second chase: working time is looked for as many weeks as it takes", () => {
+  const at = (s: string): number => Date.parse(`${s}Z`);
+  const days = (list: number[]) => ({ start: 9 * 60, end: 18 * 60, days: list });
+  const base = {
+    id: "e000000001", kind: "request_to_owner", title: "Reply to Omar about the SOW", detail: "", who: "Omar", where: { type: "mail", label: "email" },
+    whenSaid: at("2026-11-16T10:00"), check: { none: { reason: "mail" } }, status: "open", nextCheckAt: 0, createdAt: at("2026-11-16T10:00"), sources: [],
+  };
+  const aged = (work: ReturnType<typeof days>, o: Record<string, unknown>) => agingAt({ ...base, ...o } as unknown as Loop, "UTC", null, work);
+  // Monday and Tuesday only: five working days are two and a half weeks away.
+  const part = days([1, 2]);
+  const first = aged(part, { nudges: 0 });
+  assert.equal(first, at("2026-11-23T10:00"));
+  assert.equal(aged(part, { nudges: 1, agedAt: first }), at("2026-12-01T10:00"), "the second, not none");
+  // Saturday and Sunday only.
+  const weekend = days([6, 0]);
+  assert.equal(aged(weekend, { nudges: 1, agedAt: at("2026-11-22T18:00") }), at("2026-12-05T18:00"));
+  // A second chase of someone's promise, a week on, for the same short week.
+  const chase = { ...base, kind: "other_promise", dueAt: at("2026-11-17T10:00"), chase: { askedAt: at("2026-11-23T10:00"), chasedAt: at("2026-11-23T10:05") } } as unknown as Loop;
+  assert.equal(chaseAt(chase, "UTC", null, part), at("2026-11-30T10:05"));
+  // A five-day week is looked at two weeks ahead as before: none when none is there; quiet hours over the whole working day give none.
+  assert.equal(afterWorking(at("2026-11-16T10:00"), 60 * 60_000, "UTC", { start: 8 * 60, end: 19 * 60 }, days([1, 2, 3, 4, 5])), null);
+  assert.equal(nextWorking(at("2026-11-16T10:00"), "UTC", { start: 8 * 60, end: 19 * 60 }, part), null, "and for a short week, after its longer look");
+  assert.equal(nextWorking(at("2026-11-16T10:00"), "UTC", null, days([])), null, "no working day at all: none");
 });

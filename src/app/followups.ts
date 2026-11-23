@@ -44,6 +44,7 @@ export function wireFollowups(ctx: AfterMeetings) {
       // And with the check-ins' first asks (src/gentle-checkins.ts).
       // And with the at-risk cards of time to do it (src/time-to-do.ts).
       othersToday: () => budget.others("followups"),
+      take: (limit, fn) => budget.take("followups", limit, fn),
       ...(zoom.config ? { zoom: () => (zoomRef.reader ? zoomRef.reader.scheduled() : Promise.reject(new Error("Zoom is not ready"))) } : {}),
       ...(calOn && !teamsCfg.config ? { calendar: () => (calRef.reader ? calRef.reader.readAll() : Promise.reject(new Error("the calendar is not ready"))) } : {}),
       // With Teams, its calendar's Teams meetings count as "it happened" too (src/teams.ts events).
@@ -76,7 +77,10 @@ export function wireFollowups(ctx: AfterMeetings) {
             chaseDraft: async (o) => {
               if (!smartRef.brief) return false;
               const block = o.loop.who && personRef.c ? await personRef.c.about(o.loop.who, { exclude: [o.loop.id] }).catch(() => null) : null;
-              const about = { ...(o.loop.who ? { who: o.loop.who } : {}), where: o.loop.where.label, ...(o.loop.where.channel ? { channel: o.loop.where.channel } : {}) };
+              const about = {
+                ...(o.loop.who ? { who: o.loop.who } : {}), where: o.loop.where.label, ...(o.loop.where.channel ? { channel: o.loop.where.channel } : {}),
+                ...(o.loop.where.thread ? { thread: o.loop.where.thread } : {}),
+              };
               const task = await smartRef.brief.draftFor({
                 title: o.title, request: o.request, chase: { loop: o.loop.id, tone: o.tone }, about,
                 facts: [...o.facts, ...(block ? [{ label: `People · ${block.name}`, text: block.text }] : [])], ...(block?.own.length ? { allow: block.own } : {}),

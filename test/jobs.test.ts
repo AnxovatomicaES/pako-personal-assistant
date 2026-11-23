@@ -539,7 +539,7 @@ function smartRig() {
   const ref: { brief?: ReturnType<typeof createBrief> } = {};
   const v2 = createBriefV2({
     config: { waitMs: 15 * 60_000 }, kv, timeZone: TZ, now: () => clock.now, sources: { tasks: async () => [] },
-    enqueue: async () => true, plain: () => ref.brief!.plain(), bridgeAlive: () => true, notify: async (t) => out(t),
+    enqueue: async () => true, plain: (o) => ref.brief!.plain(o), bridgeAlive: () => true, notify: async (t) => out(t),
   });
   ref.brief = createBrief({
     at: 8 * 60, kv, timeZone: TZ, now: () => clock.now, notify: async (t) => out(t),
@@ -573,6 +573,17 @@ test("the written brief pending when the lid closes at 08:02 and opens the next 
   const nextDay = r.sent.filter((x) => x.at.startsWith("2026-11-18"));
   assert.equal(nextDay.length, 1, JSON.stringify(nextDay));
   assert.ok(nextDay[0]!.at >= "2026-11-18 08:00", "not before its hour");
+});
+
+test("a computer woken at 10:50 (the late limit is 11:00): the late line, then the old brief when the written one does not come at 11:05, not the line alone", async () => {
+  const r = smartRig();
+  await r.awakeFrom("2026-11-17 07:58", "2026-11-17 07:59");
+  await r.awakeFrom("2026-11-17 10:50", "2026-11-17 11:10");
+  assert.equal(r.sent.length, 2, JSON.stringify(r.sent));
+  assert.match(r.sent[0]!.text, /^⏰ Late: your computer was asleep at 08:00/);
+  assert.match(r.sent[1]!.text, /Today is Tuesday 17 November/);
+  assert.ok(r.sent[1]!.at >= "2026-11-17 11:05" && r.sent[1]!.at <= "2026-11-17 11:07", `at the end of the wait: ${r.sent[1]!.at}`);
+  assert.doesNotMatch(await r.brief.now(), /didn't go out/, "and the day is not said to be skipped");
 });
 
 test("the written brief that does not come in time on an awake morning: the old brief still goes that morning", async () => {

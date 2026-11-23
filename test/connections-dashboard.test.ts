@@ -243,6 +243,33 @@ test("a cancel or a change of an invitation counts only from its organizer, as t
   assert.deepEqual(closed, ["launch-77@acme.example"]);
 });
 
+test("an invitation moved by its organizer out of the next 60 days, or into the past, is replaced: the old time does not stay; an older copy of the mail changes nothing", async () => {
+  const store = createInviteStore({ kv: memoryKv(), timeZone: ZONE, now: () => NOW });
+  const BEA = { address: "bea@acme.example", vouched: true };
+  const invite = (start: string, end: string, sequence: number, uid = "review-7@acme.example") => ["BEGIN:VCALENDAR", "VERSION:2.0", "METHOD:REQUEST",
+    vevent({ uid, title: "Quarterly review", start, end, extra: [`SEQUENCE:${sequence}`, "ORGANIZER;CN=Bea:mailto:bea@acme.example"] }), "END:VCALENDAR"].join("\r\n");
+  const shown = async () => (await store.list()).map((x) => new Date(x.start).toISOString());
+  await store.take(invite("20261120T100000Z", "20261120T110000Z", 0), NOW, BEA);
+  assert.deepEqual(await shown(), ["2026-11-20T10:00:00.000Z"]);
+  // Moved to March (past the 60 days Pako looks ahead): the November time must not stay on the dashboard.
+  assert.deepEqual(await store.take(invite("20270301T100000Z", "20270301T110000Z", 1), NOW, BEA), { method: "request", uids: ["review-7@acme.example"] });
+  assert.deepEqual(await shown(), [], "replaced by a time outside the window, so no longer shown");
+  // Moved into the past: the same.
+  await store.take(invite("20261120T100000Z", "20261120T110000Z", 0, "review-8@acme.example"), NOW, BEA);
+  await store.take(invite("20261101T100000Z", "20261101T110000Z", 1, "review-8@acme.example"), NOW, BEA);
+  assert.deepEqual(await shown(), []);
+  // Anyone else's REQUEST for a kept UID, inside the window or not, still changes nothing.
+  await store.take(invite("20261120T100000Z", "20261120T110000Z", 0, "review-9@acme.example"), NOW, BEA);
+  await store.take(invite("20270301T100000Z", "20270301T110000Z", 5, "review-9@acme.example"), NOW, { address: "mallory@other.example", vouched: true });
+  assert.deepEqual(await shown(), ["2026-11-20T10:00:00.000Z"]);
+  // An older copy (a lower SEQUENCE) read after a newer one, the same mail by two readers or delivered out of order, does not put the old time back.
+  await store.take(invite("20261121T100000Z", "20261121T110000Z", 2, "review-9@acme.example"), NOW, BEA);
+  await store.take(invite("20261120T100000Z", "20261120T110000Z", 0, "review-9@acme.example"), NOW, BEA);
+  assert.deepEqual(await shown(), ["2026-11-21T10:00:00.000Z"], "the newer time stays");
+  await store.take(invite("20261122T100000Z", "20261122T110000Z", 2, "review-9@acme.example"), NOW, BEA);
+  assert.deepEqual(await shown(), ["2026-11-22T10:00:00.000Z"], "the same SEQUENCE again is a change as before");
+});
+
 test("over 100 invitations kept: the soonest stay, the furthest ahead give way", async () => {
   const store = createInviteStore({ kv: memoryKv(), timeZone: ZONE, now: () => NOW });
   const tomorrow = ["BEGIN:VCALENDAR", "METHOD:REQUEST", vevent({ uid: "soon@acme.example", title: "Board meeting", start: "20261119T100000Z", end: "20261119T110000Z" }),
@@ -395,7 +422,7 @@ test("catch-up: 14 days of mail send no notice but two calm lines; the Sent fold
     inbox.push({ uid: i + 1, at: NOW - (i + 1) * 30 * HOUR, source: mail({ id: `in-${i}@x.example`, from: `Person ${i} <p${i}@x.example>`, subject: `Question ${i}`, body: "Can you send me the deck?" }) });
   }
   inbox.push({ uid: 20, at: NOW - 2 * 24 * HOUR, source: mail({ id: "news@shop.example", from: "Shop <no-reply@shop.example>", subject: "Your order has shipped", body: "Tracking",
-    headers: ["Authentication-Results: mx.owner.example; dkim=pass header.d=shop.example"] }) });
+    headers: ["Authentication-Results: mx.example.com; dkim=pass header.d=shop.example"] }) });
   const sent: FakeMsg[] = [{ uid: 1, at: NOW - 24 * HOUR, source: mail({ id: "out-1@example.com", from: "Ana <ana@example.com>", to: "Person 0 <p0@x.example>",
     subject: "Re: Question 0", body: "I'll send it Friday.\n> Can you send me the deck?", headers: ["In-Reply-To: <in-0@x.example>"] }) }];
   const reader = createImapReader({
@@ -484,6 +511,21 @@ test("dashboard: the tiles count what the owner owes (due today, overdue in warn
   assert.deepEqual([calm.owe.n, calm.owe.foot, calm.owe.warn], [0, "all clear", false], "0 still shows: all clear");
   assert.equal(calm.meetings, null, "no calendar: no tile");
   assert.equal(model.kpiTiles!({ loops: null, calendarOn: true, events: [] }, NOW, "UTC").owe, null, "follow-ups off: no tile");
+});
+
+test("dashboard: the \"Things to do\" tile says \"all clear\" only at zero: owed things due later, or with no day, are not clear", () => {
+  const owed = (id: string, dueAt?: number) => ({ id, kind: "owner_promise", title: `Thing ${id}`, who: "Bea", status: "open", ...(dueAt ? { dueAt } : {}) });
+  const tomorrow = model.kpiTiles!({ loops: [1, 2, 3].map((i) => owed(String(i), NOW + 30 * HOUR)), calendarOn: false, events: [] }, NOW, "UTC");
+  assert.equal(tomorrow.owe.n, 3);
+  assert.notEqual(tomorrow.owe.foot, "all clear", "three things owed, none due today");
+  assert.equal(tomorrow.owe.foot, "none due today");
+  const noDay = model.kpiTiles!({ loops: [owed("a"), owed("b", NOW + 30 * HOUR)], calendarOn: false, events: [] }, NOW, "UTC");
+  assert.equal(noDay.owe.foot, "none due today", "a thing with no day either");
+  // Said when something is due, as before; and at zero it is clear.
+  assert.equal(model.kpiTiles!({ loops: [owed("a", NOW + HOUR)], calendarOn: false, events: [] }, NOW, "UTC").owe.foot, "1 due today");
+  assert.equal(model.kpiTiles!({ loops: [], calendarOn: false, events: [] }, NOW, "UTC").owe.foot, "all clear");
+  // Waiting on others: a tile at zero is clear, one with something says who.
+  assert.equal(model.kpiTiles!({ loops: [], calendarOn: false, events: [] }, NOW, "UTC").waiting.foot, "all clear");
 });
 
 test("dashboard: channels only as one line when broken; at most one suggestion; health is one calm line unless something is wrong", () => {

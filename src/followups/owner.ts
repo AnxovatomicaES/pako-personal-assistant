@@ -2,7 +2,7 @@
 
 import { dueAtMeeting } from "./calendar-match.ts";
 import type { Base, Engine, Owner } from "./parts.ts";
-import { LATER_TODAY_MS, NONE_BEFORE_MS, PAST_HIDE_MS, REOPEN_MS, RULES_MAX, SNOOZE_MS } from "./limits.ts";
+import { LAST_LOOK_BEFORE_MS, LATER_TODAY_MS, NONE_BEFORE_MS, PAST_HIDE_MS, REOPEN_MS, RULES_MAX, SNOOZE_MS } from "./limits.ts";
 import { loopsOf } from "./record.ts";
 import { T } from "./texts.ts";
 import { zonedTime } from "./time.ts";
@@ -65,8 +65,13 @@ export function mountOwner(
           return l.variant !== undefined ? GT()("pressedDone", { title: l.title }) : t("pressedDone", { title: l.title });
         }
         if (button === "2") {
-          Object.assign(l, { status: "snoozed", nextCheckAt: now() + SNOOZE_MS, snoozes: (l.snoozes ?? 0) + 1 });
-          return t("pressedSnooze");
+          // An hour on, but never past its time: the reminder an hour before a deadline snoozed for an hour would be looked at after it, where
+          // nothing is said any more (nudges.ts). Looked at again just before it instead (a minute on at the least, when it is that near).
+          const t0 = now();
+          const hour = t0 + SNOOZE_MS;
+          const before = l.dueAt && l.dueAt > t0 + 60_000 && hour > l.dueAt - LAST_LOOK_BEFORE_MS ? Math.max(l.dueAt - LAST_LOOK_BEFORE_MS, t0 + 60_000) : null;
+          Object.assign(l, { status: "snoozed", nextCheckAt: before ?? hour, snoozes: (l.snoozes ?? 0) + 1 });
+          return t(before === null ? "pressedSnooze" : "pressedSnoozeSoon");
         }
         if (button === "4") return GT()("snoozeAsk", { title: l.title });
         if (button === "5" || button === "6") {

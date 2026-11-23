@@ -50,8 +50,11 @@ export function zonedTime(stamp: unknown, tz: string): number | null {
   if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59) return null;
   const guess = Date.UTC(y, mo - 1, d, h, mi);
   if (new Date(guess).getUTCDate() !== d) return null;
-  const first = guess - offsetAt(guess, tz);
-  return guess - offsetAt(first, tz);
+  const offset = offsetAt(guess - offsetAt(guess, tz), tz);
+  if (offsetAt(guess - offset, tz) === offset) return guess - offset;
+  // A time the clocks skip: read with the offset before the jump (the smaller of the two around it), it is the same wall time after the
+  // jump, 02:30 is 03:30, west of UTC as east of it.
+  return guess - Math.min(offsetAt(guess - 24 * 3600_000, tz), offsetAt(guess + 24 * 3600_000, tz));
 }
 
 export const clock12 = (t: number, tz: string): string =>

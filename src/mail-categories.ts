@@ -234,8 +234,76 @@ export interface SenderRule {
 
 export const RULES_MAX = 300;
 
-/** The address of a From header: the LAST <...> pair (the display name may itself look like an address), lowercased. */
-export const senderAddress = (s: string): string => ([...s.matchAll(/<([^<>\s]+@[^<>\s]+)>/g)].at(-1)?.[1] ?? s.trim()).toLowerCase();
+/**
+ * A header's text with its RFC 5322 comments, "(...)", taken out (nested ones too, a backslash escapes, and a "quoted string" keeps its
+ * brackets). Each comment leaves a space. A comment never closed takes the rest of the line: what is inside one is never an address.
+ */
+export function withoutComments(s: string): string {
+  let out = "";
+  let depth = 0;
+  let quoted = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]!;
+    if (depth > 0) {
+      if (c === "\\") i++;
+      else if (c === "(") depth++;
+      else if (c === ")" && --depth === 0) out += " ";
+    } else if (quoted) {
+      out += c;
+      if (c === "\\" && i + 1 < s.length) out += s[++i]!;
+      else if (c === '"') quoted = false;
+    } else if (c === "(") depth = 1;
+    else {
+      if (c === '"') quoted = true;
+      out += c;
+    }
+  }
+  return out;
+}
+
+/**
+ * The address of a From header: the LAST <...> pair outside any comment (the display name may itself look like an address, and so may a
+ * comment: "pay@evil.example (Your boss <boss@vip.example>)" is pay@evil.example's), lowercased.
+ */
+export const senderAddress = (s: string): string => {
+  const plain = withoutComments(s);
+  return ([...plain.matchAll(/<([^<>\s]+@[^<>\s]+)>/g)].at(-1)?.[1] ?? plain.trim()).toLowerCase();
+};
+
+/**
+ * The mailboxes of an address-list header ("Ana Ruiz <ana@x.com>, "Lee, Bo" <bo@x.com>"), each as written: split at the commas outside quotes,
+ * comments and <...>. senderAddress reads one mailbox; given the whole list it would keep only the last.
+ */
+export function mailboxes(list: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let depth = 0;
+  let quoted = false;
+  let angle = false;
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i]!;
+    if (depth > 0 || quoted) {
+      cur += c;
+      if (c === "\\" && i + 1 < list.length) cur += list[++i]!;
+      else if (depth > 0 && c === "(") depth++;
+      else if (depth > 0 && c === ")") depth--;
+      else if (quoted && c === '"') quoted = false;
+      continue;
+    }
+    if (c === "," && !angle) {
+      out.push(cur);
+      cur = "";
+      continue;
+    }
+    if (c === '"') quoted = true;
+    else if (c === "(") depth = 1;
+    else if (c === "<") angle = true;
+    else if (c === ">") angle = false;
+    cur += c;
+  }
+  out.push(cur);
+  return out.map((x) => x.trim()).filter(Boolean);
+}
 
 /** The stored rules, each checked: a bad one is dropped, never a reason to fail. */
 export function rulesOf(v: unknown): SenderRule[] {
@@ -284,14 +352,59 @@ export function orgDomain(domain: string): string {
 const aligned = (a: string, b: string): boolean => !!a && !!b && orgDomain(a) === orgDomain(b);
 
 /**
+ * The server an Authentication-Results value names first (its authserv-id, RFC 8601: "mx.example.com; dkim=pass ..."; a version number may
+ * follow), lower case. "" when the value starts with a result instead, as some servers write it, or with anything that is not a name.
+ */
+export function authservId(value: string): string {
+  const first = (value.split(";")[0] ?? "").replace(/\([^()]*\)/g, " ").trim().split(/\s+/)[0] ?? "";
+  return /^[a-z0-9][a-z0-9.-]*$/i.test(first) ? first.toLowerCase().replace(/\.$/, "") : "";
+}
+
+/** Whether `id` is the mail server `host` itself or a name in its own organisational domain (imap.example.com: mx.example.com). */
+const namesServer = (id: string, host: string): boolean => {
+  const h = host.toLowerCase().replace(/\.$/, "");
+  const org = orgDomain(h);
+  return !!id && (id === h || id === org || id.endsWith(`.${org}`));
+};
+
+/**
+ * The big mail providers' IMAP hosts, by name. They put their own Authentication-Results on top of every message and strip a sender's, so
+ * their topmost header is theirs whatever it calls itself: Gmail writes "mx.google.com" for imap.gmail.com, Microsoft 365 often writes no
+ * server name at all. For these the header is taken as it is. Any other host (a company's or a self-hosted server) may add none, and the
+ * topmost is then the sender's own: there it must name the host (see `authenticated`). Keep this list short and exact: a host here is trusted
+ * to guard its own header.
+ */
+const PROVIDER_HOSTS = new Set([
+  "imap.gmail.com", "imap.googlemail.com",
+  "outlook.office365.com", "imap-mail.outlook.com",
+  "imap.mail.yahoo.com",
+  "imap.mail.me.com", "imap.mail.icloud.com",
+  "imap.zoho.com", "imap.zoho.eu",
+  "imap.aol.com",
+]);
+/** Whole families of a provider's hosts (a name under them, never the bare suffix as part of another name). */
+const PROVIDER_SUFFIXES = [".outlook.com", ".yahoo.com", ".fastmail.com"];
+
+/** Whether `host` is one of the big providers' IMAP hosts. */
+export const providerHost = (host: string): boolean => {
+  const h = host.toLowerCase().replace(/\.$/, "");
+  return PROVIDER_HOSTS.has(h) || PROVIDER_SUFFIXES.some((x) => h.endsWith(x));
+};
+
+/**
  * Whether the owner's own mail server vouched for the From domain: the TOPMOST Authentication-Results (the one the receiving server wrote;
  * any further down may have been written by the sender) says dkim=pass with a signing domain (header.d, or header.i's) aligned with From, or
  * dmarc=pass for that From domain. No header, fail, softfail, none, or another domain: not authenticated.
+ * `server`: the mailbox's own server (its IMAP host). On a host that is not one of the big providers' (PROVIDER_HOSTS) a header counts only
+ * when it names that server (or its domain) first: such a server may write none, and the sender's own is then on top, which says whatever the
+ * sender likes. A big provider's header counts as it is, and so does any header without `server` (a mailbox with no one server to name:
+ * Apple Mail's, AgentMail's).
  */
-export function authenticated(from: string, authResults: string[]): boolean {
+export function authenticated(from: string, authResults: string[], server?: string): boolean {
   const fromDomain = domainOf(senderAddress(from));
   const top = authResults[0];
   if (!fromDomain || typeof top !== "string") return false;
+  if (server !== undefined && !providerHost(server) && !namesServer(authservId(top), server)) return false;
   // "mx.example; dkim=pass header.i=@ups.com header.s=s1; spf=pass ...; dmarc=pass (p=REJECT) header.from=ups.com"
   for (const part of top.replace(/\([^()]*\)/g, " ").split(";").slice(1)) {
     const p = part.trim().toLowerCase();
@@ -341,8 +454,8 @@ export function redFlag(m: { from: string; replyTo: string[]; subject: string; t
 }
 
 /** Whether mail may be filed without Claude: an authenticated sender with no red flag. Otherwise Claude reads it, Suspicious check included. */
-export function trustedSender(m: { from: string; authResults: string[]; replyTo: string[]; subject: string; text: string; html?: string }): boolean {
-  return authenticated(m.from, m.authResults) && !redFlag(m);
+export function trustedSender(m: { from: string; authResults: string[]; server?: string | undefined; replyTo: string[]; subject: string; text: string; html?: string }): boolean {
+  return authenticated(m.from, m.authResults, m.server) && !redFlag(m);
 }
 
 /** Carriers and shops whose mail is a receipt, an order or a delivery: Updates without a run. */

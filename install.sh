@@ -74,10 +74,16 @@ is_pako() {
 # catch_up_git DIR: brings a Pako checkout up to date. A fast-forward when it can be one; failing that, a copy with no changes of its own whose
 # files are exactly one version from origin's history goes to origin's newest (the public history was rewritten once, on 21 November 2026,
 # so every older clone stopped being a fast-forward). Anything else (changed files, commits of its own) is left as it is: it returns 1.
+# A pull that failed because GitHub could not be reached is not a rewrite: origin's history as last fetched holds this copy too, so it would
+# "move" to the version it already has and go on as if updated. Origin is fetched again first, and when that fails too it returns 1.
 # >>> catch_up_git
 catch_up_git() {
   if run git -C "$1" pull --ff-only; then return 0; fi
   [ "$DRY" = 1 ] && return 0
+  if ! run git -C "$1" fetch; then
+    msg "  Couldn't reach Pako on GitHub to update it. Check the connection, then run this again."
+    return 2
+  fi
   [ -z "$(git -C "$1" status --porcelain --untracked-files=no 2>/dev/null)" ] || return 1
   up=$(git -C "$1" rev-parse --verify --quiet '@{upstream}') || return 1
   tree=$(git -C "$1" rev-parse --verify --quiet 'HEAD^{tree}') || return 1
@@ -146,7 +152,11 @@ main() {
       die "$DIR already exists and isn't a copy of Pako: leaving it alone. Pick another folder: PAKO_DIR=/another/folder sh install.sh"
     fi
     msg "  Already there: updating it."
-    if ! catch_up_git "$DIR"; then
+    # 2 = GitHub out of reach (catch_up_git has said so); anything else is a copy it can't move.
+    up_rc=0; catch_up_git "$DIR" || up_rc=$?
+    if [ "$up_rc" = 2 ]; then
+      exit 1
+    elif [ "$up_rc" != 0 ]; then
       die "I couldn't update $DIR (changes of yours in that folder?). Look with: git -C \"$DIR\" status"
     fi
   elif [ -e "$DIR" ] && [ -n "$(ls -A "$DIR" 2>/dev/null)" ]; then

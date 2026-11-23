@@ -184,7 +184,7 @@ export function mountRuns(b: AfterCore) {
    * Claude Code's own default (no --model): each model is tried once, and one refused so is skipped until Claude Code changes version.
    */
   const run = async (kind: RunKind, prompt: string, c: RunConfig, sessionId?: string): Promise<ClaudeResult> => {
-    budget.started(kind);
+    const giveBack = budget.started(kind);
     const once = (rc: RunConfig): Promise<ClaudeResult> =>
       // config.warmMs at 0 (the self-test found this Claude Code's stream-json broken, cli-probe.ts): every message on a run of its own.
       warm && config.warmMs !== 0 && (kind === "message" || kind === "routine") ? warm.run(prompt, rc, sessionId) : runOnce(prompt, rc, sessionId);
@@ -231,6 +231,9 @@ export function mountRuns(b: AfterCore) {
     } catch (err) {
       // A missing command is not reported as the health: the server finds that itself (src/local.ts, BridgeStatus "missing").
       if (err instanceof ClaudeError && (err.kind === "login" || err.kind === "limit")) health = err.kind;
+      // A run that never reached Claude (signed out, the command not there) is not one of the day's: a lost login tried again every few minutes
+      // would spend the whole background cap on nothing, and the mail or meeting that waited would then be kept without Claude for good.
+      if (err instanceof ClaudeError && (err.kind === "login" || err.kind === "missing")) giveBack();
       // Any run that finds the limit (the owner's too) stops the background work until it resets, and the owner hears it once.
       if (err instanceof ClaudeError && err.kind === "limit") {
         budget.limited(err.message, err.resetsAt);
@@ -249,8 +252,9 @@ export function mountRuns(b: AfterCore) {
   };
   /**
    * A background job's run, when the budget lets it: its answer, the same answer as a job with the same material a moment ago, or why there is
-   * none (over the day's cap, or Claude's limit until `until`): the caller then answers without Claude. A rehearsal's or a page's document is
-   * the owner's own (isOwnerRun) and always runs. The short verdicts get the lighter effort when this Claude Code takes one.
+   * none (over the day's cap, or Claude's limit; either ends at `until`): the caller then answers without Claude, or waits for `until`. A
+   * rehearsal's or a page's document is the owner's own (isOwnerRun) and always runs. The short verdicts get the lighter effort when this
+   * Claude Code takes one.
    */
   const background = async (
     kind: RunKind, material: string, prompt: string, c: RunConfig,

@@ -38,6 +38,7 @@ async function server() {
   data.set("assistant-reminders", JSON.stringify([{ id: "r1", at: 1_900_000_000_000, text: "Llamar a Rohan" }]));
   data.set("owner-memory", JSON.stringify({ notes: [{ at: 1, text: `Le gusta el té; la clave es ${SECRETS.slackUser}` }], calls: [] }));
   data.set("owner-language", "es");
+  data.set("assistant-stops", "3"); // how many times STOP was said: a number kept as text, not an object
   data.set("zoho-refresh", SECRETS.zoho);
   data.set("telegram-owner", JSON.stringify({ id: 4242, name: "Theo" }));
   const env = {
@@ -248,4 +249,63 @@ test("move: the dated facts the owner told and the same-person answers come alon
   assert.ok(typeof f === "object" && "entries" in f);
   assert.deepEqual(f.entries.map((e) => e.key).sort(), ["memory-facts", "people-identities"]);
   assert.deepEqual(f.skipped, []);
+});
+
+test("move: what is the person's own comes along (life, health, mail choices, hidden people, autonomy, bookings...), each under the key its module writes", () => {
+  const person = ["life", "life-health", "health", "learning", "friend", "mail-prefs", "people-hidden", "assistant-autonomy-settings", "gentle-settings", "day-helpers",
+    "after-meeting", "assistant-stops", "pako-bookings", "maitre-ledger"];
+  // A key that is not in the code's list of what Pako keeps would be left out as unknown, silently: each name is checked against it.
+  for (const k of Object.keys(MOVE_KEYS)) assert.ok(DATA_KEYS.some((f) => !f.prefix && f.key === k), `${k} is a key Pako keeps`);
+  for (const k of person) assert.ok(Object.hasOwn(MOVE_KEYS, k), `${k} comes along`);
+  const store: Record<string, unknown> = {};
+  for (const k of person) store[k] = { what: "", expires: null, value: k === "assistant-stops" ? 3 : { some: "thing" } };
+  store["life-health"] = { what: "", expires: null, value: [] }; // what the store holds after "forget my health data"
+  const f = readMoveFile({ format: "pako-export", version: 1, store });
+  assert.ok(typeof f === "object" && "entries" in f);
+  assert.deepEqual(f.skipped, []);
+  assert.deepEqual(f.entries.map((e) => e.key).sort(), [...person].sort());
+  assert.equal(f.entries.find((e) => e.key === "assistant-stops")!.raw, "3", "the count goes back as the text it is kept as");
+  assert.equal(f.entries.find((e) => e.key === "life-health")!.raw, "[]");
+});
+
+test("move: those values are checked like the others: a list or object where one goes, a whole number for a count, nothing else", () => {
+  const bad = (key: string, value: unknown): string | undefined => {
+    const f = readMoveFile({ format: "pako-export", version: 1, store: { [key]: { value } } });
+    assert.ok(typeof f === "object" && "skipped" in f);
+    return f.skipped.find((x) => x.key === key)?.why ?? (f.entries.some((e) => e.key === key) ? "taken" : "missing");
+  };
+  for (const key of ["life", "health", "mail-prefs", "assistant-autonomy-settings", "pako-bookings", "maitre-ledger"]) {
+    assert.equal(bad(key, { a: 1 }), "taken", key);
+    assert.equal(bad(key, [1]), "taken", key);
+    assert.equal(bad(key, "a string"), "badValue", key);
+    assert.equal(bad(key, 7), "badValue", key);
+    assert.equal(bad(key, null), "badValue", key);
+    assert.equal(bad(key, { big: "x".repeat(2 * 1024 * 1024 + 1) }), "badValue", `${key} too big`);
+  }
+  assert.equal(bad("assistant-stops", 0), "taken", "none said yet is a count too");
+  for (const v of [-1, 1.5, "3", { n: 3 }, [3], null, Number.MAX_SAFE_INTEGER, Number.NaN]) assert.equal(bad("assistant-stops", v), "badValue", `${JSON.stringify(v)}`);
+});
+
+test("move: what is left out says why in words that are true of it: secrets, a Pako's own state or short-lived notes, a value of the wrong shape", async () => {
+  const s = await server();
+  const c = await computer();
+  try {
+    const file = await (await fetch(`${s.base}/panel/api/move/export`, { headers: { cookie: "ok=1", "x-pako": "1" } })).json();
+    const planned = (await (await c.post({ file })).json()) as { plan: { items: { key: string }[]; skipped: { key: string; why: string }[] } };
+    const skipped = Object.fromEntries(planned.plan.skipped.map((x) => [x.key, x.why]));
+    // Nothing of the person's own that came along is listed as left out.
+    for (const k of ["life", "health", "mail-prefs", "people-hidden", "assistant-autonomy-settings", "pako-bookings", "maitre-ledger", "assistant-stops"]) {
+      assert.equal(skipped[k], undefined, `${k} is not left out`);
+      assert.ok(planned.plan.items.some((i) => i.key === k), `${k} is in the plan`);
+    }
+    // What is left out says what it is: not "it belongs to that Pako" of a meeting preparation or the chat window.
+    for (const k of ["telegram-owner", "assistant-paused", "meeting-prep", "pako-local-chat", "mail-invites", "jobs"]) {
+      assert.match(skipped[k]!, /^Not carried over: .*own state.*short-lived/, k);
+      assert.doesNotMatch(skipped[k]!, /belongs to that Pako/, k);
+    }
+    assert.match(skipped["zoho-refresh"]!, /secret/);
+  } finally {
+    s.close();
+    c.close();
+  }
 });

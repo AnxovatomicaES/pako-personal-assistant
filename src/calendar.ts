@@ -176,7 +176,8 @@ export function joinLink(...texts: unknown[]): string | undefined {
  * For each timed event that overlaps another: the one it overlaps most (its title), by how many minutes, and how many others it overlaps too.
  */
 export function clashes(events: CalEvent[]): Map<string, { other: string; minutes: number; more: number }> {
-  const timed = events.filter((e) => !e.allDay);
+  // A timed event with no length (a marker: "Submit expenses" at 10:30) takes no time: it overlaps nothing, and nothing overlaps it.
+  const timed = events.filter((e) => !e.allDay && e.end > e.start);
   const out = new Map<string, { other: string; minutes: number; more: number }>();
   for (const a of timed) {
     const hits = timed.filter((b) => b !== a && b.id !== a.id && b.start < a.end && a.start < b.end)
@@ -196,7 +197,7 @@ export function clashText(c: { other: string; minutes: number; more: number }, l
 
 /** Events that overlap another timed event, by id. */
 export function overlaps(events: CalEvent[]): Set<string> {
-  const timed = events.filter((e) => !e.allDay).sort((a, b) => a.start - b.start);
+  const timed = events.filter((e) => !e.allDay && e.end > e.start).sort((a, b) => a.start - b.start);
   const out = new Set<string>();
   for (let i = 0; i < timed.length; i++)
     for (let j = i + 1; j < timed.length && timed[j]!.start < timed[i]!.end; j++) {

@@ -4,7 +4,7 @@ import express, { type RequestHandler } from "express";
 import { rateLimit } from "express-rate-limit";
 import { paperText } from "../papers.ts";
 import { type Inbound, MAX_MSGS, isRehearsal } from "./inbox.ts";
-import { same } from "./shared.ts";
+import { cut, same } from "./shared.ts";
 import type { Door } from "./door.ts";
 import { createLog } from "../log.ts";
 
@@ -44,7 +44,7 @@ export function mountBridge(door: Door): Pick<Door, "failed" | "bridge" | "json"
       .filter((x): x is string => typeof x === "string")
       .map((x) => x.replace(/\s+/g, " ").trim())
       .filter((x) => x.length >= min)
-      .map((x) => x.slice(0, max))
+      .map((x) => cut(x, max))
       .slice(0, count);
 
   /**
@@ -54,6 +54,7 @@ export function mountBridge(door: Door): Pick<Door, "failed" | "bridge" | "json"
    */
   app.get("/assistant/inbox", failed, bridge, async (req, res) => {
     door.lastPollAt = now();
+    door.polled = true;
     void runReminders(); // the assistant's computer asks every few seconds: that is also what keeps due reminders on time
     const wait = Math.min(25, Math.max(0, Number(req.query.wait) || 0));
     try {

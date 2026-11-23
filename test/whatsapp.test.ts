@@ -265,6 +265,20 @@ test("webhook: a store that fails gives Meta a 500 so it delivers again, and the
   }
 });
 
+test("bridge: the door's last request starts at the start (a restart is no outage) but only a real poll says the computer has asked (the watchdog's \"works again\")", async () => {
+  const r = await rig();
+  try {
+    assert.ok(r.wa.lastPoll() > 0, "stamped at the start: the first minutes are not an outage");
+    assert.equal(r.wa.polled(), false, "but nothing has asked yet");
+    assert.equal((await r.bridge("/assistant/inbox", { token: "x".repeat(48) })).status, 401);
+    assert.equal(r.wa.polled(), false, "a refused request is not the computer asking");
+    assert.equal((await r.bridge("/assistant/inbox")).status, 200);
+    assert.equal(r.wa.polled(), true);
+  } finally {
+    r.close();
+  }
+});
+
 test("bridge: every route needs the bridge token; messages stay until acknowledged; a poll waits for the next message", async () => {
   const r = await rig();
   try {

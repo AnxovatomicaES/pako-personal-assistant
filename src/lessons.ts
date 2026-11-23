@@ -92,6 +92,8 @@ interface PendingDraft {
   who: string;
   where: string;
   channel?: string;
+  /** The Slack thread it was written for (its parent's ts), when it was for one: only a post in that thread answers it. */
+  thread?: string;
   address?: string;
 }
 
@@ -155,7 +157,8 @@ export function lessonsStateOf(v: unknown): State {
     isObject(x) && typeof x.id === "string" && typeof x.at === "number" && typeof x.text === "string"
       ? [{
           id: x.id, at: x.at, text: x.text.slice(0, DRAFT_MAX), who: str(x.who, FIELD_MAX), where: str(x.where, FIELD_MAX),
-          ...(typeof x.channel === "string" ? { channel: x.channel.slice(0, 40) } : {}), ...(typeof x.address === "string" ? { address: x.address.slice(0, 200) } : {}),
+          ...(typeof x.channel === "string" ? { channel: x.channel.slice(0, 40) } : {}), ...(typeof x.thread === "string" ? { thread: x.thread.slice(0, 40) } : {}),
+          ...(typeof x.address === "string" ? { address: x.address.slice(0, 200) } : {}),
         }]
       : []);
   return { lessons: lessons.slice(-LESSONS_MAX), drafts: drafts.slice(-DRAFTS_MAX) };
@@ -179,13 +182,16 @@ export const draftMessage = (text: string): string => {
   return body.slice(0, DRAFT_MAX);
 };
 
-/** Whether what the owner sent is that draft (as written, or changed): enough of the same words. */
+/**
+ * Whether what the owner sent is that draft (as written, or changed): enough of the same words, at least three of the draft's key words
+ * (fewer only for a draft that has fewer): a short post of theirs ("Will do", "On it") shares one with any draft and is not a changed copy.
+ */
 export const isSameMessage = (draft: string, sent: string): boolean => {
   const a = keyWords(draft);
   const b = keyWords(sent);
   if (!a.size || !b.size) return false;
   const common = [...a].filter((w) => b.has(w)).length;
-  return common >= Math.min(3, a.size, b.size) && common / Math.min(a.size, b.size) >= 0.4;
+  return common >= Math.min(3, a.size) && common / Math.min(a.size, b.size) >= 0.4;
 };
 
 /**
@@ -258,15 +264,22 @@ export function createLessons(d: LessonsDeps) {
     if (!raw) return { lessons: [], drafts: [] };
     return lessonsStateOf(raw);
   };
-  /** One change at a time, never written from a copy that could not be read. Over the cap: the least reinforced, then the oldest, go. */
-  const mutate = <R>(fn: (s: State) => R): Promise<R> => {
+  /**
+   * One change at a time, never written from a copy that could not be read. Over the cap: the least reinforced, then the oldest, go, but
+   * never the lesson this very change added or reinforced (`keep`: its id): it is the least reinforced of all, and would be dropped in the
+   * write that returns it.
+   */
+  const mutate = <R>(fn: (s: State) => R, keep?: (out: R) => string | undefined): Promise<R> => {
     const run = chain.then(async () => {
       const s = await readNow();
       const out = fn(s);
       const t = now();
       s.drafts = s.drafts.filter((x) => t - x.at < DRAFT_KEEP_MS).slice(-DRAFTS_MAX);
       if (s.lessons.length > LESSONS_MAX) {
-        const drop = new Set([...s.lessons].sort((a, b) => a.count - b.count || a.last - b.last).slice(0, s.lessons.length - LESSONS_MAX).map((x) => x.id));
+        const kept = keep?.(out);
+        const drop = new Set(
+          s.lessons.filter((x) => x.id !== kept).sort((a, b) => a.count - b.count || a.last - b.last).slice(0, s.lessons.length - LESSONS_MAX).map((x) => x.id),
+        );
         s.lessons = s.lessons.filter((x) => !drop.has(x.id));
       }
       if (d.kv) await d.kv.set(LESSONS_KEY, JSON.stringify(s), TTL_SECONDS);
@@ -302,7 +315,7 @@ export function createLessons(d: LessonsDeps) {
       const lesson: Lesson = { id: newId(), at: t, last: t, kind, text: text.slice(0, TEXT_MAX), source: clean, count: 1, ...extra };
       s.lessons.push(lesson);
       return lesson;
-    });
+    }, (lesson) => lesson.id);
 
   /** The owner pressed "Not mine" on a follow-up (on its reminder, or in the list). */
   const notMine: LessonsPort["notMine"] = (o) => {
@@ -345,31 +358,33 @@ export function createLessons(d: LessonsDeps) {
   };
 
   /** A draft Pako wrote (src/brief-v2.ts draftFor): kept a few days, to be compared with what the owner sends there. */
-  const drafted = (o: { text: string; who?: string; where?: string; channel?: string; address?: string }): Promise<boolean> => {
+  const drafted = (o: { text: string; who?: string; where?: string; channel?: string; thread?: string; address?: string }): Promise<boolean> => {
     const text = draftMessage(o.text);
     if (!text || (!o.channel && !o.address)) return Promise.resolve(false);
     return mutate((s) => {
       s.drafts.push({
         id: newId(), at: now(), text, who: safeField(o.who ?? "", 60), where: safeField(o.where ?? "", 60),
-        ...(o.channel ? { channel: o.channel.slice(0, 40) } : {}), ...(o.address ? { address: o.address.toLowerCase().slice(0, 200) } : {}),
+        ...(o.channel ? { channel: o.channel.slice(0, 40) } : {}), ...(o.channel && o.thread ? { thread: o.thread.slice(0, 40) } : {}),
+        ...(o.address ? { address: o.address.toLowerCase().slice(0, 200) } : {}),
       });
       return true;
     });
   };
 
   /**
-   * The owner's own words, sent: a Slack post of theirs (`channel`) or an email from their own mailbox (`to`). When it is a draft Pako wrote
-   * for that conversation or address in the last days, changed, what the owner changed becomes a lesson; sent as written, nothing is learnt.
-   * Either way that draft is done with. Null when it answers no draft.
+   * The owner's own words, sent: a Slack post of theirs (`channel`, and its `thread` when it is in one) or an email from their own mailbox
+   * (`to`). When it is a draft Pako wrote for that conversation (the same thread, when the draft was for one) or address in the last days,
+   * changed, what the owner changed becomes a lesson; sent as written, nothing is learnt. Either way that draft is done with. Null when it
+   * answers no draft.
    */
-  const ownSent = async (o: { text: string; channel?: string; to?: string[]; at?: number }): Promise<Lesson | null> => {
-    const sent = (o.text ?? "").replace(/\r/g, "").replace(/\n>.*$/gs, "").trim().slice(0, DRAFT_MAX);
+  const ownSent = async (o: { text: string; channel?: string; thread?: string; to?: string[]; at?: number }): Promise<Lesson | null> => {
+    const sent = (o.text ?? "").replace(/\r/g, "").replace(/^>.*$/gm, "").trim().slice(0, DRAFT_MAX);
     if (!sent) return null;
     const at = o.at ?? now();
     const to = new Set((o.to ?? []).map((x) => x.toLowerCase().trim()));
     const hit = await mutate((s) => {
       const d0 = [...s.drafts].reverse().find((x) => x.at <= at + 60_000
-        && ((o.channel && x.channel === o.channel) || (x.address && to.has(x.address))) && isSameMessage(x.text, sent));
+        && ((o.channel && x.channel === o.channel && (!x.thread || x.thread === o.thread)) || (x.address && to.has(x.address))) && isSameMessage(x.text, sent));
       if (d0) s.drafts = s.drafts.filter((x) => x !== d0);
       return d0 ?? null;
     });

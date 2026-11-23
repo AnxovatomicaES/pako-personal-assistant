@@ -148,6 +148,30 @@ test("the routes the demo refuses: connecting, importing, the export", () => {
   assert.equal(demoBlocks("POST", "/panel/api/demo/leave"), false);
 });
 
+test("the demo refuses every change under /panel/api/ it does not use: the calendar links, Apple Mail and Messages, pairing a phone, and any route added later", () => {
+  // These were missed when the guard was a list of what to refuse: a link added in the demo went into the real settings, a check read the
+  // person's real Mail and Messages, and a phone paired to the invented week.
+  for (const p of ["/panel/api/calendar/links", "/panel/api/calendar/links/check", "/panel/api/calendar/links/remove", "/panel/api/apple-mail/check",
+    "/panel/api/imessage/check", "/panel/api/phone", "/panel/api/phone/pair", "/panel/api/phone/revoke", "/panel/api/mail/check-now",
+    "/panel/api/reminders/settings", "/panel/api/people/imported", "/panel/api/connections/remove", "/panel/api/connections/resend/check",
+    "/panel/api/claude/connect/other", "/panel/api/a-route-added-next-year"]) {
+    assert.equal(demoBlocks("POST", p), true, `POST ${p}`);
+  }
+  assert.equal(demoBlocks("DELETE", "/panel/api/discovery"), true);
+  assert.equal(demoBlocks("DELETE", "/panel/api/people/imported"), true);
+  assert.equal(demoBlocks("PUT", "/panel/api/chat"), true, "only the routes' own methods are named");
+  assert.equal(demoBlocks("POST", "/PANEL/api/Calendar/Links/"), true, "as Express routes it");
+  // What the demo shows and uses stays: reads, the chat, the brief, the mail's Done and Move, STOP, the welcome, leaving.
+  for (const p of ["/panel/api/overview", "/panel/api/phone", "/panel/api/calendar/links", "/panel/api/connections/status"]) assert.equal(demoBlocks("GET", p), false, `GET ${p}`);
+  for (const p of ["/panel/api/chat", "/panel/api/chat/press", "/panel/api/pause", "/panel/api/settings", "/panel/api/brief/make", "/panel/api/mail/done", "/panel/api/mail/move",
+    "/panel/api/tasks/item", "/panel/api/people/edit", "/panel/api/demo/leave", "/panel/api/demo/start", "/panel/api/sessions/end", "/panel/api/memory/delete"]) {
+    assert.equal(demoBlocks("POST", p), false, `POST ${p}`);
+  }
+  // Not the panel's: the bridge's own doors and the phone page's go on as they were.
+  assert.equal(demoBlocks("POST", "/assistant/reply"), false);
+  assert.equal(demoBlocks("POST", "/m/api/pair"), false);
+});
+
 test("recorded answers without Claude", () => {
   assert.match(recordedAnswer("What did I promise Ana?"), /roadmap deck/);
   assert.match(recordedAnswer("what am I forgetting"), /Kenji/);
@@ -258,6 +282,12 @@ test("the panel in the demo: banner, recorded answers, Done on a card, the expor
     assert.equal(exp.status, 409);
     assert.match(((await exp.json()) as { error: string }).error, /nothing of yours/);
     assert.equal((await r.post("/panel/api/connections", { values: { SLACK_USER_TOKEN: "x" } })).status, 409);
+    // Not connections by name, but they would put the real week's things in the invented one (or the other way round).
+    for (const path of ["/panel/api/calendar/links", "/panel/api/apple-mail/check", "/panel/api/imessage/check", "/panel/api/phone/pair"]) {
+      const refused = await r.post(path, { url: "https://calendar.example/private.ics" });
+      assert.equal(refused.status, 409, path);
+      assert.match(((await refused.json()) as { error: string }).error, /leave the demo/);
+    }
     assert.deepEqual(outside, [], "no request left this computer");
   } finally {
     globalThis.fetch = realFetch;

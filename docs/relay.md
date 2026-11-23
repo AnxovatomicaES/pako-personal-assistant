@@ -9,6 +9,8 @@ optional and off by default.
 - Your Pako syncs with the relay every two minutes, and again just before it looks at its own due reminders: it sends the reminders of
   the next seven days (each one occurrence, with an id and a version that changes with its text or time) and hears back which the relay
   has sent.
+- A repeating reminder is sent as each of its times in those seven days, so a daily one you slept through for three days comes three times
+  on Telegram, one at each time; when your laptop wakes, it moves the repeat on to its next time and sends none of those again.
 - The relay sends each occurrence once. A reminder you cancel or change on your laptop is simply not in the next sync: the relay drops
   the old one and, for a change, sends the new one.
 - When your laptop wakes, its first sync brings back what the relay sent while it slept; those are marked sent and never sent again.

@@ -207,6 +207,9 @@ function renderHeader() {
   // Why, when it was not the owner: the store came back empty (a STOP may have been lost), or it cannot be read yet.
   const why = data.pauseWhy === "store-empty" ? t("why.storeEmpty") : data.pauseWhy === "store-unknown" ? t("why.storeUnknown") : "";
   if (data.paused) sum.prepend(h("b", { style: "color: var(--danger)" }, t("sum.paused", { why })), t("sum.pausedTail"));
+  // The line about a press the store did not keep goes with that state: a refresh keeps it, another place that changed it takes it away.
+  const warn = $("#pause-warn");
+  if (warn && warn.dataset.for !== String(!!data.paused)) warn.hidden = true;
 
   const sw = $("#pause");
   const active = !data.paused;
@@ -691,6 +694,39 @@ function pointerGlow() {
 
 // ---------- events ----------
 
+/**
+ * The line under the greeting about a STOP or RESUME the store could not keep (the chat says the same, src/door/stop-resume.ts): a restart may
+ * bring the old state back, so it stays until the next press, not for the few seconds of a toast. `pausing`: which press it is about.
+ */
+function showPauseWarn(pausing, notKept) {
+  const warn = $("#pause-warn");
+  if (!warn) return;
+  warn.dataset.for = String(pausing);
+  warn.textContent = notKept ? t(pausing ? "stop.notKept" : "resume.notKept") : "";
+  warn.hidden = !notKept;
+}
+
+/** The switch: STOP (after asking) or RESUME. The answer says whether the pause was kept (`kept`), and the page says so when it was not. */
+async function togglePause() {
+  if (!data) return;
+  const pausing = !data.paused;
+  if (pausing && !confirm(t("stop.confirm"))) return;
+  try {
+    const r = await fetch("/panel/api/pause", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json", "x-pako": "1" }, body: JSON.stringify({ on: pausing }) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    data.paused = j.paused;
+    data.pauseWhy = j.why ?? null;
+    showPauseWarn(pausing, j.kept === false);
+    renderHeader();
+    toast(pausing ? t("toast.paused") : t("toast.running"));
+    if (animate()) gsap().fromTo(".orb-wrap", { scale: 0.9 }, { scale: 1, duration: 0.9, ease: "elastic.out(1, 0.4)" });
+  } catch {
+    /* offline or refused: said in a toast */
+    toast(t("toast.cantChange"));
+  }
+}
+
 function wire() {
   $("#refresh").addEventListener("click", () => load(true));
   for (const b of document.querySelectorAll(".tabs button")) {
@@ -701,24 +737,7 @@ function wire() {
       renderAgenda();
     });
   }
-  $("#pause").addEventListener("click", async () => {
-    if (!data) return;
-    const pausing = !data.paused;
-    if (pausing && !confirm(t("stop.confirm"))) return;
-    try {
-      const r = await fetch("/panel/api/pause", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json", "x-pako": "1" }, body: JSON.stringify({ on: pausing }) });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = await r.json();
-      data.paused = j.paused;
-      data.pauseWhy = j.why ?? null;
-      renderHeader();
-      toast(pausing ? t("toast.paused") : t("toast.running"));
-      if (animate()) gsap().fromTo(".orb-wrap", { scale: 0.9 }, { scale: 1, duration: 0.9, ease: "elastic.out(1, 0.4)" });
-    } catch {
-      /* offline or refused: said in a toast */
-      toast(t("toast.cantChange"));
-    }
-  });
+  $("#pause").addEventListener("click", () => void togglePause());
   $("#settings-open").addEventListener("click", () => openWelcome(false));
   addEventListener("resize", moveInk);
   document.addEventListener("visibilitychange", () => {
@@ -1458,10 +1477,11 @@ async function finishWelcome() {
   const first = welcome.first;
   const saved = await saveSettings({ ...aboutYou(), ...(first ? { welcomed: true } : {}) }).finally(() => (welcome.finishing = false));
   if (saved) tellApp({ lang: "en", ...(first ? { welcomed: true } : {}) });
-  // A change of name from the footer that did not take: the dialog stays, to try again (unless the browser closed it already).
-  if (!saved && !first && $("#welcome").open) return;
+  // A save that did not take (the server did not answer): the dialog stays with what was typed, to try again (unless the browser closed it
+  // already). On the first visit too: closing it would say "all done" over a welcome the server never heard, and the name would be lost.
+  if (!saved && $("#welcome").open) return;
   closeWelcome();
-  if (first && chat.on) {
+  if (saved && first && chat.on) {
     setChatOpen(true);
     toast(t("w.doneToast"));
   }

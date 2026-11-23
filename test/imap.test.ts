@@ -14,7 +14,7 @@ import { CATALOGUE, connectionStates } from "../src/connections.ts";
 import { createControl } from "../src/control.ts";
 import {
   backoffMinutes, createImapReader, decodeHeader, failKind, imapflowConnect, loadImapConfig, parseMessage,
-  type ImapClient, type ImapConfig, type ImapFetched, type ImapMailbox,
+  type ImapClient, type ImapConfig, type ImapConnect, type ImapFetched, type ImapMailbox,
 } from "../src/imap.ts";
 import type { Kv } from "../src/kv.ts";
 import { addressOf, createMailbox, takeMail } from "../src/mail.ts";
@@ -54,7 +54,10 @@ interface FakeMsg {
 }
 
 /** A client that records every call (the command log) and answers from folders kept here. */
-function fakeImap(folders: Record<string, { validity: number; msgs: FakeMsg[] }>, o: { connectError?: unknown; failFetchAt?: number } = {}) {
+function fakeImap(
+  folders: Record<string, { validity: number; msgs: FakeMsg[] }>,
+  o: { connectError?: unknown; failFetchAt?: number; refuseSearch?: boolean } = {},
+) {
   const calls: string[] = [];
   const make = (): ImapClient => {
     let open = "";
@@ -72,6 +75,8 @@ function fakeImap(folders: Record<string, { validity: number; msgs: FakeMsg[] }>
       },
       search: async (q: { since: Date; uid?: string }) => {
         calls.push(`search ${q.uid ?? ""}`.trim());
+        // What imapflow resolves when the server answers NO or BAD to the SEARCH.
+        if (o.refuseSearch) return false;
         const from = q.uid ? Number(q.uid.split(":")[0]) : 1;
         const day = Date.UTC(q.since.getUTCFullYear(), q.since.getUTCMonth(), q.since.getUTCDate());
         return folders[open]!.msgs.filter((m) => m.uid >= from && m.at >= day).map((m) => m.uid);
@@ -224,6 +229,32 @@ test("first look: folders opened read-only, only the last 24 hours, nothing but 
   assert.deepEqual(r.fake.calls.filter((c) => c.startsWith("fetch")), ["fetch 3 peek max=262144"]);
 });
 
+test("a SEARCH the server refuses is a failed look, not an empty one: the pointer stays and the mail that came meanwhile is read next time", async () => {
+  const folders = { INBOX: { validity: 7, msgs: [{ uid: 1, at: NOW - HOUR, source: mail({ id: "before" }) }] } };
+  const opts = { refuseSearch: false };
+  const r = rig(folders, { fake: opts });
+  await r.reader.poll();
+  const pointer = () => JSON.parse(r.kv.data.get("assistant-imap")!).folders.INBOX;
+  assert.deepEqual(pointer(), { v: "7", last: 1 });
+  // Three emails arrive; the server refuses this one SEARCH (a temporary failure).
+  for (const uid of [2, 3, 4]) folders.INBOX.msgs.push({ uid, at: NOW + uid * 60_000, source: mail({ id: `new-${uid}`, subject: `Contract ${uid}` }) });
+  r.tick(5 * 60_000);
+  opts.refuseSearch = true;
+  const refused = await captured(() => r.reader.poll());
+  assert.equal(refused.value.skipped, "failed", "a refused search is a failed look");
+  assert.deepEqual(pointer(), { v: "7", last: 1 }, "the folder's pointer did not move past mail that was never read");
+  assert.match(r.reader.problem("en") ?? "", /unexpected/, "the card says something is wrong");
+  assert.equal((await r.reader.poll()).skipped, "waiting", "and it backs off");
+  // The server is fine again: the three emails are read, none was skipped for good.
+  opts.refuseSearch = false;
+  r.tick(10 * 60_000);
+  const next = await captured(() => r.reader.poll());
+  assert.equal(next.value.queued, 3);
+  assert.deepEqual(r.queued.slice(1).map((m) => m.email?.subject), ["Contract 2", "Contract 3", "Contract 4"]);
+  assert.deepEqual(pointer(), { v: "7", last: 4 });
+  assert.equal(r.reader.problem("en"), null);
+});
+
 test("connecting a mailbox: the last 24 hours are read quietly (kept, never told) with one Connected line; mail after that is news", async () => {
   const msgs = Array.from({ length: 10 }, (_, i) => ({ uid: i + 1, at: NOW - (i + 1) * HOUR, source: mail({ id: `day-${i}`, subject: `Mail ${i}` }) }));
   // One VIP among them: even that one waits, because it was already in the mailbox before Pako watched it.
@@ -312,7 +343,7 @@ test("the mail intake is the same: codes hidden and kept for CODE, mass mail fil
       validity: 1,
       msgs: [
         { uid: 1, at: NOW - 60_000, source: mail({ subject: "Tu código", body: "Tu código de verificación es 482913. No lo compartas." }) },
-        { uid: 2, at: NOW - HOUR, source: mail({ from: "Ofertas <news@tienda.example>", headers: ["Authentication-Results: mx.owner.example; dmarc=pass header.from=tienda.example", "List-Unsubscribe: <mailto:u@tienda.example>"] }) },
+        { uid: 2, at: NOW - HOUR, source: mail({ from: "Ofertas <news@tienda.example>", headers: ["Authentication-Results: mx.example.com; dmarc=pass header.from=tienda.example", "List-Unsubscribe: <mailto:u@tienda.example>"] }) },
         { uid: 3, at: NOW - HOUR, source: mail({ from: "Jefa <jefa@jefe.example>", headers: ["List-Id: equipo"] }) },
         { uid: 4, at: NOW - HOUR, source: mail({ from: "Ana <ana@example.com>", subject: "Nota para mí" }) },
       ],
@@ -636,6 +667,56 @@ test("signed in with a provider: a login refused with the held token is tried on
   });
   await captured(() => plain.poll());
   assert.doesNotMatch(String(plain.problem("en")), /^Sign in again/);
+});
+
+test("signed in with a provider, the login is client.connect(), as with imapflow: a refusal there is retried once with a fresh token", async () => {
+  const loaded = loadImapConfig({
+    IMAP_HOST: "outlook.office365.com", IMAP_USER: OAUTH_USER, IMAP_OAUTH: "microsoft", IMAP_REFRESH_TOKEN: "M.R3_BAY.refresh-token-one",
+    PAKO_MS_CLIENT_ID: "11111111-2222-3333-4444-555555555555",
+  });
+  const refused = Object.assign(new Error("Command failed"), { authenticationFailed: true });
+  let issued = 0;
+  let forgot = 0;
+  const tried: string[] = [];
+  let closed = 0;
+  // Shaped like imapflowConnect: the factory only builds the client; the login, and its refusal, is client.connect().
+  const connect: ImapConnect = async (c) => {
+    const token = String((c as { accessToken?: string }).accessToken);
+    const client: ImapClient = {
+      connect: async () => {
+        tried.push(token);
+        if (token === "token-1") throw refused;
+      },
+      mailboxOpen: async () => ({ uidValidity: 1, uidNext: 1 }), search: async () => [], fetchOne: async () => false,
+      logout: async () => undefined, close: () => void closed++, on: () => client,
+    };
+    return client;
+  };
+  const reader = createImapReader({
+    config: loaded.config!, kv: memoryKv(), box: createMailbox(null), enqueue: async () => true, lang: () => "en", connect,
+    tokens: async () => `token-${++issued}`, forgetToken: () => void ((forgot += 1), (issued = 1)),
+  });
+  const out = await captured(() => reader.poll());
+  assert.notEqual(out.value.skipped, "failed", "the second token worked: the look went through");
+  assert.deepEqual(tried, ["token-1", "token-2"], "the held token, then a fresh one");
+  assert.equal(forgot, 1, "the held token was dropped");
+  assert.equal(closed, 1, "the refused connection was closed before the next try (the one that read logged out)");
+  assert.equal(reader.problem("en"), null);
+  // Refused again with the fresh one: only a new sign-in mends it.
+  tried.length = 0;
+  const again = createImapReader({
+    config: loaded.config!, kv: memoryKv(), box: createMailbox(null), enqueue: async () => true, lang: () => "en",
+    connect: async () => {
+      const client: ImapClient = {
+        connect: async () => { throw refused; }, mailboxOpen: async () => ({ uidValidity: 1 }), search: async () => [], fetchOne: async () => false,
+        logout: async () => undefined, close: () => undefined, on: () => client,
+      };
+      return client;
+    },
+    tokens: async () => "token-x", forgetToken: () => void forgot++,
+  });
+  await captured(() => again.poll());
+  assert.match(String(again.problem("en")), /^Sign in again/);
 });
 
 test("the Sent folder named in IMAP_FOLDERS too: the owner's sent mail is read as theirs (follow-ups), never told as news", async () => {

@@ -342,17 +342,18 @@ export function restaurantEmail(html: string, website: string): string | undefin
 
 /**
  * The WhatsApp number a restaurant publishes for guests on its own site (a wa.me or "send" link), as digits with the
- * country code. A link without one is read as a national number of the owner's country (region.ts), and skipped when it is not one
- * there or the country is not known yet: no other country is guessed. Share buttons (no number) are not one. When a
+ * country code (a link's number is international by WhatsApp's format). A 9-digit number, too short for one, is read as a national number of
+ * the owner's country (region.ts), and skipped when it is not one there or the country is not known yet: no other country is guessed. Share buttons (no number) are not one. When a
  * site carries several numbers, the one it links most.
  */
 export function restaurantWhatsapp(html: string): string | undefined {
   const h = html.slice(0, 1_500_000).replace(/&amp;/g, "&").replace(/\\\//g, "/");
   const seen = new Map<string, number>();
   for (const m of h.matchAll(/(?:wa\.me\/|(?:api|web)\.whatsapp\.com\/send\/?\?(?:[^"'\s<>]{0,80}&)?phone=|whatsapp:\/\/send\/?\?(?:[^"'\s<>]{0,80}&)?phone=)(%2B|\+|00)?(\d{9,15})(?!\d)/gi)) {
-    // Digits only, as the links are written: anything looser would run on into the text after the link. A number written with + or 00
-    // already carries its code and is never read as a national one.
-    const national = m[1] ? null : nationalNumber(m[2]!);
+    // Digits only, as the links are written: anything looser would run on into the text after the link. A wa.me or phone= number is
+    // international by WhatsApp's own format (the code first, no plus), and one written with + or 00 carries its code too: only a number of 9
+    // digits, too short for a full one, can be a national number of the owner's country. Ten digits of Denmark are not Mexico's.
+    const national = m[1] || m[2]!.length > 9 ? null : nationalNumber(m[2]!);
     const digits = national ? national.slice(1) : m[2]!;
     if (digits.length < 10 || digits.length > 15) continue;
     seen.set(digits, (seen.get(digits) ?? 0) + 1);

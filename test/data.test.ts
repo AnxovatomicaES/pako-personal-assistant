@@ -14,7 +14,7 @@ import { createApp, loadAppConfig, type LocalContext } from "../src/app.ts";
 import type { Control } from "../src/control.ts";
 import { CONFIRM, confirmed, DATA_KEYS, factFor, privacy, span } from "../src/data.ts";
 import { mountDataPanel } from "../src/data-panel.ts";
-import { createLocalChannel, loadHome, localEnv } from "../src/local.ts";
+import { createLocalChannel, loadHome, localEnv, sessionGeneration } from "../src/local.ts";
 import { sqliteKv } from "../src/sqlite-kv.ts";
 
 const root = new URL("../", import.meta.url);
@@ -134,12 +134,15 @@ async function listen(server: Server): Promise<string> {
 }
 
 /** A person's computer: a home in a temporary folder, the real app, signed in to its panel. */
-async function computer() {
-  const home = loadHome({ PAKO_HOME: join(mkdtempSync(join(tmpdir(), "pako-data-")), "home"), PAKO_NAME: "Ana" });
+async function computer(again?: string) {
+  const home = loadHome({ PAKO_HOME: again ?? join(mkdtempSync(join(tmpdir(), "pako-data-")), "home"), PAKO_NAME: "Ana" });
   const env: Record<string, string | undefined> = { ...localEnv({}, home, 0), PAKO_HOME: home.dir };
   const kv = sqliteKv(home.dir);
   const channel = createLocalChannel({ kv });
-  const local: LocalContext = { kv, channel, bridgeToken: home.bridgeToken, panelSecret: home.panelSecret, bridge: { status: () => ({ claude: "ok", running: true }) } };
+  const local: LocalContext = {
+    kv, channel, bridgeToken: home.bridgeToken, panelSecret: home.panelSecret, bridge: { status: () => ({ claude: "ok", running: true }) },
+    sessionGeneration: sessionGeneration(home.dir), // as src/server.ts wires it
+  };
   const app = createApp(loadAppConfig(env), env, local);
   const server = createServer(app);
   const base = await listen(server);
@@ -183,6 +186,9 @@ async function fill(c: Awaited<ReturnType<typeof computer>>) {
   }
   // The other things in the folder that hold the person's things.
   writeFileSync(join(c.home.dir, "kv.db.bad"), "damaged");
+  // An older damaged store a later damage displaced (src/sqlite-kv.ts), and a journal kept with its file.
+  writeFileSync(join(c.home.dir, "kv.db.bad.2026-01-02T03-04-05-678Z"), "older damaged");
+  writeFileSync(join(c.home.dir, "kv.db.bad-journal"), "journal");
   mkdirSync(join(c.home.dir, "maitre", "shots"), { recursive: true });
   writeFileSync(join(c.home.dir, "maitre", "shots", "confirm.png"), "png");
   mkdirSync(join(c.home.dir, "browser", "Default"), { recursive: true });
@@ -286,6 +292,8 @@ test("delete everything: the confirmation, then every key, the chat, Telegram, t
     const config = JSON.parse(readFileSync(join(c.home.dir, "config.json"), "utf8")) as Record<string, unknown>;
     assert.deepEqual(config, {}, "no name, no welcome, no language: the next start shows the welcome");
     assert.equal(existsSync(join(c.home.dir, "kv.db.bad")), false);
+    assert.equal(existsSync(join(c.home.dir, "kv.db.bad.2026-01-02T03-04-05-678Z")), false, "an older damaged store holds the person's things too");
+    assert.equal(existsSync(join(c.home.dir, "kv.db.bad-journal")), false);
     assert.equal(existsSync(join(c.home.dir, "maitre")), false, "the booking screenshots");
     assert.equal(existsSync(join(c.home.dir, "browser")), false, "the booking browser's sign-ins");
     assert.equal(existsSync(join(c.home.dir, "kv.json.migrated")), false, "an older store kept after the update is the person's things too");
@@ -487,5 +495,65 @@ test("export: the WhatsApp settings saved from the panel are among the secrets t
     assert.match(text, /Here: \[secret: not exported\]/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The same search must not mask ordinary words: a setting whose name looks like a secret's but whose value is a plain word, or a bare address,
+// is no secret, and replacing it would rewrite the person's own notes and chat wherever those words appear.
+test("export: PAKO_SECRET_STORE's word and a bare address are not masked wherever they appear; an address that carries a secret still is", async () => {
+  const { mkdtempSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { exportData } = await import("../src/data.ts");
+  const dir = mkdtempSync(join(tmpdir(), "pako-export-plain-"));
+  try {
+    const env = {
+      PAKO_SECRET_STORE: "keychain",
+      ASSISTANT_SERVER_URL: "http://127.0.0.1:8819",
+      PUBLIC_URL: "https://pako.example.com",
+      LIVEKIT_URL: "wss://pako-abc123.livekit.example",
+      CALENDAR_ICS_URL: "https://calendar.example.com/ical/private-9f8e7d6c5b4a/basic.ics",
+      VOICE_RESULTS_URL: "rediss://:hunter2hunter2@kv.example.com:6379",
+      NODE_TEST_CONTEXT: "1",
+    };
+    const said = `my keychain is slow. Brief: http://127.0.0.1:8819/brief and https://pako.example.com/panel and wss://pako-abc123.livekit.example/room. `
+      + `Calendar ${env.CALENDAR_ICS_URL} and ${env.VOICE_RESULTS_URL}`;
+    const store = { get: async (k: string) => (k === "assistant-log" ? JSON.stringify([{ at: 1, kind: "note", text: said }]) : null), set: async () => undefined };
+    const text = (JSON.parse(JSON.stringify(await exportData({ store, dir, env, lang: "en" }))) as { store: Record<string, { value: { text: string }[] }> }).store["assistant-log"]!.value[0]!.text;
+    assert.match(text, /^my keychain is slow\. Brief: http:\/\/127\.0\.0\.1:8819\/brief and https:\/\/pako\.example\.com\/panel and wss:\/\/pako-abc123\.livekit\.example\/room\. /, "plain words and bare addresses stay");
+    assert.ok(!text.includes("private-9f8e7d6c5b4a"), "an ICS link's private part is hidden");
+    assert.ok(!text.includes("hunter2hunter2"), "a store's password is hidden");
+    assert.match(text, /Calendar \[secret: not exported\] and \[secret: not exported\]$/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Delete everything keeps Sign out everywhere: a session it ended stays ended when Pako starts again on the emptied store", async () => {
+  const c = await computer();
+  let again: Awaited<ReturnType<typeof computer>> | null = null;
+  try {
+    const link = (app: express.Express) => (app.locals.panelLink as () => string)();
+    const stolen = ((await fetch(link(c.app).replace(/^http:\/\/127\.0\.0\.1:\d+/, c.base), { redirect: "manual" })).headers.get("set-cookie") ?? "").split(";")[0]!;
+    const status = (base: string, cookie: string) => fetch(`${base}/panel/api/overview`, { headers: { cookie } }).then((x) => x.status);
+    assert.equal(await status(c.base, stolen), 200);
+    assert.equal((await fetch(`${c.base}/panel/api/sessions/end`, { method: "POST", headers: { cookie: stolen, "x-pako": "1" } })).status, 200);
+    assert.equal(await status(c.base, stolen), 401);
+    const owner = ((await fetch(link(c.app).replace(/^http:\/\/127\.0\.0\.1:\d+/, c.base), { redirect: "manual" })).headers.get("set-cookie") ?? "").split(";")[0]!;
+
+    c.app.locals.restart = () => undefined;
+    assert.equal((await c.del({ confirm: "DELETE EVERYTHING" }, { cookie: owner, "x-pako": "1", "content-type": "application/json" })).status, 200);
+    assert.deepEqual(c.kv.entries().map((e) => e.key), ["assistant-log"], "the store is empty: the generation in it is gone");
+    const secrets = JSON.parse(readFileSync(join(c.home.dir, "secrets.json"), "utf8")) as Record<string, unknown>;
+    assert.equal(secrets.panelSessions, 1, "kept with the run secrets");
+    assert.equal(secrets.bridgeToken, c.home.bridgeToken);
+
+    // Pako starts again on the same folder: the same run secrets, an empty store.
+    again = await computer(c.home.dir);
+    assert.equal(await status(again.base, stolen), 401, "the session ended before deleting stays ended");
+    assert.equal(await status(again.base, owner), 200, "the owner's own session goes on");
+  } finally {
+    again?.close();
+    c.close();
   }
 });

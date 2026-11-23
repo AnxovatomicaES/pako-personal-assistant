@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createBackfill } from "../src/backfill.ts";
 import { createImapReader, loadImapConfig, type ImapClient, type ImapConfig, type ImapConnect } from "../src/imap.ts";
+import { createInviteStore } from "../src/invites.ts";
 import type { Kv } from "../src/kv.ts";
 import { loginTest } from "../src/mail-autoconfig.ts";
 import { authenticated } from "../src/mail-categories.ts";
@@ -148,6 +149,94 @@ test("a forged mail in the owner's own name never marks what it names as answere
   assert.equal(typeof (await box.get(kept.id))?.repliedAt, "number", "the owner's own reply, vouched for by their server, still closes it");
 });
 
+/** An invitation of Dana's, and her mail cancelling it with the Authentication-Results line `auth` on top. */
+const boardIcs = (method: string) => ["BEGIN:VCALENDAR", "VERSION:2.0", `METHOD:${method}`, "BEGIN:VEVENT", "UID:board-42", "DTSTART:20261117T100000Z", "DTEND:20261117T110000Z",
+  "SUMMARY:Board meeting", "ORGANIZER:mailto:dana@client.example", ...(method === "CANCEL" ? ["STATUS:CANCELLED"] : []), "END:VEVENT", "END:VCALENDAR"].join("\r\n");
+const boardCancel = (id: string, auth: string): Buffer => Buffer.from([
+  `Authentication-Results: ${auth}`, "From: Dana <dana@client.example>", "To: Ana <ana@example.com>", "Subject: Canceled: Board meeting", `Message-ID: <${id}>`,
+  'Content-Type: multipart/mixed; boundary="b"', "", "--b", "Content-Type: text/plain", "", "Called off", "--b",
+  "Content-Type: text/calendar; method=CANCEL; charset=utf-8", "", boardIcs("CANCEL"), "--b--", "",
+].join("\r\n"));
+
+test("a sender's own Authentication-Results line is not the server's: on a mailbox whose server writes none it closes no loop and cancels no invitation", async () => {
+  // The topmost Authentication-Results is the receiving server's only when that server writes one; otherwise it is the sender's, which says
+  // whatever the sender likes. On a host that is not a big provider's it counts only when it names the mailbox's own server (here imap.example.com).
+  const own = (server: string) => `Authentication-Results: ${server}; dkim=pass header.d=example.com; dmarc=pass header.from=example.com`;
+  const ics = boardIcs;
+  const cancel = boardCancel;
+  const inbox: Msg[] = [{ uid: 1, at: NOW - HOUR, source: mail({ id: "ask-1@amigos.example", subject: "¿Me mandas el informe?" }) }];
+  const server = fakeServer({ INBOX: inbox });
+  const box = createMailbox(null);
+  const cancelled: string[][] = [];
+  const invites = createInviteStore({ kv: memoryKv(), timeZone: "Europe/Madrid", now: () => NOW, closed: (u) => void cancelled.push(u) });
+  let clock = NOW;
+  const reader = createImapReader({
+    config: CONFIG, kv: memoryKv(), box, now: () => clock, connect: server.connect, enqueue: async () => true, notify: async () => undefined, invites,
+  });
+  await reader.poll();
+  await invites.take(ics("REQUEST"), NOW, { address: "dana@client.example", vouched: true });
+  const kept = (await box.items()).find((r) => r.messageId === "ask-1@amigos.example");
+  assert.ok(kept);
+  // A stranger's mail in the owner's name and in Dana's, each with an Authentication-Results line of its own making.
+  inbox.push({ uid: 2, at: clock + 60_000, source: mail({
+    id: "forged@evil.example", from: "Ana <ana@example.com>", subject: "Re: ¿Me mandas el informe?", body: "done",
+    headers: [own("mx.anything.example"), "In-Reply-To: <ask-1@amigos.example>"],
+  }) });
+  inbox.push({ uid: 3, at: clock + 120_000, source: cancel("fake-cancel@evil.example", "mx.anything.example; dkim=pass header.d=client.example") });
+  clock += 10 * 60_000;
+  await reader.poll();
+  assert.equal((await box.get(kept.id))?.repliedAt, undefined, "a line the sender wrote vouches for nothing: the loop stays open");
+  assert.deepEqual((await invites.list()).map((x) => x.title), ["Board meeting"], "and the invitation stays");
+  assert.deepEqual(cancelled, []);
+  // The same two with the mailbox's own server naming itself: counted.
+  inbox.push({ uid: 4, at: clock + 60_000, source: mail({
+    id: "real@example.com", from: "Ana <ana@example.com>", subject: "Re: ¿Me mandas el informe?", body: "aquí lo tienes",
+    headers: [own("imap.example.com"), "In-Reply-To: <ask-1@amigos.example>"],
+  }) });
+  inbox.push({ uid: 5, at: clock + 120_000, source: cancel("real-cancel@client.example", "imap.example.com; dkim=pass header.d=client.example") });
+  clock += 10 * 60_000;
+  await reader.poll();
+  assert.equal(typeof (await box.get(kept.id))?.repliedAt, "number", "the owner's own reply, with their server's line, closes it");
+  assert.deepEqual(await invites.list(), [], "Dana's own cancel, with their server's line, removes the invitation");
+  assert.deepEqual(cancelled, [["board-42"]]);
+});
+
+test("a big provider's own Authentication-Results line still vouches, whatever server name it carries (Gmail's mx.google.com, Microsoft 365's none)", async () => {
+  // They put their header on top and strip a sender's, so the topmost is theirs; only an unknown host's must name itself (the test above).
+  const cases: { host: string; line: (domain: string) => string }[] = [
+    { host: "imap.gmail.com", line: (d) => `mx.google.com; dkim=pass header.i=@${d} header.s=sel; spf=pass smtp.mailfrom=${d}; dmarc=pass (p=NONE) header.from=${d}` },
+    { host: "outlook.office365.com", line: (d) => `spf=pass (sender IP is 1.2.3.4) smtp.mailfrom=${d}; dkim=pass (signature was verified) header.d=${d}; dmarc=pass action=none header.from=${d}` },
+  ];
+  for (const { host, line } of cases) {
+    const auth = line("example.com");
+    const inbox: Msg[] = [{ uid: 1, at: NOW - HOUR, source: mail({ id: "ask-1@amigos.example", subject: "¿Me mandas el informe?" }) }];
+    const server = fakeServer({ INBOX: inbox });
+    const box = createMailbox(null);
+    const cancelled: string[][] = [];
+    const invites = createInviteStore({ kv: memoryKv(), timeZone: "Europe/Madrid", now: () => NOW, closed: (u) => void cancelled.push(u) });
+    let clock = NOW;
+    const reader = createImapReader({
+      config: { ...CONFIG, host }, kv: memoryKv(), box, now: () => clock, connect: server.connect, enqueue: async () => true, notify: async () => undefined, invites,
+    });
+    await reader.poll();
+    await invites.take(boardIcs("REQUEST"), NOW, { address: "dana@client.example", vouched: true });
+    const kept = (await box.items()).find((r) => r.messageId === "ask-1@amigos.example");
+    assert.ok(kept, host);
+    inbox.push({ uid: 2, at: clock + 60_000, source: mail({
+      id: "real@example.com", from: "Ana <ana@example.com>", subject: "Re: ¿Me mandas el informe?", body: "aquí lo tienes",
+      headers: [`Authentication-Results: ${auth}`, "In-Reply-To: <ask-1@amigos.example>"],
+    }) });
+    inbox.push({ uid: 3, at: clock + 120_000, source: boardCancel("real-cancel@client.example", line("client.example")) });
+    clock += 10 * 60_000;
+    await reader.poll();
+    assert.equal(typeof (await box.get(kept.id))?.repliedAt, "number", `${host}: the owner's own reply, with the provider's line, closes it`);
+    assert.deepEqual(await invites.list(), [], `${host}: Dana's own cancel is believed`);
+    assert.deepEqual(cancelled, [["board-42"]], host);
+    // And the same line on an unknown host proves nothing.
+    assert.equal(authenticated("Ana <ana@example.com>", [auth], "imap.example.com"), false, `${host}'s line on an unknown host`);
+  }
+});
+
 test("SINCE is a day on the server's clock: mail inside the window on a server west of UTC is still read", async () => {
   // 03:00 UTC: the window starts at 03:00 UTC yesterday, which is still the day before on a server in California.
   const now = Date.UTC(2026, 10, 16, 3, 0, 0);
@@ -205,6 +294,38 @@ test("a full catch-up queue does not drop inbox mail silently: what does not fit
   const p = await b.progress();
   assert.equal(p?.total, 401);
   assert.equal(p?.notAnalysed, 1);
+});
+
+test("a catch-up of more mail than the mailbox keeps analyses the newest first: every mail handed to Claude is still kept, so its summary has somewhere to go", async () => {
+  // 14 days, an email every hour and a half: more than the 150 records the mailbox keeps. The allowance (60 runs) was spent on the oldest,
+  // which the mailbox had already dropped by the time they were handed out.
+  const N = 220;
+  const msgs: Msg[] = Array.from({ length: N }, (_, i) => ({
+    uid: i + 1, at: NOW - (N - i) * 90 * 60_000, source: mail({ id: `m${i + 1}@client.example`, from: `Person ${i + 1} <p${i + 1}@client.example>`, subject: `Question ${i + 1}` }),
+  }));
+  let clock = NOW;
+  const handed: Inbound[] = [];
+  const kv = memoryKv();
+  const box = createMailbox(kv);
+  const bf = createBackfill({ kv, config: { days: 14, allowance: 60, everyMs: 60_000 }, enqueue: async (m) => (handed.push(m), true), now: () => clock });
+  const server = fakeServer({ INBOX: msgs });
+  const reader = createImapReader({
+    config: CONFIG, kv, box, now: () => clock, connect: server.connect, enqueue: async () => true,
+    backfill: { add: bf.add, addSent: bf.addSent, startLine: bf.startLine, days: 14 },
+  });
+  assert.equal((await reader.poll()).caughtUp, N);
+  for (let i = 0; i < 70; i++) {
+    clock += 61_000;
+    await bf.tick();
+  }
+  assert.equal(handed.length, 60);
+  assert.equal(handed[0]!.email?.subject, "Question 220", "the newest first");
+  assert.equal(handed.at(-1)!.email?.subject, "Question 161");
+  for (const m of handed) {
+    const id = m.id.replace(/^mail:/, "");
+    assert.ok(await box.get(id), `${m.email?.subject} was dropped by the mailbox before its summary could be kept`);
+    assert.equal(await box.annotate(id, "aviso", "They ask you something.", clock), true);
+  }
 });
 
 test("a domain under a shared registry suffix (uk.com, me.uk, ltd.uk) is not aligned with its neighbour: a forged sender is not vouched for", () => {
@@ -294,4 +415,90 @@ test("backfill: a store that fails to answer once does not empty the catch-up's 
   }
   assert.deepEqual(sent, ["mail:m0", "mail:m1", "mail:m2"], "every queued email still goes out");
   assert.equal((await b.progress())?.total, 3);
+});
+
+test("backfill: a second mailbox connected after the first catch-up was reported gets a catch-up of its own: its allowance, its mail analysed, its own summary", async () => {
+  let clock = Date.UTC(2026, 9, 1);
+  const said: string[] = [];
+  const unread: string[] = [];
+  const sent: string[] = [];
+  const b = createBackfill({
+    kv: memoryKv(), config: { days: 14, allowance: 3, everyMs: 60_000 }, now: () => clock,
+    enqueue: async (m) => (sent.push(m.id), true), notify: async (t) => void said.push(t), keepUnread: async (id) => void unread.push(id),
+  });
+  const mail = (id: string) => ({ id: `mail:${id}`, at: clock, text: "x", email: { from: "a@example.com" } }) as never;
+  for (const id of ["a1", "a2", "a3"]) await b.add(mail(id));
+  for (let i = 0; i < 3; i++) {
+    clock += 61_000;
+    assert.equal(await b.tick(), "sent");
+  }
+  for (const id of ["a1", "a2", "a3"]) await b.answered(id, { worth: true, from: "a@example.com" });
+  clock += 61_000;
+  assert.equal(await b.tick(), "reported");
+  assert.equal(said.length, 1);
+  // Forty days later the owner connects another mailbox: its mail goes to the same catch-up, which was over.
+  clock += 40 * 24 * HOUR;
+  sent.length = 0;
+  for (const id of ["b1", "b2", "b3"]) await b.add(mail(id));
+  assert.equal((await b.progress())?.running, true, "a new catch-up is running");
+  assert.equal((await b.progress())?.total, 3, "counted apart from the first one");
+  for (let i = 0; i < 3; i++) {
+    clock += 61_000;
+    assert.equal(await b.tick(), "sent");
+  }
+  assert.deepEqual(sent, ["mail:b1", "mail:b2", "mail:b3"], "handed to Claude, not left unanalysed on a spent allowance");
+  assert.deepEqual(unread, [], "none kept unread as 'not analysed'");
+  for (const id of ["b1", "b2", "b3"]) await b.answered(id, { worth: false });
+  clock += 61_000;
+  assert.equal(await b.tick(), "reported", "and its own summary is said");
+  assert.equal(said.length, 2);
+  assert.match(said[1]!, /Caught up: 0 things need you, 0 people are waiting/);
+  assert.equal((await b.progress())?.notAnalysed, 0);
+});
+
+test("backfill: a catch-up still running takes a second mailbox's mail into the same run, and its allowance is shared", async () => {
+  let clock = Date.UTC(2026, 9, 1);
+  const sent: string[] = [];
+  const unread: string[] = [];
+  const b = createBackfill({
+    kv: null, config: { days: 14, allowance: 2, everyMs: 60_000 }, now: () => clock, enqueue: async (m) => (sent.push(m.id), true), keepUnread: async (id) => void unread.push(id),
+  });
+  const mail = (id: string) => ({ id: `mail:${id}`, at: clock, text: "x", email: { from: "a@example.com" } }) as never;
+  await b.add(mail("a1"));
+  clock += 61_000;
+  await b.tick();
+  await b.add(mail("b1"));
+  await b.add(mail("b2"));
+  assert.equal((await b.progress())?.total, 3, "one run: nothing restarted");
+  for (let i = 0; i < 3; i++) {
+    clock += 61_000;
+    await b.tick();
+  }
+  assert.deepEqual(sent, ["mail:a1", "mail:b1"]);
+  assert.deepEqual(unread, ["b2"], "the allowance is the run's, spent once");
+});
+
+test("backfill: the timer's idle ticks write nothing to the store; a tick that changes something does", async () => {
+  const data = new Map<string, string>();
+  let writes = 0;
+  const kv: Kv = { get: async (k) => data.get(k) ?? null, set: async (k, v) => void (writes++, data.set(k, v)) };
+  let clock = Date.UTC(2026, 9, 1);
+  const b = createBackfill({ kv, config: { days: 14, allowance: 3, everyMs: 60_000 }, now: () => clock, enqueue: async () => true, notify: async () => undefined });
+  for (let i = 0; i < 10; i++) {
+    clock += 15_000;
+    assert.equal(await b.tick(), "idle", "nothing was ever started");
+  }
+  assert.equal(writes, 0, "never started: nothing to keep");
+  await b.add({ id: "mail:a1", at: clock, text: "x", email: { from: "a@example.com" } } as never);
+  assert.equal(writes, 1);
+  clock += 61_000;
+  assert.equal(await b.tick(), "sent");
+  assert.equal(writes, 2, "a tick that hands out an item is written");
+  // Waiting for the answer (the timer ticks every 15 s; one is waited for 30 minutes): 25 minutes of ticks, none writes.
+  const before = writes;
+  for (let i = 0; i < 100; i++) {
+    clock += 15_000;
+    assert.equal(await b.tick(), "idle");
+  }
+  assert.equal(writes - before, 0, "waiting for an answer writes nothing");
 });

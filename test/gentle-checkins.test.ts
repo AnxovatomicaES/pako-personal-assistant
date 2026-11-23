@@ -209,8 +209,9 @@ test("check-in: no storm after a sleep — over two hours old goes to the brief,
 test("check-in: the day's cap is shared with the nudges (gentle 4, standard 6); only a first ask counts", async () => {
   let others = 3;
   const r = ciRig({ others: async () => others });
-  const first = await r.ci.add({ when: MON9 + MIN, thing: "a" });
-  await r.ci.add({ when: MON9 + 2 * MIN, thing: "b" });
+  // Offered on a nudge (a follow-up behind each): the ones the owner asked for in the chat are not held back by the cap (below).
+  const first = await r.ci.add({ when: MON9 + MIN, thing: "a", loop: "a1b2c3d4e5" });
+  await r.ci.add({ when: MON9 + 2 * MIN, thing: "b", loop: "b1b2c3d4e5" });
   r.clock.now = MON9 + MIN;
   await r.ci.sweep();
   assert.equal(r.cards.length, 1, "3 + 0 < 4");
@@ -227,22 +228,70 @@ test("check-in: the day's cap is shared with the nudges (gentle 4, standard 6); 
   // Standard mode: the standard cap.
   others = 4;
   const s = ciRig({ gentle: { ...ON, on: false }, others: async () => others });
-  await s.ci.add({ when: MON9 + MIN, thing: "c" });
+  await s.ci.add({ when: MON9 + MIN, thing: "c", loop: "c1b2c3d4e5" });
   s.clock.now = MON9 + MIN;
   await s.ci.sweep();
   assert.equal(s.cards.length, 1, "4 < 6");
 });
 
+test("check-in: one the owner asked for in the chat at a time (no follow-up behind it) is asked even when the day's cap is spent, and still counts", async () => {
+  const r = ciRig({ others: async () => 6 });
+  await r.ci.add({ when: MON9 + MIN, thing: "start the deck" });
+  await r.ci.add({ when: MON9 + 2 * MIN, thing: "the nudged one", loop: "a1b2c3d4e5" });
+  r.clock.now = MON9 + MIN;
+  assert.equal((await r.ci.sweep()).length, 1, "6 of 6 spent by the others, and still asked: the owner asked for it");
+  assert.match(r.cards[0]!.body, /the deck/);
+  assert.equal(await r.ci.spentToday(), 1, "it still counts, so the others leave room for it");
+  r.clock.now = MON9 + 2 * MIN;
+  await r.ci.sweep();
+  assert.equal(r.cards.length, 1, "the one offered on a nudge is held by the cap");
+  assert.equal((await r.ci.list()).find((c) => c.thing === "the nudged one")!.state, "brief");
+});
+
+test("check-in: one asked and never answered goes to the brief after two hours and holds no place meanwhile (ten of them do not block new ones for days)", async () => {
+  const r = ciRig();
+  for (let i = 0; i < 10; i++) {
+    await r.ci.add({ when: MON9 + (i + 1) * MIN, thing: `thing ${i}` });
+    r.clock.now = MON9 + (i + 1) * MIN;
+    await r.ci.sweep();
+  }
+  assert.equal(r.cards.length, 10);
+  assert.ok((await r.ci.list()).every((c) => c.state === "asked"));
+  const room = await r.ci.add({ when: r.clock.now + 30 * MIN, thing: "the deck" });
+  assert.equal(room.ok, true, "asked ones are not waiting ones: only waiting ones count towards the ten");
+  // Two hours (and a minute) after the last ask, with nothing waiting that is due, the unanswered ones are the brief's.
+  r.clock.now += 2 * HOUR + 11 * MIN;
+  await r.ci.sweep();
+  const states = (await r.ci.list()).map((c) => c.state);
+  assert.equal(states.filter((s) => s === "brief").length, 10, `all ten kept for the brief: ${states.join(",")}`);
+  assert.match((await r.ci.briefLine())!, /“thing 9”/);
+  // Still waiting ones are what count: ten of those are full.
+  const full = ciRig();
+  for (let i = 0; i < 10; i++) assert.equal((await full.ci.add({ when: MON9 + DAY + i * MIN, thing: `w${i}` })).ok, true);
+  assert.match((await full.ci.add({ when: MON9 + DAY + 20 * MIN, thing: "one more" })).say, /10 check-ins waiting/);
+});
+
+test("check-in: gentle mode's cap never raises the standard one (gentle 10, standard 2): the lower of the two counts", async () => {
+  const r = ciRig({ standardMax: 2, gentle: { ...ON, maxPerDay: 10 } });
+  for (const [i, thing] of ["a", "b", "c"].entries()) await r.ci.add({ when: MON9 + (i + 1) * MIN, thing, loop: `${thing}1b2c3d4e5` });
+  for (const i of [1, 2, 3]) {
+    r.clock.now = MON9 + i * MIN;
+    await r.ci.sweep();
+  }
+  assert.equal(r.cards.length, 2, "two asked: the standard cap, not gentle's 10");
+  assert.equal((await r.ci.list()).find((c) => c.thing === "c")!.state, "brief");
+});
+
 /** A follow-ups engine with gentle mode on, its cards (and the fourth button) kept. */
-function fuRig(clock = { now: MON9 }) {
+function fuRig(clock = { now: MON9 }, caps: { standard?: number; gentle?: number } = {}) {
   const store = memKv();
   const cards: { body: string; buttons: { id: string; title: string }[]; more?: { buttons: { id: string; title: string }[]; line: string } }[] = [];
   const ref: { ci: ReturnType<typeof createCheckIns> | null } = { ci: null };
   const engine = createFollowups({
-    config: { delayMs: 10 * MIN, maxPerDay: 6, batchMs: 3 * MIN, quiet: QUIET },
+    config: { delayMs: 10 * MIN, maxPerDay: caps.standard ?? 6, batchMs: 3 * MIN, quiet: QUIET },
     kv: store.kv, timeZone: TZ, now: () => clock.now, enqueue: async () => true,
     card: async (body, buttons, _f, more) => (cards.push({ body, buttons, ...(more ? { more } : {}) }), true), notify: async () => undefined,
-    gentle: async () => ({ maxPerDay: 4, checkin: async (id) => ({ buttons: [await ref.ci!.loopButton(id)], line: "Starting now?" }) }),
+    gentle: async () => ({ maxPerDay: caps.gentle ?? 4, checkin: async (id) => ({ buttons: [await ref.ci!.loopButton(id)], line: "Starting now?" }) }),
   });
   ref.ci = createCheckIns({
     kv: store.kv, timeZone: TZ, now: () => clock.now, settings: async () => ON, standardMax: 6, quiet: QUIET,
@@ -280,6 +329,13 @@ test("check-in on a stuck item: its gentle nudge offers “Check on me in 30 min
   const id = /^ci3:(.+)$/.exec(ask.buttons[2]!.id)![1]!;
   assert.match(await r.ci.pressed("3", id), /Parked: “Send Ana the Q4 deck”/);
   assert.equal((await r.engine.read()).loops.find((l) => l.id === stuck.id)!.status, "parked");
+});
+
+test("follow-ups: gentle mode's cap never raises the standard one for nudges either (gentle 10, standard 2)", async () => {
+  const r = fuRig(undefined, { standard: 2, gentle: 10 });
+  for (const title of ["Book the venue", "Send Ana the Q4 deck", "Pay the printer"]) await seedLoop(r, title);
+  await r.engine.tick();
+  assert.equal(r.cards.length, 2, "two nudged: the standard cap, not gentle's 10");
 });
 
 test("check-in words: no shame word in any of them", () => {

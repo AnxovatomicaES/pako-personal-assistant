@@ -3,8 +3,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createCompanion } from "../src/companion.ts";
+import { HEALTH_KEY } from "../src/health.ts";
 import { plainWords } from "../src/intents.ts";
 import type { Kv } from "../src/kv.ts";
+import { createProactive, HEALTH_KEY as LIFE_HEALTH_KEY, loadProactiveConfig } from "../src/proactive.ts";
 
 function memKv(): Kv & { m: Map<string, string> } {
   const m = new Map<string, string>();
@@ -54,4 +56,32 @@ test("the health diary says once, with its first note, that it is a notebook and
   assert.match(first!.say, /112/);
   const second = await c.command("log: drank 2 glasses of water", plainWords("log: drank 2 glasses of water"));
   assert.ok(second && !/medical device/.test(second.say), "said once only");
+});
+
+test("Labs off (the default install): FORGET MY HEALTH still asks, then forgets the diary of an earlier run and the mood and health facts", async () => {
+  const kv = memKv();
+  const life = createProactive({
+    config: loadProactiveConfig({}).config!, kv, timeZone: "Europe/Madrid", local: true, now: () => at,
+    enqueue: async () => true, card: async () => true, lastOwner: () => 0, bridgeAlive: () => true,
+  });
+  // The assistant's turns keep mood and health facts whatever Labs says; the diary is what an earlier run with the lab on left.
+  assert.equal(await life.learn([{ kind: "mood", key: "today", text: "exhausted and anxious" }], { outside: false }), 1);
+  kv.m.set(HEALTH_KEY, JSON.stringify({ entries: [{ at, kind: "sleep", text: "slept 4 hours" }], meds: [] }));
+  assert.match(kv.m.get(LIFE_HEALTH_KEY) ?? "", /exhausted/);
+  let also = 0;
+  const c = createCompanion({
+    kv, timeZone: "Europe/Madrid", country: "ES", lang: () => "en", people: async () => [], now: () => at, labs: false,
+    alsoForget: async () => { also++; await life.forgetHealth(); },
+  });
+  const asked = await c.command("FORGET MY HEALTH", plainWords("FORGET MY HEALTH"));
+  assert.match(asked?.say ?? "", /FORGET MY HEALTH CONFIRM/, "asked first, as with the lab on");
+  assert.match(kv.m.get(LIFE_HEALTH_KEY) ?? "", /exhausted/, "nothing is deleted on the first ask");
+  const done = await c.command("FORGET MY HEALTH CONFIRM", plainWords("FORGET MY HEALTH CONFIRM"));
+  assert.match(done?.say ?? "", /I deleted your health diary/);
+  assert.equal(also, 1);
+  assert.doesNotMatch(kv.m.get(LIFE_HEALTH_KEY) ?? "", /exhausted/, "the mood and health facts are gone");
+  assert.doesNotMatch(kv.m.get(HEALTH_KEY) ?? "", /slept 4 hours/, "the diary is gone");
+  // Only the forgetting stays on: the rest of the diary's words still go to the assistant.
+  assert.equal(await c.command("MY HEALTH", plainWords("MY HEALTH")), null);
+  assert.equal(await c.command("log: slept 5 hours", plainWords("log: slept 5 hours")), null);
 });

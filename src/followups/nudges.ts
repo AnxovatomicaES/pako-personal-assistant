@@ -1,10 +1,11 @@
 // Nudges and their timing: the quiet hours, when a loop is looked at again, and the tick that turns due batches into jobs and checks due
 // loops, closing them silently or nudging the owner within the day's budget.
 
+import { cap, takeOf } from "../app/budget.ts";
 import { quietAt } from "../day-time.ts";
 import { today } from "../lists.ts";
 import type { Base, Engine, Nudges } from "./parts.ts";
-import { CLAIM_MS, ESCALATE_BEFORE_MS, JOB_HOLD_MS, RECHECK_FOR_MS, RECHECK_MS } from "./limits.ts";
+import { CLAIM_MS, ESCALATE_BEFORE_MS, JOB_HOLD_MS, LAST_LOOK_BEFORE_MS, RECHECK_FOR_MS, RECHECK_MS } from "./limits.ts";
 import { agedDays, agingAt, AGING_DAYS, owedUndated } from "./aging.ts";
 import { isOpen, newId } from "./record.ts";
 import { T } from "./texts.ts";
@@ -22,6 +23,7 @@ export function mountNudges(
   >,
 ): Nudges {
   const quietNow = (t: number): boolean => quietAt(config.quiet, t, d.timeZone);
+  const take = takeOf(d.take, d.othersToday);
 
   /**
    * When a loop is looked at again after a check that did not close it. With a time: an hour before it (the one nudge near the deadline), then
@@ -32,7 +34,7 @@ export function mountNudges(
     // Nothing a server can see (an email to send): said once, two hours before its time; a second look would only say the same again.
     if ("none" in l.check) return 0;
     if (!l.escalated && l.dueAt - ESCALATE_BEFORE_MS > t + 15 * 60_000) return l.dueAt - ESCALATE_BEFORE_MS;
-    return !("none" in l.check) && l.dueAt - 5 * 60_000 > t + 60_000 ? l.dueAt - 5 * 60_000 : 0;
+    return !("none" in l.check) && l.dueAt - LAST_LOOK_BEFORE_MS > t + 60_000 ? l.dueAt - LAST_LOOK_BEFORE_MS : 0;
   };
 
   let ticking = false;
@@ -63,7 +65,7 @@ export function mountNudges(
       if (quietNow(t)) return out;
       // Gentle mode (src/gentle.ts): its own cap, words and buttons, and a loop left unanswered twice folded into the brief. Null: as before.
       const g: GentleRound | null = d.gentle ? await d.gentle().catch(() => null) : null;
-      const cap = g ? g.maxPerDay : config.maxPerDay;
+      const limit = cap(config.maxPerDay, g?.maxPerDay);
       const st = await read();
       // A loop whose conversation has a job still unanswered is looked at after that answer: it may say the loop was called off.
       const held = st.jobs.filter((j) => t - j.at < JOB_HOLD_MS);
@@ -129,15 +131,15 @@ export function mountNudges(
         const aged = l.nextCheckAt === 0 && owedUndated(l);
         const wanted = after || l.status === "snoozed" || soon || aged || (l.nudges === 0 && !seen.replied);
         const variant = g ? pickVariant(VARIANTS[l.kind].length, l.variant, l.id) : undefined;
-        // The budget is taken in the same write that records the nudge: two ticks can never both spend the last one.
-        const others = wanted ? await (d.othersToday?.() ?? Promise.resolve(0)).catch(() => 0) : 0;
+        // The budget is taken in the same write that records the nudge, in the part's turn at the day's cap: two ticks, or this and another
+        // part, can never both spend the last one.
         const go = wanted
-          ? await mutate((s) => {
+          ? await take(limit, (room) => mutate((s) => {
             const day = today(now(), d.timeZone);
             if (s.budget.day !== day) s.budget = { day, n: 0 };
             const x = s.loops.find((y) => y.id === l.id);
             if (!unchanged(x)) return false;
-            if (s.budget.n + others >= cap) {
+            if (s.budget.n >= room) {
               x.nextCheckAt = now() + 30 * 60_000;
               return false;
             }
@@ -157,7 +159,7 @@ export function mountNudges(
               if (after) x.afterAsked = true;
             }
             return true;
-          })
+          }))
           : await mutate((s) => {
             const x = s.loops.find((y) => y.id === l.id);
             if (unchanged(x)) Object.assign(x, { lastCheck: seen.said, checkedAt: now(), nextCheckAt: nextAfter(x, now()) });
@@ -191,7 +193,7 @@ export function mountNudges(
         const feedback = d.quality?.ask(l, lg);
         const sent = await d.card(body, buttons, feedback, more).catch(() => false);
         if (!sent) await d.notify(tl("held", { text: body }));
-        d.quality?.nudged(l, sent);
+        d.quality?.nudged(l, sent && !!feedback?.lineShown);
         d.control?.log("followup", tl("logNudge", { title: l.title }));
         out.nudged++;
       }

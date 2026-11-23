@@ -3,7 +3,7 @@
 import { randomBytes } from "node:crypto";
 import { waLink } from "../links.ts";
 import { MAX_SEEN } from "./inbox.ts";
-import { TYPED_NUMBER_MS, SEND_DAILY, SEND_PER_NUMBER_DAILY, REPLY_FORWARD_MS } from "./shared.ts";
+import { TYPED_NUMBER_MS, SEND_DAILY, SEND_PER_NUMBER_DAILY, REPLY_FORWARD_MS, cut } from "./shared.ts";
 import { callingCode, nationalNumber, phoneCountry, withoutTrunkZero } from "../region.ts";
 import type { Door } from "./door.ts";
 import type { Handler } from "./incoming.ts";
@@ -44,7 +44,7 @@ export function mountMessages(door: Door): Part {
       await sendText(tx("unknownFriend", { to: m.to, cc: codeExample(lang()) }));
       return;
     }
-    const words = m.text.slice(0, 700);
+    const words = cut(m.text, 700);
     note(tx("notePrepared", { label, owner: d.ownerName }));
     await sendText(tx("messageLink", { label, words, link: waLink(digits, words) }));
   };
@@ -100,10 +100,13 @@ export function mountMessages(door: Door): Part {
       await sendText(blocked);
       return;
     }
-    door.pendingSend = { id: randomBytes(5).toString("hex"), digits: who.digits, label: who.label, text: s.text, at, typed: true };
+    const p = { id: randomBytes(5).toString("hex"), digits: who.digits, label: who.label, text: s.text, at, typed: true, n: -1 };
+    door.pendingSend = p;
     if (door.pendingCall) door.pendingCall.typed = false;
     const card = tx("sendCard", { label: who.label, text: withOpening(s.text) });
-    await sendButtons(why ? `${why}\n\n${card}` : card, `s1:${door.pendingSend.id}`, `s0:${door.pendingSend.id}`, tx("btnSend"));
+    const shown: { n?: number } = {};
+    await sendButtons(why ? `${why}\n\n${card}` : card, `s1:${p.id}`, `s0:${p.id}`, tx("btnSend"), shown);
+    p.n = shown.n ?? -1;
   };
 
   const answerSend = async (p: NonNullable<typeof door.pendingSend>, yes: boolean): Promise<void> => {
@@ -125,7 +128,7 @@ export function mountMessages(door: Door): Part {
     if (seenReplies.has(id)) return "reply repeated";
     seenReplies.add(id);
     if (seenReplies.size > MAX_SEEN) seenReplies.delete(seenReplies.values().next().value!);
-    const body = m.type === "text" ? String((m.text as { body?: string } | undefined)?.body ?? "").trim().slice(0, 1500) : "";
+    const body = m.type === "text" ? cut(String((m.text as { body?: string } | undefined)?.body ?? "").trim(), 1500) : "";
     who.at = now(); // the conversation goes on while they talk
     note(tx("noteReplied", { label: who.label, owner: d.ownerName }));
     await door.notifyOwner(body ? tx("friendReplied", { label: who.label, body }) : tx("friendRepliedOther", { label: who.label }));

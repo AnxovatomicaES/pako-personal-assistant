@@ -12,6 +12,7 @@
 // the day's shared nudge cap is spent. AFTER_MEETING=off turns it off.
 
 import { randomBytes } from "node:crypto";
+import { takeOf, type Take } from "./app/budget.ts";
 import type { CalEvent } from "./calendar.ts";
 import { busyUntil } from "./gentle-checkins.ts";
 import { quietAt } from "./gentle.ts";
@@ -122,13 +123,16 @@ export interface AfterMeetingDeps {
   zoomReview: boolean;
   /** The day's shared cap, and what the follow-ups, check-ins, time-to-do and suggestions sent today. */
   cap: () => Promise<number>;
-  others: () => Promise<number>;
+  others?: () => Promise<number>;
+  /** This part's turn at the day's cap (src/app/budget.ts): the check against the others and the count are one turn. Absent: `others`. */
+  take?: Take;
   card: (body: string, buttons: { id: string; title: string }[]) => Promise<boolean>;
   log?: (text: string) => void;
 }
 
 export function createAfterMeeting(d: AfterMeetingDeps) {
   const now = d.now ?? Date.now;
+  const take = takeOf(d.take, d.others);
   const tz = d.timeZone;
   let memory: State = { asks: [], muted: [] };
   const load = async (): Promise<State> => (d.kv ? stateOf((await readJsonRecord(d.kv, AFTER_MEETING_KEY)) ?? {}) : structuredClone(memory));
@@ -165,15 +169,18 @@ export function createAfterMeeting(d: AfterMeetingDeps) {
       .sort((a, b) => b.end - a.end);
     const e = due[0];
     if (!e) return false;
-    // The others' total and this part's own questions today (review finding: its own were left out of its check).
-    const mine = s.asks.filter((x) => today(x.at, tz) === day).length;
-    if (mine + (await d.others().catch(() => 0)) >= (await d.cap().catch(() => 0))) return false;
     const a: Ask = {
       id: randomBytes(5).toString("hex"), key: titleKey(e.title).slice(0, 300), event: e.id.slice(0, 300), start: e.start, title: inline(e.title, 120), at: t,
     };
-    // Kept before it is sent: a send that fails is not tried again for that meeting (one question, never two).
-    s.asks.push(a);
-    await save(s);
+    // This part's own questions today count with the others' (review finding: its own were left out of its check), in its turn at the day's
+    // cap. Kept before it is sent: a send that fails is not tried again for that meeting (one question, never two).
+    const took = await take(await d.cap().catch(() => 0), async (room) => {
+      if (s.asks.filter((x) => today(x.at, tz) === day).length >= room) return false;
+      s.asks.push(a);
+      await save(s);
+      return true;
+    });
+    if (!took) return false;
     const ok = await d.card(AW()("ask", { title: a.title }), [
       { id: `an:${a.id}`, title: AW()("btnNothing") }, { id: `am:${a.id}`, title: AW()("btnMute") },
     ]).catch(() => false);

@@ -273,3 +273,111 @@ test("slack poll: a place the store did not give back at start is not replaced b
   await poll.round();
   assert.deepEqual(got.map((e) => e.text), ["Can you call me back?"], "the DM sent while Pako was off is not skipped");
 });
+
+test("slack poll: a mention that Slack's search shows later than a newer one is still taken, and none is taken twice (nor after a restart)", async () => {
+  let clock = 1_800_000_000_000;
+  const s = fakeSlack(0);
+  const got: SlackEvent[] = [];
+  const kv = memoryKv();
+  const make = () => createSlackPoll({ api: s.api, self: async () => "U1", deliver: async (e) => void got.push(e), kv, now: () => clock });
+  const mention = (at: number, user: string, text: string, channel: string) => ({ ts: slackTs(at), user, text, channel: { id: channel }, permalink: "" });
+  const poll = make();
+  await poll.round(); // marks the start
+  const contract = mention(clock + 10_000, "U2", "<@U1> can you send the contract today?", "C111"); // written first
+  const lunch = mention(clock + 15_000, "U3", "<@U1> lunch?", "C222"); // written five seconds later
+  clock += 120_000;
+  s.mentions.push(lunch); // searchable first: search indexes each channel on its own
+  await poll.round();
+  await poll.round();
+  assert.deepEqual(got.map((e) => e.text), ["<@U1> lunch?"]);
+  clock += 120_000;
+  s.mentions.push(contract); // the older one shows up a little later
+  await poll.round();
+  await poll.round();
+  assert.deepEqual(got.map((e) => e.text), ["<@U1> lunch?", "<@U1> can you send the contract today?"], "the late one is not lost behind the newer");
+  // Looked at again and again, and by a Pako started again on the same store: each is still taken once.
+  for (let i = 0; i < 4; i++) await poll.round();
+  clock += 60_000;
+  const again = make();
+  for (let i = 0; i < 4; i++) await again.round();
+  assert.equal(got.length, 2);
+  // Long after, the stretch that was looked at again is forgotten (what is kept to tell them apart stays small).
+  clock += 3600_000;
+  s.mentions.push(mention(clock - 1000, "U2", "<@U1> any news?", "C111"));
+  for (let i = 0; i < 4; i++) await again.round();
+  assert.equal(got.length, 3);
+  assert.deepEqual((JSON.parse(kv.data.get("slack-poll")!) as { seen: string[] }).seen.length, 1);
+});
+
+/**
+ * The project's own app: Slack gives it a page of 15 messages a call, and Pako's gate lets a look make one history call, so the second page of
+ * a conversation is refused ("ratelimited") as in src/slack.ts. `latest` is honoured as Slack does (the messages before it, newest first).
+ */
+function pagedSlack() {
+  const all: { ts: string; user: string; text: string }[] = [];
+  const asked: string[] = [];
+  const state = { gone: false };
+  const api = async (method: string, params: Record<string, string>): Promise<Record<string, unknown>> => {
+    if (method === "conversations.list") return { ok: true, channels: [{ id: "D0001", is_im: true }], response_metadata: { next_cursor: "" } };
+    if (method === "search.messages") return { ok: true, messages: { matches: [] } };
+    if (method !== "conversations.history") throw new Error(`unexpected ${method}`);
+    if (state.gone) throw new Error("Slack conversations.history: channel_not_found");
+    if (params.cursor) throw new Error("Slack conversations.history: ratelimited (waiting for the next free call)");
+    asked.push(`${params.oldest}..${params.latest ?? ""}`);
+    const span = all
+      .filter((m) => Number(m.ts) > Number(params.oldest) && (!params.latest || Number(m.ts) < Number(params.latest)))
+      .sort((a, b) => Number(b.ts) - Number(a.ts));
+    return { ok: true, messages: span.slice(0, 15), has_more: span.length > 15, response_metadata: { next_cursor: span.length > 15 ? "more" : "" } };
+  };
+  return { all, asked, state, api };
+}
+
+test("slack poll: a DM with more new messages than one call gives is read newest first, the older ones in the next looks, none lost or twice (also across a restart)", async () => {
+  let clock = 1_800_000_000_000;
+  const s = pagedSlack();
+  const got: string[] = [];
+  const kv = memoryKv();
+  const make = () => createSlackPoll({ api: s.api, self: async () => "U1", deliver: async (e) => void got.push(e.text ?? ""), kv, now: () => clock, perRound: 1 });
+  const poll = make();
+  await poll.round(); // marks the start
+  clock += 60_000;
+  for (let i = 1; i <= 40; i++) s.all.push({ ts: slackTs(clock + i * 1000), user: "U2", text: i === 2 ? "msg 2: can you send me the signed contract by Friday?" : `msg ${i}` });
+  clock += 30 * 60_000; // this DM's turn comes half an hour later
+  await poll.round();
+  assert.deepEqual(got.map((t) => t.slice(0, 6).trim()), Array.from({ length: 15 }, (_, i) => `msg ${26 + i}`), "the newest page first, oldest first within it");
+  clock += 60_000;
+  await poll.round();
+  assert.equal(got.length, 30, "the next look reads the span the first could not reach");
+  // Pako is started again on the same store with the last ten still to read: they are not forgotten.
+  const again = make();
+  for (let i = 0; i < 4; i++) {
+    clock += 60_000;
+    await again.round();
+  }
+  assert.equal(got.length, 40);
+  assert.deepEqual(new Set(got).size, 40, "each message once");
+  assert.ok(got.some((t) => t.startsWith("msg 2:")), "the ask in the second message was seen");
+  const kept = JSON.parse(kv.data.get("slack-poll")!) as { backlog: Record<string, unknown> };
+  assert.deepEqual(kept.backlog, {}, "nothing left over");
+  // Nothing is read twice later: with no news, one look asks for what is after the newest and gets nothing.
+  clock += 60_000;
+  await again.round();
+  assert.equal(got.length, 40);
+});
+
+test("slack poll: a span left unread is dropped when its conversation can no longer be read", async () => {
+  let clock = 1_800_000_000_000;
+  const s = pagedSlack();
+  const kv = memoryKv();
+  const poll = createSlackPoll({ api: s.api, self: async () => "U1", deliver: async () => {}, kv, now: () => clock, perRound: 1 });
+  await poll.round();
+  clock += 60_000;
+  for (let i = 1; i <= 20; i++) s.all.push({ ts: slackTs(clock + i * 1000), user: "U2", text: `msg ${i}` });
+  clock += 60_000;
+  await poll.round();
+  assert.deepEqual(Object.keys((JSON.parse(kv.data.get("slack-poll")!) as { backlog: object }).backlog), ["D0001"]);
+  s.state.gone = true; // the conversation was closed meanwhile
+  clock += 60_000;
+  await poll.round();
+  assert.deepEqual((JSON.parse(kv.data.get("slack-poll")!) as { backlog: object }).backlog, {});
+});

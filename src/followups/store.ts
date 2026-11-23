@@ -7,7 +7,7 @@ import {
 } from "./limits.ts";
 import { EXPIRED_MAX, stateOf } from "./record.ts";
 import type { Base, Store } from "./parts.ts";
-import type { FollowupsState } from "./types.ts";
+import type { FollowupsState, Loop } from "./types.ts";
 import { readJsonRecord } from "../json-record.ts";
 
 /** The store key the brief and the Zoom review read (loopsOf turns its value into checked loops). */
@@ -19,6 +19,8 @@ const EXPIRED_KEEP_MS = 90 * 24 * 3600_000;
 export function mountStore({ d, now }: Base): Store {
   let memory: FollowupsState = stateOf({});
   let chain: Promise<unknown> = Promise.resolve();
+
+  const chased = (l: Loop): boolean => l.kind === "other_promise" && !!d.chaseDraft && !l.chase?.off;
 
   const readStrict = async (): Promise<FollowupsState> => {
     if (!d.kv) return structuredClone(memory);
@@ -41,8 +43,10 @@ export function mountStore({ d, now }: Base): Store {
       else delete s.expired;
       s.loops = s.loops
         // An open loop is kept until its time has passed too (a deadline 30 days out keeps its reminder), not only 14 days from when it was made.
+        // Someone else's promise Pako chases (half a working day after its time, then every two working days: src/followups/chase.ts) is kept
+        // as long past its time as any open loop is from its making: one made weeks ahead would be gone before its chase came.
         .filter((l) => (l.status === "open" || l.status === "snoozed"
-          ? t - l.createdAt < OPEN_KEEP_MS || (!!l.dueAt && t < l.dueAt + PAST_HIDE_MS)
+          ? t - l.createdAt < OPEN_KEEP_MS || (!!l.dueAt && t < l.dueAt + (chased(l) ? OPEN_KEEP_MS : PAST_HIDE_MS))
           // A parked one stays findable in the Parked list for a month (src/gentle.ts).
           : l.status === "parked" ? t - (l.parkedAt ?? l.createdAt) < PARKED_KEEP_MS
           : t - (l.closedAt ?? l.createdAt) < CLOSED_KEEP_MS));
