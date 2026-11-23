@@ -368,6 +368,7 @@ h2 svg.lucide { color: var(--accent); }
 .signin-card b { color: var(--text); }
 .signin-card section + section { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
 .signin-card h2 { display: block; font-size: 15px; margin-bottom: 8px; }
+.signin-cmd { margin: 4px 0 14px; padding: 10px 14px; border-radius: 12px; background: var(--line); color: var(--text); font-size: 15px; text-align: left; user-select: all; overflow-x: auto; }
 
 @media (max-width: 520px) {
   .orb-wrap { width: 64px; height: 64px; }

@@ -246,7 +246,9 @@ test("the link route: only with the bridge token, compared in constant time; the
     const again = await fetch(r.here(link), { redirect: "manual" });
     assert.equal(again.status, 401, "once");
     const page = await again.text();
-    assert.match(page, /run <code>npm run panel<\/code>: it opens the panel with a fresh link, no restart needed/);
+    assert.match(page, /<pre class="signin-cmd"><code>npm run panel<\/code><\/pre>/, "the command stands alone, so nothing around it reads as part of it");
+    assert.doesNotMatch(page, /npm run panel<\/code>:/, "no colon right after the command (it was typed as part of it)");
+    assert.match(page, /It opens the panel with a fresh link\. No restart needed\./);
     assert.doesNotMatch(page, /reinicia Pako|Para entrar|WhatsApp/);
   } finally {
     r.close();
