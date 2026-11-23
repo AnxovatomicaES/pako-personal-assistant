@@ -9,7 +9,7 @@ import { CHAT_WORDS, WORDS } from "./i18n.js";
 import { allEmpty, briefTop, cardHasContent, catchUpLine, eventTag, freshnessLine, hideWhenEmpty, kpiTiles, WORDS as DASH } from "./dashboard-model.js";
 import { setMail } from "./mail.js";
 import { switchDemo } from "./demo.js";
-import { h, localeOf } from "./dom.js";
+import { h, localeOf, fill } from "./dom.js";
 
 const REFRESH_MS = 60_000;
 const $ = (s, root = document) => root.querySelector(s);
@@ -57,7 +57,7 @@ const rich = (text) => text.split(/\*\*(.+?)\*\*/g).map((part, i) => (i % 2 ? h(
 function applyStatic() {
   // The hint's icon as written in the page is a server's (a phone: the commands go by WhatsApp); with the chat here, the chat's own.
   if (HAS_CHAT) $("#sys-hint > i[data-lucide]")?.setAttribute("data-lucide", "message-circle");
-  for (const el of document.querySelectorAll("[data-i18n]")) el.replaceChildren(...rich(t(el.dataset.i18n)));
+  for (const el of document.querySelectorAll("[data-i18n]")) fill(el, ...rich(t(el.dataset.i18n)));
   for (const el of document.querySelectorAll("[data-i18n-aria]")) el.setAttribute("aria-label", t(el.dataset.i18nAria));
   for (const el of document.querySelectorAll("[data-i18n-placeholder]")) el.setAttribute("placeholder", t(el.dataset.i18nPlaceholder));
   document.documentElement.classList.add("i18n-ready");
@@ -189,7 +189,7 @@ function renderHeader() {
   const now = data.now;
   $("#date").textContent = dayLabel(now);
   // The name the person gave (on a server, the owner's setting); none yet: what Pako calls them meanwhile.
-  $("#greeting").replaceChildren(`${greeting(hourOf(now))}, `, h("span", { class: "grad" }, data.name || t("friend")));
+  fill($("#greeting"), `${greeting(hourOf(now))}, `, h("span", { class: "grad" }, data.name || t("friend")));
 
   const today = eventsOn(dayKey(now));
   const upcoming = today.filter((e) => !e.allDay && e.end > nowMs());
@@ -203,7 +203,7 @@ function renderHeader() {
   if (data.slack) parts.push([h("b", {}, String(slack)), t("sum.slack")]);
   if (rems) parts.push([h("b", {}, String(rems)), rems === 1 ? t("sum.rem") : t("sum.rems")]);
   const sum = $("#summary");
-  sum.replaceChildren(...parts.flatMap((p, i) => (i ? [i === parts.length - 1 ? t("sum.and") : ", ", ...p] : p)), ".");
+  fill(sum, ...parts.flatMap((p, i) => (i ? [i === parts.length - 1 ? t("sum.and") : ", ", ...p] : p)), ".");
   // Why, when it was not the owner: the store came back empty (a STOP may have been lost), or it cannot be read yet.
   const why = data.pauseWhy === "store-empty" ? t("why.storeEmpty") : data.pauseWhy === "store-unknown" ? t("why.storeUnknown") : "";
   if (data.paused) sum.prepend(h("b", { style: "color: var(--danger)" }, t("sum.paused", { why })), t("sum.pausedTail"));
@@ -223,7 +223,7 @@ function renderHeader() {
 
 function tickClock() {
   const p = partsOf(new Date(nowMs()), { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  $("#clock").replaceChildren(`${p.hour}:${p.minute}`, h("span", { class: "sec" }, p.second));
+  fill($("#clock"), `${p.hour}:${p.minute}`, h("span", { class: "sec" }, p.second));
 }
 
 // ---------- KPIs ----------
@@ -277,7 +277,7 @@ function renderBriefTop() {
   $("#brief-top-title").textContent = DASH.briefTitle;
   $("#brief-top-asof").textContent = b.asOf ? DASH.briefAsOf.replace("{time}", `${dayLabel(b.asOf)} ${hm(b.asOf)}`) : "";
   $("#brief-top-headline").textContent = b.headline;
-  $("#brief-top-items").replaceChildren(...b.items.map((x) => h("li", { class: `item${x.done ? " done" : ""}` },
+  fill($("#brief-top-items"), ...b.items.map((x) => h("li", { class: `item${x.done ? " done" : ""}` },
     h("span", { class: "ic" }, icon(x.done ? "circle-check" : "circle")),
     h("div", { class: "body" }, h("div", { class: "what" }, x.title), x.sources.length ? h("div", { class: "src muted small" }, x.sources.join(" · ")) : ""))),
   ...(b.more ? [h("li", { class: "muted small" }, DASH.briefMore.replace("{n}", String(b.more)))] : []));
@@ -298,7 +298,7 @@ function renderLoops() {
   const now = nowMs();
   const owes = (l) => l.kind !== "other_promise";
   const sorted = [...loops].sort((x, y) => Number(owes(y)) - Number(owes(x)) || (x.dueAt ?? Infinity) - (y.dueAt ?? Infinity));
-  $("#loops-list").replaceChildren(...sorted.slice(0, 20).map((l) => h("li", { class: "item" },
+  fill($("#loops-list"), ...sorted.slice(0, 20).map((l) => h("li", { class: "item" },
     h("span", { class: "ic" }, icon(owes(l) ? "circle-dot" : "hourglass")),
     h("div", { class: "body" },
       h("div", { class: "row" }, h("span", { class: "who" }, l.title), l.dueAt ? dueChip(l.dueAt, now) : ""),
@@ -328,7 +328,7 @@ function applyEmptyRule() {
     $("#welcome-title").textContent = DASH.welcomeTitle;
     $("#welcome-lead").textContent = DASH.welcomeLead;
     const next = window.pakoNextStep;
-    $("#welcome-next").replaceChildren(next ? h("a", { class: "btn primary", href: next.href }, next.text, " · ", DASH.settings) : "");
+    fill($("#welcome-next"), next ? h("a", { class: "btn primary", href: next.href }, next.text, " · ", DASH.settings) : "");
   }
 }
 
@@ -359,17 +359,17 @@ function renderCatchUp() {
 function renderAgenda() {
   const tl = $("#timeline");
   const allday = $("#allday");
-  allday.replaceChildren();
+  fill(allday);
   // Which calendars were read, and when: a new invitation not shown yet may simply not have reached that source (Google's links lag).
   const fresh = $("#cal-fresh");
   if (fresh) fresh.textContent = freshnessLine(data.calendarSources, nowMs());
   if (!data.calendarOn) {
-    tl.replaceChildren(h("div", { class: "empty" }, icon("calendar-plus"), t("agenda.off")));
+    fill(tl, h("div", { class: "empty" }, icon("calendar-plus"), t("agenda.off")));
     paintIcons();
     return;
   }
   if (!data.calendarOk && !data.events.length) {
-    tl.replaceChildren(h("div", { class: "empty" }, icon("calendar-x"), t("agenda.unread")));
+    fill(tl, h("div", { class: "empty" }, icon("calendar-x"), t("agenda.unread")));
     paintIcons();
     return;
   }
@@ -379,7 +379,7 @@ function renderAgenda() {
   for (const e of list.filter((x) => x.allDay)) allday.append(h("span", { class: "pill" }, icon("sun"), e.title));
   const timed = list.filter((x) => !x.allDay).sort((a, b) => a.start - b.start);
   if (!timed.length) {
-    tl.replaceChildren(h("div", { class: "empty" }, icon("coffee"), Number(day) === 0 ? t("agenda.freeToday") : t("agenda.freeTomorrow")));
+    fill(tl, h("div", { class: "empty" }, icon("coffee"), Number(day) === 0 ? t("agenda.freeToday") : t("agenda.freeTomorrow")));
     paintIcons();
     return;
   }
@@ -432,7 +432,7 @@ function renderAgenda() {
     const nowH = hourOf(now);
     if (nowH >= startH && nowH <= endH) inner.append(h("div", { class: "tl-now", id: "tl-now", style: `top:${(nowH - startH) * px + 6}px` }));
   }
-  tl.replaceChildren(inner);
+  fill(tl, inner);
   paintIcons();
   const nowLine = $("#tl-now");
   if (nowLine && firstPaint) tl.scrollTop = Math.max(0, nowLine.offsetTop - 120);
@@ -454,7 +454,7 @@ function renderWeek(tl) {
               h("div", { class: "row" }, h("span", { class: "who" }, e.title), h("span", { class: "ago" }, e.allDay ? t("agenda.allDay") : `${hm(e.start)}–${hm(e.end)}`)),
               e.location ? h("div", { class: "what" }, e.location) : null))))));
   }
-  tl.replaceChildren(box.childElementCount ? box : h("div", { class: "empty" }, icon("calendar-check"), t("agenda.freeWeek")));
+  fill(tl, box.childElementCount ? box : h("div", { class: "empty" }, icon("calendar-check"), t("agenda.freeWeek")));
   paintIcons();
   if (animate()) gsap().from(".week-day", { y: 12, opacity: 0, duration: 0.5, stagger: 0.06, ease: "power2.out" });
 }
@@ -476,7 +476,7 @@ function renderMail() {
   if (!data.mail) {
     $("#mail-address").textContent = "";
     for (const k of ["aviso", "guardado", "masivo"]) $(`.seg-${k}`).style.opacity = "0";
-    list.replaceChildren(h("li", { class: "empty" }, icon("mail-x"), t("mail.off")));
+    fill(list, h("li", { class: "empty" }, icon("mail-x"), t("mail.off")));
     return;
   }
   $("#mail-address").textContent = data.mail.address;
@@ -499,7 +499,7 @@ function renderMail() {
     offset += len;
   }
   countUp($("#ring-num"), day24.length);
-  $("#mail-legend").replaceChildren(
+  fill($("#mail-legend"), 
     ...[["aviso", "Needs you", "var(--aviso)"], ["guardado", "Worth knowing", "var(--guardado)"], ["masivo", "Read later and promotions", "var(--masivo)"]].map(([k, label, color]) =>
       h("li", {}, h("i", { class: "sw", style: `background:${color}` }), label, h("b", {}, String(n[k])))),
   );
@@ -510,7 +510,7 @@ function renderMail() {
   const max = Math.max(1, ...bins);
   const spark = $("#mail-spark");
   const ns = "http://www.w3.org/2000/svg";
-  spark.replaceChildren();
+  fill(spark);
   const defs = document.createElementNS(ns, "defs");
   const grad = document.createElementNS(ns, "linearGradient");
   grad.setAttribute("id", "sparkfill");
@@ -562,7 +562,7 @@ const KIND_ICON = {
 function renderFeed() {
   const feed = $("#feed");
   const log = data.log.slice(0, 40);
-  feed.replaceChildren(
+  fill(feed, 
     ...(log.length
       ? log.map((l) => h("li", {}, h("span", { class: "ic" }, icon(KIND_ICON[l.kind] ?? "dot")), h("div", { class: "txt" }, l.text, h("span", { class: "ago" }, ago(l.at)))))
       : [h("li", { class: "empty" }, icon("sparkles"), t("act.empty"))]),
@@ -572,9 +572,9 @@ function renderFeed() {
 function renderSlack() {
   const list = $("#slack-list");
   // Not connected: no card at all (setting it up is in Settings, Connections).
-  if (!data.slack) return void list.replaceChildren();
-  if (!data.slack.length) return void list.replaceChildren(h("li", { class: "empty" }, icon("message-square-dashed"), t("slack.empty")));
-  list.replaceChildren(
+  if (!data.slack) return void fill(list);
+  if (!data.slack.length) return void fill(list, h("li", { class: "empty" }, icon("message-square-dashed"), t("slack.empty")));
+  fill(list, 
     ...data.slack.slice(0, 12).map((a) =>
       h("li", { class: "item" }, h("span", { class: "ic" }, icon(/privado|private/.test(a.where) ? "at-sign" : "hash")),
         h("div", { class: "body" }, h("div", { class: "row" }, h("span", { class: "who" }, a.where), h("span", { class: "ago" }, ago(a.at))), h("div", { class: "what" }, a.text)))),
@@ -587,8 +587,8 @@ function renderBookings() {
   if (!data.bookings) return;
   const list = $("#book-list");
   const how = { pedida: t("book.pedida"), enlace: t("book.enlace") };
-  if (!data.bookings.length) return void list.replaceChildren(h("li", { class: "empty" }, icon("utensils-crossed"), t("book.empty")));
-  list.replaceChildren(
+  if (!data.bookings.length) return void fill(list, h("li", { class: "empty" }, icon("utensils-crossed"), t("book.empty")));
+  fill(list, 
     ...data.bookings.map((b) => {
       const u = until(b.slot);
       return h("li", { class: "item" }, h("span", { class: "ic" }, icon(b.status === "pedida" ? "mail-check" : "link")),
@@ -601,8 +601,8 @@ function renderBookings() {
 function renderReminders() {
   const list = $("#rem-list");
   const items = [...data.reminders].sort((a, b) => a.at - b.at);
-  if (!items.length) return void list.replaceChildren(h("li", { class: "empty" }, icon("bell-off"), t("rem.empty")));
-  list.replaceChildren(
+  if (!items.length) return void fill(list, h("li", { class: "empty" }, icon("bell-off"), t("rem.empty")));
+  fill(list, 
     ...items.map((r) => {
       const u = r.held ? { text: t("rem.held"), cls: "late" } : until(r.at);
       return h("li", { class: "item" }, h("span", { class: "ic" }, icon("alarm-clock")),
@@ -614,15 +614,15 @@ function renderReminders() {
 
 function renderMemory() {
   const notes = $("#notes");
-  notes.replaceChildren(...(data.notes.length ? data.notes.slice(0, 24).map((n) => h("span", { class: "note" }, n.text)) : [h("p", { class: "muted small" }, t("mem.empty"))]));
+  fill(notes, ...(data.notes.length ? data.notes.slice(0, 24).map((n) => h("span", { class: "note" }, n.text)) : [h("p", { class: "muted small" }, t("mem.empty"))]));
   const calls = $("#calls");
   const all = [...data.calls.map((c) => ({ at: c.at, text: c.summary })), ...data.happenings].sort((a, b) => b.at - a.at).slice(0, 6);
-  calls.replaceChildren(...(all.length ? all.map((c) => h("li", { class: "item" }, h("span", { class: "ic" }, icon("phone-call")), h("div", { class: "body" }, h("div", { class: "what" }, c.text), h("span", { class: "ago" }, ago(c.at))))) : [h("li", { class: "muted small empty" }, t("mem.noCalls"))]));
+  fill(calls, ...(all.length ? all.map((c) => h("li", { class: "item" }, h("span", { class: "ic" }, icon("phone-call")), h("div", { class: "body" }, h("div", { class: "what" }, c.text), h("span", { class: "ago" }, ago(c.at))))) : [h("li", { class: "muted small empty" }, t("mem.noCalls"))]));
 }
 
 const SVC_ICON = { whatsapp: "message-circle", mac: "laptop", phone: "phone", mail: "mail", calendar: "calendar", slack: "hash", zoom: "video", telegram: "send" };
 function renderSystem() {
-  $("#services").replaceChildren(
+  fill($("#services"), 
     ...data.integrations.map((s) => {
       const detail = s.detail;
       return h("div", { class: `svc${s.on ? "" : " off"}` }, h("div", { class: "name" }, icon(SVC_ICON[s.key] ?? "circle"), s.name, h("span", { class: "dot", style: "margin-left:auto" })), h("div", { class: "detail", title: detail }, detail));
@@ -826,7 +826,7 @@ function showTrouble(trouble) {
   // Drawn again only when it changes: the poll comes every second and a half, and a link being pressed must not be swapped
   // under the pointer.
   if (trouble && trouble !== chat.trouble) tell("error"); // a short shake when something new keeps Pako from answering
-  if (trouble !== chat.trouble) banner.replaceChildren(...(trouble ? BANNERS[trouble]() : []));
+  if (trouble !== chat.trouble) fill(banner, ...(trouble ? BANNERS[trouble]() : []));
   chat.trouble = trouble;
   $("#chat-status").textContent = trouble ? STATUS_LINE[trouble] : chat.waiting ? t("chat.typing") : t("chat.online");
   return stick;
@@ -912,7 +912,7 @@ async function pollChat() {
       chat.epoch = body.epoch;
       chat.messages = [];
       chat.last = 0;
-      $("#chat-log").replaceChildren();
+      fill($("#chat-log"));
       chat.busy = false;
       return void pollChat();
     }
@@ -1317,7 +1317,7 @@ function renderTg() {
   if (sig === tg.sig) return;
   tg.sig = sig;
   const had = tg.el.contains(document.activeElement);
-  tg.el.replaceChildren(...tgBody(view));
+  fill(tg.el, ...tgBody(view));
   paintIcons();
   // A press that changed the view leaves the focus on something that is gone: it goes to the token field, or to the first thing to press;
   // while there is none (a request on its way), the body itself keeps it, so it is never dropped on the page behind.
@@ -1342,12 +1342,15 @@ const welcome = { open: false, first: false, steps: [], i: 0, watch: "", replySi
 
 /**
  * The steps this time: on the first visit, the demo week or the person's own (where the server offers the demo); what a setting already
- * decides is not asked (overview.choose), and Telegram only where the server has it.
+ * decides is not asked (overview.choose), and Telegram only where the server has it. Right after the name, Claude: Pako answers nothing
+ * without it, so it is connected and asked one question before anything is tried. On a computer only (data.demo is there exactly when Claude
+ * runs on this computer, src/app/panel.ts), and not in the demo week, whose answers are recorded.
  */
 function welcomeSteps(first) {
   const c = data?.choose ?? { name: false };
   const start = first && data?.demo && !data.demo.on ? ["start"] : [];
-  return [...start, ...(c.name ? ["name"] : []), ...(first ? ["try", ...(tg.available ? ["phone"] : [])] : [])];
+  const claude = first && data?.demo && !data.demo.on ? ["claude"] : [];
+  return [...start, ...(c.name ? ["name"] : []), ...claude, ...(first ? ["try", ...(tg.available ? ["phone"] : [])] : [])];
 }
 
 /** `first`: the first visit (everything, and it ends the welcome for good); otherwise from the footer, for the name. */
@@ -1368,7 +1371,7 @@ function openWelcome(first) {
     b.querySelector(".w-sent")?.remove();
   }
   $("#w-skip").dataset.i18n = first ? "w.skip" : "w.close";
-  $("#w-dots").replaceChildren(...steps.map(() => h("li")));
+  fill($("#w-dots"), ...steps.map(() => h("li")));
   applyStatic();
   dlg.showModal();
   document.body.classList.add("welcoming");
@@ -1400,9 +1403,10 @@ function showStep(i) {
   if (animate()) gsap().fromTo(step, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" });
   // The focus goes to what this step asks for (the name); otherwise to its title, so a screen reader says where it is.
   const target = name === "name" ? $("#w-name") : $(`#w-title-${name}`);
-  // The start step is a choice of its own: its two buttons, no Continue.
-  $("#w-next").hidden = name === "start";
+  // The start step is a choice of its own: its two buttons, no Continue. The Claude step has Continue only once Claude has answered.
+  $("#w-next").hidden = name === "start" || (name === "claude" && !wc.test?.ok);
   target?.focus();
+  if (name === "claude") void wcEnter();
 }
 
 /** The welcome's words that depend on the moment: the try step's title (with the name), the progress, the main button. */
@@ -1465,7 +1469,9 @@ function tellApp(message) {
 }
 
 async function welcomeNext() {
-  if (welcome.i === 0) tellApp({ lang: "en" });
+  // A welcome with its own Claude step says nothing to the Mac app until it ends: the app's Connect Claude window, which it opens at the
+  // first word, never stands over that step (the app looks at Claude again then, and opens it only when Claude is still not ready).
+  if (welcome.i === 0 && !welcome.steps.includes("claude")) tellApp({ lang: "en" });
   if (welcome.i < welcome.steps.length - 1) return showStep(welcome.i + 1);
   await finishWelcome();
 }
@@ -1483,7 +1489,8 @@ async function finishWelcome() {
   closeWelcome();
   if (saved && first && chat.on) {
     setChatOpen(true);
-    toast(t("w.doneToast"));
+    // Skipped (or never answered): no "all set" over a Pako that cannot answer yet.
+    toast(t(welcome.steps.includes("claude") && !wc.test?.ok ? "w.doneNoClaude" : "w.doneToast"));
   }
 }
 
@@ -1495,6 +1502,8 @@ function cancelWelcome() {
 function closeWelcome() {
   const dlg = $("#welcome");
   welcome.open = false;
+  clearInterval(wc.timer);
+  wc.timer = null;
   placeTg($("#tg-slot"));
   if (dlg.open) dlg.close();
   document.body.classList.remove("welcoming");
@@ -1505,7 +1514,7 @@ function closeWelcome() {
 function renderWelcomeReply() {
   const box = $("#w-reply");
   if (!welcome.open || !welcome.watch) {
-    if (box.childElementCount) box.replaceChildren();
+    if (box.childElementCount) fill(box);
     welcome.replySig = "";
     return;
   }
@@ -1515,7 +1524,7 @@ function renderWelcomeReply() {
   const sig = [welcome.watch, answer?.n ?? "", chat.trouble].join("|");
   if (sig === welcome.replySig) return;
   welcome.replySig = sig;
-  box.replaceChildren(
+  fill(box, 
     h("div", { class: "w-msg you" }, h("b", {}, t("w.try.you")), welcome.watch),
     answer
       ? h("div", { class: "w-msg pako" }, h("b", {}, "Pako"), h("span", {}, ...richText(answer.text)))
@@ -1540,6 +1549,157 @@ async function trySay(button) {
     welcome.watch = "";
     renderWelcomeReply();
   }
+}
+
+// ---------- the welcome's Claude step: the one button of src/claude-connect.ts (Settings' Claude card has the same), then a real question ----------
+
+const wc = { view: null, test: null, testing: false, error: "", timer: null, sig: "" };
+const WC_BUSY = new Set(["checking", "installing", "signing-in"]);
+
+/** GET or POST one of the Claude routes (src/connect-setup.ts): the answer, or null when Pako did not answer. */
+async function wcCall(path, body) {
+  try {
+    const init = body === undefined
+      ? { credentials: "same-origin", cache: "no-store" }
+      : { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json", "x-pako": "1" }, body: JSON.stringify(body) };
+    const r = await fetch(`/panel/api/claude/${path}`, init);
+    if (r.status === 401) {
+      location.reload();
+      return null;
+    }
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } catch (err) {
+    console.warn("claude", err);
+    return null;
+  }
+}
+
+/**
+ * The step shown: how Claude is now; already signed in, the question at once, so a Pako that works goes on with one press. An answer
+ * already seen (Back, then Continue again) is not asked again.
+ */
+async function wcEnter() {
+  if (wc.test?.ok || wc.testing || wc.timer) return renderWelcomeClaude();
+  wc.error = "";
+  wc.test = null;
+  renderWelcomeClaude();
+  const v = await wcCall("connect");
+  if (!v) wc.error = "unreachable";
+  else wc.view = v;
+  if (v && WC_BUSY.has(v.phase)) wcWatch();
+  // Signed in, or a Claude Code too old to say (no `claude auth status` before 2.1.268, so no account): the question tells.
+  else if (v && (v.account?.loggedIn || !v.account) && v.phase !== "needs-plan" && v.phase !== "missing") return wcTest();
+  renderWelcomeClaude();
+}
+
+/** Connect Claude: installs when needed and opens Claude's sign-in in the browser; watched until it ends, then asked the question. */
+async function wcConnect(body = {}) {
+  wc.error = "";
+  wc.test = null;
+  const v = await wcCall("connect", body);
+  if (!v) wc.error = "unreachable";
+  else {
+    wc.view = v;
+    wcWatch();
+  }
+  renderWelcomeClaude();
+}
+
+async function wcCancel() {
+  const v = await wcCall("connect/cancel", {});
+  if (v) wc.view = v;
+  renderWelcomeClaude();
+}
+
+function wcWatch() {
+  if (wc.timer) return;
+  wc.timer = setInterval(async () => {
+    const v = await wcCall("connect");
+    if (v) wc.view = v;
+    if (v && WC_BUSY.has(v.phase)) return renderWelcomeClaude();
+    clearInterval(wc.timer);
+    wc.timer = null;
+    if (!welcome.open) return;
+    if (v?.phase === "connected") return wcTest();
+    if (!v) wc.error = "unreachable";
+    renderWelcomeClaude();
+  }, 2000);
+}
+
+/** The question (POST /panel/api/claude/test): one short run the way every message runs; its answer, or why there is none. */
+async function wcTest() {
+  wc.testing = true;
+  wc.error = "";
+  renderWelcomeClaude();
+  const r = await wcCall("test", {});
+  wc.testing = false;
+  if (!r) wc.error = "unreachable";
+  else if (r.ok === false && r.why === "busy") return wcEnter();
+  else wc.test = r;
+  renderWelcomeClaude();
+  if (wc.test?.ok && welcome.open && welcome.steps[welcome.i] === "claude") {
+    tell("happy");
+    $("#w-next").focus();
+  }
+}
+
+/** Skip for now: on without Claude, and without the step that tries Pako (nothing would answer there). */
+function wcSkip() {
+  welcome.steps = welcome.steps.filter((s) => s !== "try");
+  fill($("#w-dots"), ...welcome.steps.map(() => h("li")));
+  return welcomeNext();
+}
+
+/** The step's body for the moment: under way, asking, answered, or what is wrong with the one button that fixes it. */
+function wcBody() {
+  const v = wc.view;
+  const phase = v?.phase ?? "";
+  const line = (text, cls = "") => h("p", { class: `w-cl-line ${cls}`.trim() }, text);
+  const wait = (text) => h("p", { class: "w-cl-line" }, h("span", { class: "spinner", "aria-hidden": "true" }), text);
+  const button = (label, onclick, cls = "primary") => h("button", { type: "button", class: `btn ${cls}`, onclick }, label);
+  const buttons = (...b) => h("div", { class: "w-cl-buttons" }, ...b.filter(Boolean));
+  const skip = h("div", { class: "w-cl-skip" }, button(t("w.claude.skip"), () => void wcSkip(), "ghost"), h("p", { class: "w-note" }, t("w.claude.skipNote")));
+  const connect = (label = t("w.claude.connect"), body = {}) => button(label, () => void wcConnect(body));
+  const again = () => button(t("w.claude.again"), () => void wcTest());
+  if (WC_BUSY.has(phase)) {
+    const text = phase === "installing" ? t("w.claude.installing", { s: v.seconds ?? 0 }) : phase === "signing-in" ? t("w.claude.browser") : t("w.claude.checking");
+    return [wait(text), buttons(button(t("w.claude.cancel"), () => void wcCancel(), "ghost"))];
+  }
+  if (wc.testing) return [wait(t("w.claude.testing"))];
+  if (!wc.view && !wc.error && !wc.test) return [wait(t("w.claude.checking"))];
+  if (wc.test?.ok) return [h("p", { class: "w-cl-line" }, icon("circle-check"), t("w.claude.ok")), h("div", { class: "w-msg pako" }, h("b", {}, "Claude"), wc.test.answer)];
+  if (wc.error) return [line(t("w.claude.unreachable"), "bad"), buttons(button(t("w.claude.again"), () => void wcEnter())), skip];
+  const why = wc.test?.why;
+  if (why === "login") return [line(t("w.claude.login"), "bad"), buttons(connect(undefined, { again: true })), skip];
+  if (why === "missing") return [line(t("w.claude.missing"), "bad"), buttons(connect()), skip];
+  if (why === "limit") return [line(t("w.claude.limit"), "bad"), buttons(again()), skip];
+  if (why === "plan" || phase === "needs-plan") {
+    const plans = h("a", { class: "btn ghost", href: v?.upgradeUrl || "https://claude.ai/upgrade", target: "_blank", rel: "noopener noreferrer" }, t("w.claude.upgrade"));
+    return [line(t("w.claude.plan"), "bad"), buttons(plans, why ? again() : connect(t("w.claude.again"))), skip];
+  }
+  if (why) return [line(t("w.claude.other"), "bad"), wc.test.detail ? h("p", { class: "w-note" }, wc.test.detail) : null, buttons(again()), skip].filter(Boolean);
+  if (phase === "install-failed") {
+    return [line(t("w.claude.installFailed"), "bad"), v.fix ? h("p", { class: "w-cl-fix" }, v.fix) : null, buttons(connect(t("w.claude.again"))), skip].filter(Boolean);
+  }
+  if (phase === "failed" || phase === "cancelled" || phase === "timeout") return [line(t("w.claude.notFinished")), buttons(connect()), skip];
+  if (phase === "missing") return [line(t("w.claude.missing")), buttons(connect()), skip];
+  return [line(t("w.claude.none")), buttons(connect()), skip];
+}
+
+/** Draws the step's body when something it shows changed (a polite live region would otherwise read it out at every poll). */
+function renderWelcomeClaude() {
+  const box = $("#w-claude");
+  if (!box || !welcome.open) return;
+  if (welcome.steps[welcome.i] === "claude") $("#w-next").hidden = !wc.test?.ok;
+  const sig = JSON.stringify([wc.view?.phase, wc.view?.seconds, wc.testing, wc.test, wc.error]);
+  if (sig === wc.sig) return;
+  wc.sig = sig;
+  const had = box.contains(document.activeElement);
+  fill(box, ...wcBody());
+  paintIcons();
+  // A press that changed the body leaves the focus on something that is gone: the first thing to press now, or the body itself.
+  if (had && !box.contains(document.activeElement)) (box.querySelector("button, a") ?? box).focus();
 }
 
 // ---------- the demo week (src/demo.ts) ----------

@@ -131,3 +131,13 @@ test("english: Pako's own fixed texts (chat, panel, follow-ups, gentle, prompt, 
   }
   assert.deepEqual(found, [], "English only: use the English name the page or the chat shows (or, for a recognition pattern, SPANISH_ALLOWED)");
 });
+
+test("panel: cards fill an element through dom.js fill(), never replaceChildren, which writes a left-out part as the word \"null\"", () => {
+  // m.js and brief-page.js are pages of their own without dom.js; each filters its own parts before replaceChildren.
+  const own = new Set(["dom.js", "m.js", "brief-page.js"]);
+  const bad = readdirSync(new URL("src/panel/", root)).filter((f) => f.endsWith(".js") && !own.has(f))
+    .flatMap((f) => read(`src/panel/${f}`).split("\n").map((line, i) => ({ where: `src/panel/${f}:${i + 1}`, line })))
+    .filter(({ line }) => /\.replaceChildren\(/.test(line) && !/^\s*\/\//.test(line))
+    .map(({ where }) => where);
+  assert.deepEqual(bad, [], "use fill(el, ...children) from ./dom.js");
+});

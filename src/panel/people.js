@@ -6,7 +6,7 @@
 // is put on the page as text, never as HTML. Its words are English, like all of Pako's fixed texts.
 
 import { hideWhenEmpty } from "./dashboard-model.js";
-import { h, localeOf } from "./dom.js";
+import { h, localeOf, fill } from "./dom.js";
 
 const REFRESH_MS = 60_000;
 const CONFIRM_MS = 4000;
@@ -317,7 +317,7 @@ function render() {
       h("button", { type: "button", class: "tg-other", onclick: () => ((state.showHidden = true), (state.open = null), void load()) }, t("showHidden")));
   }
   if (foot.length) parts.push(h("div", { class: "people-foot" }, ...foot));
-  card.querySelector("[data-people-body]").replaceChildren(...parts);
+  fill(card.querySelector("[data-people-body]"), ...parts);
   window.lucide?.createIcons?.({ attrs: { "aria-hidden": "true" } });
 }
 

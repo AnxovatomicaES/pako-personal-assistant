@@ -2,7 +2,7 @@
 // tab says nothing is here). One switch per lab, with why it is in Labs and the same honest note for all. A change restarts Pako (as the
 // demo week does), and the page waits for it and reloads. Everything the server sends is put on the page as text, never as HTML.
 
-import { h, waitForRestart } from "./dom.js";
+import { h, waitForRestart, fill } from "./dom.js";
 
 const WORDS = {
   title: "Labs",
@@ -67,8 +67,8 @@ function row(lab) {
 
 function paint() {
   if (!holder) return;
-  if (!state) return void holder.replaceChildren(h("p", { class: "muted" }, t("none")));
-  holder.replaceChildren(h("section", { class: "card labs-card", "aria-labelledby": "h-labs" },
+  if (!state) return void fill(holder, h("p", { class: "muted" }, t("none")));
+  fill(holder, h("section", { class: "card labs-card", "aria-labelledby": "h-labs" },
     h("h2", { id: "h-labs" }, h("i", { "data-lucide": "flask-conical" }), h("span", {}, t("title"))),
     h("p", { class: "muted" }, t("lead")),
     h("p", { class: "labs-note", id: "labs-note" }, h("i", { "data-lucide": "triangle-alert" }), h("span", {}, String(state.note || t("note")))),

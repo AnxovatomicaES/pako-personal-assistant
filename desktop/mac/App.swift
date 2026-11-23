@@ -875,7 +875,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         if let d = downloaded { NSWorkspace.shared.activateFileViewerSelecting([d]) }
     }
 
-    /// The panel's word (app.js tellApp): {lang: "en"} when the welcome's first step is passed, {welcomed: true} at its end. Only from the
+    /// The panel's word (app.js tellApp): {lang: "en"} when the welcome's first step is passed (a welcome with its own Claude step sends
+    /// nothing until its end), {welcomed: true} at its end. Only from the
     /// panel itself; nothing in it is trusted beyond a moment to show the Connect window. The lang field is no choice any more (Pako's
     /// texts are English only): an older panel may still send "es", and it changes nothing.
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -889,11 +890,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             closeConnect()
             return
         }
-        if connectPending {
-            connectPending = false
-            if !(claudeState?.ready ?? false) { showConnect() }
+        let welcomed = body["welcomed"] as? Bool == true
+        guard connectPending else {
+            if welcomed, claudeState?.ready == true { maybeOfferThings() }
+            return
         }
-        if body["welcomed"] as? Bool == true, claudeState?.ready == true { maybeOfferThings() }
+        connectPending = false
+        // The welcome has a Claude step of its own (app.js): Claude may have been connected there since the app last looked. Looked at
+        // again, and the window only when Claude is still not ready (the welcome was skipped, or its Claude step was).
+        checkClaude(fresh: true) { state in
+            if !state.ready { self.showConnect() } else if welcomed { self.maybeOfferThings() }
+        }
     }
 
     // MARK: discovery (Discovery.swift): the panel's typed messages

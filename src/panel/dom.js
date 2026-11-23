@@ -26,6 +26,15 @@ export function h(tag, attrs = {}, ...children) {
 }
 
 /**
+ * Puts children into an element in place of what it had, with the same rule as h(): null, undefined and false are left out (the DOM's own
+ * replaceChildren writes them as the words "null" and "undefined", which is how "null" once showed under Settings' phone card).
+ */
+export function fill(el, ...children) {
+  el.replaceChildren(...children.flat(Infinity).filter((c) => c != null && c !== false));
+  return el;
+}
+
+/**
  * A card's words: t(key, vars) fills {name} from vars. A name vars does not have stays as it is, or, with `blank`, becomes nothing (the
  * cards that leave an optional part out that way).
  */

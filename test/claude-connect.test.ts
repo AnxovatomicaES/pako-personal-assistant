@@ -11,8 +11,9 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import {
   accountLine, claudeStatusLine, createClaudeConnect, createClaudeKeeper, installerFor, lastLine, needsPlan, parseClaudeAccount, pressSignIn,
-  type ClaudeAccount, type ConnectView,
+  TEST_PROMPT, type ClaudeAccount, type ConnectView,
 } from "../src/claude-connect.ts";
+import { ClaudeError } from "../assistant/bridge.ts";
 import { mountConnectSetup } from "../src/connect-setup.ts";
 import { auth, memoryKv, serve } from "./helpers/connect-rig.ts";
 
@@ -389,4 +390,102 @@ test("a sign-in that has expired is not 'Connected': the line asks to sign in ag
   assert.equal(c.view().phase, "connected");
   assert.ok((c.view().account?.expiresAt ?? 0) > Date.now(), "a new sign-in");
   assert.equal(claudeStatusLine(c.view(), "en")?.state, "connected");
+});
+
+// ---------- the test: one question through the bridge's own run (the welcome's Claude step) ----------
+
+/** A stand-in for the run (askClaude): what it was asked, and its answer or its failure. */
+function fakeAsk(answer: string | Error) {
+  const asked: { bin: string; prompt: string }[] = [];
+  const ask = async (bin: string, prompt: string): Promise<string> => {
+    asked.push({ bin, prompt });
+    if (answer instanceof Error) throw answer;
+    return answer;
+  };
+  return { asked, ask };
+}
+
+test("the test: signed in, Claude's answer comes back, asked once with the short setup question and the command that was found", async () => {
+  const r = rig({ authMethod: "claude.ai", email: "ana@example.com", subscriptionType: "pro", loginExpiresAt: new Date(Date.now() + 20 * DAY).toISOString() });
+  const f = fakeAsk("  Hi! I'm ready to help.\n");
+  const c = createClaudeConnect({ env: r.env, find: async () => STUB, ask: f.ask });
+  assert.deepEqual(await c.test(), { ok: true, answer: "Hi! I'm ready to help." });
+  assert.deepEqual(f.asked, [{ bin: STUB, prompt: TEST_PROMPT }]);
+  assert.ok(TEST_PROMPT.length < 160, "a short question");
+  assert.equal(logins(r).length, 0, "a test never signs in by itself");
+});
+
+test("the test says why Claude did not answer: not installed, signed out, expired, a free plan, a refused run, its limit, anything else", async () => {
+  const none = fakeAsk("never");
+  const missing = createClaudeConnect({ env: {}, find: async () => null, ask: none.ask });
+  assert.deepEqual(await missing.test(), { ok: false, why: "missing", detail: "" });
+  assert.equal(missing.view().phase, "missing");
+
+  const out = rig(null);
+  assert.deepEqual(await createClaudeConnect({ env: out.env, find: async () => STUB, ask: none.ask }).test(), { ok: false, why: "login", detail: "" });
+  const old = rig({ authMethod: "claude.ai", subscriptionType: "pro", loginExpiresAt: new Date(Date.now() - DAY).toISOString() });
+  assert.deepEqual(await createClaudeConnect({ env: old.env, find: async () => STUB, ask: none.ask }).test(), { ok: false, why: "login", detail: "" }, "expired");
+  const free = rig({ authMethod: "claude.ai", subscriptionType: "free" });
+  assert.deepEqual(await createClaudeConnect({ env: free.env, find: async () => STUB, ask: none.ask }).test(), { ok: false, why: "plan", detail: "" });
+  assert.deepEqual(none.asked, [], "nothing is run when the sign-in already says why");
+
+  const pro = rig({ authMethod: "claude.ai", subscriptionType: "pro" });
+  const said = async (e: Error) => createClaudeConnect({ env: pro.env, find: async () => STUB, ask: fakeAsk(e).ask }).test();
+  assert.deepEqual(await said(new ClaudeError("Invalid API key · Please run /login", "login")), { ok: false, why: "login", detail: "" });
+  assert.deepEqual(await said(new ClaudeError("Claude AI usage limit reached", "limit")), { ok: false, why: "limit", detail: "" });
+  assert.deepEqual(await said(new ClaudeError("could not start claude: spawn ENOENT", "missing")), { ok: false, why: "missing", detail: "" });
+  assert.deepEqual(await said(new ClaudeError("Claude took longer than 90 s", "other")), { ok: false, why: "other", detail: "Claude took longer than 90 s" });
+  const empty = await createClaudeConnect({ env: pro.env, find: async () => STUB, ask: fakeAsk("   ").ask }).test();
+  assert.deepEqual(empty, { ok: false, why: "other", detail: "" }, "an empty answer is no answer");
+});
+
+test("the test is not run while a sign-in is under way, and two presses at once share one run", async () => {
+  const r = rig(null, { CLAUDE_STUB_LOGIN: "hang" });
+  const f = fakeAsk("Ready.");
+  const c = createClaudeConnect({ env: r.env, find: async () => STUB, pollMs: 50, ask: f.ask });
+  const run = c.start();
+  await until(c, "signing-in");
+  assert.deepEqual(await c.test(), { ok: false, why: "busy", detail: "" });
+  await c.cancel();
+  await run;
+
+  const pro = rig({ authMethod: "claude.ai", subscriptionType: "pro" });
+  const g = fakeAsk("Ready.");
+  const d = createClaudeConnect({ env: pro.env, find: async () => STUB, ask: g.ask });
+  const [a, b] = await Promise.all([d.test(), d.test()]);
+  assert.deepEqual(a, { ok: true, answer: "Ready." });
+  assert.deepEqual(b, a);
+  assert.equal(g.asked.length, 1);
+});
+
+test("the test's route: POST /panel/api/claude/test answers ok or why not; it needs the panel's session and header; a server's panel has none", async () => {
+  const pro = rig({ authMethod: "claude.ai", subscriptionType: "pro" });
+  const ok = await serve((app) => mountConnectSetup(app, { ...auth, lang: () => "en", saver: null, claude: createClaudeConnect({ env: pro.env, find: async () => STUB, ask: fakeAsk("Ready when you are.").ask }) }));
+  try {
+    assert.deepEqual((await ok.post("/panel/api/claude/test", {})).body, { ok: true, answer: "Ready when you are." });
+    assert.equal((await ok.post("/panel/api/claude/test", {}, { cookie: "ok=1" })).status, 401, "a run needs the x-pako header");
+    assert.equal((await ok.post("/panel/api/claude/test", {}, { "x-pako": "1" })).status, 401, "signed in only");
+  } finally {
+    await ok.close();
+  }
+  const bad = await serve((app) => mountConnectSetup(app, { ...auth, lang: () => "en", saver: null, claude: createClaudeConnect({ env: pro.env, find: async () => STUB, ask: fakeAsk(new ClaudeError("rate_limit_error", "limit")).ask }) }));
+  try {
+    assert.deepEqual((await bad.post("/panel/api/claude/test", {})).body, { ok: false, why: "limit", detail: "" });
+  } finally {
+    await bad.close();
+  }
+  const none = await serve((app) => mountConnectSetup(app, null));
+  try {
+    assert.equal((await none.post("/panel/api/claude/test", {})).status, 404);
+  } finally {
+    await none.close();
+  }
+});
+
+test("the test with an API key set: the key answers whatever the sign-in says, so a signed-out Claude Code is still asked", async () => {
+  const out = rig(null);
+  const f = fakeAsk("Ready.");
+  const c = createClaudeConnect({ env: { ...out.env, ANTHROPIC_API_KEY: "sk-test-not-real" }, find: async () => STUB, ask: f.ask });
+  assert.deepEqual(await c.test(), { ok: true, answer: "Ready." });
+  assert.equal(f.asked.length, 1);
 });

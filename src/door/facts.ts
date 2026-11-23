@@ -66,7 +66,7 @@ export function mountFacts(door: Door): Pick<Door, "withRecall" | "learnKnow" | 
    * <fact>). Another value for the same subject and attribute goes to the isolated judge while the computer is there; without it the newest
    * wins at once.
    */
-  const learnKnow = async (list: { who: string; key: string; value: string; since: string }[], outsideTurn: boolean): Promise<void> => {
+  const learnKnow = async (list: { who: string; key: string; value: string; since: string; starts?: string }[], outsideTurn: boolean): Promise<void> => {
     if (outsideTurn) {
       logFacts.info("dropped <know> from a turn that read outside text");
       d.control?.log("security", fw()("logOutside"));
@@ -77,8 +77,15 @@ export function mountFacts(door: Door): Pick<Door, "withRecall" | "learnKnow" | 
     for (const k of list) {
       const self = !k.who || /^(me|i|myself|owner)$/i.test(k.who);
       const who = self ? "" : ((await idGraph.find(k.who).catch(() => undefined))?.name ?? k.who);
-      const from = /^\d{4}-\d{2}-\d{2}$/.test(k.since) ? localToEpoch(`${k.since} 00:00`, d.timeZone) : null;
-      inputs.push({ subject: who, attribute: k.key, value: k.value, ...(from !== null ? { validFrom: from } : {}), source: { who: "owner", where: "chat", at } });
+      // "starts": a change told ahead, which holds from that day and leaves what holds now until then; "since": the day its value began,
+      // which holds now even when that day is a few days ahead (a meeting moved to Thursdays from this week). See src/memory-facts.ts.
+      const dayOf = (s: string | undefined): number | null => (s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? localToEpoch(`${s} 00:00`, d.timeZone) : null);
+      const starts = dayOf(k.starts);
+      const from = starts ?? dayOf(k.since);
+      inputs.push({
+        subject: who, attribute: k.key, value: k.value, ...(from !== null ? { validFrom: from } : {}), ...(starts !== null ? { ahead: true } : {}),
+        source: { who: "owner", where: "chat", at },
+      });
     }
     const r = await facts.add(inputs, at, { judge: at - door.lastPollAt < 3 * 60_000 });
     const t = fw();

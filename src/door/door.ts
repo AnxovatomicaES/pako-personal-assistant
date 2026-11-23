@@ -261,7 +261,7 @@ export interface Door {
   readonly forgetPerson: (id: string, was: number | undefined, from: "chat" | "panel") => Promise<{ gone: Person | null | "changed"; changes: Change[]; }>;
   // src/door/facts.ts
   readonly withRecall: (base: ReturnType<typeof peopleContext> | null) => Promise<Record<string, unknown>>;
-  readonly learnKnow: (list: { who: string; key: string; value: string; since: string; }[], outsideTurn: boolean) => Promise<void>;
+  readonly learnKnow: (list: { who: string; key: string; value: string; since: string; starts?: string; }[], outsideTurn: boolean) => Promise<void>;
   sameAskedAt: number;
   readonly askSame: (about?: string) => Promise<boolean>;
   readonly answerSame: (id: string, yes: boolean) => Promise<string>;

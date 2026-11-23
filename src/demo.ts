@@ -646,8 +646,8 @@ const ALLOWED = [
   "/panel/api/people/edit", "/panel/api/people/delete", "/panel/api/people/prep", "/panel/api/people/hide", "/panel/api/people/unhide",
   "/panel/api/routines/remove", "/panel/api/proactive/topic",
   "/panel/api/autonomy", "/panel/api/gentle", "/panel/api/gentle/unpark", "/panel/api/day-helpers", "/panel/api/labs", "/panel/api/beta-audit",
-  // Claude's own sign-in on this computer: the demo runs live once it is signed in.
-  "/panel/api/claude/connect", "/panel/api/claude/connect/cancel", "/panel/api/claude/signout",
+  // Claude's own sign-in on this computer: the demo runs live once it is signed in. Its test only asks Claude and writes nothing.
+  "/panel/api/claude/connect", "/panel/api/claude/connect/cancel", "/panel/api/claude/signout", "/panel/api/claude/test",
 ];
 
 /**

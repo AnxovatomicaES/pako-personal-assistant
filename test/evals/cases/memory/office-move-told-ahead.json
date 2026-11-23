@@ -1,0 +1,52 @@
+{
+  "suite": "memory",
+  "behaviour": "in English: Priya's office moves to Berlin from 1 March, told in November: Lisbon still holds today and nothing changed yet",
+  "origin": "the bug hunt's case (a fact told for the future held at once and closed today's), with a made-up name",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "lang": "en",
+    "start": "2026-11-17 10:00",
+    "turns": [
+      {
+        "at": "2026-11-17 10:00",
+        "message": "Priya works at the Lisbon office.",
+        "recorded": "Noted. <know who=\"Priya\" key=\"office\">Lisbon</know>"
+      },
+      {
+        "at": "2026-11-17 10:04",
+        "message": "From 1 March Priya moves to the Berlin office.",
+        "recorded": "Got it. <know who=\"Priya\" key=\"office\" starts=\"2027-03-01\">Berlin</know>",
+        "judge": "{\"contradicts\":[\"{{old}}\"],\"compatible\":[]}"
+      }
+    ],
+    "ask": {
+      "at": "2026-11-17 10:06",
+      "message": "what do you know about Priya?"
+    }
+  },
+  "expect": {
+    "holds": [
+      {
+        "who": "Priya",
+        "key": "office",
+        "value": "Lisbon"
+      }
+    ],
+    "notHolds": [
+      {
+        "who": "Priya",
+        "key": "office",
+        "value": "Berlin"
+      }
+    ],
+    "card": {
+      "has": [
+        "Priya",
+        "office: Lisbon"
+      ],
+      "title": "Priya"
+    },
+    "noChanges": true,
+    "judged": 1
+  }
+}

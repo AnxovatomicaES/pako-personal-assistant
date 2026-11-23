@@ -165,7 +165,7 @@ export interface HeldActs {
    * silently. Absent from an older bridge: none.
    */
   facts?: { kind?: unknown; text?: unknown }[];
-  know?: { who: string; key: string; value: string; since: string }[];
+  know?: { who: string; key: string; value: string; since: string; starts?: string }[];
   role?: { health?: { kind: string; text: string }[]; goals?: string[]; cards?: { goal: string; q: string; a: string }[] };
 }
 

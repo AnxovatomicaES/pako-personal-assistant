@@ -3,7 +3,7 @@
 // here (the strict session cookie and the x-pako header, like STOP). A server's panel only shows them. Without the route the card stays hidden.
 // Everything is put on the page as text, never as HTML. Its words are its own (English, here).
 
-import { h, localeOf } from "./dom.js";
+import { h, localeOf, fill } from "./dom.js";
 
 const REFRESH_MS = 60_000;
 
@@ -113,7 +113,7 @@ function render() {
       onRemove: () => remove("watch", w.id),
     }))));
   }
-  card.querySelector("[data-routines-body]").replaceChildren(...parts);
+  fill(card.querySelector("[data-routines-body]"), ...parts);
   window.lucide?.createIcons?.({ attrs: { "aria-hidden": "true" } });
 }
 

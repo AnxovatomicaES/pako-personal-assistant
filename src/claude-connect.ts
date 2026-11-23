@@ -10,6 +10,8 @@
 //      Checked with Claude Code 2.1.327 spawned with no terminal (stdin closed): it prints the page's address and "Paste code here if prompted",
 //      waits for the browser's callback, and exits 1 with "Couldn't log in: No authorization code received" when the person cancels there;
 //   3. `claude auth status --json` every two seconds, for up to five minutes, until it says signed in.
+// Then the test (test()): one short question through `runClaude`, the same run the bridge makes for every message (its model, flags and
+// folder), so "connected" in the welcome means Claude really answered, not only that a sign-in is on file.
 //
 // Claude Code keeps its own credentials: this file never reads them, and never logs or keeps what the commands print (the sign-in's output
 // holds the page's one-time state). Only `auth status` is read, for whether it is signed in, how, the address, the plan and when it expires.
@@ -19,7 +21,7 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { homedir } from "node:os";
-import { childEnv, claudeCommand } from "../assistant/bridge.ts";
+import { childEnv, ClaudeError, claudeCommand, DEFAULT_MODEL, loadBridgeConfig, offersNoBare, runClaude } from "../assistant/bridge.ts";
 import { claudeCandidates, claudeInstalled, hasAuthStatus } from "./local.ts";
 import { texts, type Lang } from "./i18n.ts";
 import type { Kv } from "./kv.ts";
@@ -193,6 +195,37 @@ export interface ClaudeConnectOptions {
   pollMs?: number;
   loginMs?: number;
   installMs?: number;
+  /** Asks Claude one question with the `claude` command `bin` and gives its answer (default: askClaude, a real run); throws ClaudeError. */
+  ask?: (bin: string, prompt: string) => Promise<string>;
+}
+
+/** The test's question: a short answer, no tool, nothing about the owner in it. */
+export const TEST_PROMPT = "This is Pako's setup check. Reply with one short, friendly sentence saying you are ready to help.";
+
+/**
+ * What the test came to: Claude's answer, or why there is none. `why`: "missing" (no claude command), "login" (signed out or expired, or the
+ * run was refused for it), "plan" (a free plan), "limit" (out of its usage limit for now), "busy" (a sign-in is under way), "other".
+ */
+export type ClaudeTest =
+  | { ok: true; answer: string }
+  | { ok: false; why: "missing" | "login" | "plan" | "limit" | "busy" | "other"; detail: string };
+
+/**
+ * One question asked the way the bridge asks every message (assistant/bridge/claude.ts runClaude): the bridge's own settings (its model, its
+ * folder, --no-bare when this Claude Code offers it), with no tool, so the check is quick and reads nothing on the web.
+ */
+export async function askClaude(env: Env, bin: string, prompt: string): Promise<string> {
+  let model = DEFAULT_MODEL;
+  let stateDir: string | undefined;
+  try {
+    const c = loadBridgeConfig({ ...process.env, ...env, CLAUDE_BIN: bin });
+    model = c.model;
+    stateDir = c.stateDir;
+  } catch {
+    /* a setting the bridge refuses: the bridge says so itself; the check still asks with the default model */
+  }
+  const r = await runClaude(prompt, { claudeBin: bin, tools: [], model, runTimeoutMs: 90_000, noBare: offersNoBare(bin), ...(stateDir ? { stateDir } : {}) });
+  return r.text;
 }
 
 export type ClaudeConnect = ReturnType<typeof createClaudeConnect>;
@@ -384,6 +417,31 @@ export function createClaudeConnect(o: ClaudeConnectOptions) {
     return /^[^\s@-][^\s@]*@[^\s@]+\.[^\s@]+$/.test(e) && e.length <= 254 ? e : "";
   }
   const busy = (): boolean => phase === "checking" || phase === "installing" || phase === "signing-in";
+  const ask = o.ask ?? ((bin: string, prompt: string) => askClaude(o.env, bin, prompt));
+  let testing: Promise<ClaudeTest> | null = null;
+  const runTest = async (): Promise<ClaudeTest> => {
+    const bin = await find();
+    if (!bin) {
+      account = null;
+      if (phase === "idle" || phase === "connected") phase = "missing";
+      return { ok: false, why: "missing", detail: "" };
+    }
+    if (phase === "missing") phase = "idle";
+    // What the sign-in says first: a run with no sign-in would only fail the same way, slower. With an API key set, the key answers
+    // whatever the sign-in says (src/local.ts), so the question itself is the test.
+    const keyed = Boolean((o.env.ANTHROPIC_API_KEY ?? "").trim() || (o.env.ANTHROPIC_AUTH_TOKEN ?? "").trim());
+    const a = keyed ? null : await status(bin);
+    if (a && (!a.loggedIn || expired(a, now()))) return { ok: false, why: "login", detail: "" };
+    if (needsPlan(a)) return { ok: false, why: "plan", detail: "" };
+    try {
+      const answer = clean(await ask(bin, TEST_PROMPT), 300);
+      return answer ? { ok: true, answer } : { ok: false, why: "other", detail: "" };
+    } catch (err) {
+      const kind = err instanceof ClaudeError ? err.kind : "other";
+      const why = kind === "login" || kind === "limit" || kind === "missing" ? kind : "other";
+      return { ok: false, why, detail: why === "other" ? lastLine((err as Error).message ?? "") : "" };
+    }
+  };
 
   return {
     view: (): ConnectView => ({
@@ -415,6 +473,14 @@ export function createClaudeConnect(o: ClaudeConnectOptions) {
       cancelled = true;
       stopChild();
       await running;
+    },
+    /**
+     * The test: one short question through the same run as every message, and its answer, or why there is none. Not while a sign-in is
+     * under way; two presses at once share one run.
+     */
+    test: (): Promise<ClaudeTest> => {
+      if (busy()) return Promise.resolve({ ok: false, why: "busy", detail: "" });
+      return (testing ??= runTest().finally(() => (testing = null)));
     },
     /** Sign out (`claude auth logout`): Claude Code forgets its own credentials; Pako never had them. */
     signOut: async (): Promise<boolean> => {

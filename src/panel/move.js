@@ -2,7 +2,7 @@
 // computer's panel, "Import from another Pako" takes that file: first it shows what would come in, what would be replaced and what is left out,
 // and only a second press writes anything. Everything the server sends is put on the page as text, never as HTML.
 
-import { h } from "./dom.js";
+import { h, fill } from "./dom.js";
 
 const $ = (s, root = document) => root.querySelector(s);
 const MAX = 8 * 1024 * 1024;
@@ -241,7 +241,7 @@ function render() {
   }
   if (st.error) parts.push(h("p", { class: "tg-error", role: "alert" }, st.error));
   if (st.note) parts.push(h("p", { class: "tg-ok", role: "status" }, icon("circle-check"), st.note));
-  st.body.replaceChildren(...parts);
+  fill(st.body, ...parts);
   paintIcons();
 }
 

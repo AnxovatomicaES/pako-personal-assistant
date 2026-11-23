@@ -5,7 +5,7 @@
 // Everything the server sends is put on the page as text, never as HTML; no secret is ever sent back to the page.
 
 import { localeFor } from "./i18n.js";
-import { h } from "./dom.js";
+import { h, fill } from "./dom.js";
 
 const $ = (s, root = document) => root.querySelector(s);
 
@@ -342,7 +342,7 @@ function render() {
   const progress = Math.round((names.filter((n) => doneSet.has(n)).length / names.length) * 100);
   const tpl = d.meta?.template;
   // Through h() so that the parts left out (null) are left out, not written as text.
-  st.card.replaceChildren(...h("div", {},
+  fill(st.card, ...h("div", {},
     h("div", { class: "card-head" },
       h("h2", { id: "h-wa" }, icon("message-circle"), h("span", {}, t("title"))),
       h("span", { class: `wa-pill ${pill}` }, t(`pill.${pill}`))),

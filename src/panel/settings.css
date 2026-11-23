@@ -551,3 +551,29 @@ body.ready .card-slot:nth-child(8) { animation-delay: 280ms; } body.ready .card-
 .phone-pair img { display: block; width: 220px; max-width: 100%; height: auto; background: #fff; border-radius: 12px; padding: 8px; }
 .phone-code { font-size: 1.4rem; letter-spacing: .12em; margin: 10px 0 4px; }
 .phone .small { font-size: 13px; }
+
+/* Cards built by the shared scripts (acts.js, privacy.js, move.js): their form rows and leads. These used to live only in app.css,
+   which this page does not load, so the controls showed with the browser's own look. */
+.tg-lead { max-width: 70ch; }
+.tg-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.tg-input { flex: 1 1 220px; min-width: 0; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--bg-2); color: var(--text); font: inherit; font-size: 13.5px; }
+.tg-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+/* "How Pako acts" (acts.js, on this page only): the autonomy choices, gentle mode, topics, the beta and lessons. */
+.acts h3 { margin: 18px 0 4px; font-size: 15px; font-weight: 700; color: var(--text); }
+.acts h3:first-child { margin-top: 4px; }
+.acts h4 { margin: 14px 0 6px; font-size: 12.5px; font-weight: 650; color: var(--text-3); letter-spacing: .02em; }
+.acts p { margin: 0 0 10px; color: var(--text-2); font-size: 13.5px; line-height: 1.5; }
+.acts .tg-form { align-items: center; margin: 8px 0; }
+.acts .tg-form label { flex: 1 1 100%; color: var(--text-2); font-size: 13px; }
+.acts select, .acts input[type="number"] { min-width: 0; padding: 9px 12px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--bg-2); color: var(--text); font: inherit; font-size: 13.5px; }
+.acts select { flex: 1 1 200px; }
+.acts input[type="number"] { width: 84px; flex: none; }
+.acts .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.acts ul { margin: 0; padding-left: 18px; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.acts .part + .part { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.acts input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+.acts input[type="time"] { padding: 9px 12px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--bg-2); color: var(--text); font: inherit; font-size: 13.5px; }
+.acts select:focus, .acts input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.acts .unit { color: var(--text-3); font-size: 12.5px; }
+.acts .tg-form:has(> input[type="checkbox"]) { flex-wrap: nowrap; }
+.acts .tg-form:has(> input[type="checkbox"]) label { flex: 0 1 auto; order: 2; color: var(--text); font-size: 14px; }

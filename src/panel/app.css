@@ -574,6 +574,16 @@ html[data-chat]:not(.i18n-ready) :is(#sys-hint, [data-i18n="book.hint"], [data-i
 .w-msg.pako a { color: var(--accent-2); }
 .w-msg.wait { display: flex; align-items: center; gap: 10px; color: var(--text-2); }
 .w-msg.wait b { display: none; }
+.w-claude { display: grid; gap: 10px; }
+.w-claude:focus { outline: none; }
+.w-claude p.w-cl-line { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--text); font-weight: 600; }
+.w-claude p.w-cl-line.bad { color: var(--danger); }
+.w-cl-line svg.lucide { flex: none; width: 22px; height: 22px; color: var(--ok); }
+.w-cl-fix { padding: 10px 12px; border-radius: 12px; background: var(--bg-2); font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; user-select: all; }
+.w-cl-buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+.w-cl-skip { display: grid; gap: 4px; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+.w-cl-skip .btn { justify-self: start; }
+.w-cl-skip .w-note { margin-top: 0; }
 .w-actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
 .w-actions .primary { margin-left: auto; min-width: 128px; }
 @media (max-width: 640px) {
@@ -601,19 +611,6 @@ html[data-chat]:not(.i18n-ready) :is(#sys-hint, [data-i18n="book.hint"], [data-i
 .rh-item { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
 .rh-item p { margin: 4px 0 0; }
 .rh-item.nudge, .rh-item.later { border-color: var(--accent); }
-/* "How Pako acts" (acts.js): two parts in one card, the autonomy choices and the topics on its own. */
-.acts h3 { margin: 18px 0 4px; font-size: 15px; font-weight: 700; color: var(--text); }
-.acts h3:first-child { margin-top: 4px; }
-.acts h4 { margin: 14px 0 6px; font-size: 12.5px; font-weight: 650; color: var(--text-3); letter-spacing: .02em; }
-.acts p { margin: 0 0 10px; color: var(--text-2); font-size: 13.5px; line-height: 1.5; }
-.acts .tg-form { align-items: center; margin: 8px 0; }
-.acts .tg-form label { flex: 1 1 100%; color: var(--text-2); font-size: 13px; }
-.acts select, .acts input[type="number"] { min-width: 0; padding: 9px 12px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--bg-2); color: var(--text); font: inherit; font-size: 13.5px; }
-.acts select { flex: 1 1 200px; }
-.acts input[type="number"] { width: 84px; flex: none; }
-.acts .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
-.acts ul { margin: 0; padding-left: 18px; color: var(--text-2); font-size: 13px; line-height: 1.5; }
-.acts .part + .part { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
 
 /* ---------- the dashboard's order: the brief first, then the three tiles, then the Needs-you mail, then the rest ---------- */
 .brief-top { grid-column: 1 / -1; width: 100%; max-width: 760px; justify-self: center; }

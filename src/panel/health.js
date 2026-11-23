@@ -4,7 +4,7 @@
 // never as HTML. Its words are its own (English, here).
 
 import { healthSummary } from "./dashboard-model.js";
-import { h, localeOf } from "./dom.js";
+import { h, localeOf, fill } from "./dom.js";
 
 const WORDS = {
   title: "Health",
@@ -119,13 +119,13 @@ function paint() {
   const sum = healthSummary(state, Date.now());
   const top = card.querySelector("[data-hl-summary]");
   top.className = `hl-summary ${sum.ok ? "ok" : "bad"}`;
-  top.replaceChildren(h("b", {}, sum.line), ...sum.problems.map((p) => h("p", { class: "hl-problem" }, `${t(`name.${p.key}`)}: ${p.detail}`)));
+  fill(top, h("b", {}, sum.line), ...sum.problems.map((p) => h("p", { class: "hl-problem" }, `${t(`name.${p.key}`)}: ${p.detail}`)));
   card.querySelector("details")?.toggleAttribute("open", !sum.ok);
   card.querySelector("[data-hl-title]").textContent = t("title");
   card.querySelector("[data-hl-lead]").textContent = state.on === false ? t("off") : state.quietNow ? `${t("lead")} ${t("quiet")}` : t("lead");
   const list = card.querySelector("[data-hl-list]");
   const parts = Array.isArray(state.parts) ? state.parts : [];
-  list.replaceChildren(
+  fill(list, 
     ...parts.map((p) => {
       const key = str(p.key);
       const status = ["ok", "failing", "down", "waiting", "warn"].includes(p.status) ? p.status : "waiting";

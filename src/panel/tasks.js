@@ -3,7 +3,7 @@
 // session cookie and the x-pako header, like STOP). A server's panel only shows them. Without the route (no WhatsApp door) the card stays hidden.
 // Everything is put on the page as text, never as HTML. Its words are its own (English, here).
 
-import { h, localeOf } from "./dom.js";
+import { h, localeOf, fill } from "./dom.js";
 
 const REFRESH_MS = 60_000;
 
@@ -121,7 +121,7 @@ function render() {
     parts.push(h("p", { class: "muted small" }, t("done")));
     parts.push(h("ul", { class: "list compact" }, ...done.slice(0, 20).map(taskRow)));
   }
-  card.querySelector("[data-tasks-body]").replaceChildren(...parts);
+  fill(card.querySelector("[data-tasks-body]"), ...parts);
   window.lucide?.createIcons?.({ attrs: { "aria-hidden": "true" } });
 }
 

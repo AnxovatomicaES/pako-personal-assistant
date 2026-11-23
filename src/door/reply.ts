@@ -174,7 +174,7 @@ const readReply = (door: Door, b: ReplyBody) => {
   const roleCount = (roleTags.health?.length ?? 0) + (roleTags.goals?.length ?? 0) + (roleTags.cards?.length ?? 0);
   const knowAdds = objs(b.know, 3).flatMap((k) => {
     const [key, value] = [line(k.key, ATTRIBUTE_MAX), line(k.value, VALUE_MAX)];
-    return key && value ? [{ who: line(k.who, 60), key, value, since: line(k.since, 10) }] : [];
+    return key && value ? [{ who: line(k.who, 60), key, value, since: line(k.since, 10), starts: line(k.starts, 10) }] : [];
   });
   // Notes come with a reply only from a marked turn, or one with new outside text in its context (held below); any other reply's notes went
   // to /assistant/memory.

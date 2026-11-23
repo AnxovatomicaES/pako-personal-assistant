@@ -123,9 +123,10 @@ in local mode only; a hosted server has none). It answers what Pako started afte
 - **App Settings** (Cmd+Option+,): *Start with this Mac*,
   *Ask before quitting*, Claude (its state and *Connect Claude…*), notifications, and updates (*Check for updates automatically*, *Check Now*).
 
-Every word of the app's own is in English (`Texts.swift`), like the panel's. On the first run, *Connect your Claude account* opens after the
-welcome's first step, not over its hello. VoiceOver reads the menu-bar item (with how many are unread, or that Pako is stopped), the
-window's own page as it changes, and each step of *Connect Claude* (its code field and spinner are labelled).
+Every word of the app's own is in English (`Texts.swift`), like the panel's. On the first run, *Connect your Claude account* waits for the
+panel's welcome, which has its own Claude step, and opens at its end only when Claude is still not ready. VoiceOver reads the menu-bar item
+(with how many are unread, or that Pako is stopped), the window's own page as it changes, and each step of *Connect Claude* (its code field
+and spinner are labelled).
 
 ## Start with this Mac
 

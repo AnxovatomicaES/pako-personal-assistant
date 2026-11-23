@@ -5,7 +5,7 @@
 // follow-ups and the written brief off) the cards stay hidden. Everything is put on the page as text, never as HTML.
 
 import { hideWhenEmpty } from "./dashboard-model.js";
-import { h, localeOf } from "./dom.js";
+import { h, localeOf, fill } from "./dom.js";
 
 const WORDS = {
   quality: "Quality",
@@ -69,7 +69,7 @@ function paintQuality() {
   const cell = (label, value) => h("div", { class: "q-cell" }, h("strong", {}, String(num(value))), h("span", { class: "muted" }, label));
   const unhelpful = num(stats.unhelpful);
   const poor = num(n.sent) >= 3 && unhelpful >= 2 && unhelpful * 3 >= num(n.sent);
-  body.replaceChildren(
+  fill(body, 
     num(n.sent) ? h("div", { class: "q-grid" }, cell(t("sent"), n.sent), cell(t("done"), n.done), cell(t("notMine"), n.notMine),
       cell(t("ignored"), n.ignored), cell(t("up"), n.up), cell(t("down"), n.down)) : h("p", { class: "muted" }, t("noData")),
     h("p", {}, t("briefVotes", { up: num(stats.brief?.up), down: num(stats.brief?.down) })),
@@ -146,7 +146,7 @@ function paintRehearsal() {
     const rank = (j) => (j.kind === "brief" ? 0 : j.outcome?.items?.some((x) => x.outcome === "nudge" || x.outcome === "later") ? 1 : 2);
     for (const j of [...jobs].sort((a, b) => rank(a) - rank(b))) parts.push(jobBlock(j, view.timeZone));
   }
-  body.replaceChildren(...parts);
+  fill(body, ...parts);
 }
 
 async function load() {

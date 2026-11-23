@@ -12,6 +12,10 @@
 //   contradiction: decided by a small isolated job on the owner's computer (strict JSON, judgeText / verdict below), which may say both hold
 //   ("speaks English" and "speaks French"). Without an answer within JUDGE_MS (an older bridge lets the job go, the computer is off) the
 //   newest wins: the old fact is closed. A `multi` attribute (notes, likes) holds many values at once and never closes another.
+// - Two dates a told fact can carry, which are not the same thing. Its validFrom ("since"): the day its value began, even one a few days
+//   ahead ("the weekly moved to Thursdays from this week", since Thursday): the change is already made, so it holds now and closes the old
+//   value now. Told ahead (`ahead`, <know starts>): a change still to come ("from 1 March the office is in Diagonal"): what holds now stays
+//   true until that day, the new one is not current before it, and on that day it closes the old one (see arrive), so the change is said then.
 //
 // One key in the store. Writes are one at a time and never start from a copy that could not be read.
 
@@ -54,6 +58,11 @@ export interface Fact {
   origin?: string;
   /** Waiting for the isolated judge: the facts it may close, and when the newest wins without an answer. */
   pending?: { until: number; against: string[] };
+  /**
+   * Told ahead of its day (validFrom, still to come): it does not hold yet, and when the day comes it closes what holds then for the same
+   * subject and attribute, except `keep` (the ones the judge said both hold).
+   */
+  ahead?: { keep: string[] };
 }
 
 /** A fact as it is told: the parts said. `validFrom` absent: from when it was learnt. */
@@ -62,6 +71,8 @@ export interface FactInput {
   attribute: string;
   value: string;
   validFrom?: number;
+  /** `validFrom` is a day to come and the change is not made before it: what holds now stays true until then (see Fact.ahead). */
+  ahead?: boolean;
   source: FactSource;
   multi?: boolean;
 }
@@ -114,7 +125,9 @@ export function factOf(v: unknown): Fact | null {
   const s = isObject(v.source) ? v.source : {};
   const validTo = num(v.validTo);
   const p = isObject(v.pending) ? v.pending : null;
-  const against = p && Array.isArray(p.against) ? p.against.filter((x): x is string => typeof x === "string" && HEX10.test(x)).slice(0, 10) : [];
+  const ids = (a: unknown): string[] => (Array.isArray(a) ? a.filter((x): x is string => typeof x === "string" && HEX10.test(x)).slice(0, 10) : []);
+  const against = p ? ids(p.against) : [];
+  const ahead = isObject(v.ahead) && validTo === undefined ? { keep: ids(v.ahead.keep) } : null;
   return {
     id: v.id,
     subject: line(v.subject, SUBJECT_MAX),
@@ -129,6 +142,7 @@ export function factOf(v: unknown): Fact | null {
     ...(v.multi === true ? { multi: true as const } : {}),
     ...(typeof v.origin === "string" && v.origin.length <= 120 ? { origin: v.origin } : {}),
     ...(p && against.length && num(p.until) !== undefined ? { pending: { until: num(p.until)!, against } } : {}),
+    ...(ahead ? { ahead } : {}),
   };
 }
 
@@ -146,7 +160,10 @@ function clean(raw: unknown): Fact[] {
   return out;
 }
 
-const holds = (f: Fact): boolean => f.validTo === undefined;
+/** Holds now: not ended, and not a change told ahead whose day has not come (arrive settles those on their day). */
+const holds = (f: Fact): boolean => f.validTo === undefined && !f.ahead;
+/** Ended: history. A fact told ahead has not ended either: it has not begun. */
+const ended = (f: Fact): boolean => f.validTo !== undefined;
 const sameSubject = (a: string, b: string): boolean => fold(a) === fold(b);
 
 /** Closes `old` because of `by`: it was true until `by` became true (never before it began), and Pako learnt that now. */
@@ -232,12 +249,37 @@ export function sweep(facts: Fact[], now: number): boolean {
   let changed = false;
   for (const f of facts) {
     if (!f.pending || f.pending.until > now) continue;
-    for (const id of f.pending.against) {
+    // Told ahead: the newest wins on its day (arrive), not now.
+    for (const id of f.ahead ? [] : f.pending.against) {
       const old = facts.find((x) => x.id === id);
       if (old && holds(old)) close(old, f, now);
     }
     delete f.pending;
     changed = true;
+  }
+  return changed;
+}
+
+/**
+ * Facts told ahead whose day has come (and no judge is still asked): from that day they hold, and close what held until then; the old one
+ * ends on that day and is said as a change on that day, not on the day it was told. True when anything changed.
+ */
+export function arrive(facts: Fact[], now: number): boolean {
+  let changed = false;
+  // In the order of their days: two changes told ahead for the same thing take turns.
+  for (const f of facts.filter((x) => x.ahead && !x.pending && x.validFrom <= now).sort((x, y) => x.validFrom - y.validFrom)) {
+    const keep = new Set(f.ahead!.keep);
+    delete f.ahead;
+    changed = true;
+    if (f.multi) continue;
+    const rivals = facts.filter((x) => x !== f && holds(x) && !x.multi && !keep.has(x.id) && sameSubject(x.subject, f.subject) && attrKey(x.attribute) === attrKey(f.attribute));
+    // One that began after this day (told since then): this one was true only until it began.
+    const next = rivals.filter((x) => x.validFrom > f.validFrom).sort((a, b) => a.validFrom - b.validFrom)[0];
+    if (next) {
+      Object.assign(f, { validTo: next.validFrom, closedAt: f.validFrom, closedBy: next.id });
+      continue;
+    }
+    for (const old of rivals) close(old, f, f.validFrom);
   }
   return changed;
 }
@@ -265,15 +307,15 @@ export function derivedValues(seed: FactSeed): Derives {
 function prune(facts: Fact[], now: number, derives: Derives): void {
   const newest = new Map<string, Fact>();
   for (const f of facts) if (f.origin) newest.set(f.origin, f);
-  const keeps = (f: Fact): boolean => !!f.origin && !holds(f) && newest.get(f.origin) === f && (derives === null || derives.get(f.origin) === fold(f.value));
+  const keeps = (f: Fact): boolean => !!f.origin && ended(f) && newest.get(f.origin) === f && (derives === null || derives.get(f.origin) === fold(f.value));
   for (let i = facts.length - 1; i >= 0; i--) {
     const f = facts[i]!;
-    if (!holds(f) && (f.closedAt ?? 0) < now - CLOSED_KEEP_MS && !keeps(f)) facts.splice(i, 1);
+    if (ended(f) && (f.closedAt ?? 0) < now - CLOSED_KEEP_MS && !keeps(f)) facts.splice(i, 1);
   }
   const counted = (f: Fact): boolean => !mirror(f) && !keeps(f);
   let over = facts.filter(counted).length - FACTS_MAX;
   if (over <= 0) return;
-  const closed = facts.filter((f) => !holds(f) && !keeps(f)).sort((a, b) => (a.closedAt ?? 0) - (b.closedAt ?? 0));
+  const closed = facts.filter((f) => ended(f) && !keeps(f)).sort((a, b) => (a.closedAt ?? 0) - (b.closedAt ?? 0));
   const drop = new Set(closed.slice(0, over));
   over -= drop.size;
   for (const f of facts) {
@@ -335,6 +377,7 @@ export function createFacts(kv: Kv | null, o: { seed?: () => Promise<FactSeed>; 
       } else derives = null;
     }
     if (sweep(facts, now)) dirty = true;
+    if (arrive(facts, now)) dirty = true;
     return { facts, dirty, derives };
   };
   const change = <T>(fn: (facts: Fact[], now: number) => { out: T; changed: boolean }, at?: number): Promise<T> =>
@@ -362,7 +405,10 @@ export function createFacts(kv: Kv | null, o: { seed?: () => Promise<FactSeed>; 
           const subject = facts.find((f) => !f.origin && sameSubject(f.subject, said))?.subject ?? said;
           const attribute = facts.find((f) => !f.origin && sameSubject(f.subject, subject) && attrKey(f.attribute) === attrKey(named))?.attribute ?? named;
           const same = facts.filter((f) => holds(f) && sameSubject(f.subject, subject) && attrKey(f.attribute) === attrKey(attribute));
-          if (same.some((f) => fold(f.value) === fold(value))) {
+          const ahead = !!input.ahead && input.validFrom !== undefined && input.validFrom > now;
+          // The same change told ahead again: already known.
+          const told = ahead && facts.some((f) => f.ahead && sameSubject(f.subject, subject) && attrKey(f.attribute) === attrKey(attribute) && fold(f.value) === fold(value));
+          if (told || same.some((f) => fold(f.value) === fold(value))) {
             out.same++;
             continue;
           }
@@ -370,6 +416,7 @@ export function createFacts(kv: Kv | null, o: { seed?: () => Promise<FactSeed>; 
             id: newId(), subject, attribute, value, validFrom: input.validFrom ?? now, learnedAt: now,
             source: { who: line(input.source.who, 60) || "?", where: line(input.source.where, 40) || "?", at: input.source.at },
             ...(input.multi ? { multi: true as const } : {}),
+            ...(ahead ? { ahead: { keep: [] } } : {}),
           };
           const rivals = fact.multi ? [] : same.filter((f) => !f.multi);
           // One that began after this one ("works at Acme" since October, "at Initech" since 2020 told today): this one is history. It was
@@ -380,7 +427,7 @@ export function createFacts(kv: Kv | null, o: { seed?: () => Promise<FactSeed>; 
           } else if (rivals.length && opt.judge) {
             fact.pending = { until: now + JUDGE_MS, against: rivals.map((f) => f.id).slice(0, 10) };
             out.pending.push({ fact: structuredClone(fact), against: structuredClone(rivals) });
-          } else {
+          } else if (!ahead) {
             for (const old of rivals) {
               close(old, fact, now);
               out.closed.push({ old: structuredClone(old), by: structuredClone(fact) });
@@ -400,7 +447,13 @@ export function createFacts(kv: Kv | null, o: { seed?: () => Promise<FactSeed>; 
         for (const oldId of f.pending.against) {
           const old = facts.find((x) => x.id === oldId);
           // Both hold only when the judge said so of this one; anything else (unsure, not named, not JSON) is the newest winning.
-          if (!old || !holds(old) || (v && v.compatible.has(oldId) && !v.contradicts.has(oldId))) continue;
+          if (!old || !holds(old)) continue;
+          if (v && v.compatible.has(oldId) && !v.contradicts.has(oldId)) {
+            f.ahead?.keep.push(oldId);
+            continue;
+          }
+          // Told ahead: it closes the old one on its day (arrive), not now.
+          if (f.ahead) continue;
           close(old, f, now);
           closed++;
         }
@@ -485,7 +538,7 @@ export function changesSince(facts: Fact[], since: number, l: Lang, timeZone: st
   // A fact learnt as history (closed by one Pako knew before it) is not a change.
   const history = (f: Fact): boolean => !!f.closedBy && (facts.find((x) => x.id === f.closedBy)?.learnedAt ?? 0) < f.learnedAt;
   return facts
-    .filter((f) => !holds(f) && (f.closedAt ?? 0) >= since && !history(f))
+    .filter((f) => ended(f) && (f.closedAt ?? 0) >= since && !history(f))
     .sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))
     .slice(0, max)
     .map((f) => {

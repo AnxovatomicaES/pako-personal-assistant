@@ -3,7 +3,7 @@
 // others promised, the decisions, the meetings agreed and the open questions. Read only. Everything the server sends is put on the page as
 // text, never as HTML.
 
-import { h } from "./dom.js";
+import { h, fill } from "./dom.js";
 
 const WORDS = {
   title: "Meetings",
@@ -53,7 +53,7 @@ function paint() {
   card.querySelector("[data-mt-title]").textContent = t("title");
   card.querySelector("[data-mt-lead]").textContent = t("lead");
   const list = card.querySelector("[data-mt-list]");
-  list.replaceChildren();
+  fill(list);
   if (!meetings.length) {
     list.append(h("p", { class: "muted" }, t("none")));
     return;

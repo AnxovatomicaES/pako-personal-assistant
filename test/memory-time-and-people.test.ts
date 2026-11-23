@@ -15,7 +15,7 @@ import { matchContacts } from "../src/autonomy.ts";
 import { attendeesOf } from "../src/calendar.ts";
 import { createControl } from "../src/control.ts";
 import type { Kv } from "../src/kv.ts";
-import { changesBrief, changesSince, createFacts, currentAbout, FACTS_MAX, judgement, ownAttribute, JUDGE_MS, type Fact } from "../src/memory-facts.ts";
+import { changesBrief, changesSince, createFacts, currentAbout, FACTS_MAX, factLine, judgement, ownAttribute, JUDGE_MS, type Fact } from "../src/memory-facts.ts";
 import {
   createPeopleGraph, eventSightings, identityValue, mailSightings, slackSightings, splitAddress, whoCommand, zoomSightings,
 } from "../src/people-graph.ts";
@@ -428,6 +428,31 @@ test("without the computer (no poll for minutes) a new value wins at once: no ju
   }
 });
 
+test("<know starts> told ahead: what holds now stays until that day and nothing changed is said; a <know since> a few days ahead still holds now", async () => {
+  const r = await rig();
+  try {
+    await r.post("/assistant/reply", { text: "Ok.", know: [{ key: "office", value: "Gran Vía" }, { who: "Luis", key: "weekly meeting", value: "martes 10:00" }] });
+    r.clock.now += 10 * 60_000;
+    // "From 1 March the office moves to Diagonal", told on 17 November (no computer: no judge, the newest wins, on its day).
+    await r.post("/assistant/reply", {
+      text: "Ok.",
+      know: [{ key: "office", value: "Diagonal", starts: "2027-03-01" }, { who: "Luis", key: "weekly meeting", value: "jueves 10:00", since: "2026-11-19" }],
+    });
+    let ctx = await r.context();
+    assert.deepEqual(ctx.memoryNow, ["office: Gran Vía (since 17 Nov)"], "today the office is still Gran Vía");
+    // The meeting moved from this week: a change already made, so it holds now and closes Tuesday now.
+    assert.deepEqual(ctx.memoryChanges, ["Luis · weekly meeting: “martes 10:00” → “jueves 10:00” (17 Nov)"]);
+    r.clock.now = Date.parse("2027-02-28T22:00:00Z"); // 23:00 in Madrid, the evening before
+    assert.deepEqual((await r.context()).memoryNow, ["office: Gran Vía (since 17 Nov)"]);
+    r.clock.now = Date.parse("2027-03-01T08:00:00Z");
+    ctx = await r.context();
+    assert.deepEqual(ctx.memoryNow, ["office: Diagonal (since 1 Mar)"]);
+    assert.deepEqual(ctx.memoryChanges, ["you · office: “Gran Vía” → “Diagonal” (1 Mar)"], "the change is said on its day");
+  } finally {
+    r.close();
+  }
+});
+
 test("“what do you know about Ana?”: her card (relation, identities, facts, last contacts) and then the waiting question, answered with a button", async () => {
   const r = await rig({ seed: oldStores });
   try {
@@ -499,6 +524,8 @@ test("bridge: <know> parsed (who, key, since) and removed, at most three, a bad 
   const p = parseReply('Hecho. <know who="Rohan" key="reunión semanal" since="2026-11-19">jueves 10:00</know><know key="gym" since="mañana">lunes</know>');
   assert.equal(p.text, "Hecho.");
   assert.deepEqual(p.know, [{ who: "Rohan", key: "reunión semanal", value: "jueves 10:00", since: "2026-11-19" }, { key: "gym", value: "lunes" }]);
+  assert.deepEqual(parseReply('<know key="office" starts="2027-03-01">Diagonal</know><know key="gym" starts="marzo">x</know>').know,
+    [{ key: "office", value: "Diagonal", starts: "2027-03-01" }, { key: "gym", value: "x" }], "a change told ahead keeps its first day");
   assert.equal(parseReply("<know key='x'>half").text.includes("<know"), false);
   assert.equal(parseReply("a <know key=\"a\">1</know><know key=\"b\">2</know><know key=\"c\">3</know><know key=\"d\">4</know>").know?.length, 3);
   assert.match(SYSTEM_PROMPT, /<know who="Rohan" key="/);
@@ -547,6 +574,62 @@ test("facts: a full PERSONAS mirrored into more facts than FACTS_MAX never pushe
   assert.ok(again.some((f) => f.attribute === "oficina" && f.validTo === undefined), "the owner's told fact is still there");
   assert.equal(first.length, 2201);
   assert.equal(kv.m.get("memory-facts"), stored, "nothing changed: the store is not written again");
+});
+
+test("facts: a change told ahead holds only from its day: until then the current one stays, nothing changed is said, and on the day the change is said", async () => {
+  const kv = memKv();
+  let now = Date.UTC(2026, 10, 22, 10);
+  const facts = createFacts(kv, { now: () => now });
+  const told = (value: string, since: number, o: { ahead?: boolean; judge?: boolean } = {}) =>
+    facts.add([{ subject: "Ana", attribute: "works at", value, validFrom: since, ...(o.ahead ? { ahead: true } : {}), source: { who: "owner", where: "chat", at: now } }], now, o);
+  const jobNow = async (): Promise<string[]> => currentAbout(await facts.read(), ["Ana"]).map((f) => factLine(f, "en", "UTC"));
+  await told("Acme", Date.UTC(2024, 0, 1));
+  now += 60_000;
+  // "From January I'll work at Initech", told on 22 November.
+  const r = await told("Initech", Date.UTC(2027, 0, 1), { ahead: true });
+  assert.deepEqual(r.closed, [], "nothing is closed today");
+  assert.deepEqual(await jobNow(), ["works at: Acme (since 1 Jan)"], "today it is still Acme");
+  assert.deepEqual(changesSince(await facts.read(), now - 3600_000, "en", "UTC"), [], "nothing has changed yet, so nothing is said");
+  assert.equal((await told("Initech", Date.UTC(2027, 0, 1), { ahead: true })).same, 1, "told again: already known");
+  // Another fact told meanwhile runs the prune of old history: the one not begun is not history, and goes nowhere.
+  await facts.add([{ subject: "", attribute: "coffee", value: "black", source: { who: "owner", where: "chat", at: now } }], now);
+  now = Date.UTC(2026, 11, 31, 23);
+  assert.deepEqual(await jobNow(), ["works at: Acme (since 1 Jan)"], "the evening before: still Acme");
+  now = Date.UTC(2027, 0, 1, 9);
+  assert.deepEqual(await jobNow(), ["works at: Initech (since 1 Jan)"], "from the day: Initech");
+  const all = await facts.read();
+  assert.equal(all.find((f) => f.value === "Acme")?.validTo, Date.UTC(2027, 0, 1), "Acme was true until that day");
+  assert.deepEqual(changesSince(all, Date.UTC(2026, 11, 31, 8), "en", "UTC"), ["Ana · works at: “Acme” → “Initech” (1 Jan)"], "the change is said on its day");
+  assert.deepEqual(changesSince(all, Date.UTC(2027, 0, 1, 8), "en", "UTC"), [], "and once: not again after that day's brief");
+});
+
+test("facts: the judge's answer on a change told ahead is kept for its day: contradicts closes the old one on that day, compatible keeps both", async () => {
+  const kv = memKv();
+  let now = Date.UTC(2026, 10, 22, 10);
+  const facts = createFacts(kv, { now: () => now });
+  const about = async (who: string): Promise<string[]> => currentAbout(await facts.read(), [who]).map((f) => f.value).sort();
+  const add = (subject: string, attribute: string, value: string, validFrom: number, ahead = false) =>
+    facts.add([{ subject, attribute, value, validFrom, ...(ahead ? { ahead: true } : {}), source: { who: "owner", where: "chat", at: now } }], now, { judge: true });
+  await add("Luis", "city", "Madrid", Date.UTC(2020, 0, 1));
+  await add("Marta", "language", "English", Date.UTC(2020, 0, 1));
+  now += 60_000;
+  const city = await add("Luis", "city", "Lisbon", Date.UTC(2027, 5, 1), true);
+  const lang = await add("Marta", "language", "French", Date.UTC(2027, 5, 1), true);
+  assert.equal(city.pending.length, 1, "a rival holds now, so the judge is asked");
+  const [c, l] = [city.pending[0]!, lang.pending[0]!];
+  assert.deepEqual(await facts.verdict(c.fact.id, JSON.stringify({ contradicts: [c.against[0]!.id], compatible: [] }), now), { ok: true, closed: 0 });
+  assert.equal((await facts.verdict(l.fact.id, JSON.stringify({ contradicts: [], compatible: [l.against[0]!.id] }), now)).ok, true);
+  assert.deepEqual(await about("Luis"), ["Madrid"], "the old one still holds until the day");
+  assert.deepEqual(await about("Marta"), ["English"]);
+  now = Date.UTC(2027, 5, 2);
+  assert.deepEqual(await about("Luis"), ["Lisbon"], "from the day");
+  assert.deepEqual(await about("Marta"), ["English", "French"], "both hold, as the judge said");
+  // Without the judge's answer in time, the newest wins, from its day all the same.
+  await add("Luis", "city", "Porto", Date.UTC(2028, 0, 1), true);
+  now += JUDGE_MS + 1;
+  assert.deepEqual(await about("Luis"), ["Lisbon"], "the judge did not answer: the newest wins, but not before its day");
+  now = Date.UTC(2028, 0, 2);
+  assert.deepEqual(await about("Luis"), ["Porto"]);
 });
 
 test("facts: a derived fact the owner's later word closed is not pruned as old history while PEOPLE still says it, so it never comes back as current", async () => {

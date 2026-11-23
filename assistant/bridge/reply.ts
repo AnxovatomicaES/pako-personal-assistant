@@ -106,6 +106,8 @@ export interface KnowTag {
   value: string;
   /** "YYYY-MM-DD": since when it is true, when the owner said. */
   since?: string;
+  /** "YYYY-MM-DD": a change still to come starts that day; what holds now stays true until then. */
+  starts?: string;
 }
 
 export interface PersonTag {
@@ -182,9 +184,11 @@ export function parseReply(raw: string): ParsedReply {
       const key = attrOf(attrs, "key");
       const who = attrOf(attrs, "who");
       const since = attrOf(attrs, "since");
+      const starts = attrOf(attrs, "starts");
       const value = body.replace(/\s+/g, " ").trim().slice(0, 300);
       if (key && value && know.length < 3) {
-        know.push({ key, value, ...(who ? { who } : {}), ...(since && /^\d{4}-\d{2}-\d{2}$/.test(since) ? { since } : {}) });
+        know.push({ key, value, ...(who ? { who } : {}), ...(since && /^\d{4}-\d{2}-\d{2}$/.test(since) ? { since } : {}),
+          ...(starts && /^\d{4}-\d{2}-\d{2}$/.test(starts) ? { starts } : {}) });
       }
       return "";
     })

@@ -4,7 +4,7 @@
 // It takes over the card's notes from app.js (which keeps drawing its own copy, hidden: the card still shows notes if this file fails).
 // Everything a note says is put on the page as text, never as HTML.
 
-import { h } from "./dom.js";
+import { h, fill } from "./dom.js";
 
 const REFRESH_MS = 60_000;
 const CONFIRM_MS = 4_000;
@@ -92,8 +92,8 @@ function render() {
   if (!know || !list) return;
   const d = state.data;
   if (!d) {
-    know.replaceChildren(state.failed ? t("unread") : "");
-    list.replaceChildren();
+    fill(know, state.failed ? t("unread") : "");
+    fill(list);
     return;
   }
   const n = d.notes.length;
@@ -101,9 +101,9 @@ function render() {
   const parts = !n ? [t("knowsNone")] : [n === 1 ? t("knowsOne") : t("knowsMany", { n, max: d.max })];
   if (d.calls) parts.push(d.calls === 1 ? t("knowsCall") : t("knowsCalls", { n: d.calls }));
   if (latest) parts.push(t("knowsLatest", { text: short(latest.text) }), t("knowsUse"), d.editable ? t("canEdit") : t("readOnly"));
-  know.replaceChildren(icon("sparkles"), h("span", {}, ...rich(parts.join(""))));
+  fill(know, icon("sparkles"), h("span", {}, ...rich(parts.join(""))));
   // Newest first, as the rest of the panel; each with the number the chat uses.
-  list.replaceChildren(...[...d.notes].reverse().map((note) => row(note, d.editable)));
+  fill(list, ...[...d.notes].reverse().map((note) => row(note, d.editable)));
   if (state.failed) know.append(h("span", { class: "muted small" }, ` ${t("unread")}`));
   paintIcons();
 }

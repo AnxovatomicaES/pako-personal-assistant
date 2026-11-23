@@ -3,7 +3,7 @@
 // which work once, for 10 minutes; each paired phone is listed with when it was last seen, and can be removed. Away from home, Telegram.
 // Everything the server sends is put on the page as text, never as HTML; the QR code is an image made by the server (an SVG as data:).
 
-import { h } from "./dom.js";
+import { h, fill } from "./dom.js";
 
 const WORDS = {
   title: "Use on my phone (same Wi-Fi)",
@@ -140,7 +140,7 @@ function paint() {
     state.devices.length > 1 ? h("button", { type: "button", class: "btn ghost", disabled: busy, onclick: removeAll }, t("removeAll")) : null,
     note ? h("p", { class: "muted", role: "alert" }, note) : null,
   ];
-  card.replaceChildren(h("div", { class: "card-head" }, h("h2", { id: "h-phone" }, h("i", { "data-lucide": "smartphone" }), t("title"))), ...body);
+  fill(card, h("div", { class: "card-head" }, h("h2", { id: "h-phone" }, h("i", { "data-lucide": "smartphone" }), t("title"))), ...body);
   window.lucide?.createIcons?.({ attrs: { "aria-hidden": "true" } });
 }
 

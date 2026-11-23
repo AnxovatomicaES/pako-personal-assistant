@@ -94,9 +94,12 @@ npm start
 **The first five minutes** happen in the panel, in a welcome you can skip:
 
 1. **Name.** What Pako should call you.
-2. **Try it.** Three suggestions that send real messages to the chat: a reminder in two minutes, a note to remember, a question for the web.
-   The first answer takes a few seconds.
-3. **Your phone.** Connect Telegram: create a bot, paste its token, scan a QR code (see [Telegram](channels.md#telegram-next-to-your-chat)). You can do it later.
+2. **Claude.** Pako thinks with Claude, on your own Claude plan. *Connect Claude* installs Claude Code if needed and opens Claude's sign-in
+   in your browser; then Pako asks Claude one short question and shows its answer. Already connected, it shows the answer and you go on
+   with one press. *Skip for now* goes on without it: Pako won't answer until Claude is set up (Settings, Claude).
+3. **Try it.** Three suggestions that send real messages to the chat: a reminder in two minutes, a note to remember, a question for the web.
+   The first answer takes a few seconds. Left out when Claude was skipped.
+4. **Your phone.** Connect Telegram: create a bot, paste its token, scan a QR code (see [Telegram](channels.md#telegram-next-to-your-chat)). You can do it later.
 
 The welcome is shown once. **Your name**, at the foot of the panel, changes the name later. Pako's own words are in English; write to it in
 any language and Claude answers in that language. In the chat, write `HELP` to see what your Pako can do.

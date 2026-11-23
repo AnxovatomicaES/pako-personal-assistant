@@ -3,7 +3,7 @@
 // The facts come from the server (src/data.ts); the card's own words are here. Everything is put on the page as
 // text, never as HTML.
 
-import { h, post } from "./dom.js";
+import { h, post, fill } from "./dom.js";
 
 const $ = (s, root = document) => root.querySelector(s);
 
@@ -210,7 +210,7 @@ function render() {
   go.style.borderColor = "var(--danger)";
   go.style.color = "var(--danger)";
   // replaceChildren would write a null as the text "null": the parts not shown now are left out.
-  st.body.replaceChildren(...[
+  fill(st.body, ...[
     h("p", { class: "tg-lead" }, t("lead", { folder: d.folder })),
     ...parts.map(([, el]) => el),
     h("ul", { class: "list compact" }, d.how.map((x) => h("li", { class: "muted small" }, x))),

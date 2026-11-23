@@ -28,6 +28,13 @@ Node runs the TypeScript directly (type stripping): no build step. That means **
 5. **Every setting the code reads is documented** (a test checks it) and **no line in `src/*.ts` is over 200 characters** (a test checks that too).
 6. **No secret, personal data or private note in the repository**, ever, including in tests and examples.
 
+## Size: new code replaces old
+
+Pako's code has a ceiling: `code-ceiling.json`, checked by `test/code-ceiling.test.ts` in the gate. The count is the non-blank lines of
+the code files in `src/`, `assistant/`, `desktop/`, `bin/` and `voice-worker/src/` (tests and docs do not count). A change that adds
+code deletes as much somewhere else; when the code shrinks, the ceiling comes down with it. Until 7 December 2026 there is also a
+feature freeze: only fixes for data loss, security, or Pako acting in someone's name.
+
 ## Pull requests
 
 Small and focused, with a test for the behaviour you changed. Say in the description what you checked and, honestly, what you could not (for example "not tried against the real API").

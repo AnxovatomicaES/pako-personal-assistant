@@ -200,6 +200,9 @@ export const TOOLS = {
       value: words(300).describe("the value alone, short, in their own words and language, never translated (\"Berlin\", \"jueves a las 10:00\"), not a sentence"),
       who: plain(60).optional().describe("whom it is about; leave out for the owner"),
       since: day("since").optional(),
+      starts: day("starts").optional().describe("only for a change still to come that they tell ahead (\"from 1 March the office is in Diagonal\"): "
+        + "its first day; what holds now stays true until then. A change already made that applies from its next time (a meeting moved to "
+        + "Thursdays from this week) is since, not starts"),
     }),
   },
   schedule_routine: {
@@ -509,7 +512,7 @@ export function applyToolCalls(reply: ParsedReply, calls: ToolCall[]): ParsedRep
         break;
       }
       case "know_fact": {
-        const k: KnowTag = { key: s("key"), value: one(s("value")).slice(0, 300), ...(a.who ? { who: s("who") } : {}), ...(a.since ? { since: s("since") } : {}) };
+        const k: KnowTag = { key: s("key"), value: one(s("value")).slice(0, 300), ...(a.who ? { who: s("who") } : {}), ...(a.since ? { since: s("since") } : {}), ...(a.starts ? { starts: s("starts") } : {}) };
         push("know", k, 3);
         break;
       }

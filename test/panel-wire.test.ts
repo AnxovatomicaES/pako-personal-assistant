@@ -97,8 +97,8 @@ test("the panel's words for a pause that was not kept are the chat's (src/door/t
 
 // ---------- the welcome ----------
 
-function welcomeRig(o: { saved: boolean; dialogOpen: boolean; first: boolean }) {
-  const welcome = { first: o.first, finishing: false };
+function welcomeRig(o: { saved: boolean; dialogOpen: boolean; first: boolean; steps?: string[]; claudeOk?: boolean }) {
+  const welcome = { first: o.first, finishing: false, steps: o.steps ?? [] };
   const calls: string[] = [];
   const dialog = { open: o.dialogOpen };
   const finish = page<() => Promise<void>>(
@@ -114,6 +114,7 @@ function welcomeRig(o: { saved: boolean; dialogOpen: boolean; first: boolean }) 
       $: () => dialog,
       closeWelcome: () => void calls.push("close"),
       chat: { on: true },
+      wc: { test: o.claudeOk === undefined ? null : o.claudeOk ? { ok: true, answer: "Ready." } : { ok: false, why: "login", detail: "" } },
       setChatOpen: () => void calls.push("chat opens"),
       toast: (s: string) => void calls.push(`toast ${s}`),
       t,
@@ -143,4 +144,140 @@ test("the welcome says it is done only when the save took; closed by the browser
   const footer = welcomeRig({ saved: false, dialogOpen: true, first: false });
   await footer.finish();
   assert.deepEqual(footer.calls, ['save {"name":"Ana"}']);
+});
+
+// ---------- the welcome's Claude step ----------
+
+test("the welcome's steps on a first visit: the name, then Claude, then trying Pako and the phone; no Claude step on a server or in the demo", () => {
+  const steps = (o: { first: boolean; demo: { on: boolean } | null; name?: boolean; phone?: boolean }) =>
+    page<(first: boolean) => string[]>(["welcomeSteps"], { data: { choose: { name: o.name ?? true }, demo: o.demo }, tg: { available: o.phone ?? true } }, "welcomeSteps")(o.first);
+  assert.deepEqual(steps({ first: true, demo: { on: false } }), ["start", "name", "claude", "try", "phone"]);
+  assert.deepEqual(steps({ first: true, demo: { on: false }, name: false, phone: false }), ["start", "claude", "try"], "a name a setting decides: Claude comes first");
+  assert.deepEqual(steps({ first: true, demo: null }), ["name", "try", "phone"], "a server's panel: Claude runs elsewhere, nothing to connect here");
+  assert.deepEqual(steps({ first: true, demo: { on: true } }), ["name", "try", "phone"], "the demo week's answers are recorded");
+  assert.deepEqual(steps({ first: false, demo: { on: false } }), ["name"], "from the footer: the name only");
+  // The page has the step, between the name and the suggestions, with its title and the body the script fills.
+  const html = readFileSync(new URL("../src/panel/index.html", import.meta.url), "utf8");
+  assert.match(html, /data-step="name"[\s\S]*data-step="claude"[\s\S]*id="w-title-claude"[\s\S]*id="w-claude"[\s\S]*data-step="try"/);
+});
+
+/** A tiny DOM: h() makes plain nodes; text() reads what a node says, buttons() what can be pressed. */
+type Node = { tag: string; attrs: Record<string, any>; kids: unknown[] };
+const h = (tag: string, attrs: Record<string, any> = {}, ...kids: unknown[]): Node => ({ tag, attrs, kids: kids.flat().filter((k) => k !== null && k !== undefined && k !== false) });
+const text = (n: unknown): string => (typeof n === "string" ? n : n && typeof n === "object" ? (n as Node).kids.map(text).join("") : "");
+const all = (nodes: unknown[], tag: string): Node[] =>
+  nodes.flatMap((n) => (n && typeof n === "object" ? [...((n as Node).tag === tag ? [n as Node] : []), ...all((n as Node).kids, tag)] : []));
+
+function claudeRig(answers: Record<string, unknown>, steps = ["name", "claude", "try", "phone"]) {
+  const welcome = { open: true, first: true, steps: [...steps], i: steps.indexOf("claude") };
+  const wc = { view: null, test: null, testing: false, error: "", timer: null, sig: "" } as Record<string, any>;
+  const box = { kids: [] as unknown[], replaceChildren(...k: unknown[]) { this.kids = k; }, contains: () => false, querySelector: () => null, focus() {} };
+  const next = { hidden: true, focus() {} };
+  const dots = { kids: [] as unknown[], replaceChildren(...k: unknown[]) { this.kids = k; } };
+  const calls: string[] = [];
+  const fns = page<Record<string, (...a: any[]) => Promise<void> | void>>(
+    ["wcCall", "wcEnter", "wcConnect", "wcTest", "wcSkip", "wcBody", "renderWelcomeClaude"],
+    {
+      welcome, wc, WC_BUSY: new Set(["checking", "installing", "signing-in"]), h, t,
+      fill: (el: { replaceChildren: (...k: unknown[]) => void }, ...k: unknown[]) => el.replaceChildren(...k.flat().filter((x) => x != null && x !== false)),
+      icon: (name: string) => h("i", { "data-lucide": name }),
+      $: (s: string) => (s === "#w-claude" ? box : s === "#w-next" ? next : s === "#w-dots" ? dots : null),
+      paintIcons: () => undefined,
+      tell: (s: string) => void calls.push(`tell ${s}`),
+      welcomeNext: async () => void calls.push(`next ${welcome.steps.join(",")}`),
+      document: { activeElement: null },
+      location: { reload: () => void calls.push("reload") },
+      console: { warn: () => undefined },
+      setInterval: () => 1, clearInterval: () => undefined,
+      fetch: async (url: string, init?: { method?: string }) => {
+        const key = `${init?.method ?? "GET"} ${url}`;
+        calls.push(key);
+        const a = answers[key];
+        if (a === undefined) return { ok: false, status: 500, json: async () => ({}) };
+        return { ok: true, status: 200, json: async () => a };
+      },
+    },
+    "{ wcEnter, wcConnect, wcTest, wcSkip }",
+  );
+  const body = () => text({ tag: "box", attrs: {}, kids: box.kids });
+  const pressable = () => all(box.kids, "button").map(text);
+  return { welcome, wc, next, dots, calls, fns, body, pressable };
+}
+
+const SIGNED_IN = { phase: "connected", seconds: 0, account: { loggedIn: true, billing: "plan", email: "", plan: "pro", planLabel: "Pro", expiresAt: null }, fix: "", detail: "", upgradeUrl: "https://claude.ai/upgrade", emailHint: "" };
+
+test("the Claude step, already connected: Pako asks Claude its question at once, shows the answer, and Continue goes on in one press", async () => {
+  const r = claudeRig({ "GET /panel/api/claude/connect": SIGNED_IN, "POST /panel/api/claude/test": { ok: true, answer: "Ready to help." } });
+  await r.fns.wcEnter!();
+  assert.deepEqual(r.calls.filter((c) => c.includes("/panel/api/")), ["GET /panel/api/claude/connect", "POST /panel/api/claude/test"]);
+  assert.match(r.body(), new RegExp(WORDS["w.claude.ok"]!.replace(".", "\\.")));
+  assert.match(r.body(), /Ready to help\./, "Claude's own answer is shown");
+  assert.equal(r.next.hidden, false, "Continue is there");
+  assert.deepEqual(r.pressable(), [], "nothing else to press, no skip");
+  assert.ok(r.calls.includes("tell happy"));
+});
+
+test("the Claude step when Claude does not answer: a plain reason, the button that fixes it, no Continue, and Skip for now saying Pako won't answer", async () => {
+  const cases: [Record<string, unknown>, string, string][] = [
+    [{ ok: false, why: "login", detail: "" }, "w.claude.login", WORDS["w.claude.connect"]!],
+    [{ ok: false, why: "missing", detail: "" }, "w.claude.missing", WORDS["w.claude.connect"]!],
+    [{ ok: false, why: "limit", detail: "" }, "w.claude.limit", WORDS["w.claude.again"]!],
+    [{ ok: false, why: "other", detail: "Claude took longer than 90 s" }, "w.claude.other", WORDS["w.claude.again"]!],
+  ];
+  for (const [answer, key, button] of cases) {
+    const r = claudeRig({ "GET /panel/api/claude/connect": SIGNED_IN, "POST /panel/api/claude/test": answer });
+    await r.fns.wcEnter!();
+    assert.ok(r.body().includes(WORDS[key]!), `${key}: ${r.body()}`);
+    assert.equal(r.next.hidden, true, `${key}: no Continue as if Pako worked`);
+    assert.deepEqual(r.pressable(), [button, WORDS["w.claude.skip"]], key);
+    assert.ok(r.body().includes(WORDS["w.claude.skipNote"]!), key);
+    assert.match(WORDS["w.claude.skipNote"]!, /won't answer until Claude is set up/);
+  }
+  // Signed out from the start: no question is asked, the step offers Connect Claude.
+  const out = claudeRig({ "GET /panel/api/claude/connect": { ...SIGNED_IN, phase: "idle", account: { ...SIGNED_IN.account, loggedIn: false } } });
+  await out.fns.wcEnter!();
+  assert.ok(!out.calls.includes("POST /panel/api/claude/test"));
+  assert.deepEqual(out.pressable(), [WORDS["w.claude.connect"], WORDS["w.claude.skip"]]);
+  assert.equal(out.next.hidden, true);
+  // Pako itself did not answer: said so, with Try again.
+  const gone = claudeRig({});
+  await gone.fns.wcEnter!();
+  assert.ok(gone.body().includes(WORDS["w.claude.unreachable"]!));
+  assert.equal(gone.next.hidden, true);
+});
+
+test("Skip for now leaves out the step that tries Pako (nothing would answer there), and the end says Pako won't answer instead of 'all set'", async () => {
+  const r = claudeRig({}, ["start", "name", "claude", "try", "phone"]);
+  await r.fns.wcSkip!();
+  assert.deepEqual(r.welcome.steps, ["start", "name", "claude", "phone"]);
+  assert.equal(r.dots.kids.length, 4, "one dot per step left");
+  assert.deepEqual(r.calls, ["next start,name,claude,phone"]);
+
+  const skipped = welcomeRig({ saved: true, dialogOpen: true, first: true, steps: ["name", "claude", "phone"], claudeOk: false });
+  await skipped.finish();
+  assert.equal(skipped.calls.at(-1), `toast ${WORDS["w.doneNoClaude"]}`);
+  assert.match(WORDS["w.doneNoClaude"]!, /won't answer until Claude is set up/);
+  const worked = welcomeRig({ saved: true, dialogOpen: true, first: true, steps: ["name", "claude", "try"], claudeOk: true });
+  await worked.finish();
+  assert.equal(worked.calls.at(-1), `toast ${WORDS["w.doneToast"]}`);
+});
+
+test("a welcome with its own Claude step does not tell the Mac app at its first step (its Connect window would cover the step)", async () => {
+  const told: unknown[] = [];
+  const next = (steps: string[]) =>
+    page<() => Promise<void>>(["welcomeNext"], { welcome: { i: 0, steps }, tellApp: (m: unknown) => void told.push(m), showStep: () => undefined, finishWelcome: async () => undefined }, "welcomeNext")();
+  await next(["start", "name", "claude", "try"]);
+  assert.deepEqual(told, []);
+  await next(["name", "try"]);
+  assert.deepEqual(told, [{ lang: "en" }], "a server's welcome, as before");
+  // The app looks at Claude again before it opens its window at the welcome's end.
+  const swift = readFileSync(new URL("../desktop/mac/App.swift", import.meta.url), "utf8");
+  assert.match(swift, /connectPending = false\n[\s\S]{0,400}checkClaude\(fresh: true\) \{ state in\n\s+if !state\.ready \{ self\.showConnect\(\) \}/);
+});
+
+test("the Claude step with a Claude Code too old to report its sign-in (no account): the question tells, it is not taken for signed out", async () => {
+  const r = claudeRig({ "GET /panel/api/claude/connect": { ...SIGNED_IN, phase: "idle", account: null }, "POST /panel/api/claude/test": { ok: true, answer: "Ready." } });
+  await r.fns.wcEnter!();
+  assert.ok(r.calls.includes("POST /panel/api/claude/test"));
+  assert.equal(r.next.hidden, false);
 });

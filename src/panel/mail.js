@@ -7,7 +7,7 @@
 // Its words are English only (the owner's decision).
 
 import { localeFor } from "./i18n.js";
-import { h } from "./dom.js";
+import { h, fill } from "./dom.js";
 
 const $ = (s, root = document) => root.querySelector(s);
 /** Dates written the way the owner's country writes English (i18n.js localeFor): 5:00 PM in the US, 17:00 elsewhere. */
@@ -83,7 +83,7 @@ function toast(text, action) {
     box = h("div", { id: "mail-toast", class: "mail-toast", role: "status", "aria-live": "polite" });
     document.body.append(box);
   }
-  box.replaceChildren(h("span", {}, text), action ? h("button", { type: "button", class: "btn-link", onclick: action.run }, action.label) : null);
+  fill(box, h("span", {}, text), action ? h("button", { type: "button", class: "btn-link", onclick: action.run }, action.label) : null);
   box.hidden = false;
   clearTimeout(box.timer);
   box.timer = setTimeout(() => (box.hidden = true), UNDO_MS);
@@ -98,13 +98,13 @@ function drawNeeds() {
   const v = st.view;
   // Mail not connected: no block at all (the place stays empty, and the page hides an empty one).
   if (!v || !v.connected) {
-    mount.replaceChildren();
+    fill(mount);
     return;
   }
   let card = $("#needs-card", mount);
   if (!card) {
     card = h("section", { class: "card needs", id: "needs-card", "aria-label": "Mail that needs you" });
-    mount.replaceChildren(card);
+    fill(mount, card);
   }
   const rows = v.needs.rows.filter((r) => !st.hidden.has(r.id));
   // Gentle mode: a time that passed is said plainly and never in red (src/gentle.ts).
@@ -113,12 +113,12 @@ function drawNeeds() {
   const more = v.needs.more;
   if (!rows.length && !more) {
     card.classList.add("calm");
-    card.replaceChildren(h("p", { class: "needs-calm" }, icon("inbox"), "Inbox: nothing needs you ✓"));
+    fill(card, h("p", { class: "needs-calm" }, icon("inbox"), "Inbox: nothing needs you ✓"));
     paint();
     return;
   }
   card.classList.remove("calm");
-  card.replaceChildren(
+  fill(card, 
     h("div", { class: "card-head" }, h("h2", {}, icon("bell-ring"), h("span", {}, "Needs you"))),
     h("ul", { class: "list needs-list" }, ...rows.map((r) => h("li", { class: `item needs-row${late(r) ? " overdue" : ""}` },
       h("button", { type: "button", class: "needs-open", onclick: () => openReader(r.id), "aria-label": `Open the mail from ${r.from}` },
@@ -190,7 +190,7 @@ function moveSelect(m) {
       // list (its tabs and counts), and one made from the list the reader, if it shows that mail.
       for (const x of st.items) if (x.id === m.id && x !== m) Object.assign(x, { category: to, why: m.why });
       repaintReader(m);
-      sel.replaceChildren(...moveOptions(m));
+      fill(sel, ...moveOptions(m));
       toast(`Moved to ${LABEL[to]}. Mail from ${senderName(m.from)} will go there from now on.`);
     } catch {
       /* offline or refused: said in a toast */
@@ -215,16 +215,16 @@ export function drawList() {
   const list = $("#mail-list");
   if (!tabs || !list || !st.fed) return;
   const n = tabCounts(st.items);
-  tabs.replaceChildren(...CATEGORIES.map((c) => h("button", {
+  fill(tabs, ...CATEGORIES.map((c) => h("button", {
     type: "button", class: `chip${c === st.tab ? " on" : ""}`, role: "tab", "aria-selected": c === st.tab ? "true" : "false", onclick: () => pickTab(c),
   }, LABEL[c], h("b", { class: "count" }, String(n[c])))));
   const items = st.items.filter((m) => m.category === st.tab).slice(0, 40);
   if (!items.length) {
-    list.replaceChildren(h("li", { class: "empty" }, icon("inbox"), "Nothing here."));
+    fill(list, h("li", { class: "empty" }, icon("inbox"), "Nothing here."));
     paint();
     return;
   }
-  list.replaceChildren(...items.map((m) => h("li", {
+  fill(list, ...items.map((m) => h("li", {
     class: `item k-${m.category}${m.category === "suspicious" ? " scam" : ""}`, tabindex: "0", role: "button",
     onclick: () => openReader(m.id), onkeydown: (e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), openReader(m.id)),
   },
@@ -265,21 +265,21 @@ async function openReader(id) {
     dlg = h("dialog", { id: "mail-reader", class: "mail-reader", "aria-labelledby": "mail-reader-subject" });
     document.body.append(dlg);
   }
-  dlg.replaceChildren(h("p", { class: "muted" }, "Opening…"));
+  fill(dlg, h("p", { class: "muted" }, "Opening…"));
   if (!dlg.open) dlg.showModal?.();
   let r;
   try {
     r = await call(`/panel/api/mail/item?id=${encodeURIComponent(id)}`);
   } catch {
     /* offline or refused: said in the dialog */
-    dlg.replaceChildren(h("p", {}, "This mail can't be opened right now."), h("button", { type: "button", class: "btn", onclick: () => dlg.close() }, "Close"));
+    fill(dlg, h("p", {}, "This mail can't be opened right now."), h("button", { type: "button", class: "btn", onclick: () => dlg.close() }, "Close"));
     return;
   }
   const m = r.item;
   dlg.dataset.id = String(m.id);
   const when = new Intl.DateTimeFormat(localeOf(), { dateStyle: "medium", timeStyle: "short" }).format(m.at);
   const link = showLink(r.link) ? h("a", { class: "btn primary", href: r.link.url, target: "_blank", rel: "noopener noreferrer" }, icon("external-link"), r.link.label) : null;
-  dlg.replaceChildren(
+  fill(dlg, 
     h("header", { class: "reader-head" },
       h("h2", { id: "mail-reader-subject" }, m.subject || "(no subject)"),
       h("button", { type: "button", class: "icon-btn", onclick: () => dlg.close(), "aria-label": "Close" }, icon("x"))),
@@ -304,7 +304,7 @@ async function drawSettings(holder) {
     s = await call("/panel/api/mail/settings");
   } catch {
     /* offline or refused: said in place */
-    holder.replaceChildren(h("p", { class: "muted small" }, "The mail settings can't be read right now."));
+    fill(holder, h("p", { class: "muted small" }, "The mail settings can't be read right now."));
     return;
   }
   const switches = s.keys.map((k) => {
@@ -336,7 +336,7 @@ async function drawSettings(holder) {
           },
         }, "Remove")))
     : [h("li", { class: "muted small" }, "No rules yet. Move a mail to another category and its sender's next mail goes there.")];
-  holder.replaceChildren(
+  fill(holder, 
     h("h3", {}, "Notify me at once for"),
     h("p", { class: "muted small" }, "VIP senders always notify. Waiting on others and Important come in the morning brief."),
     h("ul", { class: "mail-switches" }, ...switches),

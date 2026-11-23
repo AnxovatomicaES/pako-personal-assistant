@@ -40,6 +40,7 @@
 //   POST /panel/api/claude/connect          { switch?: true, again?: true } -> ConnectView (started; `switch` signs out first)
 //   POST /panel/api/claude/connect/cancel   -> ConnectView
 //   POST /panel/api/claude/signout          { confirm: true } -> { ok } & ConnectView
+//   POST /panel/api/claude/test             -> ClaudeTest: one short question through the bridge's own run, and its answer (or why not)
 
 import { createHash, randomBytes } from "node:crypto";
 import { createServer, type Server } from "node:http";
@@ -379,7 +380,7 @@ async function slackLoopback(port: number, handler: (req: Request, res: Response
   return loopback.port;
 }
 
-const CLAUDE_PATHS = ["/panel/api/claude/connect", "/panel/api/claude/connect/cancel", "/panel/api/claude/signout"];
+const CLAUDE_PATHS = ["/panel/api/claude/connect", "/panel/api/claude/connect/cancel", "/panel/api/claude/signout", "/panel/api/claude/test"];
 const PATHS = [
   "/panel/api/connect/clients", "/panel/api/slack/setup", "/panel/api/slack/connect", "/panel/api/slack/account",
   "/panel/api/zoom/setup", "/panel/api/zoom/manifest", "/panel/api/zoom/connect", "/panel/api/zoom/account",
@@ -566,5 +567,9 @@ function mountClaudeConnect(app: Express, d: ConnectSetupDeps): void {
     if (b.confirm !== true) return void res.status(400).json({ ok: false, error: "confirm" });
     const ok = await c.signOut();
     res.json({ ok, ...c.view() });
+  });
+  // The welcome's check: a real run (seconds, on the owner's plan), so few of them.
+  app.post(CLAUDE_PATHS[3]!, guard(d, true), limit(10), async (_req, res) => {
+    res.json(await c.test());
   });
 }

@@ -18,7 +18,7 @@ import {
   ADVANCED, askApp, cardStates, importedCount, checkField, cleanAppPassword, cleanDiscovery, connectedCount, COUNTED, discoveryChips, inApp, isEmail, nextSuggestion,
   providerOf, resumable, tellApp, accountLine, mailStatus, cleanClients, labHiddenCards,
 } from "./settings-model.js";
-import { h, localeOf } from "./dom.js";
+import { h, localeOf, fill } from "./dom.js";
 
 const $ = (s, root = document) => root.querySelector(s);
 function t(key, vars) {
@@ -372,9 +372,9 @@ function drawCards() {
   const ids = Object.keys(CARD).filter((id) => !S.hidden?.has(id));
   // Mail on this Mac sits beside the mail card: two ways to the same mailbox.
   const mailIds = ["mail", "applemail"].filter((id) => ids.includes(id));
-  $("#cards").replaceChildren(...ids.filter((id) => !ADVANCED.includes(id) && !mailIds.includes(id)).map(slot));
-  $("#cards-mail")?.replaceChildren(...mailIds.map(slot));
-  $("#cards-advanced").replaceChildren(...ids.filter((id) => ADVANCED.includes(id)).map(slot));
+  fill($("#cards"), ...ids.filter((id) => !ADVANCED.includes(id) && !mailIds.includes(id)).map(slot));
+  { const m = $("#cards-mail"); if (m) fill(m, ...mailIds.map(slot)); }
+  fill($("#cards-advanced"), ...ids.filter((id) => ADVANCED.includes(id)).map(slot));
   for (const id of ids) drawCard(id);
 }
 
@@ -405,7 +405,7 @@ function drawCard(id, { focusStep = false, focusToggle = false } = {}) {
     icon("chevron-down", "chev")));
   const wiz = open ? h("div", { class: "wizard", id: wizId, role: "group", "aria-labelledby": `toggle-${id}` }, details(id), wizard(id)) : null;
   const article = h("article", { class: `conn${open ? " open" : ""} state-${state}`, "data-id": id }, toggle, wiz);
-  slot.replaceChildren(article);
+  fill(slot, article);
   paint();
   if (focusStep) ($(".step-title", article) ?? toggle).focus({ preventScroll: false });
   else if (focusToggle) toggle.focus();
@@ -456,14 +456,14 @@ VIEWS.claude = (w) => {
         actions(btn(t("back"), () => go("claude", 0), "ghost"), btn(t("save"), async (e) => {
           if (!key.check()) return key.input.focus();
           e.currentTarget.disabled = true;
-          out.replaceChildren(testing(t("restarting")));
+          fill(out, testing(t("restarting")));
           const r = await saveConnection("claude", { ANTHROPIC_API_KEY: key.input.value.trim() });
           if (!r.ok) {
-            out.replaceChildren();
+            fill(out);
             e.currentTarget.disabled = false;
             return key.error(r.error);
           }
-          out.replaceChildren(saved(t("claude.keySaved"), t("claude.keySavedLine")));
+          fill(out, saved(t("claude.keySaved"), t("claude.keySavedLine")));
           drawHero();
         })),
       ],
@@ -630,13 +630,13 @@ function calendarPick(d) {
     children: [
       cals.length ? h("div", { class: "cal-list" }, boxes) : h("p", { class: "aside" }, t("cal.noneFound")), out,
       actions(btn(t("back"), () => go("calendar", 0), "ghost"), btn(t("cal.useThese"), async (e) => {
-        if (!chosen.size) return out.replaceChildren(problem(t("cal.pickOne")));
+        if (!chosen.size) return fill(out, problem(t("cal.pickOne")));
         e.currentTarget.disabled = true;
-        out.replaceChildren(testing(t("cal.connecting")));
+        fill(out, testing(t("cal.connecting")));
         const r = await askApp(window, { type: "use", what: "calendars", ids: [...chosen] }, "pakoUsed", 30_000, (v) => v?.what === "calendars");
         if (!r?.ok) {
           e.currentTarget.disabled = false;
-          return out.replaceChildren(problem(r ? (typeof r.error === "string" && r.error ? r.error.slice(0, 300) : t("cal.appFailed")) : t("app.noAnswer"),
+          return fill(out, problem(r ? (typeof r.error === "string" && r.error ? r.error.slice(0, 300) : t("cal.appFailed")) : t("app.noAnswer"),
             r ? "" : t("app.update")));
         }
         await loadAll();
@@ -671,12 +671,12 @@ function calendarIcs(w) {
         const button = e.currentTarget;
         button.disabled = true;
         const add = async (anyway) => {
-          out.replaceChildren(testing(t("cal.checking")));
+          fill(out, testing(t("cal.checking")));
           const r = await addCalendarLink(link.input.value.trim(), anyway);
           if (r.ok) return go("calendar", 2, { path: "ics", works: r.works ?? "" });
           button.disabled = false;
           // Why it does not work, where the right link is for a known service, and the way to keep it anyway (a calendar down for now).
-          out.replaceChildren(problem(r.error, r.help ?? ""), r.canForce ? actions(btn(t("cal.anyway"), () => void add(true), "ghost")) : "");
+          fill(out, problem(r.error, r.help ?? ""), r.canForce ? actions(btn(t("cal.anyway"), () => void add(true), "ghost")) : "");
         };
         await add(false);
       })),
@@ -746,7 +746,7 @@ function signInBox(address, provider) {
   void read("/panel/api/mail/oauth").then((d) => {
     if (d?.[provider] !== true) return;
     const out = h("div", { "aria-live": "polite" });
-    box.replaceChildren(h("div", { class: "note", role: "note" }, icon("log-in"), h("div", {},
+    fill(box, h("div", { class: "note", role: "note" }, icon("log-in"), h("div", {},
       h("p", {}, t("mail.signInLine", { name })),
       actions(btn(t("mail.signInWith", { name }), async (e) => {
         const acc = await waitForAllow({ start: "/panel/api/mail/oauth/start", body: { provider, address }, account: "/panel/api/mail/oauth/account", service: name },
@@ -795,7 +795,7 @@ function mailPassword(w) {
   void (async () => {
     const cfg = await autoconfig(address);
     if (S.open !== "mail" || W("mail").step !== 1) return;
-    holder.replaceChildren(cfg ? passwordStep(w, cfg) : manualServer(w));
+    fill(holder, cfg ? passwordStep(w, cfg) : manualServer(w));
     paint();
   })();
   return holder;
@@ -876,23 +876,23 @@ function manualServer(w) {
  * password is said on the password field; a server that cannot be reached, with how to fix the server; "Done" only after a yes.
  */
 async function connectImap(w, cfg, password, out, pw, button, hostField = null) {
-  out.replaceChildren(testing(t("mail.testingLogin", { address: w.address ?? "" })));
+  fill(out, testing(t("mail.testingLogin", { address: w.address ?? "" })));
   const body = { address: w.address, password: String(password ?? "").trim(), host: cfg.host, port: cfg.port || 993, username: cfg.username || w.address };
   const r = await checkAndSave("/panel/api/mail/connect", body);
   if (S.open !== "mail") return;
   if (!r.ok) {
     button.disabled = false;
-    out.replaceChildren();
+    fill(out);
     const why = r.data.why;
     if (why === "auth" || why === "password") {
       pw.error(r.error);
       // Refused: forwarding is the way that always works (a Microsoft 365 or Workspace account may never accept a password). What else to
       // try is said under the field (cfg.refused).
-      if (why === "auth") out.replaceChildren(actions(btn(t("mail.forwardInstead"), () => go("mail", 1, { path: "forward" }), "ghost")));
+      if (why === "auth") fill(out, actions(btn(t("mail.forwardInstead"), () => go("mail", 1, { path: "forward" }), "ghost")));
       return;
     }
     if ((why === "network" || why === "tls") && hostField) return hostField.error(`${r.error} ${t("mail.fixServer")}`);
-    return out.replaceChildren(problem(r.error, why === "network" || why === "tls" ? t("mail.fixServer") : ""));
+    return fill(out, problem(r.error, why === "network" || why === "tls" ? t("mail.fixServer") : ""));
   }
   go("mail", 2, { path: "imap" });
 }
@@ -912,11 +912,11 @@ function mailForward(w) {
           if (!key.check()) return key.input.focus();
           if (!inbox.check()) return inbox.input.focus();
           e.currentTarget.disabled = true;
-          out.replaceChildren(testing());
+          fill(out, testing());
           const r = await saveConnection("mail", { AGENTMAIL_API_KEY: key.input.value.trim(), AGENTMAIL_INBOX: inbox.input.value.trim() });
           if (!r.ok) {
             e.currentTarget.disabled = false;
-            out.replaceChildren();
+            fill(out);
             return (r.field === "AGENTMAIL_INBOX" ? inbox : key).error(r.error);
           }
           go("mail", 2, { path: "forward", address: inbox.input.value.trim() });
@@ -973,11 +973,11 @@ VIEWS.telegram = (w) => {
         actions(btn(t("back"), () => go("telegram", 0), "ghost"), btn(t("tg.check"), async (e) => {
           if (!token.check()) return token.input.focus();
           e.currentTarget.disabled = true;
-          out.replaceChildren(testing(t("tg.checking")));
+          fill(out, testing(t("tg.checking")));
           const r = await api("/panel/api/telegram/token", { method: "POST", body: { token: token.input.value.trim() } });
           if (!r.ok || !r.data.ok) {
             e.currentTarget.disabled = false;
-            out.replaceChildren();
+            fill(out);
             return token.error(r.data.error || t("err.save"));
           }
           announce(t("tg.botOk", { bot: r.data.bot }));
@@ -1007,12 +1007,12 @@ VIEWS.telegram = (w) => {
 async function pairTelegram(holder) {
   const r = await api("/panel/api/telegram/link", { method: "POST" });
   if (!r.ok || typeof r.data.link !== "string" || !/^https:\/\/t\.me\//.test(r.data.link)) {
-    holder.replaceChildren(problem(r.data.error || t("tg.noLink")), actions(btn(t("tryAgain"), () => go("telegram", 2))));
+    fill(holder, problem(r.data.error || t("tg.noLink")), actions(btn(t("tryAgain"), () => go("telegram", 2))));
     return paint();
   }
   const qr = typeof r.data.svg === "string" && /^\s*<svg[\s>]/.test(r.data.svg)
     ? h("img", { class: "qr", src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(r.data.svg)}`, alt: t("tg.pairQr"), width: 180, height: 180 }) : null;
-  holder.replaceChildren(
+  fill(holder, 
     h("div", { class: "pair-row" }, qr, h("div", {},
       h("p", {}, t(S.app ? "tg.tapHere" : "tg.scanOrTap")),
       actions(outLink(r.data.link, t("tg.openLink"))),
@@ -1061,11 +1061,11 @@ VIEWS.whatsapp = (w) => {
   const doIt = async (e) => {
     for (const f of fields) if (!f.check()) return f.input.focus();
     e.currentTarget.disabled = true;
-    out.replaceChildren(testing());
+    fill(out, testing());
     const values = Object.fromEntries(fields.map((f) => [f.input.id.slice(5), f.input.value.trim()]));
     const r = await api("/panel/api/whatsapp/setup", { method: "POST", body: { step: s.id, values } });
     e.currentTarget.disabled = false;
-    if (!r.ok || r.data.ok === false) return out.replaceChildren(problem(str(r.data.error) || t("err.save"), str(r.data.fix)));
+    if (!r.ok || r.data.ok === false) return fill(out, problem(str(r.data.error) || t("err.save"), str(r.data.fix)));
     await loadAll();
     const again = Array.isArray(S.data.whatsapp?.steps) ? S.data.whatsapp.steps.findIndex((x) => !x.done) : -1;
     go("whatsapp", again < 0 ? steps.length - 1 : again);
@@ -1104,11 +1104,11 @@ async function oauthConnect(id, clientId, out, button) {
  */
 async function waitForAllow({ start: startPath, body, account, service }, out, button) {
   button.disabled = true;
-  out.replaceChildren(testing());
+  fill(out, testing());
   const r = await api(startPath, { method: "POST", body });
   if (!r.ok || r.data.ok !== true || typeof r.data.authorizeUrl !== "string") {
     button.disabled = false;
-    out.replaceChildren(problem(typeof r.data.error === "string" && r.data.error ? r.data.error.slice(0, 400) : t(r.status ? "err.save" : "err.offline")));
+    fill(out, problem(typeof r.data.error === "string" && r.data.error ? r.data.error.slice(0, 400) : t(r.status ? "err.save" : "err.offline")));
     return null;
   }
   const url = r.data.authorizeUrl;
@@ -1119,7 +1119,7 @@ async function waitForAllow({ start: startPath, body, account, service }, out, b
   } catch {
     /* the link below */
   }
-  out.replaceChildren(testing(t("oauth.waiting", { service })), h("p", { class: "aside" }, outLink(url, t("oauth.reopen", { service }), "btn ghost")));
+  fill(out, testing(t("oauth.waiting", { service })), h("p", { class: "aside" }, outLink(url, t("oauth.reopen", { service }), "btn ghost")));
   const start = Date.now();
   while (Date.now() - start < 10 * 60_000) {
     await sleep(1500);
@@ -1129,18 +1129,18 @@ async function waitForAllow({ start: startPath, body, account, service }, out, b
     if (!a.ok || a.data.state === "waiting") continue;
     if (a.data.state === "failed") {
       button.disabled = false;
-      out.replaceChildren(problem(String(a.data.error ?? "").slice(0, 400) || t("oauth.timeout")));
+      fill(out, problem(String(a.data.error ?? "").slice(0, 400) || t("oauth.timeout")));
       return null;
     }
     if (a.data.state === "connected") {
-      out.replaceChildren(testing(t("oauth.restarting")));
+      fill(out, testing(t("oauth.restarting")));
       await waitForRestart();
       await loadAll();
       return a.data.account && typeof a.data.account === "object" ? a.data.account : {};
     }
   }
   button.disabled = false;
-  out.replaceChildren(problem(t("oauth.timeout")));
+  fill(out, problem(t("oauth.timeout")));
   return null;
 }
 
@@ -1149,7 +1149,7 @@ function connectedAs(id) {
   const line = h("p", { class: "aside" });
   void read(`/panel/api/${id}/account`).then((a) => {
     const who = a?.state === "connected" ? accountLine(a.account) : "";
-    if (who) line.replaceChildren(icon("circle-check"), t("oauth.connectedAs", { who }));
+    if (who) fill(line, icon("circle-check"), t("oauth.connectedAs", { who }));
   });
   return line;
 }
@@ -1231,16 +1231,16 @@ VIEWS.teams = () => {
   const out = h("div", { "aria-live": "polite" });
   const body = h("div", {}, testing());
   void read("/panel/api/teams/status").then((st) => {
-    if (!st || typeof st !== "object") return body.replaceChildren(problem(t("err.offline")));
+    if (!st || typeof st !== "object") return fill(body, problem(t("err.offline")));
     const connect = (more) => btn(t(more ? "teams.more" : "teams.connect"), async (e) => {
       const a = await waitForAllow({ start: "/panel/api/teams/connect", body: more ? { more: true } : {}, account: "/panel/api/teams/account", service: "Microsoft" }, out, e.currentTarget);
       if (a) drawCard("teams");
       // Refused for want of an admin: the request to send them, at once.
       else void read("/panel/api/teams/status").then((s2) => s2?.adminNeeded && out.append(teamsAdmin(s2) ?? ""));
     }, more ? "ghost" : "primary");
-    if (!st.available && !st.connected) return body.replaceChildren(step({ title: t("teams.s1"), text: t("teams.noClient") }));
+    if (!st.available && !st.connected) return fill(body, step({ title: t("teams.s1"), text: t("teams.noClient") }));
     if (!st.connected) {
-      return body.replaceChildren(step({
+      return fill(body, step({
         title: t("teams.s1"), text: t("teams.lead"),
         art: mini({ title: "login.microsoftonline.com", rows: [t("teams.chats"), { text: "Accept", hot: true }, { text: "Pako · read only", dim: true }], tint: "violet" }),
         children: [
@@ -1253,7 +1253,7 @@ VIEWS.teams = () => {
     }
     const g = st.granted ?? {};
     const mark = (on, off = t("teams.needsAdmin")) => (on ? t("teams.yes") : off);
-    body.replaceChildren(
+    fill(body, 
       rows(
         row(t("d.account"), [st.name, st.account && `(${st.account})`].filter(Boolean).join(" ")),
         row(t("teams.org"), st.org),
@@ -1290,16 +1290,16 @@ for (const id of Object.keys(MAC_SOURCES)) {
 /** A card's body from its GET route: Mac only, off, waiting for Full Disk Access, or reading. */
 function macSourceView(id, body, st) {
   const src = MAC_SOURCES[id];
-  if (!st) return body.replaceChildren(h("p", { class: "step-text" }, t(`${id}.older`)));
-  if (!st.mac) return body.replaceChildren(h("p", { class: "step-text" }, t(`${id}.macOnly`)));
+  if (!st) return fill(body, h("p", { class: "step-text" }, t(`${id}.older`)));
+  if (!st.mac) return fill(body, h("p", { class: "step-text" }, t(`${id}.macOnly`)));
   const out = h("div", { "aria-live": "polite" });
   const checkAgain = (label = t(`${id}.check`)) => btn(label, async (e) => {
     e.currentTarget.disabled = true;
-    out.replaceChildren(testing());
+    fill(out, testing());
     const r = await api(`${src.api}/check`, { method: "POST", body: {} });
     if (!r.ok) {
       e.currentTarget.disabled = false;
-      return out.replaceChildren(problem(t(r.status ? "err.save" : "err.offline")));
+      return fill(out, problem(t(r.status ? "err.save" : "err.offline")));
     }
     await loadAll();
     macSourceView(id, body, r.data);
@@ -1309,7 +1309,7 @@ function macSourceView(id, body, st) {
   // Mail read by IMAP too: the same email is taken once, said so the owner is not left wondering.
   const both = st.imap === true ? h("p", { class: "aside" }, icon("info"), t(`${id}.withImap`)) : null;
   if (!st.on) {
-    return body.replaceChildren(
+    return fill(body, 
       h("p", { class: "step-text" }, t(`${id}.lead`)),
       h("p", { class: "aside" }, icon("shield-check"), t(`${id}.private`)),
       h("p", { class: "aside" }, icon("lock"), t(`${id}.fdaFirst`)),
@@ -1317,11 +1317,11 @@ function macSourceView(id, body, st) {
       out,
       actions(btn(t(`${id}.turnOn`), async (e) => {
         e.currentTarget.disabled = true;
-        out.replaceChildren(testing(t("restarting")));
+        fill(out, testing(t("restarting")));
         const r = await saveConnection(id, { [src.key]: "on" });
         if (!r.ok) {
           e.currentTarget.disabled = false;
-          return out.replaceChildren(problem(r.error));
+          return fill(out, problem(r.error));
         }
         drawCard(id);
       })));
@@ -1332,7 +1332,7 @@ function macSourceView(id, body, st) {
     const open = S.app
       ? btn(t(`${id}.openPane`), () => tellApp(window, { type: "openURL", url: pane }), "tiny primary")
       : h("a", { class: "btn tiny primary", href: pane }, t(`${id}.openPane`));
-    return body.replaceChildren(
+    return fill(body, 
       h("div", { class: "denied" },
         h("p", {}, icon("lock"), h("span", {}, typeof st.problem === "string" && st.problem ? st.problem : t(`${id}.fda`))),
         h("ol", { class: "how" }, [1, 2, 3].map((n) => h("li", {}, t(`${id}.fda${n}`, { app: t(S.app ? `${id}.appMac` : `${id}.appTerminal`) })))),
@@ -1344,7 +1344,7 @@ function macSourceView(id, body, st) {
     : st.access === "ok" ? [success(t(`${id}.on`), t(`${id}.onLine`))]
     : [h("p", { class: "step-text" }, t(`${id}.soon`))];
   const problemLine = st.access === "ok" && typeof st.problem === "string" && st.problem ? problem(st.problem) : null;
-  return body.replaceChildren(...lines, problemLine, both,
+  return fill(body, ...lines, problemLine, both,
     rows(row(t(`${id}.lastRead`), st.lastRead ? ago(st.lastRead) : t("d.never")), row(t(`${id}.since`), st.since ? ago(st.since) : "")),
     out, actions(checkAgain(st.access === "ok" ? t(`${id}.checkNow`) : t(`${id}.check`)), off));
 }
@@ -1368,10 +1368,10 @@ VIEWS.zoom = (w) => {
       title: t("zoom.sLocal"), text: t("zoom.localText", { folder: rec?.folder ?? "" }),
       children: [out, actions(btn(t("back"), () => go("zoom", 0), "ghost"), btn(t("zoom.useLocalBtn"), async (e) => {
         e.currentTarget.disabled = true;
-        out.replaceChildren(testing());
+        fill(out, testing());
         const r = await askApp(window, { type: "use", what: "zoomRecordings" }, "pakoUsed", 30_000, (v) => v?.what === "zoomRecordings");
         e.currentTarget.disabled = false;
-        out.replaceChildren(r?.ok ? success(t("zoom.localDone"), t("zoom.localDoneLine")) : problem(r ? t("zoom.localFailed") : t("app.noAnswer"), r ? "" : t("app.update")));
+        fill(out, r?.ok ? success(t("zoom.localDone"), t("zoom.localDoneLine")) : problem(r ? t("zoom.localFailed") : t("app.noAnswer"), r ? "" : t("app.update")));
         paint();
       }))],
     });
@@ -1395,7 +1395,7 @@ VIEWS.zoom = (w) => {
           e.currentTarget.disabled = true;
           const r = await api("/panel/api/zoom/manifest", { method: "POST" });
           e.currentTarget.disabled = false;
-          saved.replaceChildren(r.ok && typeof r.data.path === "string"
+          fill(saved, r.ok && typeof r.data.path === "string"
             ? h("p", { class: "aside" }, icon("circle-check"), t("zoom.savedTo", { path: r.data.path.slice(0, 300) }))
             : problem(t("zoom.saveFailed")));
         }), h("a", { class: "btn ghost", href: "/panel/api/zoom/manifest", download: "pako-zoom-app.json" }, t("zoom.download"))),
@@ -1406,7 +1406,7 @@ VIEWS.zoom = (w) => {
     const id = field({ id: "f-zoom-client", label: "Client ID", hint: t("zoom.fromApp"), kind: "zoomClientId" });
     const redirect = h("div");
     void read("/panel/api/zoom/setup").then((d) => {
-      if (typeof d?.redirectUri === "string") redirect.replaceChildren(h("p", { class: "aside" }, t("zoom.redirectIf")), codeLine(d.redirectUri));
+      if (typeof d?.redirectUri === "string") fill(redirect, h("p", { class: "aside" }, t("zoom.redirectIf")), codeLine(d.redirectUri));
     });
     const out = h("div", { "aria-live": "polite" });
     return step({
@@ -1461,11 +1461,11 @@ VIEWS.contacts = (w) => {
       h("p", { class: "aside" }, icon("shield-check"), t("contacts.private")), out,
       actions(btn(t("contacts.import", { n }), async (e) => {
         e.currentTarget.disabled = true;
-        out.replaceChildren(testing(t("contacts.importing")));
+        fill(out, testing(t("contacts.importing")));
         const r = await askApp(window, { type: "use", what: "contacts" }, "pakoUsed", 60_000, (v) => v?.what === "contacts");
         if (!r?.ok) {
           e.currentTarget.disabled = false;
-          return out.replaceChildren(problem(r ? t("contacts.failed") : t("app.noAnswer"), r ? "" : t("app.update")));
+          return fill(out, problem(r ? t("contacts.failed") : t("app.noAnswer"), r ? "" : t("app.update")));
         }
         await loadAll();
         // "Lo que Pako sabe" gets its "Olvidar contactos" and the chip goes, not only on the next load.
@@ -1500,11 +1500,11 @@ VIEWS.tables = (w) => {
       children: [key, out, actions(btn(t("back"), () => go("tables", 0), "ghost"), btn(t("save"), async (e) => {
         if (!key.check()) return key.input.focus();
         e.currentTarget.disabled = true;
-        out.replaceChildren(testing(t("restarting")));
+        fill(out, testing(t("restarting")));
         const r = await saveConnection("tables", { GOOGLE_PLACES_API_KEY: key.input.value.trim() });
         if (!r.ok) {
           e.currentTarget.disabled = false;
-          out.replaceChildren();
+          fill(out);
           return key.error(r.error);
         }
         go("tables", 2);
@@ -1524,12 +1524,12 @@ function resendCheck(out, key = "") {
   return btn(t("resend.check"), async (e) => {
     const b = e.currentTarget;
     b.disabled = true;
-    out.replaceChildren(testing());
+    fill(out, testing());
     const r = await api("/panel/api/connections/resend/check", { method: "POST", body: key ? { key: key() } : {} });
     b.disabled = false;
-    if (!r.ok || r.data.ok !== true) return out.replaceChildren(problem(typeof r.data.error === "string" && r.data.error ? r.data.error.slice(0, 300) : t(r.status ? "err.save" : "err.offline")));
+    if (!r.ok || r.data.ok !== true) return fill(out, problem(typeof r.data.error === "string" && r.data.error ? r.data.error.slice(0, 300) : t(r.status ? "err.save" : "err.offline")));
     const domains = Array.isArray(r.data.domains) ? r.data.domains.filter((x) => typeof x === "string").slice(0, 20) : [];
-    out.replaceChildren(saved(t("resend.works"), domains.length ? t("resend.domains", { list: domains.join(", ") }) : t("resend.sendOnly")));
+    fill(out, saved(t("resend.works"), domains.length ? t("resend.domains", { list: domains.join(", ") }) : t("resend.sendOnly")));
   }, "ghost");
 }
 
@@ -1555,13 +1555,13 @@ VIEWS.resend = (w) => {
           if (!key.check()) return key.input.focus();
           if (!from.input.value.trim()) return from.error(t("resend.fromHint"));
           e.currentTarget.disabled = true;
-          out.replaceChildren(testing(t("restarting")));
+          fill(out, testing(t("restarting")));
           const values = { RESEND_API_KEY: key.input.value.trim(), RESEND_FROM: from.input.value.trim() };
           if (reply.input.value.trim()) values.RESEND_REPLY_TO = reply.input.value.trim();
           const r = await saveConnection("resend", values);
           if (!r.ok) {
             e.currentTarget.disabled = false;
-            out.replaceChildren();
+            fill(out);
             return (r.field === "RESEND_FROM" ? from : r.field === "RESEND_REPLY_TO" ? reply : key).error(r.error);
           }
           go("resend", 2);
@@ -1603,15 +1603,15 @@ VIEWS.more = (w) => {
         btn(t("more.save"), async (e) => {
           const values = {};
           for (const f of inputs) if (!f.input.disabled && f.input.value.trim()) values[f.input.name] = f.input.value.trim();
-          if (!Object.keys(values).length) return out.replaceChildren(problem(t("more.nothing")));
+          if (!Object.keys(values).length) return fill(out, problem(t("more.nothing")));
           e.currentTarget.disabled = true;
-          out.replaceChildren(testing(t("restarting")));
+          fill(out, testing(t("restarting")));
           const r = await saveConnection(pick.id, values);
           e.currentTarget.disabled = false;
           if (!r.ok) {
-            out.replaceChildren();
+            fill(out);
             const bad = inputs.find((f) => f.input.name === r.field);
-            return bad ? bad.error(r.error) : out.replaceChildren(problem(r.error));
+            return bad ? bad.error(r.error) : fill(out, problem(r.error));
           }
           go("more", 0, { path: pick.id });
           announce(t("more.saved"));
@@ -1619,11 +1619,11 @@ VIEWS.more = (w) => {
         pick.fields.some((f) => f.from === "panel") ? btn(t("more.remove"), async (e) => {
           if (!confirm(t("more.removeConfirm", { name: pick.name }))) return;
           e.currentTarget.disabled = true;
-          out.replaceChildren(testing(t("restarting")));
+          fill(out, testing(t("restarting")));
           const r = await api("/panel/api/connections/remove", { method: "POST", body: { id: pick.id } });
           if (!r.ok || !r.data.ok) {
             e.currentTarget.disabled = false;
-            return out.replaceChildren(problem(r.data.error || t("err.save")));
+            return fill(out, problem(r.data.error || t("err.save")));
           }
           if (r.data.restarting) await waitForRestart();
           await loadAll();
@@ -1649,7 +1649,7 @@ function drawHero() {
   $("#ring").setAttribute("aria-label", t("ringAria", { n, total }));
   const next = nextSuggestion(S.states);
   const box = $("#next");
-  box.replaceChildren(...(next
+  fill(box, ...(next
     ? [h("span", { class: "next-kicker" }, t("nextKicker")), h("span", { class: "next-what" }, t(`next.${next}`)),
       h("button", { type: "button", class: "btn primary", onclick: () => openCard(next) }, t(S.states[next] === "off" ? "start" : "continue"), icon("arrow-right"))]
     : [h("span", { class: "next-what" }, t("allDone"))]));
@@ -1713,12 +1713,12 @@ function drawDiscovery(outcome = "") {
   const box = $("#discover");
   const d = S.data.discovery;
   if (!S.app) {
-    box.replaceChildren(h("div", { class: "disc-browser" }, icon("laptop"), h("div", {}, h("p", { class: "disc-title" }, t("disc.browserTitle")),
+    fill(box, h("div", { class: "disc-browser" }, icon("laptop"), h("div", {}, h("p", { class: "disc-title" }, t("disc.browserTitle")),
       h("p", {}, t("disc.browserText")))));
     return paint();
   }
   if (S.discovering) {
-    box.replaceChildren(h("div", { class: "disc looking", role: "status" }, h("div", { class: "radar", "aria-hidden": "true" }, h("i"), h("i"), h("i")),
+    fill(box, h("div", { class: "disc looking", role: "status" }, h("div", { class: "radar", "aria-hidden": "true" }, h("i"), h("i"), h("i")),
       h("div", {}, h("p", { class: "disc-title" }, t("disc.looking")), h("p", {}, t("disc.lookingLine")))));
     return paint();
   }
@@ -1727,7 +1727,7 @@ function drawDiscovery(outcome = "") {
     const denied = Object.entries(d.permissions).filter(([, v]) => v === "denied").map(([k]) => k);
     // Mail closed at the look (its permission never asked, no account): said, with the button that may open it.
     const mailClosed = d.mailState ? d.mailState === "closed" : !d.mailAccounts.length && d.permissions.mail === "notAsked";
-    box.replaceChildren(h("div", { class: "disc found" },
+    fill(box, h("div", { class: "disc found" },
       h("div", { class: "disc-head" }, h("p", { class: "disc-title" }, chips.length ? t("disc.found") : t("disc.nothing")),
         h("button", { type: "button", class: "btn tiny ghost", onclick: () => void discover() }, icon("refresh-cw"), t("disc.again"))),
       h("ul", { class: "chips" }, chips.map((c, i) => h("li", { class: "chip", style: { "--i": String(i) } },
@@ -1741,7 +1741,7 @@ function drawDiscovery(outcome = "") {
     return paint();
   }
   if (S.declined) {
-    box.replaceChildren(h("div", { class: "disc small" }, h("p", {}, t("disc.later")),
+    fill(box, h("div", { class: "disc small" }, h("p", {}, t("disc.later")),
       btn(t("disc.lookNow"), () => {
         S.declined = false;
         remember();
@@ -1749,7 +1749,7 @@ function drawDiscovery(outcome = "") {
       }, "tiny ghost")));
     return paint();
   }
-  box.replaceChildren(h("div", { class: "disc ask" },
+  fill(box, h("div", { class: "disc ask" },
     h("div", { class: "disc-art", "aria-hidden": "true" }, h("span", { class: "mac" }), h("span", { class: "glass" })),
     h("div", { class: "disc-words" },
       h("h2", { class: "disc-title", id: "disc-title" }, t("disc.ask")),
@@ -1793,7 +1793,7 @@ function drawKnown() {
     .map((c) => (typeof c === "string" ? c : typeof c?.title === "string" ? c.title : "")).filter(Boolean);
   const people = importedCount(S.data.people);
   if (!d && !cals.length && !people) {
-    box.replaceChildren(h("p", { class: "aside" }, icon("shield-check"), t("known.none")));
+    fill(box, h("p", { class: "aside" }, icon("shield-check"), t("known.none")));
     return paint();
   }
   const redraw = () => {
@@ -1839,7 +1839,7 @@ function drawKnown() {
     }, "tiny ghost")]);
   }
   const when = d?.at ? new Date(d.at) : null;
-  box.replaceChildren(
+  fill(box, 
     h("dl", { class: "known-list" }, rows.map(([k, v, act]) => [h("dt", {}, k), h("dd", {}, h("span", {}, v), act ?? null)])),
     h("p", { class: "aside" }, icon("hard-drive"), t("known.where"), when && !Number.isNaN(when.getTime())
       ? ` ${t("known.when", { when: when.toLocaleString(localeOf(), { dateStyle: "medium", timeStyle: "short" }) })}` : ""),
@@ -1956,17 +1956,17 @@ function remindersBox() {
   const on = h("input", { type: "checkbox", id: "rem-on", checked: !!r.on });
   on.addEventListener("change", async () => {
     on.disabled = true;
-    out.replaceChildren(testing(t(on.checked ? "rem.turningOn" : "rem.turningOff")));
+    fill(out, testing(t(on.checked ? "rem.turningOn" : "rem.turningOff")));
     const a = await askApp(window, { type: "reminders", on: on.checked }, "pakoReminders", 60_000);
     on.disabled = false;
-    if (!a) return out.replaceChildren(problem(t("app.noAnswer"), t("app.update")));
+    if (!a) return fill(out, problem(t("app.noAnswer"), t("app.update")));
     if (a.access === "denied") {
       on.checked = false;
-      return out.replaceChildren(problem(t("rem.denied")), actions(btn(t("perm.open", { what: t("perm.reminders") }), () => {
+      return fill(out, problem(t("rem.denied")), actions(btn(t("perm.open", { what: t("perm.reminders") }), () => {
         tellApp(window, { type: "openURL", url: "x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders" });
       }, "tiny primary")));
     }
-    if (!a.ok) return out.replaceChildren(problem(typeof a.error === "string" && a.error ? a.error.slice(0, 300) : t("rem.failed")));
+    if (!a.ok) return fill(out, problem(typeof a.error === "string" && a.error ? a.error.slice(0, 300) : t("rem.failed")));
     await redraw();
   });
   const theirs = h("input", { type: "checkbox", id: "rem-waiting", checked: r.waiting !== false });
@@ -1974,7 +1974,7 @@ function remindersBox() {
     theirs.disabled = true;
     const w = await api("/panel/api/reminders/settings", { method: "POST", body: { waiting: theirs.checked } });
     theirs.disabled = false;
-    if (!w.ok) return out.replaceChildren(problem(t("err.save")));
+    if (!w.ok) return fill(out, problem(t("err.save")));
     // In step now rather than at the app's next round.
     if (r.on) await askApp(window, { type: "reminders", on: true }, "pakoReminders", 30_000);
     await redraw();
@@ -2068,7 +2068,7 @@ function drawTabs() {
   const bar = $("#tabs");
   if (!bar) return;
   bar.setAttribute("aria-label", t("tabs.aria"));
-  bar.replaceChildren(...TABS.map((tab) => h("button", {
+  fill(bar, ...TABS.map((tab) => h("button", {
     type: "button", role: "tab", class: "tabbtn", id: `tab-btn-${tab}`, "aria-controls": `tab-${tab}`,
     onclick: () => {
       // The address follows the tab, so a reload or a shared link lands on it.
@@ -2099,7 +2099,7 @@ async function start() {
   await loadAll();
   if (!S.data.connections) {
     // Not a computer's Pako (or not signed in, handled in api()): nothing here can be connected.
-    $("#cards").replaceChildren(h("li", {}, problem(t("err.noConnections"))));
+    fill($("#cards"), h("li", {}, problem(t("err.noConnections"))));
     return;
   }
   const fromHash = location.hash.slice(1);

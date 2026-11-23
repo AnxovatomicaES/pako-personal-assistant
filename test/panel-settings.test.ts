@@ -85,3 +85,11 @@ test("settings: a hosted server's panel serves the gear hidden and has no connec
     server.closeAllConnections();
   }
 });
+
+test("settings page: the cards it mounts (How Pako acts, privacy, moving) are styled by a stylesheet the page loads, not only by app.css", () => {
+  const html = read("src/panel/settings.html");
+  const sheets = [...html.matchAll(/href="\/panel\/assets\/([\w-]+\.css)"/g)].map((m) => read(`src/panel/${m[1]}`)).join("\n");
+  for (const rule of [".acts select", ".acts input[type=\"number\"]", ".acts .tg-form", ".tg-form", ".tg-lead"]) {
+    assert.ok(sheets.includes(`${rule} {`) || sheets.includes(`${rule},`), `${rule} is styled on the settings page`);
+  }
+});

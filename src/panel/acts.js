@@ -14,7 +14,7 @@
 //   a draft changed before it was sent), how often it was taught, and a button that deletes one.
 // Saved with the strict session cookie and the x-pako header, like STOP. Everything is put on the page as text, never as HTML.
 
-import { h, localeOf } from "./dom.js";
+import { h, localeOf, fill } from "./dom.js";
 
 const WORDS = {
   title: "How Pako acts",
@@ -31,6 +31,7 @@ const WORDS = {
   direct: "Do it (with undo)",
   confirm: "Ask first",
   seconds: "Seconds to undo",
+  unit: "seconds to undo",
   def: "Default",
   saved: "Saved.",
   failed: "Couldn't save it right now.",
@@ -267,7 +268,7 @@ function autonomyPart() {
         void saveAutonomy({ ...choices, seconds: { ...choices.seconds, [type]: Number.isInteger(n) && n >= 3 && n <= 120 ? n : undefined } });
       },
     });
-    return h("div", { class: "tg-form" }, h("label", { for: `au-${type}` }, t(type)), pick, wait);
+    return h("div", { class: "tg-form" }, h("label", { for: `au-${type}` }, t(type)), pick, wait, h("span", { class: "unit", "aria-hidden": "true" }, t("unit")));
   });
   return [
     h("h3", { id: "h-acts-au" }, t("auTitle")),
@@ -430,7 +431,7 @@ function lessonsPart() {
 function paint() {
   if (!st.card || (!st.autonomy && !st.life && !st.lessons && !st.gentle && !st.beta && !st.day)) return;
   st.card.hidden = false;
-  st.card.replaceChildren(
+  fill(st.card, 
     h("div", { class: "card-head" }, h("h2", { id: "h-acts" }, h("i", { "data-lucide": "sparkles" }), h("span", {}, t("title")))),
     h("div", { "aria-live": "polite" },
       st.autonomy ? h("div", { class: "part" }, ...autonomyPart()) : "",

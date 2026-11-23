@@ -237,7 +237,8 @@
     </form>
   </aside>
 
-  <!-- The first visit on a computer: the name, three things to try, Telegram. Skippable; once done it never comes back. -->
+  <!-- The first visit on a computer: the name, Claude (connected and asked one question), three things to try, Telegram. Skippable; once done
+       it never comes back. -->
   <dialog class="welcome" id="welcome" data-i18n-aria="w.aria" aria-label="Welcome">
     <div class="w-head">
       <span class="w-orb" data-pako-twin aria-hidden="true"></span>
@@ -265,6 +266,13 @@
       <input class="w-name" id="w-name" type="text" maxlength="40" autocomplete="given-name" spellcheck="false" aria-labelledby="w-title-name"
         aria-describedby="w-name-lead" data-i18n-placeholder="w.name.placeholder" placeholder="Your name">
       <p class="w-note" id="w-name-lead" data-i18n="w.name.lead">Just so I can greet you. You can change it any time.</p>
+    </section>
+
+    <!-- Right after the name: Claude, Pako's brain (the same one button as Settings' Claude card), then one real question to it. -->
+    <section class="w-step" data-step="claude" hidden>
+      <h2 id="w-title-claude" tabindex="-1" data-i18n="w.claude.title">Connect Claude</h2>
+      <p class="w-lead" data-i18n="w.claude.lead">Pako thinks with Claude, on your own Claude plan. Once it's connected, Pako asks it one quick question to check that it works.</p>
+      <div class="w-claude" id="w-claude" tabindex="-1" aria-live="polite"></div>
     </section>
 
     <section class="w-step" data-step="try" hidden>
