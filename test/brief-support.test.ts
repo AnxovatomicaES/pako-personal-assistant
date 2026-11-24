@@ -80,6 +80,9 @@ test("a real event whose title the model got wrong is still on the day, under it
 test("the pieces: names, clock times and sentences", () => {
   assert.deepEqual(inventedNames("Meet Laura on Monday in Zoom. Then Gregory.", "laura pine"), ["Gregory"]);
   assert.deepEqual(inventedNames("Call Ana's office.", "Ana"), []);
+  // A plural of a known word, and a zone said by name, are no one: "Wednesdays", "Zooms", "5:15 AM Eastern", "hora del Este".
+  assert.deepEqual(inventedNames('Vik wrote: "not sure yet." Nothing else says so. « Done. » Then Gregory.', "vik"), ["Gregory"]);
+  assert.deepEqual(inventedNames("The invite goes out on Wednesdays. Two Zooms tomorrow at 5:15 AM Eastern, 11:15 hora del Este. Then Gregory.", "zoom"), ["Gregory"]);
   assert.deepEqual(clockTimes("at 9:30, 3pm, 11 a.m. and 5:15 AM ET; due 30/11"), { bare: [570], ampm: [900, 660, 315], zoned: [] });
   assert.deepEqual(clockTimes("16:30 Hong Kong time (09:30 Madrid); 11:15 Madrid; 10:00 Standup", "Madrid"), { bare: [570, 675, 600], ampm: [], zoned: [990] });
   assert.deepEqual(unsupported("At 14:00 with Zed", { text: "nothing", minutes: [] }), ["Zed", "14:00"]);

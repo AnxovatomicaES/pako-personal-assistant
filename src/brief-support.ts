@@ -8,7 +8,7 @@ import { fold } from "./lists.ts";
  * sentence capitalises mid-line. Folded (lower case, no accents).
  */
 export const NOT_NAMES = new Set(("monday tuesday wednesday thursday friday saturday sunday january february march april may june july august"
-  + " september october november december today tomorrow tonight yesterday morning afternoon evening noon midnight"
+  + " september october november december today tomorrow tonight yesterday morning afternoon evening noon midnight eastern pacific este"
   + " pako slack zoom teams gmail outlook google microsoft apple icloud whatsapp telegram calendar email mail inbox"
   + " utc gmt cet cest bst est edt pst pdt cst cdt mst mdt et pt ct mt am pm ok okay fyi asap eod eow re fwd"
   // The earlier Spanish facts and evals still carry these.
@@ -47,13 +47,13 @@ export function inventedNames(written: string, facts: string, labels = ""): stri
   // A sentence starts after its end mark, a line break, a bullet, or a dash that sets a clause off ("Thanks — Let me know", "Ok - Let's go"):
   // an em or en dash anywhere, a hyphen only with spaces around it (a hyphen inside a word joins a name, "Jean-Pierre").
   for (const sentence of written.split(/(?<=[.!?:;¿¡\n•—–])\s*|\s+-\s+/u)) {
-    const words = sentence.trim().split(/\s+/);
+    const words = sentence.trim().split(/\s+/).filter((w) => /\p{L}/u.test(w)); // a lone closing quote (…week." Nothing) starts nothing
     words.forEach((w, i) => {
       const clean = w.replace(/['’]s$/u, "").replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
       if (i === 0 || !/^\p{Lu}[\p{L}'’‐-]*$/u.test(clean)) return;
       // A name with an apostrophe or a hyphen (O'Brien, Jean-Pierre) is checked by its parts.
       const parts = clean.split(/['’‐-]/u).filter((p) => /^\p{Lu}\p{Ll}{2,}$/u.test(p));
-      if (parts.every((p) => NOT_NAMES.has(fold(p)) || UI_WORDS.has(fold(p)) || known.includes(` ${fold(p)}`))) return;
+      if (parts.every((p) => [fold(p), fold(p).replace(/s$/u, "")].some((q) => NOT_NAMES.has(q) || UI_WORDS.has(q) || known.includes(` ${q}`)))) return;
       out.add(clean);
     });
   }

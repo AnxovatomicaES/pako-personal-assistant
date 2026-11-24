@@ -1,0 +1,57 @@
+{
+  "suite": "brief",
+  "behaviour": "a promise Pako found no sign of is said as where it looked and what to check, never as not done",
+  "origin": "owner's reference brief, 2026-11-24 (names changed)",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-24 08:00",
+    "read": [
+      "slack",
+      "zoom",
+      "calendar",
+      "mail"
+    ],
+    "facts": [
+      {
+        "id": "Z1",
+        "kind": "meeting",
+        "icon": "zoom",
+        "label": "Zoom · «Monday morning meeting», Mon 23/11 09:00",
+        "text": "meeting “Monday morning meeting” on Mon 23/11 09:00 · summary: Nora's 'Markets in Motion' investor webinar runs twice on Wednesday 25/11, at 10:00 and 16:00 Madrid. You built the registration form and the two Zoom webinars. 11 signups so far; lead-list open rates 20 to 26 percent. Nora asked for an Excel list of everyone who got the webinar email, including those who did not open, and a follow-up email; both assigned to you."
+      },
+      {
+        "id": "L1",
+        "kind": "loop",
+        "icon": "zoom",
+        "ref": "c3c3c3c3c3",
+        "label": "Zoom · «Monday morning meeting», 23/11 09:00",
+        "text": "Follow-up (asked of you) · Nora in the Zoom meeting «Monday morning meeting», Mon 09:00: send an Excel list of everyone who got the webinar email, and the follow-up email · Pako checked: no message with a list from you in Slack; I can't see the mail you sent"
+      }
+    ],
+    "recorded": "{\"opening\": \"One thing owed from Monday.\", \"todos\": [{\"title\": \"Get Nora the list of everyone who got the webinar email\", \"context\": \"In Monday's meeting Nora asked for an Excel list of all recipients, including those who didn't open, and a follow-up email; both are yours.\", \"checked\": \"I couldn't find a list from you in Slack and can't see your sent mail, so check whether both went out.\", \"sources\": [\"L1\", \"Z1\"], \"loopId\": \"L1\"}], \"updates\": [], \"day\": []}",
+    "lang": "en"
+  },
+  "expect": {
+    "todoCites": [
+      [
+        "L1",
+        "Z1"
+      ]
+    ],
+    "saidAny": [
+      [
+        "check whether",
+        "check if",
+        "worth checking"
+      ]
+    ],
+    "notSaid": [
+      "wasn't sent",
+      "was not sent",
+      "didn't send",
+      "did not send",
+      "you haven't sent",
+      "still not sent"
+    ]
+  }
+}

@@ -52,8 +52,7 @@ type Env = Record<string, string | undefined>;
 
 export const BRIEF_V2_KEY = "brief-v2";
 const TTL_SECONDS = 7 * 24 * 3600;
-const HOUR = 3600_000;
-const DAY = 24 * HOUR;
+const DAY = 24 * 3600_000;
 /** Inbox ids of this module's jobs: br:<hex10>. */
 export const BRIEF_JOB = /^br:([0-9a-f]{10})$/;
 const TASKS_MAX = 12;

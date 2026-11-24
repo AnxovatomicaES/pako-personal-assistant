@@ -472,7 +472,7 @@ const briefWords = (d: BriefDoc): string =>
     ...d.updates.flatMap((u) => [u.title, u.text]), ...d.dayItems.flatMap((x) => [x.title, x.note])].filter(Boolean).join(". ");
 
 /**
- * brief: expect: { todos: n, todoHas: [[words]], todoCites: [[ids]], updateCites: [[ids]], day: [{time, titleHas, confirmed, prep, absent}], notSaid: [words],
+ * brief: expect: { todos: n, todoHas: [[words]], todoCites: [[ids]], updateCites: [[ids]], focusCites: [ids], focusHas: [words], saidAny: [[words]], day: [{time, titleHas, confirmed, prep, absent}], notSaid: [words],
  * maxDropped (default 0) }. Always: usable; every item cites
  * a fact it was given; every time it writes (H:MM, not an AM/PM time with its zone) is an owner's-zone time of a fact; no invented people.
  */
@@ -531,6 +531,22 @@ export function judgeBrief(c: EvalCase, r: BriefRun): Check[] {
   checks.push(check("every time it writes is the owner's local time of a fact", !wrong.length, `${wrong.join(", ")} (allowed ${[...allowed].join(", ")})`));
   for (const w of strs(e.notSaid)) {
     checks.push(check(`the brief never says «${w}»`, !fold(briefWords(d)).includes(fold(w)), briefWords(d).slice(0, 300)));
+  }
+  // expect.focusCites: [ids]: the focus joins these facts (one piece of work from several sources); focusHas: [words] in its title, story or offer.
+  if (e.focusCites !== undefined || e.focusHas !== undefined) {
+    const f = d.focus;
+    const shown = f ? `${f.title} [${f.sources}] ${f.story} / ${f.offer}` : "no focus";
+    if (e.focusCites !== undefined) checks.push(check(`the focus cites ${strs(e.focusCites).join(" + ")}`, !!f && strs(e.focusCites).every((id) => f.sources.includes(id)), shown));
+    if (e.focusHas !== undefined) checks.push(check(`the focus says ${strs(e.focusHas).join(" + ")}`, !!f && hasAll(`${f.title} ${f.story} ${f.offer}`, strs(e.focusHas)), shown));
+  }
+  // expect.itemCites: [[ids]]: the focus or a to-do cites every one of them (one piece of work, wherever the brief put it).
+  for (const ids of asArr(e.itemCites).map(strs)) {
+    const its = [...(d.focus ? [d.focus] : []), ...d.todos];
+    checks.push(check(`the focus or a to-do cites ${ids.join(" + ")}`, its.some((t) => ids.every((id) => t.sources.includes(id))), its.map((t) => `${t.title} [${t.sources}]`).join(" | ")));
+  }
+  // expect.saidAny: [[words]]: for each group, the brief says at least one of its words (an inference or a hedge, worded freely).
+  for (const any of asArr(e.saidAny).map(strs)) {
+    checks.push(check(`the brief says one of ${any.join(" / ")}`, any.some((w) => fold(briefWords(d)).includes(fold(w))), briefWords(d).slice(0, 400)));
   }
   // expect.updateCites: [[ids]]: an update cites every one of them (the calendar changes since the last brief, C facts).
   for (const ids of asArr(e.updateCites).map(strs)) {

@@ -1,0 +1,58 @@
+{
+  "suite": "brief",
+  "behaviour": "two facts that together mean more work coming are joined and the consequence said as a likelihood",
+  "origin": "owner's reference brief, 2026-11-24 (names changed)",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-24 08:00",
+    "read": [
+      "slack",
+      "zoom",
+      "calendar",
+      "mail"
+    ],
+    "facts": [
+      {
+        "id": "Z2",
+        "kind": "meeting",
+        "icon": "zoom",
+        "label": "Zoom · «Monday morning meeting», Mon 23/11 09:00",
+        "text": "meeting “Monday morning meeting” on Mon 23/11 09:00 · summary: Ivo will coordinate with you on portfolio review requests that reach the appointments inbox."
+      },
+      {
+        "id": "S2",
+        "kind": "slack",
+        "icon": "slack",
+        "label": "Slack · #events, Mon 23/11 15:00",
+        "text": "Slack · #events, Mon 23/11 15:00: Pia: the webinar's last slide now offers every attendee a one-to-one portfolio review, booked through the appointments inbox."
+      },
+      {
+        "id": "Q1",
+        "kind": "zoom",
+        "icon": "zoom",
+        "label": "Zoom",
+        "at": "2026-11-25 10:00",
+        "title": "Markets in Motion (Asia)",
+        "text": "Zoom tomorrow 10:00 Madrid: Markets in Motion (Asia)"
+      }
+    ],
+    "recorded": "{\"opening\": \"Quiet today.\", \"todos\": [{\"title\": \"Line up with Ivo on portfolio review requests\", \"context\": \"Monday's summary has Ivo coordinating with you on review requests reaching the appointments inbox. Tomorrow's webinar offers every attendee a one-to-one review, so expect more of them.\", \"checked\": \"\", \"sources\": [\"Z2\", \"S2\"]}], \"updates\": [], \"day\": []}",
+    "lang": "en"
+  },
+  "expect": {
+    "saidAny": [
+      [
+        "expect",
+        "likely",
+        "more requests",
+        "more of them"
+      ]
+    ],
+    "itemCites": [
+      [
+        "Z2",
+        "S2"
+      ]
+    ]
+  }
+}

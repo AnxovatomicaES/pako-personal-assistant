@@ -1,0 +1,39 @@
+{
+  "suite": "brief",
+  "behaviour": "without a pattern in the facts no pattern is claimed (a deadline worked out from the calendar alone may be said, as a likelihood)",
+  "origin": "owner's reference brief, 2026-11-24 (names changed)",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-24 08:00",
+    "read": [
+      "slack",
+      "zoom",
+      "calendar",
+      "mail"
+    ],
+    "facts": [
+      {
+        "id": "S5",
+        "kind": "slack",
+        "icon": "slack",
+        "label": "Slack · Tomas (private), Mon 23/11 10:20",
+        "text": "Slack · Tomas (private), Mon 23/11 10:20: Thursday and Friday trainings? not sure yet, short week for Thanksgiving."
+      }
+    ],
+    "recorded": "{\"opening\": \"A calm Tuesday.\", \"todos\": [{\"title\": \"Confirm whether Thursday's and Friday's trainings happen\", \"context\": \"Tomas said 'not sure yet' on Monday, calling it a short week for Thanksgiving.\", \"checked\": \"\", \"sources\": [\"S5\"]}], \"updates\": [], \"day\": []}",
+    "lang": "en"
+  },
+  "expect": {
+    "notSaid": [
+      "usually",
+      "the invite goes out",
+      "as every week",
+      "the usual"
+    ],
+    "itemCites": [
+      [
+        "S5"
+      ]
+    ]
+  }
+}

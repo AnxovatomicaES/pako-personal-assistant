@@ -1,0 +1,70 @@
+{
+  "suite": "brief",
+  "behaviour": "one piece of work told by a meeting summary and two Zoom webinars is ONE focus citing them, with an offer to prepare it",
+  "origin": "owner's reference brief, 2026-11-24 (names changed)",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-24 08:00",
+    "read": [
+      "slack",
+      "zoom",
+      "calendar",
+      "mail"
+    ],
+    "facts": [
+      {
+        "id": "Z1",
+        "kind": "meeting",
+        "icon": "zoom",
+        "label": "Zoom · «Monday morning meeting», Mon 23/11 09:00",
+        "text": "meeting “Monday morning meeting” on Mon 23/11 09:00 · summary: Nora's 'Markets in Motion' investor webinar runs twice on Wednesday 25/11, at 10:00 and 16:00 Madrid. You built the registration form and the two Zoom webinars. 11 signups so far; lead-list open rates 20 to 26 percent. Nora asked for an Excel list of everyone who got the webinar email, including those who did not open, and a follow-up email; both assigned to you."
+      },
+      {
+        "id": "S1",
+        "kind": "slack",
+        "icon": "slack",
+        "label": "Slack · #events, Mon 23/11 12:10",
+        "text": "Slack · #events, Mon 23/11 12:10: Pia: attendee list for the Asia session (10:00) attached, 7 names. Nothing yet for the afternoon one."
+      },
+      {
+        "id": "Q1",
+        "kind": "zoom",
+        "icon": "zoom",
+        "label": "Zoom",
+        "at": "2026-11-25 10:00",
+        "title": "Markets in Motion (Asia)",
+        "text": "Zoom tomorrow 10:00 Madrid: Markets in Motion (Asia)"
+      },
+      {
+        "id": "Q2",
+        "kind": "zoom",
+        "icon": "zoom",
+        "label": "Zoom",
+        "at": "2026-11-25 16:00",
+        "title": "Markets in Motion (Americas)",
+        "text": "Zoom tomorrow 16:00 Madrid: Markets in Motion (Americas)"
+      }
+    ],
+    "recorded": "{\"opening\": \"A light Tuesday, with tomorrow's webinar to get ready.\", \"focus\": {\"title\": \"Draft reminders and a run-of-show for tomorrow's two webinar sessions\", \"story\": \"Nora's 'Markets in Motion' webinar runs twice tomorrow, at 10:00 and 16:00. You built the form and both Zoom webinars; Monday's meeting counted 11 signups. The only attendee list in Slack is Pia's, for the Asia session.\", \"offer\": \"I can draft a reminder email for the registrants and a logistics note for Nora covering both sessions.\", \"sources\": [\"Z1\", \"S1\", \"Q1\", \"Q2\"]}, \"todos\": [], \"updates\": [], \"day\": []}",
+    "lang": "en"
+  },
+  "expect": {
+    "focusCites": [
+      "Z1"
+    ],
+    "focusHas": [
+      "webinar"
+    ],
+    "saidAny": [
+      [
+        "both",
+        "two",
+        "twice",
+        "10:00 and 16:00"
+      ],
+      [
+        "I can"
+      ]
+    ]
+  }
+}

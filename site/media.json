@@ -42,6 +42,222 @@
       "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v2/pako-reel-7.mp4",
       "sha256": "efb36f91e1caa4abc4e6ccb6b1c62c34ed8a900d9ea9c9e98599767dcefdd74b",
       "bytes": 5311149
+    },
+    {
+      "path": "social/ig/pako-r-2358.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-2358.mp4",
+      "sha256": "dd923afd36ab60d4d110f058112b41b714c754cf954ea37359a8aa6ed59462ed",
+      "bytes": 4110504
+    },
+    {
+      "path": "social/ig/pako-r-brief.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-brief.mp4",
+      "sha256": "43e38a2b54eac833c2d800949de146558c8bd7bc174a145816c516e1e834e541",
+      "bytes": 4493844
+    },
+    {
+      "path": "social/ig/pako-r-checks-first.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-checks-first.mp4",
+      "sha256": "0f08fddda01696084f959c60f8fc34d26f260d5b5dc0d5e9871e6bdf48893447",
+      "bytes": 4752710
+    },
+    {
+      "path": "social/ig/pako-r-circle-back.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-circle-back.mp4",
+      "sha256": "884d29d23ac043bdaca7db89a3479a72e38583524fecf88d9704a6901c01b335",
+      "bytes": 4768909
+    },
+    {
+      "path": "social/ig/pako-r-claude-plan.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-claude-plan.mp4",
+      "sha256": "c04fe5b3dc07feea72106855c44e3e2040bf2c54416771abea459f6ea2f5686c",
+      "bytes": 4944464
+    },
+    {
+      "path": "social/ig/pako-r-count-sure.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-count-sure.mp4",
+      "sha256": "72734f61f63e49ab76d7fae0e20a636a25dbdabd00f2d5bad4561cd54ec38330",
+      "bytes": 3766905
+    },
+    {
+      "path": "social/ig/pako-r-friday-10.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-friday-10.mp4",
+      "sha256": "99156e8b41ab1276388b2956844cd7c02201e39c81785ec265c91d3064134cf4",
+      "bytes": 5019674
+    },
+    {
+      "path": "social/ig/pako-r-graveyard-b.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-graveyard-b.mp4",
+      "sha256": "336c9ee2f4eee5cba035ab74c0a6dd7f902560043a8fcad36757f020ab450920",
+      "bytes": 4479643
+    },
+    {
+      "path": "social/ig/pako-r-graveyard.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-graveyard.mp4",
+      "sha256": "51bd90cfde9e57f800c5e810ffef54f4946a49838736a31fbf67d361b972927e",
+      "bytes": 4480609
+    },
+    {
+      "path": "social/ig/pako-r-meeting-5-b.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-meeting-5-b.mp4",
+      "sha256": "f6632b91da963fe765f18a04054ba3e6fc64102e43b6695e7b4f6b1986a47b87",
+      "bytes": 4959783
+    },
+    {
+      "path": "social/ig/pako-r-meeting-5.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-meeting-5.mp4",
+      "sha256": "cf933262dcaded2575290ce2e13d6ea3165aab8719683d105e54c11d33743b1a",
+      "bytes": 5046279
+    },
+    {
+      "path": "social/ig/pako-r-only-one.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-only-one.mp4",
+      "sha256": "a7bcfc2f1e02883485566575c2e2efe2a12308d6fe1f7e3476319d8ff8fd14ac",
+      "bytes": 4418349
+    },
+    {
+      "path": "social/ig/pako-r-overdue.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-overdue.mp4",
+      "sha256": "f5e0638ca3ec100689db5790123d71937f1322430bf67550cc0ecd5061320b61",
+      "bytes": 5039842
+    },
+    {
+      "path": "social/ig/pako-r-park-it.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-park-it.mp4",
+      "sha256": "755486f7fefb5b059935911f607211b5d79e9b387e3fcf2f857fbb184e1d499d",
+      "bytes": 5136338
+    },
+    {
+      "path": "social/ig/pako-r-rate-monday.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-rate-monday.mp4",
+      "sha256": "23c147590d0f209a47662123cbe678c38d310f3f7254560c74b20c365f3a03b0",
+      "bytes": 4609744
+    },
+    {
+      "path": "social/ig/pako-r-said-sure.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-said-sure.mp4",
+      "sha256": "1a420968760a81ed1757dad262164180a1dabca5b0cac41d56fbf9b78a940a8f",
+      "bytes": 4797846
+    },
+    {
+      "path": "social/ig/pako-r-send-on-it.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-send-on-it.mp4",
+      "sha256": "cef1cb3070214313d820ea22da0238aba8f3fb78b27cb7cac3dee35f253255b1",
+      "bytes": 4759151
+    },
+    {
+      "path": "social/ig/pako-r-stopped-1.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-stopped-1.mp4",
+      "sha256": "61cbb07f9fbe82c3642d4b50cb700ea88367498fac8dd48324ded81890e3a7b5",
+      "bytes": 4330703
+    },
+    {
+      "path": "social/ig/pako-r-stopped-2.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-stopped-2.mp4",
+      "sha256": "13c8268f8c4a66279f96244d1f0ae266a0c724aad9dd388ed2f1c7d647b29dae",
+      "bytes": 4278372
+    },
+    {
+      "path": "social/ig/pako-r-streak.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-streak.mp4",
+      "sha256": "45d49d167fcb005ecb78d6a0f7b044552a4459c4d97c77df233e139c712dfdd6",
+      "bytes": 4992973
+    },
+    {
+      "path": "social/ig/pako-r-sunday-2140.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-sunday-2140.mp4",
+      "sha256": "c35b35909cfdc19c10de0cca3085b8788c335269ed9f2aca8b1a197d38d7b3f7",
+      "bytes": 4553029
+    },
+    {
+      "path": "social/ig/pako-r-sunday-reset.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-sunday-reset.mp4",
+      "sha256": "623bdd8b63186f5ecac555750e8bf9961169ecb19e9c1aaad81cdcd597677919",
+      "bytes": 3915381
+    },
+    {
+      "path": "social/ig/pako-r-swipe.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-swipe.mp4",
+      "sha256": "1b8c91c920d34c3338ce9a53d3b508c2504483e993a3af6c3019b31b09fc9903",
+      "bytes": 4955933
+    },
+    {
+      "path": "social/ig/pako-r-sync.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-sync.mp4",
+      "sha256": "508e6e60d65f4ae4b774d4aed63ca4c80356c0e51ece3d708c6de67eee62dbfc",
+      "bytes": 4057176
+    },
+    {
+      "path": "social/ig/pako-r-tabs-open.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-tabs-open.mp4",
+      "sha256": "73b47009a79a4e3ddf3bb22eee0515264b88f9b3ab5274ff1f7731aab164b72f",
+      "bytes": 5114599
+    },
+    {
+      "path": "social/ig/pako-r-take-a-look-b.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-take-a-look-b.mp4",
+      "sha256": "fc75e94e89266fcd4c1df1a2237bc587dff9b3552bd151942f5974811a98f107",
+      "bytes": 4595118
+    },
+    {
+      "path": "social/ig/pako-r-take-a-look.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-take-a-look.mp4",
+      "sha256": "81081794193d287fc17aec30548b047935d9ac4b9eb8bf512385218706c3a49f",
+      "bytes": 4525136
+    },
+    {
+      "path": "social/ig/pako-r-texts-2.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-texts-2.mp4",
+      "sha256": "4d2d21e4227989f57c96644283944afb242d16a914d06a7f0b296309641bc7b4",
+      "bytes": 5016856
+    },
+    {
+      "path": "social/ig/pako-r-texts-3.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-texts-3.mp4",
+      "sha256": "30d698f9e0b0644d043d9717de8825c8e9d71057fe40c10093d50d339b7a1519",
+      "bytes": 4946267
+    },
+    {
+      "path": "social/ig/pako-r-texts-4.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-texts-4.mp4",
+      "sha256": "b1e8d85dd47d610168376ac7b2af8f6ebe1becfd27a5a9ba1904df21967f615a",
+      "bytes": 5029032
+    },
+    {
+      "path": "social/ig/pako-r-thought-you-b.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-thought-you-b.mp4",
+      "sha256": "c52b6c35273cae6a33c23506c67b2b8050118b687e78441e227776d2cb2487dc",
+      "bytes": 4086179
+    },
+    {
+      "path": "social/ig/pako-r-thought-you.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-thought-you.mp4",
+      "sha256": "d44da04327b7077bc68d2061a34ff5727d2b04259d76265208fdef3a83b1f865",
+      "bytes": 4096613
+    },
+    {
+      "path": "social/ig/pako-r-tiny-step.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-tiny-step.mp4",
+      "sha256": "b58c4a5b9ab63b2cf8ae6c38f02c9fac103c48fb3bde22edc60e3a34c1579c3e",
+      "bytes": 5200957
+    },
+    {
+      "path": "social/ig/pako-r-todo-b.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-todo-b.mp4",
+      "sha256": "2096c554d3952f519ffe0a30c84d2f6e9f349f7d701c2bc425971db7b0dbe492",
+      "bytes": 4012203
+    },
+    {
+      "path": "social/ig/pako-r-todo.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-todo.mp4",
+      "sha256": "22324485c4e83c7098012c2c776a2174735f9b89f9a54d152df8c285087ade50",
+      "bytes": 4034903
+    },
+    {
+      "path": "social/ig/pako-r-unread-3.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-unread-3.mp4",
+      "sha256": "0a7ab7e1efc8336c421e5629457a8649b5719cdae55228da670296c91d4ed4df",
+      "bytes": 4231142
     }
   ]
 }
