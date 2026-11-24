@@ -82,6 +82,17 @@ export const stepOf = (m: { step?: unknown }): StepJob | undefined => {
   return j && typeof j.text === "string" && j.text.trim() ? { text: j.text.slice(0, 8000) } : undefined;
 };
 
+/** A connector job (src/connector-intake.ts): which of the owner's tools to read through their claude.ai connector, and since when (ms). */
+export interface ConnectorJob {
+  source: "slack" | "notion";
+  since: number;
+}
+export const connectorOf = (m: { connector?: unknown }): ConnectorJob | undefined => {
+  const j = m.connector as { source?: unknown; since?: unknown } | undefined;
+  if (!j || (j.source !== "slack" && j.source !== "notion") || typeof j.since !== "number" || !Number.isFinite(j.since)) return undefined;
+  return { source: j.source, since: j.since };
+};
+
 /** A meeting's review (src/meeting-review.ts), as the server passes it on: Zoom's summary, or (beside `meeting`) a transcript to review. */
 export interface Review {
   source: "summary" | "transcript";

@@ -9,7 +9,7 @@ import type { State } from "./core.ts";
 import {
   contextBlock, contextOutside, LANGUAGE_FRESH_MS, languageOf, namedPeople, outside, outsideKey, uiOf, zoneOf, type Context,
 } from "./context.ts";
-import type { BriefJob, Email, FollowupJob, JudgeJob, Meeting, Paper, ProactiveJob, Review, StepJob } from "./items.ts";
+import type { BriefJob, ConnectorJob, Email, FollowupJob, JudgeJob, Meeting, Paper, ProactiveJob, Review, StepJob } from "./items.ts";
 import { readReply, tagActions, type ParsedReply } from "./reply.ts";
 import { T } from "./texts.ts";
 import { labsOffOf } from "../prompt.ts";
@@ -19,7 +19,7 @@ export function mountTurn(b: AfterJobs) {
   const {
     config, log, api, say, run, chat, warm, readState, writeState, readSeen, writeSeen, writeToolData, replyCache, attempts, retryAt, waits,
     toldAt, hold, pendingNotes, flushNotes, reportUsage, loginWait, language, listen, handleEmail, handleReview, handleMeeting, handleFollowup,
-    handleBrief, handleProactive, handleJudge, handleStep, handlePaper, answerWithSlack,
+    handleBrief, handleProactive, handleJudge, handleStep, handleConnector, handlePaper, answerWithSlack,
   } = b;
   /** Answers one message. Returns true when it is done with (answered, or failed in a way that retrying would not fix). */
   const handle = async (incoming: {
@@ -31,6 +31,7 @@ export function mountTurn(b: AfterJobs) {
     proactive?: ProactiveJob;
     judge?: JudgeJob;
     step?: StepJob;
+    connector?: ConnectorJob;
     /** A routine's run (src/routines.ts): nobody is waiting for it, so no "Un momento…". */
     routine?: boolean;
     /** A proactive check with a newer one behind it in the inbox. */
@@ -44,6 +45,7 @@ export function mountTurn(b: AfterJobs) {
     if (incoming.proactive) return handleProactive(incoming.id, incoming.proactive, incoming.superseded === true);
     if (incoming.judge) return handleJudge(incoming.id, incoming.judge);
     if (incoming.step) return handleStep(incoming.id, incoming.step);
+    if (incoming.connector) return handleConnector(incoming.id, incoming.connector);
     const cached = replyCache.get(incoming.id);
     if (cached) {
       if (await say(cached)) {

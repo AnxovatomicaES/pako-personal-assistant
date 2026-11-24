@@ -1,6 +1,6 @@
 // One round of the bridge: ask the server's inbox for what waits, answer each item in order, and acknowledge it.
 
-import { briefOf, emailOf, followupOf, judgeOf, meetingOf, paperOf, proactiveOf, reviewOf, stepOf } from "./items.ts";
+import { briefOf, connectorOf, emailOf, followupOf, judgeOf, meetingOf, paperOf, proactiveOf, reviewOf, stepOf } from "./items.ts";
 import type { AfterTurn } from "./parts.ts";
 
 export function mountTick(b: AfterTurn) {
@@ -14,7 +14,7 @@ export function mountTick(b: AfterTurn) {
     if (!r.ok) throw new Error(`inbox answered ${r.status}`);
     type Raw = {
       id: string; at: number; text: string; audio?: { id?: unknown; mime?: unknown }; email?: unknown; meeting?: unknown; forwarded?: unknown; routine?: unknown;
-      paper?: unknown; followup?: unknown; review?: unknown; brief?: unknown; proactive?: unknown; judge?: unknown; step?: unknown;
+      paper?: unknown; followup?: unknown; review?: unknown; brief?: unknown; proactive?: unknown; judge?: unknown; step?: unknown; connector?: unknown;
     };
     // The inbox may also carry uiLanguage (an older server's choice of Spanish or English): ignored, Pako's fixed texts are English.
     const { messages } = (await r.json()) as { messages?: Raw[] };
@@ -22,7 +22,7 @@ export function mountTick(b: AfterTurn) {
       typeof m.audio?.id === "string" && m.audio.id ? { id: m.audio.id, mime: typeof m.audio.mime === "string" ? m.audio.mime : "audio/ogg" } : undefined;
     const usable = (m: Raw) =>
       m && typeof m.id === "string" && typeof m.text === "string" &&
-      (m.text.trim() || audioOf(m) || emailOf(m) || meetingOf(m) || paperOf(m) || followupOf(m) || reviewOf(m) || briefOf(m) || proactiveOf(m) || judgeOf(m) || stepOf(m));
+      (m.text.trim() || audioOf(m) || emailOf(m) || meetingOf(m) || paperOf(m) || followupOf(m) || reviewOf(m) || briefOf(m) || proactiveOf(m) || judgeOf(m) || stepOf(m) || connectorOf(m));
     const ack = async (id: string): Promise<boolean> => {
       try {
         // `papers: 1`: this bridge reads papers, so a paper acknowledged here was answered (an older bridge's ack makes the server say update);
@@ -44,13 +44,15 @@ export function mountTick(b: AfterTurn) {
     // The owner's own messages first, in order; then emails, transcripts and follow-ups jobs.
     type Side = {
       email?: unknown; meeting?: unknown; followup?: unknown; review?: unknown; brief?: unknown; proactive?: unknown; judge?: unknown; step?: unknown;
+      connector?: unknown;
     };
-    const later = (m: Side) => (m.email || m.meeting || m.followup || m.review || m.brief || m.proactive || m.judge || m.step ? 1 : 0);
+    const job = (m: Side): boolean => !!(m.email || m.meeting || m.followup || m.review || m.brief || m.proactive || m.judge || m.step || m.connector);
+    const later = (m: Side) => (job(m) ? 1 : 0);
     const list = (messages ?? [])
       .filter(usable)
       .map((m) => ({
         id: m.id, at: m.at, text: m.text, audio: audioOf(m), email: emailOf(m), meeting: meetingOf(m), paper: paperOf(m), followup: followupOf(m),
-        review: reviewOf(m), brief: briefOf(m), proactive: proactiveOf(m), judge: judgeOf(m), step: stepOf(m),
+        review: reviewOf(m), brief: briefOf(m), proactive: proactiveOf(m), judge: judgeOf(m), step: stepOf(m), connector: connectorOf(m),
         ...(m.forwarded === true ? { forwarded: true } : {}), ...(m.routine && typeof m.routine === "object" ? { routine: true } : {}),
       }))
       .sort((a, b) => later(a) - later(b) || a.at - b.at);
@@ -62,7 +64,7 @@ export function mountTick(b: AfterTurn) {
         if (await ack(m.id)) handledUnacked.delete(m.id);
         continue; // answered already: never twice
       }
-      const side = !!(m.email || m.meeting || m.followup || m.review || m.brief || m.proactive || m.judge || m.step);
+      const side = job(m);
       if ((retryAt.get(m.id) ?? 0) > Date.now()) {
         if (side) continue;
         break; // an owner's message waits for Claude: the ones after it wait too, to keep the order

@@ -21,6 +21,7 @@ import { loadReviewConfig, type MeetingReviewer, type ReviewDoor } from "../meet
 import type { RelayClient } from "../relay-client.ts";
 import { chooseSender, loadResendConfig } from "../resend.ts";
 import { loadSlackConfig, type SlackReader } from "../slack.ts";
+import { type ConnectorIntake, loadConnectorConfig } from "../connector-intake.ts";
 import { loadTeamsConfig, type TeamsReader } from "../teams.ts";
 import { loadZoomConfig, type ZoomReader } from "../zoom.ts";
 import type { OwnerCtx } from "./context.ts";
@@ -34,6 +35,7 @@ const logMail = createLog("mail");
 const logRelay = createLog("relay");
 const logReview = createLog("review");
 const logSlack = createLog("slack");
+const logConnectors = createLog("connectors");
 const logTeams = createLog("teams");
 const logZoom = createLog("zoom");
 
@@ -95,6 +97,10 @@ export function wireSources(ctx: OwnerCtx) {
   const imessageCfg = local ? loadImessageConfig(env) : { config: null, problems: [] as string[] };
   if (imessageCfg.problems.length) logImessage.error(`off, because: ${imessageCfg.problems.join("; ")}`);
   const imessageRef: { reader: ImessageReader | null } = { reader: null };
+  // Slack and Notion through the owner's claude.ai connectors (src/connector-intake.ts): off unless PAKO_CONNECTORS names them.
+  const connectorsCfg = loadConnectorConfig(env);
+  if (connectorsCfg.problems.length) logConnectors.error(`off, because: ${connectorsCfg.problems.join("; ")}`);
+  const connectorsRef: { c: ConnectorIntake | null } = { c: null };
   // Every meeting reviewed (src/meeting-review.ts): with Zoom, unless ZOOM_REVIEW=off. Built once the door is; the door reaches it here.
   const reviewCfg = zoom.config ? loadReviewConfig(env) : { config: null, problems: [] };
   if (reviewCfg.problems.length) logReview.error(`${reviewCfg.problems.join("; ")}`);
@@ -155,6 +161,6 @@ export function wireSources(ctx: OwnerCtx) {
   return {
     friends, plain, timeZone, startName, givenName, ownerName, mail, outgoing, imap, imapRef, appleMailCfg, appleMailRef, repliedRef, box, mailAddress, slack, slackRef,
     fakeSlack, zoom, zoomRef, teamsCfg, teamsRef, imessageCfg, imessageRef, reviewCfg, reviewRef, reviewsDoor, timing, macCal, relayClientCfg, relayRef, calDoorRef, calWrites,
-    cal, calOn, calLabel, calRef, calChangesRef, icsRef, myAddresses, invites, backfillCfg, backfillRef,
+    cal, calOn, calLabel, calRef, calChangesRef, icsRef, myAddresses, invites, backfillCfg, backfillRef, connectorsCfg, connectorsRef,
   };
 }

@@ -119,4 +119,20 @@ export function mountFeeds(door: Door): void {
       res.status(503).json({ error: (err as Error).message });
     }
   });
+
+  /** The bridge's answer to a connector job (src/connector-intake.ts): what it found, already checked there, taken field by field here. */
+  app.post("/assistant/connector", failed, bridge, json, async (req, res) => {
+    const b = (req.body ?? {}) as { id?: unknown; items?: unknown; error?: unknown };
+    const id = typeof b.id === "string" && /^cx:(?:slack|notion):[0-9a-f]{10}$/.test(b.id) ? b.id : "";
+    if (!id || !d.connectors) {
+      res.status(400).json({ error: d.connectors ? "No such job." : "Connectors are off." });
+      return;
+    }
+    try {
+      const r = await d.connectors.result(id, b.items, typeof b.error === "string" ? cut(b.error, 200) : undefined);
+      res.status(r.ok ? 200 : 400).json(r);
+    } catch (err) {
+      res.status(503).json({ error: (err as Error).message });
+    }
+  });
 }

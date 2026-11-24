@@ -105,6 +105,8 @@ export interface WhatsappDeps {
   claudeSignIn?: () => Promise<string>;
   /** Follow-ups (src/followups.ts): its buttons, PENDING, the assistant's context lines, the bridge's extraction answers; absent when off. */
   followups?: FollowupsDoor;
+  /** The connector intake (src/connector-intake.ts): the bridge's answer to a connector job; absent when PAKO_CONNECTORS is off. */
+  connectors?: { result: (id: string, items: unknown, error?: string) => Promise<{ ok: boolean; kept: number }> };
   /**
    * Gentle mode (src/gentle.ts): the bridge's answer to a first-tiny-step job, and "On it" pressed on a time anchor. Absent: neither is
    * taken (a step job is never made then).

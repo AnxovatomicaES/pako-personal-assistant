@@ -229,6 +229,31 @@ test("slack poll: one DM Slack refuses does not stop the others, nor the mention
   assert.deepEqual(got.map((e) => e.text).sort(), ["<@U1> the budget?", "Can you call me?"]);
 });
 
+test("slack poll: a DM Slack refuses is passed by for a day, not asked (and logged) every round", async () => {
+  let clock = 1_800_000_000_000;
+  const s = fakeSlack(3);
+  let refused = 0;
+  const api = async (method: string, params: Record<string, string>): Promise<Record<string, unknown>> => {
+    if (method === "conversations.history" && params.channel === "D0000") {
+      refused++;
+      throw new Error("Slack conversations.history: channel_not_found");
+    }
+    return s.api(method, params);
+  };
+  const poll = createSlackPoll({ api, self: async () => "U1", deliver: async () => undefined, kv: null, now: () => clock });
+  for (let i = 0; i < 25; i++) {
+    await poll.round().catch(() => undefined);
+    clock += 60_000;
+  }
+  assert.equal(refused, 1, "asked once, then passed by, even after the list is read again");
+  clock += 24 * 3600_000;
+  for (let i = 0; i < 12; i++) {
+    await poll.round().catch(() => undefined);
+    clock += 60_000;
+  }
+  assert.equal(refused, 2, "a day later it is tried again");
+});
+
 test("slack poll (one history call a minute): a DM Slack rate-limited is read next round, not skipped for a whole turn", async () => {
   const s = fakeSlack(3);
   let limited = true;

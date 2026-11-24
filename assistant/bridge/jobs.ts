@@ -7,6 +7,7 @@ import { ClaudeError } from "./claude.ts";
 import { fenced } from "./context.ts";
 import type { BriefJob, FollowupJob, JudgeJob, ProactiveJob, StepJob } from "./items.ts";
 import type { AfterLanguage } from "./parts.ts";
+import { mountConnectors } from "./connectors.ts";
 
 export function mountJobs(b: AfterLanguage) {
   const { config, log, api, budget, background, rehearsal, retryAt, hold, unsent, deliver } = b;
@@ -173,7 +174,7 @@ export function mountJobs(b: AfterLanguage) {
     }
     return true;
   };
-  return { handleFollowup, handleProactive, handleJudge, handleBrief, handleStep };
+  return { handleFollowup, handleProactive, handleJudge, handleBrief, handleStep, ...mountConnectors(b) };
 }
 
 export type Jobs = ReturnType<typeof mountJobs>;

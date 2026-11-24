@@ -1,5 +1,6 @@
 {
-  "lines": 91904,
+  "lines": 92308,
   "since": "2026-11-23",
-  "why": "Feature freeze: Pako's code may not grow past its size on 2026-11-23. New code replaces old. Counted by test/code-ceiling.test.ts: non-blank lines of the tracked .ts, .js, .cjs, .mjs, .swift, .sh and .ps1 files in src/, assistant/, desktop/, bin/, voice-worker/src/ and the repository root (bin/mirror.ts, private-only, is left out). Tests and docs do not count. Lower this number when the code shrinks; raise it only with the owner's yes."
+  "why": "Feature freeze: Pako's code may not grow past its size on 2026-11-23. New code replaces old. Counted by test/code-ceiling.test.ts: non-blank lines of the tracked .ts, .js, .cjs, .mjs, .swift, .sh and .ps1 files in src/, assistant/, desktop/, bin/, voice-worker/src/ and the repository root (bin/mirror.ts, private-only, is left out). Tests and docs do not count. Lower this number when the code shrinks; raise it only with the owner's yes.",
+  "raised": "2026-11-24: +404 for the Slack and Notion connector intake, with the owner's yes."
 }

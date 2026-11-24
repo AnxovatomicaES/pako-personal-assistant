@@ -7,6 +7,7 @@ import { runsInMacApp } from "../autostart.ts";
 import { appliedAtStart, writeStored } from "../connections.ts";
 import { createContactsStore } from "../contacts.ts";
 import { createImapReader } from "../imap.ts";
+import { createConnectorIntake } from "../connector-intake.ts";
 import { createImessage, forgetImessage } from "../imessage.ts";
 import { pakoHome } from "../local.ts";
 import { createLog } from "../log.ts";
@@ -18,13 +19,14 @@ import type { AfterProactive } from "./context.ts";
 const logAppleMail = createLog("apple-mail");
 const logImap = createLog("imap");
 const logImessage = createLog("imessage");
+const logConnectors = createLog("connectors");
 const logMail = createLog("mail");
 const logTeams = createLog("teams");
 
 export function wireMail(ctx: AfterProactive) {
   const {
     app, env, local, uiLang, dog, kv, control, mail, imap, imapRef, appleMailCfg, appleMailRef, box, teamsCfg, teamsRef, imessageCfg, imessageRef, invites, backfillCfg, backfillRef, followupsCfg,
-    followupsRef, followupsDoor, mailFollowups, lessons, door,
+    connectorsCfg, connectorsRef, slack, followupsRef, followupsDoor, mailFollowups, lessons, door,
   } = ctx;
   if (mail.config && box) {
     mountMail(app, {
@@ -138,5 +140,15 @@ export function wireMail(ctx: AfterProactive) {
     logImessage.info(`ON: read only, every ${imessageCfg.config.pollMinutes} min`);
   } else if (local) {
     void forgetImessage(local.kv).catch((err: Error) => logImessage.error(`could not forget where it was: ${err.message}`));
+  }
+  if (connectorsCfg.config && followupsCfg.config && kv) {
+    // Slack and Notion read through the owner's claude.ai connectors, by the bridge: messages go to the follow-ups as Slack's own do.
+    connectorsRef.c = createConnectorIntake({
+      kv, config: connectorsCfg.config, now: Date.now, enqueue: (m) => door.inbox.add(m), nativeSlack: !!slack.config,
+      observe: (m) => followupsRef.engine ? followupsRef.engine.observeSlack(m) : Promise.resolve(),
+      offer: (o) => followupsDoor.offer(o),
+    });
+    connectorsRef.c.start();
+    logConnectors.info(`ON: ${connectorsCfg.config.sources.join(", ")} through claude.ai, read only, every ${connectorsCfg.config.everyMinutes} min`);
   }
 }

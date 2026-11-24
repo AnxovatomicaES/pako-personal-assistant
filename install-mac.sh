@@ -71,7 +71,8 @@ fetch() { # fetch <url> <file>
     *) curl -fL --progress-bar --proto '=https' --tlsv1.2 --retry 2 -o "$2" "$1" ;;
   esac
 }
-field() { plutil -extract "$1" raw -o - "$WORK/feed.json" 2>/dev/null || true; }
+# A missing field is empty: some plutil versions print their error to stdout, so only a successful extract counts.
+field() { _v=$(plutil -extract "$1" raw -o - "$WORK/feed.json" 2>/dev/null) || _v=""; printf '%s' "$_v"; }
 
 step "Reading the latest release"
 fetch "$FEED" "$WORK/feed.json" 2>/dev/null || die "Could not download $FEED. Check your connection and try again."

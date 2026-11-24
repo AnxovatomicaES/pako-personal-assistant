@@ -26,9 +26,10 @@ export interface FileBlock {
  * one JSON line (stream-json), which is how a file is given as a content block; the result then comes as JSON lines too.
  */
 export function buildClaudeArgs(
-  c: Pick<BridgeConfig, "tools" | "model"> & { systemPrompt?: string; stream?: boolean; noBare?: boolean; effort?: string; mcp?: string },
+  c: Pick<BridgeConfig, "tools" | "model"> & { systemPrompt?: string; stream?: boolean; noBare?: boolean; effort?: string; mcp?: string; connector?: Connector },
   sessionId?: string,
 ): string[] {
+  if (c.connector) return connectorArgs(c, c.connector);
   // With Pako's MCP server, its tools are allowed by name, one by one: --tools names only Claude Code's own (the web), and nothing else of
   // that server's or of any other is allowed; --strict-mcp-config keeps every other server out. Its turns stream, so the bridge sees each
   // tool call and its result (watchTurn).
@@ -51,6 +52,39 @@ export function buildClaudeArgs(
   ];
 }
 
+/**
+ * A read-only look through the owner's claude.ai connectors (connectors.ts): `allow` names the read tools of ONE connector, `deny` every other
+ * server's prefix. The connectors only load with Claude Code's own setting sources, so the user's settings load too: hooks are switched off and
+ * CLAUDE.md files left out (both checked with Claude Code 2.1.330), no built-in tool, no slash command, and anything not allowed is refused.
+ */
+export interface Connector {
+  allow: string[];
+  deny: string[];
+}
+const CONNECTOR_SETTINGS = JSON.stringify({ disableAllHooks: true, claudeMdExcludes: ["**/CLAUDE.md", "**/CLAUDE.local.md"] });
+function connectorArgs(c: Pick<BridgeConfig, "model"> & { systemPrompt?: string; noBare?: boolean }, k: Connector): string[] {
+  return [
+    "-p", ...(c.noBare ? ["--no-bare"] : []), "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+    "--tools", "", "--allowedTools", k.allow.join(","), ...(k.deny.length ? ["--disallowedTools", k.deny.join(",")] : []),
+    "--settings", CONNECTOR_SETTINGS, "--disable-slash-commands", "--permission-mode", "dontAsk",
+    "--system-prompt", c.systemPrompt ?? "", ...(c.model ? ["--model", c.model] : []),
+  ];
+}
+
+/** The texts the tools gave a connector run (tool_result blocks), joined: what its answer is checked against. */
+function toolTexts(l: string): string {
+  if (!/"tool_result"/.test(l)) return "";
+  try {
+    const doc = JSON.parse(l) as { type?: unknown; message?: { content?: unknown } };
+    if (doc.type !== "user" || !Array.isArray(doc.message?.content)) return "";
+    const flat = (v: unknown): string =>
+      typeof v === "string" ? v : Array.isArray(v) ? v.map(flat).join("\n") : v && typeof v === "object" && "text" in v ? flat((v as { text: unknown }).text) : "";
+    return doc.message.content.map((b: { type?: unknown; content?: unknown }) => (b?.type === "tool_result" ? flat(b.content) : "")).join("\n");
+  } catch {
+    return "";
+  }
+}
+
 export interface ClaudeResult {
   text: string;
   sessionId: string;
@@ -66,6 +100,8 @@ export interface ClaudeResult {
   outsideRead?: OutsideSource[];
   /** Pako's MCP server did not load for this run: the bridge goes back to the tags. */
   mcpDown?: true;
+  /** A connector run: what its tools returned, joined (at most 2 MB). */
+  toolResults?: string;
   /** The model that answered, when the bridge chose one by the run's kind (runs.ts): the writing model, or the general one after a fallback. */
   model?: string;
 }
@@ -143,6 +179,7 @@ export type RunConfig = Pick<BridgeConfig, "claudeBin" | "tools" | "model" | "ru
   stateDir?: string; systemPrompt?: string; files?: FileBlock[]; effort?: string;
   /** Pako's MCP server for this run (mcpConfigFor): only the owner's conversation gets it. */
   mcp?: string;
+  connector?: Connector;
 };
 
 export function runClaude(
@@ -151,7 +188,8 @@ export function runClaude(
   sessionId?: string,
 ): Promise<ClaudeResult> {
   return new Promise((resolve, reject) => {
-    const stream = !!c.files?.length || !!c.mcp;
+    const stream = !!c.files?.length || !!c.mcp || !!c.connector;
+    let tools = "";
     // Streamed, every line is read for tool use (the web, Pako's tools) and for structured error signals.
     const watch = stream ? watchTurn() : null;
     const signals = stream ? errorSignals() : null;
@@ -161,7 +199,8 @@ export function runClaude(
     const [cmd, args] = claudeCommand(c.claudeBin, buildClaudeArgs({ ...c, stream }, sessionId));
     // windowsHide: under the hidden autostart (src/autostart-windows.ts) each run would otherwise flash a console window. Ignored elsewhere.
     const child = spawn(cmd, args, {
-      stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32", windowsHide: true, env: { ...childEnv(process.env), NO_COLOR: "1" },
+      stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32", windowsHide: true,
+      env: { ...childEnv(process.env), NO_COLOR: "1", ...(c.connector ? { CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1" } : {}) },
       ...(c.stateDir ? { cwd: c.stateDir } : {}),
     });
     if (child.pid) runningClaude.add(child.pid);
@@ -199,6 +238,7 @@ export function runClaude(
     const keepResult = (l: string): void => {
       watch?.line(l);
       signals?.line(l);
+      if (c.connector && tools.length < 2_000_000) tools += `${toolTexts(l)}\n`;
       if (!/"type"\s*:\s*"result"/.test(l)) return;
       try {
         if ((JSON.parse(l) as { type?: unknown }).type === "result") out = l;
@@ -241,6 +281,7 @@ export function runClaude(
         costUsd: typeof doc.total_cost_usd === "number" ? doc.total_cost_usd : 0,
         ...(readTheWeb(doc, seen ?? undefined, c.tools.length > 0 || !!c.mcp) ? { readOutside: true } : {}),
         ...seenFields(seen),
+        ...(c.connector ? { toolResults: tools } : {}),
       });
     });
     child.stdin.on("error", () => undefined);

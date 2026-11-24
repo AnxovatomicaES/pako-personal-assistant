@@ -83,6 +83,7 @@ const KEY_LIST = [
   { key: "slack-poll", keep: 60 * DAY }, // slack-poll.ts
   { key: "teams-poll", keep: 60 * DAY }, // teams.ts
   { key: "imessage-poll", keep: 60 * DAY }, // imessage.ts
+  { key: "connector-intake", keep: 60 * DAY }, // connector-intake.ts
   { key: "apple-mail-poll", keep: 60 * DAY }, // apple-mail.ts
   { key: "zoom-state", keep: 60 * DAY }, // zoom.ts
   { key: "followups", keep: 60 * DAY }, // followups.ts
@@ -189,6 +190,8 @@ const ABOUT = texts<AboutKey | "unknown">(
     "teams-poll": "Where Pako is in each Teams chat and channel it looks at, and the last read and error (no message text)",
     "apple-mail-poll": "Mail on this Mac: the last message already looked at (its number in Apple Mail's index), when it was turned on, the numbers "
       + "of messages Mail had not downloaded yet, and the last read and error (no message text, subject or address)",
+    "connector-intake": "Slack and Notion read through your claude.ai connectors: where the next look starts, the job waiting, and which messages "
+      + "and pages were already passed to the follow-ups (their ids only).",
     "imessage-poll": "Messages on this Mac: the last message already looked at (its number in Messages' history), when it was turned on, "
       + "and the last read and error (no message text, number or address)",
     "zoom-state": "Zoom meetings seen and the last 20 summaries",

@@ -258,7 +258,7 @@ export function mountRuns(b: AfterCore) {
    */
   const background = async (
     kind: RunKind, material: string, prompt: string, c: RunConfig,
-  ): Promise<{ text: string; costUsd: number; reused?: true; model?: string } | { skipped: "cap" | "paused"; until: number }> => {
+  ): Promise<{ text: string; costUsd: number; reused?: true; model?: string; toolResults?: string } | { skipped: "cap" | "paused"; until: number }> => {
     const a = budget.admit(kind, material);
     if (!a.go) {
       void reportUsage();
@@ -272,7 +272,10 @@ export function mountRuns(b: AfterCore) {
     const result = await run(kind, prompt, light ? { ...c, effort: config.backgroundEffort } : c);
     budget.answered(kind, a.key, result.text);
     void reportUsage();
-    return { text: result.text, costUsd: result.costUsd, ...(result.model ? { model: result.model } : {}) };
+    return {
+      text: result.text, costUsd: result.costUsd, ...(result.model ? { model: result.model } : {}),
+      ...(result.toolResults !== undefined ? { toolResults: result.toolResults } : {}),
+    };
   };
   /** A rehearsal's job (src/rehearsal.ts, ids rh: and rb:) is the owner's own request: counted apart, never held back by the budget. */
   const rehearsal = (id: string): boolean => /^r[hb]:/.test(id);

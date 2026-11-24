@@ -27,7 +27,7 @@ export function wireDoor(ctx: AfterChat) {
     app, env, local, uiLang, country, labs, waComputer, demo, dogRef, dog, kv, control, jobs, personal, wa, friends, plain, timeZone, givenName,
     ownerName, mail, outgoing, imap, box, mailAddress, slack, slackRef, fakeSlack, zoom, zoomRef, reviewCfg, reviewsDoor, macCal, relayClientCfg,
     relayRef, calDoorRef, calWrites, cal, calOn, calRef, backfillRef, briefCfg, briefNow, smartCfg, smartRef, followupsCfg, followupsRef, personRef,
-    gentleRef, followupsDoor, mailFollowups, proactiveCfg, lifeDoor, lessons, quality, rehearsalRef, judged, panelRef, booking, tgRef, usable, betaRef,
+    gentleRef, followupsDoor, mailFollowups, connectorsCfg, connectorsRef, proactiveCfg, lifeDoor, lessons, quality, rehearsalRef, judged, panelRef, booking, tgRef, usable, betaRef,
     fromEnv, learn, autonomyConfig, contactEmails, autonomySettings, claudeConnect, claudeKeeper, timeRef,
   } = ctx;
   const door = mountWhatsapp(app, {
@@ -75,6 +75,9 @@ export function wireDoor(ctx: AfterChat) {
       : {}),
     brief: { now: briefNow, daily: briefCfg.at !== null },
     ...(followupsCfg.config ? { followups: followupsDoor } : {}),
+    ...(connectorsCfg.config
+      ? { connectors: { result: (id: string, items: unknown, e?: string) => connectorsRef.c ? connectorsRef.c.result(id, items, e) : Promise.resolve({ ok: false, kept: 0 }) } }
+      : {}),
     gentle: {
       stepResult: (id: string, raw: string) => (gentleRef.steps ? gentleRef.steps.result(id, raw) : Promise.resolve({ ok: false })),
       anchorPressed: (id: string) => (gentleRef.anchors ? gentleRef.anchors.pressed(id) : Promise.resolve("👍")),

@@ -102,6 +102,8 @@ export function createSlackPoll(d: SlackPollDeps) {
   let timer: ReturnType<typeof setInterval> | null = null;
   let first: ReturnType<typeof setTimeout> | null = null;
   let busy = false;
+  /** Conversations Slack lists but will not show this token (closed, a removed person's): passed by until then (ms), and named once. */
+  const closed = new Map<string, number>();
 
   const load = async (): Promise<PollState> => {
     if (state) return state;
@@ -150,7 +152,7 @@ export function createSlackPoll(d: SlackPollDeps) {
       cursor = String((j.response_metadata as { next_cursor?: unknown } | undefined)?.next_cursor ?? "");
       if (!cursor) break;
     }
-    convs = out;
+    convs = out.filter((c) => !((closed.get(c.id) ?? 0) > now()));
   };
 
   /**
@@ -260,9 +262,11 @@ export function createSlackPoll(d: SlackPollDeps) {
           log.error("Slack asked to slow down: the next DM is read in the next look");
           break;
         }
-        // One conversation this token may not read (closed, gone) is that one's: the others and the mentions go on.
+        // One conversation this token may not read (closed, gone): passed by for a day, said once; the others and the mentions go on.
         if (/\b(channel_not_found|not_in_channel|missing_scope|is_archived)\b/.test(why)) {
-          log.error(`a conversation could not be read: ${why}`);
+          if (!closed.has(c.id)) log.error(`a conversation could not be read, passed by for a day: ${why}`);
+          closed.set(c.id, now() + 24 * 3600_000);
+          convs = convs.filter((x) => x.id !== c.id);
           delete s.backlog[c.id];
           continue;
         }
