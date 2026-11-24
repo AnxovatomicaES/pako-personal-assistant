@@ -35,7 +35,7 @@ export function createFollowups(d: FollowupsDeps) {
   const { jobText, queueJob, slackJob, flushBatch, observeSlack, textJob, offer } = mountJobs(base, { mutate, read, stamp });
   const { observeMail, flushMailDue } = mountMailJobs(base, { mutate, queueJob, stamp });
   const { ruledOut, keep, result, ingest, fromChat, dropFromChat, touched, told } = mountMatching(base, { mutate });
-  const { runCheck } = mountChecks(base);
+  const { runCheck } = mountChecks(base, { read });
   const { quietNow, nextAfter, tick } = mountNudges(base, { mutate, read, flushBatch, flushMailDue, runCheck, nudgeText, dueText, sourceText });
   const { press, open, command, context, closeByWords, calendarChanged, reopenClosed, forDraft, draftFacts, snoozeCard, parked, parkedText, unpark,
     setStep, letGo, engaged, expiredParked, closedForYou, reopenByWords } = mountOwner(base, { mutate, read, dueText, sourceText, quietNow, nextAfter });

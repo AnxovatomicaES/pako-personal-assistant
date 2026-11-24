@@ -4,7 +4,7 @@
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type CalendarSource, type CalEvent, createCalendarCore, invitesBrief } from "../src/calendar.ts";
+import { type CalendarSource, type CalEvent, createCalendarCore } from "../src/calendar.ts";
 import { createGoogleCalendarSource } from "../src/google-calendar.ts";
 import { icsEvents, parseFeed } from "../src/ics.ts";
 import { memoryKv } from "./helpers/connect-rig.ts";
@@ -88,7 +88,6 @@ test("core: an invitation not answered keeps its tag (and its organizer) when an
   const mac = source("Mac", [{ ...base, id: "mac:1", calendar: "Work", response: "needs", organizer: "Ana" }]);
   const events = await core([feed, mac]).today();
   assert.equal(events.length, 1);
-  assert.match(invitesBrief(events, NOW, ZONE, "en") ?? "", /Ana invited you to Budget review today at 16:00/);
 });
 
 const G_ID = "1234567890-abcdefghij.apps.googleusercontent.com";

@@ -10,6 +10,9 @@ export const LOOPS_PER_JOB = 3;
 export const MAIL_BATCHES_MAX = 30;
 export const MAIL_BATCH_MAX = 5;
 export const MAIL_READ_MAX = 600;
+/** What the owner sent, kept for the checks to search: at most this many, for this long. */
+export const SENT_MAX = 300;
+export const SENT_KEEP_MS = 45 * 24 * 3600_000;
 /** All the emails of one job together: each one's words are cut to its share (and to src/mail-body.ts MAIL_BODY_MAX). */
 export const MAIL_JOB_CHARS = 12_000;
 /** Email reading jobs a day when FOLLOWUP_MAIL_JOBS_PER_DAY is not set. */

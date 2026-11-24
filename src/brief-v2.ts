@@ -1553,4 +1553,3 @@ export function mountBriefPage(app: Express, d: { signedIn: (req: Request) => bo
   });
 }
 
-export const briefTaskText = (key: "docFailed" | "oldBridge", l: Lang): string => C(l)(key);

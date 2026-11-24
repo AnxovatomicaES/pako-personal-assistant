@@ -10,7 +10,7 @@ import { today } from "../lists.ts";
 import { cleanMailBody, MAIL_BODY_MAX, MAIL_THREAD } from "../mail-body.ts";
 import { inline, neutralise } from "../quarantine.ts";
 import { createLog } from "../log.ts";
-import { JOB_HOLD_MS, JOB_KEEP_MS, MAIL_BATCH_MAX, MAIL_JOB_CHARS, MAIL_JOBS_PER_DAY } from "./limits.ts";
+import { JOB_HOLD_MS, JOB_KEEP_MS, MAIL_BATCH_MAX, MAIL_JOB_CHARS, MAIL_JOBS_PER_DAY, SENT_KEEP_MS, SENT_MAX } from "./limits.ts";
 import type { Base, Engine, MailJobs } from "./parts.ts";
 import { newId } from "./record.ts";
 import { T } from "./texts.ts";
@@ -27,6 +27,11 @@ export function mountMailJobs({ d, now, lang, config }: Base, { mutate, queueJob
    */
   const observeMail: Engine["observeMail"] = (m, label) =>
     mutate((s) => {
+      // What the owner sent is kept for the checks whatever the day's budget: "I found nothing you sent" must mean Pako looked.
+      if (m.mine && !(s.sent ?? []).some((x) => x.at === m.at && x.subject === m.subject.slice(0, 200))) {
+        s.sent = [...(s.sent ?? []), { at: m.at, to: `${m.to} ${m.cc}`.trim().slice(0, 300), subject: m.subject.slice(0, 200) }]
+          .filter((x) => x.at > now() - SENT_KEEP_MS).slice(-SENT_MAX);
+      }
       if (perDay <= 0 || !MAIL_THREAD.test(m.thread) || !m.ref) return false;
       const ref = m.ref.slice(0, 200);
       if (s.mailRead.includes(ref) || s.mailBatches.some((b) => b.mails.some((x) => x.ref === ref))) return true;

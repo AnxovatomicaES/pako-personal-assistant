@@ -26,13 +26,6 @@ export const PLACE_PREFIX = "gp_";
 const DETECT_TIMEOUT_MS = 10_000;
 
 /** Google place types we treat as somewhere one books a table. */
-const FOOD_TYPES = new Set(["restaurant", "bar", "pub", "cafe", "bistro", "brasserie", "diner", "steak_house", "pizzeria", "wine_bar", "cocktail_bar", "tavern", "winery", "brewery", "izakaya", "food_court", "bar_and_grill", "gastropub", "fine_dining_restaurant"]);
-
-/** Google place types we treat as somewhere one books a table. Whole types only: "barber_shop" is not a bar. */
-export function isFoodPlace(primaryType: string | undefined): boolean {
-  return !!primaryType && (FOOD_TYPES.has(primaryType) || primaryType.endsWith("_restaurant"));
-}
-
 /** Where a site check survives a restart (the key-value store); optional. */
 export interface SiteMemory {
   getSiteCheck(placeId: string): { targetJson?: string; walkIn?: string; ownPage?: string; email?: string; whatsapp?: string; depositPolicy?: string; checkedAt: number } | undefined;

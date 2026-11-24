@@ -37,6 +37,8 @@ export const T = texts(
     noPost: "I don't see a message from you in that conversation with “{words}”.",
     cantSlack: "I can't read that conversation right now: please check.",
     cantMail: "I can't see the mail you sent: please check.",
+    sentMaybe: "You wrote to {to} on {when} («{subject}»): check whether it covers this, and if it does, press Done.",
+    sentNone: "I looked in the mail you sent since then and found nothing to {who} about it: check whether it went out another way.",
     cantMailIn: "I can't see your mail: check whether it came.",
     cantSee: "I have no way to check it ({reason}).",
     btnDone: "Done",

@@ -232,6 +232,8 @@ export interface FollowupsState {
   mailBatches: MailBatch[];
   /** The emails already read for follow-ups (their refs): none is ever sent to the model twice. */
   mailRead: string[];
+  /** What the owner sent (their Sent folder), whatever the day's email budget: when, to whom, the subject. A check searches it (checks.ts). */
+  sent?: { at: number; to: string; subject: string }[];
   /** Email jobs queued on `day` (the owner's day): at most FollowupsConfig.mailPerDay. */
   mailBudget: { day: string; n: number };
   /** Nudges given on `day` (the owner's day, "YYYY-MM-DD"). */

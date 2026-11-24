@@ -276,6 +276,9 @@ commitment you may be missing, a contradiction, a deadline, or the result of a c
   (`FOLLOWUP_DELAY_MIN`, 10 minutes by default) and then checks. If it sees the thing done, it says nothing. If not, you get ONE message
   saying who asked what, when and where, what Pako checked, and the time in both zones ("5:15 AM ET (10:15 London)"), with three buttons:
   **Done**, **In 1 h** and **Not mine**. Near the deadline it checks once more.
+  For something you send by mail, it first searches the mail you sent since you were asked (your Sent folder, when Pako reads it): a mail
+  to that person, or on its subject, is said as *"You wrote to Ana on Tue 17 Nov («The contract»): check whether it covers this"*; none, as
+  *"I looked in the mail you sent since then and found nothing to Ana about it"*. Never as "not sent": it may have gone another way.
 - **What you owe with no date.** An email asking you for something, with no day and nothing Pako can check, used to wait silently in the
   brief until it was let go after two weeks. Now it is said again after two working days and after five (your `WORK_HOURS` and
   `WORK_DAYS`; never on a weekend off), with how long it has waited: *"Waiting on you for 2 days. Already answered it? Press Done."* Within

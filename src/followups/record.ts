@@ -3,7 +3,7 @@
 
 import { randomBytes } from "node:crypto";
 import {
-  BATCH_MSGS_MAX, BATCHES_MAX, DETAIL_MAX, JOBS_MAX, LOOPS_MAX, MAIL_BATCH_MAX, MAIL_BATCHES_MAX, MAIL_READ_MAX, RULES_MAX, TITLE_MAX, WHO_MAX,
+  BATCH_MSGS_MAX, BATCHES_MAX, DETAIL_MAX, JOBS_MAX, LOOPS_MAX, MAIL_BATCH_MAX, MAIL_BATCHES_MAX, MAIL_READ_MAX, RULES_MAX, SENT_MAX, TITLE_MAX, WHO_MAX,
 } from "./limits.ts";
 import { chaseOf } from "./chase.ts";
 import { isZone } from "./time.ts";
@@ -167,8 +167,11 @@ export function stateOf(raw: unknown): FollowupsState {
   const expired = (Array.isArray(o.expired) ? o.expired : []).flatMap((x): ParkedExpired[] =>
     isObject(x) && typeof x.title === "string" && typeof x.at === "number"
       ? [{ title: str(x.title, TITLE_MAX), who: str(x.who, WHO_MAX), parkedAt: num(x.parkedAt) ?? 0, at: x.at }] : []).slice(-EXPIRED_MAX);
+  const sent = (Array.isArray(o.sent) ? o.sent : []).flatMap((x) =>
+    isObject(x) && typeof x.at === "number" ? [{ at: x.at, to: str(x.to, 300), subject: str(x.subject, 200) }] : []).slice(-SENT_MAX);
   return {
     ...(expired.length ? { expired } : {}),
+    ...(sent.length ? { sent } : {}),
     loops: (Array.isArray(o.loops) ? o.loops : []).map(loopOf).filter((x): x is Loop => x !== null).slice(-LOOPS_MAX),
     rules: rules.slice(-RULES_MAX),
     jobs: (Array.isArray(o.jobs) ? o.jobs : []).map(jobOf).filter((x): x is Job => x !== null).slice(-JOBS_MAX),

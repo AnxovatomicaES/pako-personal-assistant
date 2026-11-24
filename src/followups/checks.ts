@@ -6,7 +6,7 @@ import { isImessageChannel } from "../imessage.ts";
 import { isFocusBlock } from "../time-to-do.ts";
 import { fold } from "../lists.ts";
 import { meetingWords } from "./calendar-match.ts";
-import type { Base, Checks } from "./parts.ts";
+import type { Base, Checks, Store } from "./parts.ts";
 import { CREATED_SLACK_MS, NEAR_TIME_MS, SAME_TIME_MS } from "./limits.ts";
 import { T } from "./texts.ts";
 import type { Loop } from "./types.ts";
@@ -17,7 +17,7 @@ const log = createLog("followups");
 /** `replied`: the owner wrote in that conversation after the ask (not proof, but a reason to speak softly). */
 export type Seen = { done: boolean | null; what: string; said: string; replied?: boolean };
 
-export function mountChecks({ d, lang }: Base): Checks {
+export function mountChecks({ d, lang, now }: Base, { read }: Pick<Store, "read">): Checks {
   const hintWords = (hints: string[]): string[] => meetingWords(hints.join(" "));
   /**
    * Whether a meeting is the one asked for. A repeating one (the weekly standup) never is. One that starts at the time asked counts whatever
@@ -32,6 +32,23 @@ export function mountChecks({ d, lang }: Base): Checks {
     const named = hits >= (before ? 2 : 1);
     if (around !== undefined) return (!before && Math.abs(m.at - around) <= SAME_TIME_MS) || (named && Math.abs(m.at - around) <= NEAR_TIME_MS);
     return named && m.at >= l.whenSaid - 3600_000;
+  };
+
+  /**
+   * What the owner sent after it was said, to the person (by name or address) or on its subject (two of its words): said as something to
+   * check, never as done. Null when no mail the owner sent was seen for two weeks (the Sent folder is not read: nothing can be said of it).
+   */
+  const sentAbout = async (l: Loop): Promise<Seen | null> => {
+    const sent = (await read()).sent ?? [];
+    if (!sent.some((x) => x.at > now() - 14 * 24 * 3600_000)) return null;
+    const who = fold(l.who).split(/[^\p{L}\p{N}@.]+/u).filter((w) => w.length > 2);
+    const words = meetingWords(l.title).filter((w) => !who.includes(w));
+    const hit = sent.filter((x) => x.at > l.whenSaid).reverse()
+      .find((x) => who.some((w) => fold(x.to).includes(w)) || words.filter((w) => fold(x.subject).includes(w)).length >= 2);
+    const t = T(lang());
+    if (!hit) return { done: null, what: "", said: t("sentNone", { who: l.who || "them" }) };
+    const when = new Intl.DateTimeFormat("en-GB", { timeZone: d.timeZone, weekday: "short", day: "numeric", month: "short" }).format(hit.at);
+    return { done: null, what: "", said: t("sentMaybe", { to: hit.to.split(/[,<]/)[0]!.trim() || hit.to, when, subject: hit.subject }) };
   };
 
   const runCheck = async (l: Loop): Promise<Seen> => {
@@ -113,6 +130,8 @@ export function mountChecks({ d, lang }: Base): Checks {
     const mail = /^(mail|correo|email)$/i.test(reason) || l.where.type === "mail";
     // Someone else's email to the owner cannot be seen either: said as theirs, not as the owner's sent mail.
     if (mail && l.kind === "other_promise") return { done: null, what: "", said: t("cantMailIn") };
+    const sent = l.kind === "other_promise" ? null : await sentAbout(l).catch(() => null);
+    if (sent) return sent;
     return { done: null, what: "", said: mail ? t("cantMail") : t("cantSee", { reason: reason || "—" }) };
   };
 

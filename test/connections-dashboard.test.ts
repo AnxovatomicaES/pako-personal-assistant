@@ -10,7 +10,7 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import express from "express";
 import { createBackfill } from "../src/backfill.ts";
-import { createCalendarCore, invitesBrief, type CalEvent, type CalendarSource } from "../src/calendar.ts";
+import { createCalendarCore, type CalEvent, type CalendarSource } from "../src/calendar.ts";
 import { connectionDetails, mountConnectionDetails } from "../src/connections-details.ts";
 import { createControl } from "../src/control.ts";
 import { mountDashboard, REFRESH_EVERY_MS } from "../src/dashboard.ts";
@@ -182,7 +182,7 @@ test("a private link that breaks later shows on its row (and once in the brief),
 
 // ---------- invitations ----------
 
-test("an invitation not answered is tagged, one declined is left out; the brief names today's and tomorrow's", () => {
+test("an invitation not answered is tagged, one declined is left out", () => {
   const feed = parseFeed(ics([
     vevent({ uid: "inv1", title: "Budget review", start: "20261118T140000Z", end: "20261118T150000Z",
       extra: ["ORGANIZER;CN=Ana Ruiz:mailto:ana@acme.example", "ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:me@example.com"] }),
@@ -196,7 +196,6 @@ test("an invitation not answered is tagged, one declined is left out; the brief 
   assert.equal(byTitle["Standup"]!.response, undefined);
   assert.equal(model.eventTag!(byTitle["Budget review"]), "Invited · not answered");
   assert.equal(model.eventTag!(byTitle["Standup"]), "");
-  assert.equal(invitesBrief(events, NOW, ZONE, "en"), "• Ana Ruiz invited you to Budget review today at 15:00, not answered.");
 });
 
 test("an invitation mail shows on the dashboard at once, gives way to the calendar's copy (same UID), and a cancel removes it", async () => {

@@ -582,6 +582,35 @@ test("no Zoom and no calendar: the nudge says it cannot see them; mail: it says 
   assert.match(await m.engine.command(), /contrato firmado, on 18\/11 at 18:00 — email/, "another day is named");
 });
 
+test("sent mail is searched before speaking: a mail to the person says check whether it covers this; none says where Pako looked", async () => {
+  const ask = async () => {
+    const m = rig();
+    await m.engine.offer({ source: "mail", ref: "mail-2", label: "email", text: "Ines asks for the signed contract by Wednesday 18:00." });
+    const answer = JSON.stringify({ loops: [{ kind: "request_to_owner", title: "Send Ines the signed contract", who: "Ines", due: "2026-11-18 18:00",
+      tz: "Europe/Madrid", check: "none", reason: "email" }] });
+    await m.engine.result(/^fu:(.+)$/.exec(m.queued[0]!.id)![1]!, answer);
+    return m;
+  };
+  const sent = (to: string, subject: string) => ({ ref: `sent:${subject.length}`, thread: "a1b2c3d4e5f60718", at: Date.parse("2026-11-17T10:00:00Z"),
+    from: "me@owner.example", to, cc: "", subject, body: "", mine: true }); // no words: kept for the search, no reading job
+  const found = await ask();
+  await found.engine.observeMail(sent("Ines Duarte <ines@client.example>", "The contract"), "email · Ines Duarte");
+  found.clock.now = Date.parse("2026-11-18T14:00:00Z");
+  await found.engine.tick();
+  found.clock.now = Date.parse("2026-11-18T15:00:00Z");
+  await found.engine.tick();
+  assert.match(found.cards[0]!.body, /You wrote to Ines Duarte on Tue 17 Nov \(«The contract»\): check whether it covers this, and if it does, press Done\./);
+
+  const none = await ask();
+  await none.engine.observeMail(sent("Bob <bob@x.example>", "Lunch"), "email · Bob");
+  none.clock.now = Date.parse("2026-11-18T14:00:00Z");
+  await none.engine.tick();
+  none.clock.now = Date.parse("2026-11-18T15:00:00Z");
+  await none.engine.tick();
+  assert.match(none.cards[0]!.body, /I looked in the mail you sent since then and found nothing to Ines about it: check whether it went out another way\./);
+  assert.doesNotMatch(none.cards[0]!.body, /I can't see the mail you sent/, "the Sent folder is read: Pako looked");
+});
+
 test("a mailbox's catch-up: an ask the owner already answered is made a closed loop, known but never a nudge", async () => {
   const m = rig();
   assert.equal(await m.engine.offer({ source: "mail", ref: "mail-2", label: "email", text: "Stan asks for the signed contract by Wednesday 18:00.", closed: true }), true);

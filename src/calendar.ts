@@ -668,35 +668,3 @@ export function createCalendarCore(d: CalendarCoreDeps) {
 }
 
 export type CalendarReader = ReturnType<typeof createCalendarCore>;
-
-const INVITES = texts(
-  {
-    invited: "{who} invited you to {title} {when}, not answered.",
-    someone: "Someone",
-    today: "today at {time}",
-    tomorrow: "tomorrow at {time}",
-    todayAllDay: "today",
-    tomorrowAllDay: "tomorrow",
-  },
-);
-
-/**
- * The brief's lines about invitations the owner has not answered, today and tomorrow ("Ana invited you to Budget review today at 15:00, not
- * answered."): answering an invitation is a small promise too. Null when there is none.
- */
-export function invitesBrief(events: CalEvent[], nowMs: number, timeZone: string, l: Lang): string | null {
-  const today = dayBounds(nowMs, timeZone);
-  const tomorrow = dayBounds(today.end + 1000, timeZone);
-  const hm = (t: number) => new Intl.DateTimeFormat(locale(l), { timeZone, hour: "2-digit", minute: "2-digit" }).format(t);
-  const say = INVITES(l);
-  const lines = events
-    .filter((e) => e.response === "needs" && e.end > nowMs && e.start < tomorrow.end)
-    .sort((a, b) => a.start - b.start)
-    .slice(0, 5)
-    .map((e) => {
-      const isToday = e.start < today.end;
-      const when = e.allDay ? say(isToday ? "todayAllDay" : "tomorrowAllDay") : say(isToday ? "today" : "tomorrow", { time: hm(e.start) });
-      return `• ${say("invited", { who: e.organizer || say("someone"), title: e.title, when })}`;
-    });
-  return lines.length ? lines.join("\n") : null;
-}
