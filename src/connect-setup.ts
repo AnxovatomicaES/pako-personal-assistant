@@ -2,7 +2,7 @@
 //
 // Both services now let a program on the person's own computer finish OAuth by itself (PKCE, no client secret):
 // - Slack since 2026-03-30. With PKCE on, a redirect to http://localhost is a "desktop redirect".
-// - Zoom with "Use Public Client OAuth". A redirect to http://127.0.0.1 is allowed at any port.
+// - Zoom with "Use Public Client OAuth". A redirect to http://127.0.0.1 is allowed, but only at the port the app registered.
 // Each person still needs an app of their own (a single shared Pako app would be a distributed app, which Slack and Zoom only allow
 // through their marketplaces), so the flow is:
 //
@@ -87,7 +87,7 @@ const CALLBACK = { slack: "/connect/slack/callback", zoom: "/connect/zoom/callba
 /**
  * The address the service sends the browser back to, at the port this Pako answers on.
  * - Slack only treats `localhost` as a desktop redirect (its PKCE page names no other), and it must match the manifest.
- * - Zoom wants the numeric 127.0.0.1 and refuses `localhost`, and ignores the port.
+ * - Zoom wants the numeric 127.0.0.1 and refuses `localhost`. It matches the port too (error 4,700 "Invalid redirect" otherwise).
  */
 export const redirectUri = (service: Service, port: number): string =>
   `http://${service === "slack" ? "localhost" : "127.0.0.1"}:${port}${CALLBACK[service]}`;
@@ -190,6 +190,8 @@ interface Flow {
   clientId: string;
   verifier: string;
   redirect: string;
+  /** The project's app: back through the fixed loopback port. */
+  loopback: boolean;
   at: number;
 }
 
@@ -208,8 +210,8 @@ export interface ConnectSetupDeps extends RouteAuth {
   env?: Record<string, string | undefined>;
   /** The built-in client IDs (src/connect-clients.ts), for the tests; the real ones without it. */
   defaults?: BuiltInDefaults;
-  /** The fixed loopback port the project's Slack app returns to (SLACK_LOOPBACK_PORT; the tests give 0, any free port). */
-  slackPort?: number;
+  /** The fixed loopback port the project's Slack and Zoom apps return to (SLACK_LOOPBACK_PORT; the tests give a free port). */
+  loopbackPort?: number;
   /** The https page the project's Slack app returns to, which passes the code on to the loopback port (SLACK_RELAY_REDIRECT). */
   slackRelay?: string;
   /** Who the running Slack and Zoom readers say they are (src/slack.ts and src/zoom.ts account); absent or null: not connected. */
@@ -345,11 +347,12 @@ const namesThisComputer = (req: Request): boolean => {
 export const fromThisComputer = (req: Request): boolean => isLoopback(req.socket.remoteAddress) && namesThisComputer(req);
 
 /**
- * The listener on the project's Slack app's fixed loopback port (SLACK_LOOPBACK_PORT). It is one per process: Pako restarts in place,
- * and a second listener would find the port taken, so a new mount only swaps the handler. It answers the Slack callback only, and closes
- * once the browser came back, or after a quarter of an hour with no sign-in started.
+ * The listener on the project's Slack and Zoom apps' fixed loopback port (SLACK_LOOPBACK_PORT): both services match the registered
+ * address, port included, and Pako's own port differs from computer to computer. It is one per process: Pako restarts in place, and a
+ * second listener would find the port taken, so a new mount only swaps the handler. It answers the two callbacks only, and closes once
+ * the browser came back, or after a quarter of an hour with no sign-in started.
  */
-const loopback: { server: Server | null; port: number; handler: ((req: Request, res: Response) => unknown) | null; timer: NodeJS.Timeout | null } = {
+const loopback: { server: Server | null; port: number; handler: ((service: Service) => (req: Request, res: Response) => unknown) | null; timer: NodeJS.Timeout | null } = {
   server: null, port: 0, handler: null, timer: null,
 };
 /** Closes the listener: the browser came back (or nobody started a sign-in in time). The next Connect opens it again. */
@@ -360,14 +363,14 @@ function closeLoopback(): void {
   loopback.server?.closeIdleConnections();
   loopback.server = null;
 }
-async function slackLoopback(port: number, handler: (req: Request, res: Response) => unknown): Promise<number> {
+async function openLoopback(port: number, handler: (service: Service) => (req: Request, res: Response) => unknown): Promise<number> {
   loopback.handler = handler;
   if (loopback.timer) clearTimeout(loopback.timer);
   loopback.timer = setTimeout(closeLoopback, 15 * 60_000);
   loopback.timer.unref?.();
   if (loopback.server) return loopback.port;
   const mini = express();
-  mini.get(CALLBACK.slack, (req, res) => void loopback.handler?.(req, res));
+  for (const service of ["slack", "zoom"] as const) mini.get(CALLBACK[service], (req, res) => void loopback.handler?.(service)(req, res));
   mini.use((_req, res) => void res.status(404).set(HEADERS).type("text").send("Not here"));
   const server = createServer(mini);
   await new Promise<void>((resolve, reject) => {
@@ -450,14 +453,14 @@ export function mountConnectSetup(app: Express, d: ConnectSetupDeps | null): voi
     // A Slack Client ID is two numbers joined by a dot; Zoom's is letters, digits, _ and -.
     const ok = service === "slack" ? /^\d{5,20}\.\d{5,20}$/.test(raw) : /^[A-Za-z0-9_-]{10,64}$/.test(raw);
     if (!ok) return void res.status(400).json({ ok: false, error: say(service === "slack" ? "slackId" : "zoomId") });
-    // The project's Slack app returns to its one registered address, on a fixed port: a listener is opened there for the sign-in.
+    // The project's apps return to their one registered address, on a fixed port: a listener is opened there for the sign-in.
     let back = port(req);
-    if (service === "slack" && !typed) {
+    if (!typed) {
       try {
-        back = await slackLoopback(d.slackPort ?? SLACK_LOOPBACK_PORT, slackCallback);
+        back = await openLoopback(d.loopbackPort ?? SLACK_LOOPBACK_PORT, callback);
       } catch {
         /* the port is taken: said to the user */
-        return void res.status(409).json({ ok: false, error: say("portBusy", { port: String(d.slackPort ?? SLACK_LOOPBACK_PORT) }) });
+        return void res.status(409).json({ ok: false, error: say("portBusy", { port: String(d.loopbackPort ?? SLACK_LOOPBACK_PORT) }) });
       }
     }
     sweep();
@@ -467,7 +470,7 @@ export function mountConnectSetup(app: Express, d: ConnectSetupDeps | null): voi
     const { verifier, challenge } = pkcePair();
     // The project's Slack app returns through its https page (SLACK_RELAY_REDIRECT), which hands the code on to the loopback port.
     const redirect = service === "slack" && !typed ? (d.slackRelay ?? SLACK_RELAY_REDIRECT) : redirectUri(service, back);
-    flows.set(state, { service, clientId: raw, verifier, redirect, at: now() });
+    flows.set(state, { service, clientId: raw, verifier, redirect, loopback: !typed, at: now() });
     const u = exchanges.urls;
     const q = service === "slack"
       ? new URLSearchParams({ client_id: raw, scope: "", user_scope: SLACK_USER_SCOPES.join(","), redirect_uri: redirect, state, code_challenge: challenge, code_challenge_method: "S256" })
@@ -509,8 +512,8 @@ export function mountConnectSetup(app: Express, d: ConnectSetupDeps | null): voi
       await finish(service, flow, q, res);
     } finally {
       exchanging.delete(service);
-      // The project's Slack app's port is not held once its sign-in is over (another program may want it): only while one is under way.
-      if (service === "slack" && ![...flows.values()].some((f) => f.service === "slack")) closeLoopback();
+      // The project's apps' port is not held once their sign-in is over (another program may want it): only while one is under way.
+      if (![...flows.values()].some((f) => f.loopback)) closeLoopback();
     }
   };
   const finish = async (service: Service, flow: Flow, q: Record<string, unknown>, res: Response): Promise<void> => {
@@ -535,8 +538,7 @@ export function mountConnectSetup(app: Express, d: ConnectSetupDeps | null): voi
     // waits for it and then hears from the reader itself.
     d.saver.restartAfter(res);
   };
-  const slackCallback = callback("slack");
-  app.get(CALLBACK.slack, limit(20), slackCallback);
+  app.get(CALLBACK.slack, limit(20), callback("slack"));
   app.get(CALLBACK.zoom, limit(20), callback("zoom"));
 }
 

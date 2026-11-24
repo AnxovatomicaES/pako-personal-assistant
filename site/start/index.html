@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pako · start here</title>
+  <meta name="description" content="Pako: nothing you promised, or were promised, gets dropped. Get the 12 follow-up texts, see a demo week, or download it for Mac.">
+  <meta property="og:title" content="Pako · start here">
+  <meta property="og:description" content="Nothing you promised, or were promised, gets dropped.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://pako-os.com/start/">
+  <meta property="og:image" content="https://pako-os.com/og.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/join.css">
+  <style>
+    :root { --bg: #f7f5f1; --ink: #1c1b22; --ink-2: #4b4a57; --line: #e3dfd6; --accent: #5b46ff; color-scheme: light; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #0b0d14; --ink: #eef0fa; --ink-2: #a9b0cf; --line: #232741; --accent: #8b7bff; color-scheme: dark; } }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.65 "Inter Tight", ui-sans-serif, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    a { color: var(--accent); }
+    main { max-width: 480px; margin: 0 auto; padding: 22px 16px 28px; text-align: center; }
+    h1 { font-family: "Instrument Serif", Georgia, serif; font-weight: 400; font-size: 44px; line-height: 1; margin: 0; }
+    .line { margin: 6px 0 16px; color: var(--ink); font-size: 17px; line-height: 1.35; }
+    .go { display: flex; align-items: center; justify-content: center; min-height: 50px; margin: 8px 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-weight: 600; font-size: 16px; line-height: 1.25; text-decoration: none; }
+    .go:first-of-type { border-color: var(--accent); }
+    .go:hover { border-color: var(--accent); }
+    .go:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .join { margin: 14px 0 12px; padding: 14px 16px 16px; }
+    .join .join-pitch { font-size: 16px; }
+    .join .join-btn { margin-top: 10px; }
+    .fine { margin: 0; color: var(--ink-2); font-size: 13.5px; line-height: 1.45; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Pako</h1>
+    <p class="line">Nothing you promised, or were promised, gets dropped.</p>
+    <a class="go" href="/texts/" data-keep-source>Get the 12 follow-up texts</a>
+    <a class="go" href="/#try" data-keep-source>See Pako on a demo week (2 minutes)</a>
+    <a class="go" href="/#gentle" data-keep-source>Gentle mode: fewer, kinder nudges</a>
+    <a class="go" href="/#install" data-keep-source>Download for Mac</a>
+    <div class="join">
+      <p class="join-pitch">Loose Ends: one short email on Sunday evening, so Monday starts with fewer of them.</p>
+      <a class="join-btn" href="mailto:join@pako-os.com?subject=Subscribe%20me%20(site)&amp;body=Send%20this%20email%20as%20it%20is%20and%20you%27re%20in.%20First%20thing%20you%20get%3A%20the%2012%20follow-up%20texts.">Email me in</a>
+    </div>
+    <p class="fine">Free and open source. Runs on your computer with your own Claude plan. No API key.</p>
+  </main>
+  <script src="/join.js" defer></script>
+</body>
+</html>

@@ -22,6 +22,19 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lenis@1.3.11/dist/lenis.css">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="join.css">
+  <script>
+    // The link in our Instagram and TikTok bios opens this page inside the app's own browser. Send those visitors straight to
+    // the 12 texts, once per visit (a menu page in between loses about a third of them). No cookie and nothing is sent anywhere: the tag only names the page they came from.
+    (function () {
+      try {
+        var ua = navigator.userAgent, app = /Instagram/.test(ua) ? "ig" : /TikTok|musical_ly|Bytedance/i.test(ua) ? "tt" : "";
+        if (!app || location.search || location.hash || sessionStorage.getItem("pako-s")) return;
+        sessionStorage.setItem("pako-s", app);
+        location.replace("/texts/?s=" + app);
+      } catch (e) { /* storage off: stay on this page */ }
+    })();
+  </script>
   <script type="importmap">
     { "imports": {
       "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.min.js",
@@ -517,6 +530,14 @@
         <a class="btn btn-primary magnetic" href="#install"><span>Get Pako for free</span></a>
       </div>
     </section>
+
+    <!-- ============ NEWSLETTER (join.js fills it; the link inside is what shows with JavaScript off) ============ -->
+    <section class="join-section" aria-label="Newsletter">
+      <div class="join join-dark">
+        <p class="join-pitch">Loose Ends: one short email on Sunday evening, so Monday starts with fewer of them.</p>
+        <a class="join-btn" href="mailto:join@pako-os.com?subject=Subscribe%20me%20(site)&amp;body=Send%20this%20email%20as%20it%20is%20and%20you%27re%20in.%20First%20thing%20you%20get%3A%20the%2012%20follow-up%20texts.">Email me in</a>
+      </div>
+    </section>
   </main>
 
   <footer class="foot">
@@ -526,7 +547,7 @@
     </div>
     <p class="fine">Pako is an independent open-source project, not made or endorsed by Anthropic, and not affiliated with Meta, Google, Slack,
       Zoom or any other service named here; their names belong to them. Pako is not a medical device, a doctor or a therapist; in an
-      emergency, call your local emergency number. <a href="privacy.html">Privacy</a> · The Pako project receives none of your data.</p>
+      emergency, call your local emergency number. <a href="texts/">12 follow-up texts</a> · <a href="privacy.html">Privacy</a> · The Pako project receives none of your data from the software.</p>
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/lenis@1.3.11/dist/lenis.min.js"></script>
@@ -534,5 +555,6 @@
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/SplitText.min.js"></script>
   <script type="module" src="app.js"></script>
+  <script src="join.js" defer></script>
 </body>
 </html>

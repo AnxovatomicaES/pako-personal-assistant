@@ -1,0 +1,37 @@
+/* The newsletter block (join.js). Light and dark by the reader's setting; .join-dark is for the main page, which is always dark. */
+.join {
+  --j-ink: #1c1b22; --j-ink-2: #4b4a57; --j-line: #d9d4c8; --j-card: #ffffff; --j-btn: #5b46ff; --j-btn-ink: #ffffff; --j-link: #4a36e0;
+  border: 1px solid var(--j-line); border-radius: 16px; background: var(--j-card); color: var(--j-ink);
+  padding: 20px; margin: 28px 0; text-align: left; font-size: 16px; line-height: 1.5;
+}
+@media (prefers-color-scheme: dark) {
+  .join { --j-ink: #eef0fa; --j-ink-2: #b4bad6; --j-line: #2c3152; --j-card: #121522; --j-btn: #9d90ff; --j-btn-ink: #0b0d14; --j-link: #a99dff; }
+}
+.join.join-dark { --j-ink: #f2f4ff; --j-ink-2: #b4bad6; --j-line: #2c3152; --j-card: #0d0f1c; --j-btn: #9d90ff; --j-btn-ink: #0b0d14; --j-link: #a99dff; }
+.join p { margin: 0; color: var(--j-ink-2); }
+.join .join-pitch { color: var(--j-ink); font-weight: 600; font-size: 18px; line-height: 1.35; letter-spacing: -0.01em; }
+.join .join-promise { margin-top: 6px; font-size: 15px; }
+.join .join-fine { margin-top: 10px; font-size: 14px; }
+.join .join-done { margin-top: 14px; color: var(--j-ink); font-weight: 600; }
+.join a { color: var(--j-link); }
+.join .join-promise a { text-decoration: underline; }
+.join .join-btn {
+  display: flex; align-items: center; justify-content: center; width: 100%; min-height: 48px; margin-top: 14px; padding: 12px 18px;
+  border: 0; border-radius: 12px; background: var(--j-btn); color: var(--j-btn-ink); font: inherit; font-weight: 700; text-decoration: none; cursor: pointer;
+}
+.join .join-btn:hover { filter: brightness(1.08); }
+.join .join-btn:disabled { opacity: 0.6; cursor: default; }
+.join a:focus-visible, .join button:focus-visible, .join input:focus-visible { outline: 3px solid var(--j-link); outline-offset: 2px; }
+.join-form { margin-top: 14px; }
+.join-label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
+.join-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.join-row input {
+  flex: 1 1 200px; min-width: 0; min-height: 48px; padding: 10px 14px; border: 1px solid var(--j-line); border-radius: 12px;
+  background: transparent; color: var(--j-ink); font: inherit;
+}
+.join-row .join-btn { flex: 1 1 160px; width: auto; margin-top: 0; }
+.join-trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+
+/* The main page's own small section for the block, above the footer: opaque enough to read over the scene behind it. */
+section.join-section { padding: 56px 24px 64px; background: rgba(6, 7, 13, 0.82); border-top: 1px solid rgba(255, 255, 255, 0.08); }
+section.join-section .join { max-width: 560px; margin: 0 auto; }

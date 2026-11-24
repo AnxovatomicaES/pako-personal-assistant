@@ -158,8 +158,9 @@ stays on the person's computer. If you make the app again, replace the manifest'
    - **App name:** `Pako`.
    - **Select how the app is managed:** **User-managed**.
    - **App Credentials:** turn on **Use Public Client OAuth** (PKCE, no secret), for development and for production.
-3. **OAuth Redirect URL** and **OAuth Allow List**: `http://127.0.0.1:53682/connect/zoom/callback`. Zoom ignores the port of a loopback
-   address and refuses `localhost`, so Pako's own port works whatever it is.
+3. **OAuth Redirect URL** and **OAuth Allow List**: `http://127.0.0.1:53682/connect/zoom/callback`. Zoom refuses `localhost` and matches the
+   port too (error 4,700 "Invalid redirect" otherwise), so Pako opens a small listener on 53682 for the minutes a sign-in takes, whatever
+   its own port is.
 4. **Scopes** → **Add Scopes**:
    - `meeting:read:list_meetings`
    - `meeting:read:summary`

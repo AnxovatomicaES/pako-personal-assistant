@@ -178,7 +178,8 @@ with no account at all.
    card. It is not a secret.
 4. **Connect Zoom**, then **Allow** on Zoom's page. The card says who you are connected as.
 
-If Zoom asks for a redirect URL, the card shows it to copy: `http://127.0.0.1:<port>/connect/zoom/callback`. Zoom ignores the port.
+If Zoom asks for a redirect URL, the card shows it to copy: `http://127.0.0.1:<port>/connect/zoom/callback`, with Pako's own port. Zoom
+matches the port too, so an app made on another computer, or before Pako's port changed, needs this address added (error 4,700 otherwise).
 
 What the app is: a General app for your own use (`USER_OPERATION`), unpublished, with PKCE and these read scopes:
 `meeting:read:list_meetings`, `meeting:read:summary`, `meeting:read:list_summaries`, `cloud_recording:read:list_user_recordings`,

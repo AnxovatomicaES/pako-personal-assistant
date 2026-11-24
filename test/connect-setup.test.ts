@@ -443,7 +443,7 @@ test("the built-in clients: empty by default, a well-formed one counts, an envir
 test("Slack with the project's app: one Connect, Allow, done; back through the https page to the fixed loopback port; no Client ID typed", async () => {
   const v = await fakeVendors();
   v.relay.port = await freePort();
-  const p = await pako(v.urls, { readers: { defaults: BUILT_IN, env: {}, slackPort: v.relay.port, slackRelay: v.relayUrl } });
+  const p = await pako(v.urls, { readers: { defaults: BUILT_IN, env: {}, loopbackPort: v.relay.port, slackRelay: v.relayUrl } });
   try {
     assert.deepEqual((await p.get("/panel/api/connect/clients")).body, { slack: true, zoom: true, microsoft: false, google: false, gmail: false });
     assert.equal((await p.get("/panel/api/slack/setup")).body.builtIn, true);
@@ -464,13 +464,17 @@ test("Slack with the project's app: one Connect, Allow, done; back through the h
   }
 });
 
-test("Zoom with the project's app: one Connect, Allow, done", async () => {
+test("Zoom with the project's app: one Connect, Allow, done; back to the fixed loopback port it registered, not Pako's own", async () => {
   const v = await fakeVendors();
-  const p = await pako(v.urls, { readers: { defaults: BUILT_IN, env: {} } });
+  const fixed = await freePort();
+  const p = await pako(v.urls, { readers: { defaults: BUILT_IN, env: {}, loopbackPort: fixed } });
   try {
     assert.equal((await p.get("/panel/api/zoom/setup")).body.builtIn, true);
     const started = await p.post("/panel/api/zoom/connect", {});
-    assert.equal(new URL(started.body.authorizeUrl).searchParams.get("client_id"), BUILT_IN.zoom);
+    const asked = new URL(started.body.authorizeUrl).searchParams;
+    assert.equal(asked.get("client_id"), BUILT_IN.zoom);
+    // Zoom matches the port too (error 4,700): the project's app knows only the fixed one.
+    assert.equal(asked.get("redirect_uri"), `http://127.0.0.1:${fixed}/connect/zoom/callback`);
     assert.match((await browse(started.body.authorizeUrl)).text, /Connected as Ana Ruiz \(ana@acme\.example\)/);
     assert.equal(readStored(p.dir)!.ZOOM_CLIENT_ID, BUILT_IN.zoom);
   } finally {
@@ -537,7 +541,7 @@ test("while the code is being exchanged the card is still waiting, not the old a
 test("the Slack loopback listener closes once the browser came back, instead of holding its port for a quarter of an hour", async () => {
   const v = await fakeVendors();
   v.relay.port = await freePort();
-  const p = await pako(v.urls, { readers: { defaults: BUILT_IN, env: {}, slackPort: v.relay.port, slackRelay: v.relayUrl } });
+  const p = await pako(v.urls, { readers: { defaults: BUILT_IN, env: {}, loopbackPort: v.relay.port, slackRelay: v.relayUrl } });
   try {
     const started = await p.post("/panel/api/slack/connect", {});
     const back = new URL(`http://localhost:${v.relay.port}/connect/slack/callback`);
