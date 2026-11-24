@@ -34,7 +34,7 @@ const UI_WORDS = new Set(("mon tue tues wed thu thur thurs fri sat sun jan feb m
   + " sent inbox outbox drafts draft spam junk trash bin archive archived starred flagged unread snooze snoozed undo reply forward forwarded"
   + " subject cc bcc attachment attached folder label labels settings notifications primary promotions updates needs later important"
   + " security receipt invoice brief focus todo todos tasks task notes note lists list reminders reminder people person contacts open done"
-  + " not mine yes no new moved gone since agenda invite invitation accepted declined tentative busy free meeting meetings event events standup").split(" "));
+  + " not mine yes no new moved gone since agenda invite invitation accepted declined tentative busy free meet meeting meetings event events standup").split(" "));
 
 /**
  * Names in what was written that the facts never had: capitalised words (not the first of a sentence) that appear nowhere in the facts,

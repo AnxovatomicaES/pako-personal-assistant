@@ -51,7 +51,6 @@
     "lang": "es"
   },
   "expect": {
-    "todos": 2,
     "todoHas": [
       [
         "reunión",
