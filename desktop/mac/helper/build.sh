@@ -11,8 +11,9 @@ LABEL=local.pako.helper
 AGENT="$HOME/Library/LaunchAgents/$LABEL.plist"
 say() { printf '%s\n' "$*"; }
 
-launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+stop() { launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true; }
 if [ "${1:-}" = "--remove" ]; then
+  stop
   rm -f "$AGENT"
   rm -rf "$HOME_DIR/helper"
   say "Pako's Mac helper is stopped and removed."
@@ -29,6 +30,8 @@ swiftc -O -swift-version 5 -module-name PakoHelper -framework AppKit -framework 
   "$MAC/Core.swift" "$MAC/DiscoveryCore.swift" "$MAC/Pako.swift" "$MAC/Discovery.swift" "$MAC/RemindersCore.swift" "$MAC/Reminders.swift" \
   "$MAC/Asks.swift" "$HERE/main.swift" -o "$WORK/pako-helper" 2>"$WORK/build.log" || { grep -A 3 'error:' "$WORK/build.log" | head -30; exit 1; }
 
+# Stopped only now: a build that fails leaves the running helper as it was.
+stop
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$HOME_DIR/logs"
 cp "$WORK/pako-helper" "$APP/Contents/MacOS/pako-helper"
@@ -53,5 +56,6 @@ cat > "$AGENT" <<PLIST
 </dict>
 </plist>
 PLIST
-launchctl bootstrap "gui/$(id -u)" "$AGENT"
+# Right after a bootout, launchd may still be letting the old one go ("Input/output error"): once more after a moment.
+launchctl bootstrap "gui/$(id -u)" "$AGENT" 2>/dev/null || { sleep 2; launchctl bootstrap "gui/$(id -u)" "$AGENT"; }
 say "Pako's Mac helper is running. In the panel's Connections, Calendar and Contacts now offer this Mac's own; macOS asks you first."

@@ -71,7 +71,8 @@ export function wireMail(ctx: AfterProactive) {
       : null;
     const reader = createImapReader({
       backfill: { add: bf.add, addSent: bf.addSent, startLine: bf.startLine, days: backfillCfg.config.days },
-      config: cfg, stateKey: `assistant-${part}`, kv, box: box!, control, lang: uiLang, enqueue: (m) => door.inbox.add(m), health: dog.reporter(part),
+      config: cfg, stateKey: `assistant-${part}`, alsoOwn: (part === "imap" ? imap2 : imap).config?.user ?? "", kv, box: box!, control, lang: uiLang,
+      enqueue: (m) => door.inbox.add(m), health: dog.reporter(part),
       notify: (text) => door.notifyOwner(text),
       ownSent: (o) => lessons.ownSent(o),
       ...(mailFollowups ? { sentMail: (m) => mailFollowups.sent(m), filed: (id, category) => mailFollowups.inbox(id, { category }) } : {}),

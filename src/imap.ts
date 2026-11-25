@@ -532,10 +532,16 @@ const PER_POLL = 50;
 /** Messages a new account's catch-up takes per folder, the newest. */
 const CATCH_UP_MAX = 300;
 
+/** A sent email's catch-up ref: the second mailbox's carries its address (UID 42 in each is another email); the first's stay as they were. */
+export const sentRef = (stateKey: string | undefined, own: string, uid: number): string =>
+  stateKey === "assistant-imap2" ? `imap-sent:${own}:${uid}` : `imap-sent:${uid}`;
+
 export interface ImapDeps {
   config: ImapConfig;
   /** Where its place is kept ("assistant-imap"): the second mailbox has its own, so two readers never take each other's state. */
   stateKey?: string;
+  /** The owner's other mailbox's address: mail from it is the owner's own here too (not a stranger's to triage). */
+  alsoOwn?: string;
   kv: Kv | null;
   box: Mailbox;
   /** The owner's assistant inbox (src/whatsapp.ts). */
@@ -744,7 +750,7 @@ export function createImapReader(d: ImapDeps) {
     for (const h of p.headers) {
       if (/^(in-reply-to|references)$/i.test(h.name)) for (const m of h.value.match(/<[^<>\s]{1,300}>/g) ?? []) answered.add(m.toLowerCase());
     }
-    return intake.sent(p, at, { catchUp, ref: `imap-sent:${uid}` });
+    return intake.sent(p, at, { catchUp, ref: sentRef(d.stateKey, own, uid) });
   };
 
   /** One message into the shared intake (src/mail-intake.ts, then src/mail.ts takeMail), under this mailbox's own id. */
@@ -758,7 +764,7 @@ export function createImapReader(d: ImapDeps) {
     const id = `imap:${createHash("sha256").update(key).digest("hex").slice(0, 32)}`;
     // A catch-up email the owner already answered is marked so.
     const replied = catchUp && !!p.messageId && answered.has(p.messageId.toLowerCase());
-    return intake.inbox(p, at, { id, own: own ? [own] : [], account: accountOf(p), quiet, replied, catchUp, sentFolder });
+    return intake.inbox(p, at, { id, own: [own, addressOf(d.alsoOwn ?? "")].filter(Boolean), account: accountOf(p), quiet, replied, catchUp, sentFolder });
   };
 
   const fail = (err: unknown): void => {

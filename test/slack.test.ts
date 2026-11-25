@@ -116,20 +116,27 @@ test("events: Slack's check is answered; a DM and a mention reach the owner in o
   }
 });
 
-test("the owner's own messages are kept for the brief, any conversation, never as alerts; the brief gets both sides with since when", async () => {
+test("the owner's own messages are kept for the brief, any conversation, never as alerts; once each, edited and deleted as in Slack", async () => {
   const kv = memoryKv();
   const r = await rig({ forward: false, kv });
   try {
-    assert.deepEqual(await r.reader.conversations(), { list: [], ownSince: null }, "nothing kept yet");
+    assert.deepEqual(await r.reader.conversations(), [], "nothing kept yet");
     await r.message({ channel: "D1", channel_type: "im", user: "UANA", text: "if the boss is happy on Wednesday we're off" });
     await r.message({ channel: "D1", channel_type: "im", user: "UME", text: "I'll call him to find out about Thursday and Friday", ts: "1794657700.000100" });
+    await r.message({ channel: "D1", channel_type: "im", user: "UME", text: "I'll call him to find out about Thursday and Friday", ts: "1794657700.000100" });
     await r.message({ channel: "C1", channel_type: "channel", user: "UME", text: "numbers going out today", ts: "1794657800.000100" });
+    await r.message({ channel: "C1", channel_type: "channel", user: "UME", text: "<@UANA> thanks", ts: "1794657900.000100" });
     await r.settle();
-    const { list, ownSince } = await r.reader.conversations();
-    assert.ok(ownSince !== null && Math.abs(ownSince - 1794657700_000) < 1, "since the first own message");
-    assert.deepEqual(list.map((a) => [a.where, a.mine ?? false]), [["#proyecto", true], ["Ana (private)", true], ["Ana (private)", false]]);
+    const list = await r.reader.conversations();
+    assert.deepEqual(list.map((a) => [a.where, a.mine ?? false]), [["#proyecto", true], ["#proyecto", true], ["Ana (private)", true], ["Ana (private)", false]]);
+    assert.equal(list[0]!.text, "@Ana thanks", "a mention is kept with the name, not «someone»");
     assert.equal((await r.reader.recent()).length, 1, "the owner's own are never alerts");
     assert.equal((await r.reader.alerts()).length, 1);
+    await r.message({ channel: "C1", channel_type: "channel", subtype: "message_changed", message: { ts: "1794657800.000100", text: "numbers going out Friday" } });
+    await r.message({ channel: "D1", channel_type: "im", subtype: "message_deleted", deleted_ts: "1794657700.000100" });
+    await r.settle();
+    const after = (await r.reader.conversations()).filter((a) => a.mine);
+    assert.deepEqual(after.map((a) => a.text), ["@Ana thanks", "numbers going out Friday"]);
   } finally {
     r.close();
   }

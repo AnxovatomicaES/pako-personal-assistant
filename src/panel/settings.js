@@ -2013,7 +2013,8 @@ function details(id) {
           e.currentTarget.disabled = true;
           out.textContent = t("d.checking");
           const r = await api("/panel/api/mail/check-now", { method: "POST", body: {} });
-          if (r.ok && S.data.details?.mail) Object.assign(S.data.details.mail, { imap: r.data.mail ?? null, imap2: r.data.mail2 ?? null });
+          // A mailbox whose reader is not running answers nothing: its row (and its Disconnect) stays as it was.
+          if (r.ok && S.data.details?.mail) Object.assign(S.data.details.mail, r.data.mail ? { imap: r.data.mail } : {}, r.data.mail2 ? { imap2: r.data.mail2 } : {});
           drawCard("mail");
         }, "tiny ghost"),
         btn(t("d.edit"), () => go("mail", 1, { path: "imap", address: m.address }), "tiny ghost"),
@@ -2130,5 +2131,13 @@ document.addEventListener("visibilitychange", async () => {
   drawHero();
 });
 
+// The Mac helper started (or quit) after the page loaded: looked for once a minute, and the cards follow (the open one left alone).
+setInterval(async () => {
+  if (document.visibilityState !== "visible" || S.restarting) return;
+  useHelper(await read("/panel/api/helper"));
+  if (S.app === inApp(window)) return;
+  S.app = inApp(window);
+  for (const id of Object.keys(CARD)) if (id !== S.open) drawCard(id);
+}, 60_000);
 mountTwins(); // Pako's figure in the header (figure-twin.js)
 void start();

@@ -178,7 +178,7 @@ export function oneSuggestion(status) {
   const list = status ?? [];
   const on = (id) => list.some((c) => c.id === id && c.state === "connected");
   const hasCal = on("calendar") || on("macCalendar");
-  const hasMail = on("imap") || on("mail");
+  const hasMail = on("imap") || on("imap2") || on("mail");
   for (const id of SUGGEST_ORDER) {
     if ((id === "calendar" || id === "macCalendar") && hasCal) continue;
     if (id === "imap" && hasMail) continue;

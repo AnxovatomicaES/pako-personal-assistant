@@ -106,6 +106,8 @@ export async function checkAgentMail(apiKey: string, inbox: string, f: typeof fe
 export interface ConnectionsSaver {
   save(id: ConnectionId, values: Record<string, string>): Promise<{ ok: true; name: string } | { ok: false; error: string; field?: string; status?: number }>;
   restartAfter(res: express.Response): boolean;
+  /** The settings as they are now: the panel's saved ones (a connect or a disconnect since the start included) and those set outside it. */
+  now?(): Record<string, string | undefined>;
 }
 
 /** The panel's connection routes. `d` null: not a person's computer, and every route answers 404. */
@@ -295,5 +297,6 @@ export function mountConnectionsPanel(app: Express, d: ConnectionsPanelDeps | nu
       return job;
     },
     restartAfter,
+    now: () => ({ ...Object.fromEntries(Object.entries(d.env).filter(([k]) => !fromStore().has(k))), ...(readStored(dir) ?? {}) }),
   };
 }

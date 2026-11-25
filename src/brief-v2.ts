@@ -58,6 +58,9 @@ const DAY = 24 * 3600_000;
 export const BRIEF_JOB = /^br:([0-9a-f]{10})$/;
 const TASKS_MAX = 12;
 const MATERIAL_MAX = 30_000;
+/** How long the brief waits for the live checks of sites said down (src/site-check.ts has its own, shorter deadline). */
+const SITE_WAIT_MS = 8000;
+const RANK: Record<FactKind, number> = { event: 0, zoom: 0, task: 0, reminder: 0, birthday: 0, change: 0, loop: 1, mail: 1, person: 1, meeting: 2, slack: 3 };
 
 /** BRIEF_SMART=off keeps the old brief only; BRIEF_WAIT_MIN: how long the written brief is waited for before the old one goes instead. */
 export function loadBriefV2Config(env: Env): { config: { waitMs: number } | null; problems: string[] } {
@@ -139,11 +142,8 @@ export interface GatherDeps {
   loops?: () => Promise<Loop[]>;
   /** Zoom's summaries with the review's structured outcomes (src/meeting-review.ts briefMeetings), when the review is on. */
   meetings?: () => Promise<BriefMeeting[]>;
-  /**
-   * The Slack messages kept for the owner and, with `mine`, the owner's own (src/slack.ts conversations), newest first; `ownSince`: since when
-   * the owner's own are kept (before it, Pako cannot say "nothing from you since").
-   */
-  slack?: () => Promise<SlackItem[] | { list: SlackItem[]; ownSince: number | null }>;
+  /** The Slack messages kept for the owner and, with `mine`, the owner's own (src/slack.ts conversations), newest first. */
+  slack?: () => Promise<SlackItem[]>;
   /** One live GET of a site an uptime monitor's email says is down (src/site-check.ts checkSite): the brief says what it answers now. */
   checkSite?: (url: string) => Promise<SiteCheck>;
   events?: () => Promise<CalEvent[]>;
@@ -209,6 +209,7 @@ const F = texts(
     alertChecked: " · Pako checked {url} now ({time}): {result}",
     siteDown: "still failing, HTTP {status}",
     siteUp: "it answers again, HTTP {status}",
+    siteRedirect: "it answers with a redirect, HTTP {status}",
     siteOther: "HTTP {status}",
     siteTimeout: "no answer (timed out)",
     siteUnreachable: "it could not be reached",
@@ -338,19 +339,22 @@ export async function gatherFacts(d: GatherDeps): Promise<Gathered> {
       text: fact(say("meeting", { topic: m.topic, when: when(m.at, tz, l), summary: m.summary || "—" }) + outcomes(m), 2400),
     });
   }
-  const got = await take(d.slack, "slack");
-  const slack = (Array.isArray(got) ? got : got?.list ?? []).filter((x) => x.at > t - 7 * DAY).sort((a, b) => b.at - a.at).slice(0, 60);
-  const ownSince = Array.isArray(got) ? null : got?.ownSince ?? null;
-  // Both sides of a conversation: the owner's own lines are marked as theirs, and the latest message to the owner in each conversation says
-  // whether the owner wrote there after it (or, once Pako keeps the owner's messages, that nothing from them came since).
+  const all = ((await take(d.slack, "slack")) ?? []).filter((x) => x.at > t - 7 * DAY).sort((a, b) => b.at - a.at);
+  // Both sides of a conversation: the owner's own lines (at most 20, from conversations with a message to the owner here) are marked as theirs,
+  // and the latest message to the owner in each conversation says whether the owner wrote there after it. "Nothing from you since" only
+  // where Pako kept one of the owner's messages from before it: then it reads the owner there (a poll never sees the owner in a channel).
   const convo = (a: SlackItem): string => a.channel ?? a.where;
+  const incoming = all.filter((a) => !a.mine).slice(0, 40);
+  const talks = new Set(incoming.map(convo));
+  const slack = [...incoming, ...all.filter((a) => a.mine && talks.has(convo(a))).slice(0, 20)].sort((a, b) => b.at - a.at);
   const lastIn = new Set<SlackItem>();
-  for (const a of slack) if (!a.mine && ![...lastIn].some((b) => convo(b) === convo(a))) lastIn.add(a);
+  for (const a of incoming) if (![...lastIn].some((b) => convo(b) === convo(a))) lastIn.add(a);
   for (const a of slack) {
     let after = "";
     if (lastIn.has(a)) {
-      const reply = slack.filter((b) => b.mine && convo(b) === convo(a) && b.at > a.at).sort((x, y) => x.at - y.at)[0];
-      after = reply ? say("slackReplied", { when: when(reply.at, tz, l) }) : ownSince !== null && ownSince <= a.at ? say("slackNoReply") : "";
+      const own = all.filter((b) => b.mine && convo(b) === convo(a));
+      const reply = own.filter((b) => b.at > a.at).sort((x, y) => x.at - y.at)[0];
+      after = reply ? say("slackReplied", { when: when(reply.at, tz, l) }) : own.some((b) => b.at <= a.at) ? say("slackNoReply") : "";
     }
     push("S", {
       kind: "slack", icon: "slack",
@@ -390,18 +394,20 @@ export async function gatherFacts(d: GatherDeps): Promise<Gathered> {
     });
   }
   const mail = ((await take(d.mail, "mail")) ?? []).filter((x) => x.at > t - 7 * DAY && !x.handledAt);
-  // Uptime monitors' emails (src/site-check.ts), whatever their category: the latest one of each site in the last two days. A site whose
+  // Uptime monitors' emails (src/site-check.ts), whatever their category: the latest one of each site in the week. A site whose
   // latest says down is checked now, once, so the brief tells how it is this morning; a site that came back says nothing.
   const bySite = new Map<string, { m: RecentMail; a: MonitorAlert }>();
+  const monitored = new Set<string>();
   for (const m of [...mail].sort((x, y) => x.at - y.at)) {
-    const a = m.at > t - 2 * DAY ? monitorAlert(m) : null;
-    if (a) bySite.set(a.host, { m, a });
+    const a = monitorAlert(m);
+    if (a) (bySite.set(a.host, { m, a }), monitored.add(m.id));
   }
-  const monitored = new Set(mail.filter((m) => monitorAlert(m)).map((m) => m.id));
-  const down = [...bySite.values()].filter((x) => x.a.down).slice(-3);
-  const checks = await Promise.all(down.map((x) => (d.checkSite ? d.checkSite(x.a.url).catch(() => null) : Promise.resolve(null))));
+  const down = [...bySite.values()].filter((x) => x.a.down).sort((x, y) => x.m.at - y.m.at).slice(-3);
+  // The brief never waits on a site: whatever has not answered in SITE_WAIT_MS is told as not checked.
+  const check = (url: string) => (d.checkSite ? d.checkSite(url).catch(() => null) : null);
+  const checks = await Promise.all(down.map((x) => Promise.race([check(x.a.url), new Promise<null>((r) => setTimeout(r, SITE_WAIT_MS, null).unref?.())])));
   const result = (c: SiteCheck): string => "status" in c
-    ? say(c.status >= 500 ? "siteDown" : c.status >= 200 && c.status < 400 ? "siteUp" : "siteOther", { status: String(c.status) })
+    ? say(c.status >= 500 ? "siteDown" : c.status >= 300 && c.status < 400 ? "siteRedirect" : c.status >= 200 ? "siteUp" : "siteOther", { status: String(c.status) })
     : say(c.error === "timeout" ? "siteTimeout" : "siteUnreachable");
   down.forEach(({ m, a }, i) => {
     const c = checks[i];
@@ -531,7 +537,8 @@ export function briefMaterial(
     ...lessonsSection(o.lessons ?? []),
     "",
     say("facts"),
-    ...(g.facts.length ? g.facts.map((f) => `${f.id} · ${f.text}`) : [say("noFacts")]),
+    // The day first, long meeting summaries and Slack last: the material is cut at MATERIAL_MAX, and that cut must not lose today's events.
+    ...(g.facts.length ? [...g.facts].sort((a, b) => RANK[a.kind] - RANK[b.kind]).map((f) => `${f.id} · ${f.text}`) : [say("noFacts")]),
   ];
   let text = lines.join("\n");
   if (text.length > MATERIAL_MAX) text = text.slice(0, MATERIAL_MAX);
@@ -645,7 +652,9 @@ export function validateBrief(raw: unknown, g: Gathered, o: { now: number; timeZ
       focus = { title, story: keep(clean(v.focus.story, 900), gr), offer: keep(clean(v.focus.offer, 240), gr), sources };
       // Figures repeated from a meeting summary or an email go out only after the owner checks them: said in code, not left to the model.
       const from = sources.map((id) => byId.get(id)!).find((f) => f.kind === "meeting" || f.kind === "mail");
-      if (from && ((focus.story + focus.offer).match(/\d[\d,.]*/g) ?? []).length >= 2 && !/\bcheck/i.test(focus.story + focus.offer)) {
+      const said = `${focus.story} ${focus.offer}`;
+      const figures = said.replace(/\b\d{1,2}[:/.]\d{1,2}(?:[/.]\d{2,4})?\b/g, " ").match(/\d[\d,.]*/g) ?? [];
+      if (from && figures.length >= 2 && !/\bcheck (them|it|these|those|the figures|the numbers|against)\b/i.test(said)) {
         focus.story = `${focus.story} ${F(o.lang)("checkFigures", { source: from.kind === "meeting" ? "the meeting's AI summary" : "an email" })}`.trim();
       }
       sources.forEach((s) => used.add(s));

@@ -210,12 +210,12 @@ export const useHelper = (r) => void (helper = r?.here === true);
 /** Whether the Mac app answers this page: it runs inside the app (its message handler is there), or the helper does it for it. */
 export const inApp = (win) => bridge(win) || helper;
 
-/** An ask passed on to the helper by Pako: the answer called `want` (null: none in two minutes, or no helper); no `want`: only sent. */
-async function relay(win, message, want) {
+/** An ask passed on to the helper by Pako: the answer called `want` (null: none within `ms`, or no helper); no `want`: only sent. */
+async function relay(win, message, want, ms = 120_000) {
   try {
     const r = await win.fetch("/panel/api/helper/ask", {
       method: "POST", credentials: "same-origin", cache: "no-store", headers: { "content-type": "application/json", "x-pako": "1" },
-      body: JSON.stringify(want ? { message, want } : { message }),
+      body: JSON.stringify(want ? { message, want, ms } : { message }), signal: AbortSignal.timeout(ms + 2000),
     });
     return r.ok ? ((await r.json())?.value ?? null) : null;
   } catch {
@@ -246,7 +246,7 @@ export function tellApp(win, message) {
  */
 export function askApp(win, message, callback, ms = 60_000, accept = () => true) {
   if (!inApp(win)) return Promise.resolve(null);
-  if (!bridge(win)) return relay(win, message, callback).then((v) => (v !== null && accept(v) ? v : null));
+  if (!bridge(win)) return relay(win, message, callback, ms).then((v) => (v !== null && accept(v) ? v : null));
   return new Promise((resolve) => {
     const before = win[callback];
     let done = false;

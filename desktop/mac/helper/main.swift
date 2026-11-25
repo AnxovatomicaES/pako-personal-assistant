@@ -25,6 +25,9 @@ func call(_ method: String, _ path: String, _ body: Any?, wait: TimeInterval = 1
     return ((200..<300).contains(a.status), try? JSONSerialization.jsonObject(with: a.body) as? [String: Any])
 }
 
+/// The Mac app is open: it does all this itself, so the helper waits (two would undo each other's choices); once running, it quits (launchd restarts it).
+func appRuns() -> Bool { !NSRunningApplication.runningApplications(withBundleIdentifier: "io.github.anxovatomicaes.pako").isEmpty }
+
 MainActor.assumeIsolated {
     var asks: MacAsks?
     let send: MacAsks.Send = { method, path, body, done in
@@ -38,6 +41,7 @@ MainActor.assumeIsolated {
     }
     // The panel's asks, waited for at Pako (it holds the request up to 25 s); a Pako that does not answer is asked again in 10 s.
     func poll() {
+        if appRuns() { exit(0) }
         net.async {
             let r = call("POST", "/panel/api/helper/next", [String: Any](), wait: 40)
             DispatchQueue.main.async {
@@ -51,6 +55,7 @@ MainActor.assumeIsolated {
     }
     // At the start, once Pako answers: the calendars chosen before (Pako keeps them), read and kept in step again.
     func begin() {
+        if appRuns() { return DispatchQueue.main.asyncAfter(deadline: .now() + 30) { begin() } }
         net.async {
             let r = call("GET", "/panel/api/calendar/local", nil)
             DispatchQueue.main.async {

@@ -167,6 +167,9 @@ export interface SlackEvent {
   thread_ts?: string;
   /** The files shared with the message (a file_share). */
   files?: unknown[];
+  /** message_changed: the message as it is now; message_deleted: the ts of the one deleted. */
+  message?: { ts?: string; text?: string };
+  deleted_ts?: string;
 }
 
 export interface SlackDeps {
@@ -386,29 +389,42 @@ export function mountSlack(app: Express, d: SlackDeps) {
 
   /**
    * The owner's own message, in any conversation (a DM, a group DM, a channel): kept for a week, the last ALERTS_KEEP, for the morning brief,
-   * which reads both sides of a conversation ("You told Ana you'd call", "nothing from you there since"). Never told, never an alert.
+   * which reads both sides of a conversation ("You told Ana you'd call", "nothing from you there since"). Never told, never an alert. Once per
+   * ts; an edit replaces the text, a deletion removes it (Slack's live events only: a poll sees neither).
    */
-  const keepOwn = async (e: SlackEvent): Promise<void> => {
-    if (!d.kv || !e.ts || !e.channel) return;
-    const l = lang();
-    const t = T(l);
-    const text = plainSlack(e.text ?? "", (id) => people.get(id) ?? t("someone"), l).slice(0, TEXT_MAX);
-    if (!text.trim()) return;
-    const where = e.channel_type === "im" ? t("dm", { who: await partnerOf(e.channel) })
-      : e.channel_type === "mpim" ? t("privateGroup") : await channelOf(e.channel, l);
-    const own: SlackAlert = { at: Number(e.ts) * 1000 || now(), where, text, channel: e.channel, ts: e.ts, mine: true };
+  const editOwn = (change: (list: SlackAlert[]) => SlackAlert[]): Promise<void> => {
     const run = storeChain.then(async () => {
       try {
-        const raw = (await readJsonRecord(d.kv!, OWN_KEY)) as { since?: unknown; list?: unknown } | null;
-        const list = Array.isArray(raw?.list) ? (raw.list as SlackAlert[]) : [];
-        const since = typeof raw?.since === "number" ? raw.since : own.at;
-        await d.kv!.set(OWN_KEY, JSON.stringify({ since, list: [...list, own].slice(-ALERTS_KEEP) }), 8 * 24 * 3600);
+        const raw = (await readJsonRecord(d.kv!, OWN_KEY)) as { list?: unknown } | null;
+        const list = change(Array.isArray(raw?.list) ? (raw.list as SlackAlert[]) : []);
+        await d.kv!.set(OWN_KEY, JSON.stringify({ list: list.slice(-ALERTS_KEEP) }), 8 * 24 * 3600);
       } catch (err) {
         logSlack.error(`could not keep the owner's message: ${(err as Error).message}`);
       }
     });
     storeChain = run;
-    await run;
+    return run;
+  };
+  const ownText = async (raw: string): Promise<string> => {
+    for (const id of [...new Set([...raw.matchAll(/<@([UW][A-Z0-9]+)>/g)].map((m) => m[1]!))].slice(0, 10)) await nameOf(id);
+    return plainSlack(raw, (id) => people.get(id) ?? T(lang())("someone"), lang()).slice(0, TEXT_MAX);
+  };
+  const keepOwn = async (e: SlackEvent): Promise<void> => {
+    if (!d.kv || !e.ts || !e.channel) return;
+    const t = T(lang());
+    const text = await ownText(e.text ?? "");
+    if (!text.trim()) return;
+    const where = e.channel_type === "im" ? t("dm", { who: await partnerOf(e.channel) })
+      : e.channel_type === "mpim" ? t("privateGroup") : await channelOf(e.channel, lang());
+    const own: SlackAlert = { at: Number(e.ts) * 1000 || now(), where, text, channel: e.channel, ts: e.ts, mine: true };
+    await editOwn((list) => [...list.filter((a) => a.ts !== own.ts || a.channel !== own.channel), own]);
+  };
+  /** An edit or a deletion of a message (Slack's message_changed / message_deleted): applied to the owner's kept one, if it is one. */
+  const changeOwn = async (e: SlackEvent): Promise<void> => {
+    const ts = e.subtype === "message_deleted" ? e.deleted_ts : e.message?.ts;
+    if (!d.kv || !e.channel || !ts) return;
+    const text = e.subtype === "message_changed" ? await ownText(e.message?.text ?? "") : "";
+    await editOwn((list) => list.flatMap((a) => (a.channel !== e.channel || a.ts !== ts ? [a] : text.trim() ? [{ ...a, text }] : [])));
   };
   /**
    * The owner's own message: never told back to them, but read for what they promise ("I'll send it by Friday"), in a DM, a group DM, a
@@ -422,8 +438,7 @@ export function mountSlack(app: Express, d: SlackDeps) {
     if (!direct && !inThread && !/<@[UW][A-Z0-9]+>/.test(raw)) return;
     const l = lang();
     const t = T(l);
-    for (const id of [...new Set([...raw.matchAll(/<@([UW][A-Z0-9]+)>/g)].map((m) => m[1]!))].slice(0, 10)) await nameOf(id);
-    const text = plainSlack(raw, (id) => people.get(id) ?? t("someone"), l).slice(0, TEXT_MAX);
+    const text = await ownText(raw);
     if (!text.trim()) return;
     const where = e.channel_type === "im" ? t("dm", { who: await partnerOf(e.channel) })
       : e.channel_type === "mpim" ? t("ownGroupDm") : t("ownInChannel", { channel: await channelOf(e.channel, l) });
@@ -447,6 +462,7 @@ export function mountSlack(app: Express, d: SlackDeps) {
 
   const seen = new Set<string>();
   const handle = async (e: SlackEvent): Promise<void> => {
+    if (e.type === "message" && (e.subtype === "message_changed" || e.subtype === "message_deleted")) return changeOwn(e);
     if (e.type !== "message" || (e.subtype && e.subtype !== "thread_broadcast" && e.subtype !== "file_share") || e.bot_id || !e.user || !e.channel) return;
     const self = await whoAmI();
     if (!self) throw new Error("could not tell whose Slack this is (auth.test failed)");
@@ -611,23 +627,18 @@ export function mountSlack(app: Express, d: SlackDeps) {
       const t = now();
       return (await allAlerts()).filter((a) => t - a.at < 7 * 24 * 3600_000).reverse();
     },
-    /**
-     * For the morning brief: the last week's alerts and the owner's own messages, newest first (own ones `mine`), and since when the owner's
-     * own are kept (null: none yet): before that moment "nothing from you since" cannot be said.
-     */
-    conversations: async (): Promise<{ list: SlackAlert[]; ownSince: number | null }> => {
+    /** For the morning brief: the last week's alerts and the owner's own messages (`mine`), newest first. */
+    conversations: async (): Promise<SlackAlert[]> => {
       const t = now();
       let own: SlackAlert[] = [];
-      let ownSince: number | null = null;
       try {
-        const raw = d.kv ? ((await readJsonRecord(d.kv, OWN_KEY)) as { since?: unknown; list?: unknown } | null) : null;
+        const raw = d.kv ? ((await readJsonRecord(d.kv, OWN_KEY)) as { list?: unknown } | null) : null;
         if (Array.isArray(raw?.list)) own = (raw.list as SlackAlert[]).filter((a) => !!a && typeof a.at === "number" && typeof a.text === "string");
-        if (typeof raw?.since === "number") ownSince = raw.since;
       } catch {
         /* not JSON, or the store did not answer: the alerts alone, and nothing said about replies */
       }
       const list = [...(await allAlerts()), ...own.map((a): SlackAlert => ({ ...a, mine: true }))].filter((a) => t - a.at < 7 * 24 * 3600_000);
-      return { list: list.sort((a, b) => b.at - a.at), ownSince };
+      return list.sort((a, b) => b.at - a.at);
     },
     /** The alerts of the last 24 hours, for the owner's SLACK command and the assistant's context. */
     recent: async (): Promise<string[]> => {

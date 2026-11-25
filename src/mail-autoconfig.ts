@@ -380,7 +380,7 @@ export function mountMailConnect(app: Express, d: MailConnectDeps | null): void 
     }
     if (!d.saver) return void res.json({ ok: true, restarting: false });
     // An earlier sign-in with Microsoft or Google is removed: kept, it would win over this password (src/imap.ts loadImapConfig).
-    const slot = mailSlot(d.env ?? {}, {
+    const slot = mailSlot(d.saver.now?.() ?? d.env ?? {}, {
       IMAP_HOST: host, IMAP_USER: user, IMAP_PASSWORD: pass, IMAP_PORT: port === 993 ? "" : String(port), IMAP_OAUTH: "", IMAP_REFRESH_TOKEN: "",
     });
     if (!slot) return void res.status(409).json({ ok: false, why: "save", error: WORDS()("twoMailboxes") });

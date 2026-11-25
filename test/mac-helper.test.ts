@@ -82,3 +82,59 @@ test("in a browser with the helper here, the page's asks go to Pako's relay; wit
     useHelper(null);
   }
 });
+
+test("the panel's own time limit is kept; an ask whose page stopped waiting, or older than two minutes, never reaches a helper", async () => {
+  let t = 0;
+  const p = await serve((app) => mountMacHelper(app, { ...auth, holdMs: 50, now: () => t }));
+  try {
+    await p.post("/panel/api/helper/next", {}, APP); // the helper is here
+    const started = Date.now();
+    assert.deepEqual((await p.post("/panel/api/helper/ask", { message: DISCOVER, want: "pakoDiscovered", ms: 300 })).body, { value: null });
+    assert.ok(Date.now() - started < 2000, "answered at the page's limit, not after two minutes");
+    assert.deepEqual((await p.post("/panel/api/helper/next", {}, APP)).body, { asks: [] }, "the timed-out ask is not delivered later");
+    // Sent (no answer waited for) and left: delivered within two minutes, never after.
+    await p.post("/panel/api/helper/ask", { message: { type: "openURL", url: "x-apple.systempreferences:" } });
+    t += 121_000;
+    await p.post("/panel/api/helper/next", {}, APP); // still here (it asked again)
+    assert.deepEqual((await p.post("/panel/api/helper/next", {}, APP)).body, { asks: [] });
+  } finally {
+    await p.close();
+  }
+});
+
+test("a second helper is told another is waiting (409), and a helper whose held request closes is gone at once", async () => {
+  const p = await serve((app) => mountMacHelper(app, { ...auth, holdMs: 5000 }));
+  try {
+    await p.post("/panel/api/helper/next", {}, APP).catch(() => null);
+    const ac = new AbortController();
+    const held = fetch(`${p.base}/panel/api/helper/next`, { method: "POST", headers: APP, signal: ac.signal }).catch(() => null);
+    await new Promise((r) => setTimeout(r, 100));
+    assert.equal((await p.post("/panel/api/helper/next", {}, APP)).status, 409, "two helpers do not answer each other's waits");
+    assert.deepEqual((await p.get("/panel/api/helper")).body, { here: true });
+    ac.abort();
+    await held;
+    await new Promise((r) => setTimeout(r, 100));
+    assert.deepEqual((await p.get("/panel/api/helper")).body, { here: false }, "it quit: the panel stops offering it");
+  } finally {
+    await p.close();
+  }
+});
+
+test("through the helper, the page's ask carries its own time limit and is given up after it", async () => {
+  const sent: any[] = [];
+  const win = {
+    fetch: (_url: string, init: { body: string; signal?: AbortSignal }) => {
+      sent.push(JSON.parse(init.body));
+      return new Promise((_r, reject) => init.signal?.addEventListener("abort", () => reject(new Error("aborted"))));
+    },
+  };
+  useHelper({ here: true });
+  try {
+    const started = Date.now();
+    assert.equal(await askApp(win as unknown as Win, { type: "use", what: "contacts" }, "pakoUsed", 200), null);
+    assert.ok(Date.now() - started < 4000);
+    assert.equal(sent[0].ms, 200);
+  } finally {
+    useHelper(null);
+  }
+});

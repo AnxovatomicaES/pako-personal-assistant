@@ -9,12 +9,14 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import express from "express";
 import { mobileFeed } from "../src/app/mobile.ts";
 import { connectionStates, mailSlot, readStored, writeStored } from "../src/connections.ts";
+import { privacy } from "../src/data.ts";
 import { connectionDetails } from "../src/connections-details.ts";
 import { mountConnectionsPanel, type ConnectionsSaver } from "../src/connections-panel.ts";
 import { createControl } from "../src/control.ts";
-import { createImapReader, loadImapConfig, type ImapClient, type ImapConfig, type ImapConnect } from "../src/imap.ts";
+import { createImapReader, loadImapConfig, sentRef, type ImapClient, type ImapConfig, type ImapConnect } from "../src/imap.ts";
 import { createAutoconfig, mountMailConnect } from "../src/mail-autoconfig.ts";
 import { createMailbox } from "../src/mail.ts";
 import { auth, memoryKv, serve } from "./helpers/connect-rig.ts";
@@ -177,4 +179,56 @@ test("the phone's draft says which address to reply from: the mailbox the loop's
   const plain = await mobileFeed({ ...{ engine: () => engine as never, door: { press: async () => ({}) } as never, brief: () => null, draftLoop: async () => null },
     timeZone: "Europe/Madrid", name: () => "Ana", gentle: async () => false, telegram: () => false, now: () => NOW }).today();
   assert.equal(plain.loops![0]!.from, undefined);
+});
+
+test("mail from the owner's other address is the owner's own in either mailbox, not a stranger's to triage", async () => {
+  const self = Buffer.from("From: Ana <ana@example.com>\r\nTo: ana@work.example\r\nSubject: note to self\r\nMessage-ID: <x1@example.com>\r\n"
+    + "Authentication-Results: mx.work.example; dkim=pass header.d=example.com; dmarc=pass header.from=example.com\r\n"
+    + "Content-Type: text/plain\r\n\r\nremember the contract\r\n", "utf8");
+  const read = async (alsoOwn?: string) => {
+    const queued: string[] = [];
+    const work = fakeServer([{ uid: 1, source: self }]);
+    const r = createImapReader({
+      config: ANA_WORK, stateKey: "assistant-imap2", kv: memoryKv(), box: createMailbox(null), control: createControl(null), now: () => NOW,
+      connect: work.connect, enqueue: async (m) => (queued.push(m.id), true), ...(alsoOwn ? { alsoOwn } : {}),
+    });
+    await r.poll();
+    return queued.length;
+  };
+  assert.equal(await read(), 1, "without the other address: queued as news (the bug)");
+  assert.equal(await read("ana@example.com"), 0, "with it: the owner's own");
+});
+
+test("the slot is chosen from what is saved now: a mailbox connected since the start is not overwritten, a disconnected one is free", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pako-imap2-now-"));
+  assert.ok(writeStored(dir, { IMAP_HOST: "imap.example.com", IMAP_USER: "ana@example.com", IMAP_PASSWORD: "app-pass-ana-1234" }));
+  // Started before any mailbox: the start's settings name none.
+  const saver = mountConnectionsPanel(express(), { signedIn: auth.signedIn, env: { PAKO_HOME: dir, PAKO_SECRET_STORE: "file" }, lang: () => "en", dir,
+    fromStore: () => new Set<string>(), restart: () => false })!;
+  assert.equal(mailSlot(saver.now!(), { IMAP_USER: "ana@work.example" })?.id, "imap2", "the first, saved since the start, is kept");
+  // Started with the first mailbox, then disconnected in the panel: the start's IMAP_USER no longer counts.
+  assert.ok(writeStored(dir, { IMAP_HOST: null, IMAP_USER: null, IMAP_PASSWORD: null } as unknown as Record<string, string>));
+  const after = mountConnectionsPanel(express(), { signedIn: auth.signedIn, env: { PAKO_HOME: dir, PAKO_SECRET_STORE: "file", IMAP_USER: "ana@example.com" },
+    lang: () => "en", dir, fromStore: () => new Set(["IMAP_USER"]), restart: () => false })!;
+  assert.equal(mailSlot(after.now!(), { IMAP_USER: "ana@work.example" })?.id, "imap");
+});
+
+test("the privacy page names both mailboxes' servers, and the second alone counts as a mailbox connection", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pako-imap2-priv-"));
+  const line = (env: Record<string, string>) => privacy({ dir, env, lang: "en" }).sends.find((x) => x.name === "IMAP")!;
+  assert.deepEqual([line({ IMAP2_HOST: "imap.work.example", IMAP2_USER: "ana@work.example" }).on, line({ IMAP2_HOST: "imap.work.example", IMAP2_USER: "a" }).detail],
+    [true, "imap.work.example"]);
+  assert.equal(line({ IMAP_HOST: "imap.example.com", IMAP_USER: "a", IMAP2_HOST: "imap.work.example", IMAP2_USER: "b" }).detail, "imap.example.com, imap.work.example");
+});
+
+test("the dashboard does not ask for a mailbox when only the second one is connected", async () => {
+  const { oneSuggestion } = (await import(new URL("../src/panel/dashboard-model.js", import.meta.url).href)) as { oneSuggestion: (s: unknown) => { id: string } | null };
+  const s = oneSuggestion([{ id: "calendar", state: "connected" }, { id: "imap2", state: "connected" }]);
+  assert.notEqual(s?.id, "imap");
+});
+
+test("sent mail in the catch-up: the second mailbox's refs carry its address, the first's are as before (no repeat loops after an update)", () => {
+  assert.equal(sentRef("assistant-imap", "ana@example.com", 42), "imap-sent:42");
+  assert.equal(sentRef(undefined, "ana@example.com", 42), "imap-sent:42");
+  assert.equal(sentRef("assistant-imap2", "ana@work.example", 42), "imap-sent:ana@work.example:42");
 });

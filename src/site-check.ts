@@ -2,22 +2,27 @@
 // "still 503 this morning" or "it answers again", not only what last night's email said.
 //
 // Security: the address comes from an email, so it is other people's input. The check is kept as narrow as it can be:
-// - Only emails from known uptime-monitoring services (MONITORS, by the sender's domain) are looked at, and only when they say a site is down.
+// - Only emails from known uptime-monitoring services (MONITORS, by the domain of the sender's address, never its display name), not taken for
+//   a scam, are looked at, and only when they say a site is down. A link of a mailing service (TRACKERS) is never the site.
 // - https only, port 443 only, no user name or password in the address, no IP-literal hosts; the query and fragment are dropped.
 // - The host is resolved once and EVERY address it resolves to must be public: loopback, private, link-local, carrier-grade NAT, unique-local,
 //   multicast, unspecified, documentation and NAT64 ranges are refused. The request then goes to that very address (TLS still checks the
 //   certificate against the host name), so a second DNS answer cannot point it inside the owner's network.
-// - Redirects are not followed (a 3xx is the answer); a short timeout; only the status code is read, the body is never kept.
+// - Redirects are not followed (a 3xx is the answer); one deadline for the whole request, however slowly a server answers; only the status code
+//   is read, the body is never kept.
 
 import { lookup } from "node:dns/promises";
 import { request } from "node:https";
 import { isIP } from "node:net";
+import { senderAddress } from "./mail-categories.ts";
 
 /** Senders whose "down" emails are uptime alerts (the domain of the From address, or a parent of it). */
-const MONITORS = [
-  "uptimerobot.com", "betteruptime.com", "betterstack.com", "pingdom.com", "statuscake.com", "freshping.io", "hetrixtools.com", "cronitor.io",
-  "healthchecks.io", "updown.io", "uptime.com", "site24x7.com", "uptimekuma.com", "statuspage.io", "checklyhq.com",
-];
+const MONITORS = ["uptimerobot.com", "betteruptime.com", "betterstack.com", "pingdom.com", "statuscake.com", "freshping.io", "hetrixtools.com", "cronitor.io",
+  "healthchecks.io", "updown.io", "uptime.com", "site24x7.com", "uptimekuma.com", "statuspage.io", "checklyhq.com"];
+/** Mailing services' click-tracking and list hosts: in a monitor's email, never the site it is about. */
+const TRACKERS = ["sendgrid.net", "sendgrid.com", "mailgun.org", "mailgun.net", "mandrillapp.com", "list-manage.com", "mcsv.net", "mailchimp.com",
+  "sparkpostmail.com", "amazonses.com", "awstrack.me", "mailjet.com", "mjt.lu", "sendinblue.com", "brevo.com", "postmarkapp.com", "hubspotlinks.com", "rs6.net",
+  "exacttarget.com"];
 const TIMEOUT_MS = 6000;
 
 export type SiteCheck = { status: number } | { error: "refused" | "timeout" | "unreachable" };
@@ -31,23 +36,25 @@ export interface MonitorAlert {
 }
 
 /** An uptime monitor's email about a site going down or coming back, or null. */
-export function monitorAlert(m: { from: string; subject: string; summary?: string; preview?: string }): MonitorAlert | null {
-  const domain = /@([a-z0-9.-]+)/i.exec(m.from)?.[1]?.toLowerCase().replace(/\.$/, "");
-  const monitor = domain ? MONITORS.find((x) => domain === x || domain.endsWith(`.${x}`)) : undefined;
+export function monitorAlert(m: { from: string; subject: string; summary?: string; preview?: string; scam?: boolean }): MonitorAlert | null {
+  const domain = /@([a-z0-9.-]+)$/i.exec(senderAddress(m.from))?.[1]?.replace(/\.$/, "");
+  const monitor = domain && !m.scam ? MONITORS.find((x) => domain === x || domain.endsWith(`.${x}`)) : undefined;
   if (!monitor) return null;
   const head = m.subject;
   const all = `${m.subject} ${m.summary ?? ""} ${m.preview ?? ""}`;
   const downWord = /\bdown\b|outage|unreachable|not responding|\b5\d\d\b/i;
   const upWord = /\bup\b|back online|recovered|resolved|is back/i;
-  const down = downWord.test(head) ? !(upWord.test(head) && !/\bdown\b/i.test(head)) : upWord.test(head) ? false : downWord.test(all) ? true : null;
+  // "[Resolved] Down: x", "Monitor is UP: x (was down 12 min)": a subject that says it is over wins over the word "down" in it.
+  const over = /\bresolved\b|\brecovered\b|\bis (back )?up\b|\bback (up|online)\b|^\W*up\b/i.test(head);
+  const down = over ? false : downWord.test(head) ? true : upWord.test(head) ? false : downWord.test(all) ? true : null;
   if (down === null) return null;
-  const url = siteUrl(all, monitor);
+  const url = siteUrl(head, monitor) ?? siteUrl(all, monitor);
   return url ? { url: url.href, host: url.hostname, down } : null;
 }
 
 /** The first https address in the text, else the first host name that is not the monitor's own; http, credentials or another port: none. */
 function siteUrl(text: string, monitor: string): URL | null {
-  const own = (h: string) => h === monitor || h.endsWith(`.${monitor}`);
+  const own = (h: string) => [monitor, ...TRACKERS].some((x) => h === x || h.endsWith(`.${x}`));
   const urls = /\b[a-z][a-z0-9+.-]*:\/\/[^\s<>"'()]+/gi;
   for (const raw of text.match(urls) ?? []) {
     const u = safeUrl(raw.replace(/[.,;:]+$/, ""));
@@ -55,7 +62,7 @@ function siteUrl(text: string, monitor: string): URL | null {
   }
   // A bare host name, outside any address already refused (an http one is never checked as https).
   for (const h of text.replace(urls, " ").match(/\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,24}\b/gi) ?? []) {
-    if (own(h.toLowerCase())) continue;
+    if (own(h.toLowerCase().replace(/\.$/, ""))) continue;
     const u = safeUrl(`https://${h}/`);
     if (u) return u;
   }
@@ -89,13 +96,15 @@ export function privateAddress(ip: string): boolean {
   const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(x)?.[1];
   if (mapped) return privateAddress(mapped);
   // "::", "::1" and every other address starting "::" (IPv4-compatible, mapped forms not caught above) are refused.
-  return x.startsWith("::") || /^f[cd]/.test(x) || /^fe[89ab]/.test(x) || x.startsWith("ff") || x.startsWith("64:ff9b:") || x.startsWith("2001:db8:");
+  // Also 6to4 (2002::/16, which can carry a private IPv4), site-local (fec0::/10), discard (100::/64) and Teredo (2001:0::/32).
+  return x.startsWith("::") || /^f[cd]/.test(x) || /^fe[89a-f]/.test(x) || x.startsWith("ff") || x.startsWith("64:ff9b:") || x.startsWith("2001:db8:")
+    || x.startsWith("2002:") || /^100:(0:0:0:|:)/.test(x) || /^2001:(0+:|:)/.test(x);
 }
 
 export interface SiteCheckDeps {
   resolve?: (host: string) => Promise<{ address: string; family: number }[]>;
   /** The GET itself, to that address with that host name: its status. Tests replace it. */
-  get?: (address: string, family: number, url: URL) => Promise<number>;
+  get?: (address: string, family: number, url: URL, timeoutMs?: number) => Promise<number>;
   timeoutMs?: number;
 }
 
@@ -113,24 +122,27 @@ export async function checkSite(raw: string, d: SiteCheckDeps = {}): Promise<Sit
   if (!addrs.length || addrs.some((a) => privateAddress(a.address))) return { error: "refused" };
   const first = addrs[0]!;
   try {
-    return { status: await (d.get ?? getStatus)(first.address, first.family, url) };
+    return { status: await (d.get ?? getStatus)(first.address, first.family, url, d.timeoutMs) };
   } catch (err) {
     // A timeout is said as such; anything else (refused connection, TLS failure, reset) as unreachable.
     return { error: (err as Error).message === "timeout" ? "timeout" : "unreachable" };
   }
 }
 
-function getStatus(address: string, family: number, url: URL, timeoutMs = TIMEOUT_MS): Promise<number> {
+/** The GET itself (`port` only for tests: always 443). */
+export function getStatus(address: string, family: number, url: URL, timeoutMs = TIMEOUT_MS, port = 443): Promise<number> {
   return new Promise((resolve, reject) => {
     const req = request({
-      host: address, family, port: 443, servername: url.hostname, path: url.pathname || "/", method: "GET", agent: false,
-      headers: { host: url.hostname, "user-agent": "Pako site check", accept: "*/*" }, timeout: timeoutMs,
+      host: address, family, port, servername: url.hostname, path: url.pathname || "/", method: "GET", agent: false,
+      headers: { host: url.hostname, "user-agent": "Pako site check", accept: "*/*" },
     }, (res) => {
+      clearTimeout(deadline);
       resolve(res.statusCode ?? 0);
       res.destroy();
     });
-    req.on("timeout", () => req.destroy(new Error("timeout")));
-    req.on("error", reject);
+    // One deadline for the whole request: a server that sends its headers a byte at a time cannot hold the brief.
+    const deadline = setTimeout(() => req.destroy(new Error("timeout")), timeoutMs);
+    req.on("error", (err) => (clearTimeout(deadline), reject(err)));
     req.end();
   });
 }

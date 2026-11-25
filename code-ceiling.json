@@ -1,6 +1,6 @@
 {
-  "lines": 92866,
+  "lines": 92932,
   "since": "2026-11-23",
   "why": "Feature freeze: Pako's code may not grow past its size on 2026-11-23. New code replaces old. Counted by test/code-ceiling.test.ts: non-blank lines of the tracked .ts, .js, .cjs, .mjs, .swift, .sh and .ps1 files in src/, assistant/, desktop/, bin/, voice-worker/src/ and the repository root (bin/mirror.ts, private-only, is left out). Tests and docs do not count. Lower this number when the code shrinks; raise it only with the owner's yes.",
-  "raised": "2026-11-24: +404 for the Slack and Notion connector intake, with the owner's yes. 2026-11-25: +318 for the Mac helper (+250) and the second IMAP mailbox (+68), with the owner's yes. 2026-11-25: +240 for the brief upgrade (both sides of Slack, done-yet checks, alert re-checks), with the owner's yes."
+  "raised": "2026-11-24: +404 for the Slack and Notion connector intake, with the owner's yes. 2026-11-25: +318 for the Mac helper (+250) and the second IMAP mailbox (+68), with the owner's yes. 2026-11-25: +240 for the brief upgrade (both sides of Slack, done-yet checks, alert re-checks), with the owner's yes. 2026-11-25: +32 for the brief fixes after the bug hunt (per-conversation reply checks, own-message cap, site-check deadline), with the owner's yes. 2026-11-25: +34 for the Mac helper and second mailbox bug-hunt fixes, with the owner's yes."
 }

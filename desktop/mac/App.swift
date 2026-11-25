@@ -98,7 +98,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
         let rem = RemindersFeed(defaults: runner.defaults, live: !AppDelegate.headless && AppDelegate.report == nil && AppDelegate.fakeSources == nil)
         return MacAsks(sources: sources, calendars: cal, reminders: rem) { [weak self] method, path, body, done in
-            guard let self = self, self.signedIn else { return done(false, nil) }
+            // The calendars' and Reminders' feeds wait for a signed-in panel; a look or an import the page asked for goes at once (as before).
+            guard let self = self, self.signedIn || path.hasPrefix("/panel/api/discovery") || path == "/panel/api/people/import" else { return done(false, nil) }
             self.panelSend(self.webView, method, path, body, done: done)
         }
     }()

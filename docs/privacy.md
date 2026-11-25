@@ -120,7 +120,7 @@ also capped, as said.
 | `mail-invites` | Invitations caught from your mail (title, time, organizer, place), shown on the dashboard until your calendar has them. Never the mail itself | 60 days |
 | `slack-alerts` | Slack messages it told you about (the last 100) | 14 days |
 | `slack-held` | Slack notices kept during quiet hours | 2 days |
-| `slack-own` | Your own Slack messages (the last 100 of the week), so the morning brief reads both sides of a conversation ("you told Ana you'd call", "nothing from you there since"); never shown as alerts | 8 days |
+| `slack-own` | Your own Slack messages (the last 100 of the week), so the morning brief reads both sides of a conversation ("you told Ana you'd call", "nothing from you there since"); never shown as alerts. A message you edit or delete in Slack is edited or removed here too when Slack's live events are on (a poll does not see edits) | 8 days |
 | `slack-poll` | Where Pako is in each Slack conversation it looks at (no message text) | 60 days |
 | `teams-poll` | Where Pako is in each Teams chat and channel it looks at, and the last read and error (no message text) | 60 days |
 | `apple-mail-poll` | Mail on this Mac: the last message already looked at (its number in Apple Mail's index), when it was turned on, the numbers of messages Mail had not downloaded yet, and the last read and error (no message text, subject or address) | 60 days |
@@ -209,7 +209,7 @@ Only to what you have connected. Each line is off until its settings are there.
 | **Your calendar's host** (ICS) | A request for your calendar by its private link; nothing of yours. | With `CALENDAR_ICS_URL` (in `.env` or the panel's Connections card). The panel names the host (or hosts) only: the rest of each link is its secret. |
 | **Mozilla** (autoconfig.thunderbird.net), then your mail's domain | Your mail address's domain (never the address), to find its server: Mozilla's database, then that domain's own `autoconfig` file and its MX records. | Only when you type an address in the guided mail connection. Kept a day in memory. |
 | **Zoho** Calendar | Pako reads your calendar; it doesn't write to it. | With the Zoho settings (`ZOHO_CLIENT_ID` and the rest). |
-| **A site an uptime monitor says is down** | One plain GET to that address (https only, the path without its query), to say in the morning brief whether it still fails; only the status code is read. Never a private or local address, never a redirect followed. | Only for an email from a known uptime-monitoring service (UptimeRobot, Better Stack, Pingdom and the like) saying a site is down, at most three sites a brief. |
+| **A site an uptime monitor says is down** | One plain GET to that address (https only, the path without its query), to say in the morning brief whether it still fails; only the status code is read. Never a private or local address, never a redirect followed. | Only for an email whose sender address (not its display name) is a known uptime-monitoring service (UptimeRobot, Better Stack, Pingdom and the like) saying a site is down, not taken for a scam; at most three sites a brief, six seconds each at most. |
 | **LiveKit / Retell** | On calls: your voice and the other person's, the numbers, and what Pako should say, through the speech services they use. | Only with the phone line set up (`LIVEKIT_URL` or `RETELL_API_KEY`; see `docs/personal-caller.md`). |
 
 **Mail on this Mac** (off until you turn it on) adds no service to this list either, and needs no password. Pako reads the mail Apple Mail
