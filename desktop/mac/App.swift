@@ -86,38 +86,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private var notifiedCount = 0
     private var noticePolls = 0
     private var settingsWindow: SettingsWindow?
-    /// When the dashboard's refresh last asked for the calendars' events (see .calendarPush).
-    private var lastCalendarPush = Date.distantPast
     // Discovery (Discovery.swift): what this Mac has, read only when the panel asks and the person said yes; a check-only run reads no
     // Calendars, Contacts or Mail. The chosen calendars' events go to Pako every ten minutes and when they change.
     private lazy var sources: any PakoSources = AppDelegate.fakeSources.flatMap { FileSources(path: $0, userHome: runner.userHome) }
         ?? MacSources(userHome: runner.userHome, live: !AppDelegate.headless && AppDelegate.report == nil)
-    private let discoverWork = DispatchQueue(label: "io.github.anxovatomicaes.pako.discover")
-    private var discovering = false
-    private lazy var calendarFeed: CalendarFeed = {
-        let f = CalendarFeed(sources: sources, ids: runner.defaults.stringArray(forKey: "calendarIDs") ?? []) { [runner] ids in
+    /// The panel's asks of this Mac (Asks.swift), the chosen calendars' feed and Apple Reminders (off until the person turns it on in the
+    /// panel; a check-only run never asks for it). Sent with the panel's own session, only while it is signed in.
+    private lazy var asks: MacAsks = {
+        let cal = CalendarFeed(sources: sources, ids: runner.defaults.stringArray(forKey: "calendarIDs") ?? []) { [runner] ids in
             runner.defaults.set(ids, forKey: "calendarIDs")
         }
-        f.post = { [weak self] body, done in
-            guard let self = self, self.signedIn else { return done(false) }
-            self.panelSend(self.webView, "POST", "/panel/api/calendar/local", body) { ok, _ in done(ok) }
+        let rem = RemindersFeed(defaults: runner.defaults, live: !AppDelegate.headless && AppDelegate.report == nil && AppDelegate.fakeSources == nil)
+        return MacAsks(sources: sources, calendars: cal, reminders: rem) { [weak self] method, path, body, done in
+            guard let self = self, self.signedIn else { return done(false, nil) }
+            self.panelSend(self.webView, method, path, body, done: done)
         }
-        f.exchange = { [weak self] results, done in
-            guard let self = self, self.signedIn else { return done(nil) }
-            self.panelSend(self.webView, "POST", "/panel/api/calendar/writes", ["results": results]) { ok, body in
-                done(ok ? (body?["writes"] as? [[String: Any]] ?? []) : nil)
-            }
-        }
-        return f
-    }()
-    /// Apple Reminders (Reminders.swift): off until the person turns it on in the panel; a check-only run never asks for it.
-    private lazy var remindersFeed: RemindersFeed = {
-        let f = RemindersFeed(defaults: runner.defaults, live: !AppDelegate.headless && AppDelegate.report == nil && AppDelegate.fakeSources == nil)
-        f.post = { [weak self] body, done in
-            guard let self = self, self.signedIn else { return done(nil) }
-            self.panelSend(self.webView, "POST", "/panel/api/reminders/local", body) { ok, answer in done(ok ? (answer ?? [:]) : nil) }
-        }
-        return f
     }()
     private var sigterm: DispatchSourceSignal?
 
@@ -776,10 +759,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
                 self.startClaudeWatch()
                 self.pollNotices()
                 self.resumeThings()
-                self.calendarFeed.start()
-                self.calendarFeed.push()
-                self.remindersFeed.start()
-                self.remindersFeed.sync()
+                self.asks.resume()
                 self.reportDiscovery()
                 self.walkConnections()
             }
@@ -909,53 +889,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     /// window.pakoCalendarSynced({events}), window.pakoImported({people}) (null on failure) and window.pakoReminders({ok, on, access}), each
     /// only when the page defines it.
     private func handle(_ msg: PakoMessage, from wv: WKWebView?) {
+        if asks.handle(msg, answer: { fn, value in self.answer(wv, fn, value) }) { return }
         switch msg {
-        case let .discover(what, openMail): discover(what, openMail: openMail, from: wv)
-        case let .calendarSelect(ids):
-            calendarFeed.select(ids) { n in self.answer(wv, "pakoCalendarSynced", n.map { ["events": $0, "calendars": ids.count] }) }
-        case .contactsImport: importContacts(from: wv)
-        case let .openURL(url): NSWorkspace.shared.open(url)
         // A page from before Settings moved into the main window still asks for "a window": it gets the main window on that page, the one
         // place Settings opens now.
         case .openSettingsWindow: showPanelSettings()
-        case .calendarPush:
-            // The dashboard's refresh: a new invitation reaches Pako now. Rate-limited, a page cannot make the app read EventKit in a loop.
-            if Date().timeIntervalSince(lastCalendarPush) >= 30 {
-                lastCalendarPush = Date()
-                calendarFeed.push()
-            }
         case let .openWindow(path):
             openPanelSettings(path)
             answer(wv, "pakoOpened", true)
-        case let .use(what, ids): use(what, ids: ids, from: wv)
-        case let .reminders(on):
-            remindersFeed.setOn(on) { r in self.answer(wv, "pakoReminders", r) }
-        case .panelWord: break
-        }
-    }
-
-    /// The connections page's "use this": the calendars' events go to Pako from now on, the contacts are imported, or Zoom's recordings
-    /// (already found by the look; Pako reads their transcripts from the folder the discovery names). Answered pakoUsed({what, ok, count}); for
-    /// the contacts with what Pako's import did too ({added, merged, count}: count is how many people Pako knows from this Mac now).
-    private func use(_ what: String, ids: [String], from wv: WKWebView?) {
-        let used = { (ok: Bool, n: Int, extra: [String: Any]?) in
-            var out: [String: Any] = ["what": what, "ok": ok, "count": n]
-            for k in ["added", "merged", "count"] { if let v = extra?[k] as? Int { out[k] = v } }
-            self.answer(wv, "pakoUsed", out)
-        }
-        switch what {
-        case "calendars":
-            calendarFeed.select(ids) { n in
-                self.answer(wv, "pakoCalendarSynced", n.map { ["events": $0, "calendars": ids.count] })
-                used(n != nil, n ?? 0, nil)
-            }
-        case "contacts": importContacts(from: wv, used: used)
-        default:
-            let s = sources
-            discoverWork.async {
-                let n = s.zoomFolders().map(zoomRecordingCount)
-                DispatchQueue.main.async { used(n != nil, n ?? 0, nil) }
-            }
+        default: break
         }
     }
 
@@ -978,48 +920,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         wv.callAsyncJavaScript(js, arguments: ["path": path, "method": method, "body": body ?? NSNull()], in: nil, in: .defaultClient) { r in
             guard case let .success(v) = r, let d = v as? [String: Any] else { return done(false, nil) }
             done(d["ok"] as? Bool == true, d["body"] as? [String: Any])
-        }
-    }
-
-    /// One look (the person said yes in the panel), on its own queue: a macOS prompt may wait for them there. What Pako keeps is read first
-    /// and this look put on top of it (mergeDiscovery), then posted, then given to the page.
-    private func discover(_ what: [String], openMail: Bool, from wv: WKWebView?) {
-        guard let wv = wv, !discovering else { return }
-        discovering = true
-        let s = sources
-        discoverWork.async {
-            let fresh = runDiscovery(what: what, openMail: openMail, sources: s, now: Date())
-            DispatchQueue.main.async {
-                self.panelSend(wv, "GET", "/panel/api/discovery", nil) { _, kept in
-                    let all = mergeDiscovery(kept: kept ?? [:], fresh: fresh)
-                    self.panelSend(wv, "POST", "/panel/api/discovery", all) { _, _ in
-                        self.discovering = false
-                        self.answer(wv, "pakoDiscovered", all)
-                    }
-                }
-            }
-        }
-    }
-
-    /// The contacts, after the person confirmed the import in the panel: read (macOS asks first, if it never did), shaped and posted.
-    private func importContacts(from wv: WKWebView?, used: ((Bool, Int, [String: Any]?) -> Void)? = nil) {
-        guard let wv = wv else { return }
-        let s = sources
-        discoverWork.async {
-            if s.contactsPermission() == "notAsked" { _ = s.requestContacts() }
-            let people = shapePeople(s.people())
-            DispatchQueue.main.async {
-                guard s.contactsPermission() == "granted" else {
-                    used?(false, 0, nil)
-                    return self.answer(wv, "pakoImported", nil)
-                }
-                // The person confirmed the import in the panel ("Import N people"): written now (the route's preview is for a page that
-                // asks first).
-                self.panelSend(wv, "POST", "/panel/api/people/import", ["people": people, "confirm": true]) { ok, body in
-                    self.answer(wv, "pakoImported", ok ? (body ?? ["people": people.count]) : nil)
-                    used?(ok, people.count, body)
-                }
-            }
         }
     }
 
@@ -1288,7 +1188,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         guard let base = AppDelegate.report, !discoveryReported else { return }
         discoveryReported = true
         let s = sources
-        discoverWork.async {
+        asks.work.async {
             let fresh = runDiscovery(what: discoverKinds, openMail: false, sources: s, now: Date())
             DispatchQueue.main.async {
                 self.panelSend(self.webView, "POST", "/panel/api/discovery", mergeDiscovery(kept: [:], fresh: fresh)) { ok, _ in

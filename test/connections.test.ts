@@ -68,7 +68,7 @@ const waitFor = async (ok: () => boolean, ms = 3000): Promise<boolean> => {
 };
 
 test("catalogue: Claude, calendar, mail, Slack, Zoom, Teams, Messages, tables and pointers to Telegram and WhatsApp; no phone line; every name and how-to in both languages", () => {
-  assert.deepEqual(CATALOGUE.map((c) => c.id), ["claude", "calendar", "google", "mail", "imap", "applemail", "resend", "slack", "zoom", "teams", "imessage", "tables", "telegram", "whatsapp"]);
+  assert.deepEqual(CATALOGUE.map((c) => c.id), ["claude", "calendar", "google", "mail", "imap", "imap2", "applemail", "resend", "slack", "zoom", "teams", "imessage", "tables", "telegram", "whatsapp"]);
   for (const k of ["ANTHROPIC_API_KEY", "CALENDAR_ICS_URL", "AGENTMAIL_API_KEY", "AGENTMAIL_INBOX", "SLACK_USER_TOKEN", "ZOOM_CLIENT_SECRET", "GOOGLE_PLACES_API_KEY"]) {
     assert.ok(KEYS.has(k), k);
   }

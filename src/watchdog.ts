@@ -37,8 +37,8 @@ export type HealthReport = (ok: boolean, detail?: string, since?: number) => voi
 // slack: Slack's Web API with the user token (searches, the half-hourly auth.test); slackEvents: Slack's events by Socket Mode (SLACK_APP_TOKEN).
 // Two tokens, two parts: a working search must never close an incident of a refused Socket Mode, nor a hello one of a revoked user token.
 export type PartKey =
-  | "bridge" | "claude" | "store" | "whatsapp" | "telegram" | "calendar" | "mail" | "imap" | "slack" | "slackEvents" | "zoom" | "teams" | "update";
-const ORDER: PartKey[] = ["bridge", "claude", "store", "whatsapp", "telegram", "calendar", "mail", "imap", "slack", "slackEvents", "zoom", "teams", "update"];
+  | "bridge" | "claude" | "store" | "whatsapp" | "telegram" | "calendar" | "mail" | "imap" | "imap2" | "slack" | "slackEvents" | "zoom" | "teams" | "update";
+const ORDER: PartKey[] = ["bridge", "claude", "store", "whatsapp", "telegram", "calendar", "mail", "imap", "imap2", "slack", "slackEvents", "zoom", "teams", "update"];
 /** Told whatever the hour: without these Pako cannot answer at all, or forgets what it is told. */
 const URGENT = new Set<PartKey>(["bridge", "store"]);
 /** Parts whose failure is counted in rounds. */
@@ -169,6 +169,7 @@ const T = texts(
     "name.calendar": "The calendar",
     "name.mail": "Pako's inbox (AgentMail)",
     "name.imap": "Your mailbox (IMAP)",
+    "name.imap2": "Your second mailbox (IMAP)",
     "name.slack": "Slack",
     "name.slackEvents": "Slack's connection for new messages (Socket Mode)",
     "name.zoom": "Zoom",
@@ -204,6 +205,7 @@ const T = texts(
     "todo.calendar": "check the calendar link or the Zoho connection {where}.",
     "todo.mail": "check the AgentMail key (AGENTMAIL_API_KEY) {where}.",
     "todo.imap": "check the mail user name and app password {where}.",
+    "todo.imap2": "check the second mailbox's user name and app password {where}.",
     "todo.slack": "check the Slack token (SLACK_USER_TOKEN) {where}: it may have been revoked.",
     "todo.slackSocket": "check the Socket Mode token (SLACK_APP_TOKEN) {where}, and that Socket Mode is still on in the Slack app.",
     "todo.zoom": "check the Zoom app (ZOOM_ACCOUNT_ID, ZOOM_CLIENT_ID and ZOOM_CLIENT_SECRET) {where}.",

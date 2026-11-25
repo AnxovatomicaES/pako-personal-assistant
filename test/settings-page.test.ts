@@ -359,7 +359,7 @@ test("settings and the Mac app: the mail button may open Mail; a refused permiss
   assert.match(js, /if \(perm !== "granted" \|\| \(!n && !contactsLooked\)\)/);
   assert.match(js, /if \(!n\) \{\s*return step\(\{ title: t\("contacts\.s1"\), text: t\("contacts\.none"\)/);
   // The contacts' "done" says what Pako's import counted, which the app passes on.
-  assert.match(read("desktop/mac/App.swift"), /for k in \["added", "merged", "count"\]/);
+  assert.match(read("desktop/mac/Asks.swift"), /for k in \["added", "merged", "count"\]/);
   assert.match(js, /go\("contacts", 1, \{ added: num\(r\.added\), merged: num\(r\.merged\) \}\)/);
 });
 

@@ -41,7 +41,8 @@ function keysInTheCode(): { keys: Set<string>; unread: string[] } {
       const arg = m[1]!;
       if (passThrough.has(`${file} ${arg}`)) continue;
       const literal = /^["`]([a-z][a-z0-9-]*:?)["`]$/.exec(arg);
-      const name = /^([A-Za-z_][A-Za-z0-9_]*)(\(.*\))?$/.exec(arg);
+      // `d.stateKey ?? STATE_KEY` (src/imap.ts): the constant is the key, the other is the second mailbox's (named below).
+      const name = /^(?:[\w.]+ \?\? )?([A-Za-z_][A-Za-z0-9_]*)(\(.*\))?$/.exec(arg);
       let key: string | undefined = literal?.[1];
       if (!key && name) {
         const def = new RegExp(`(?:^|\\n)\\s*(?:export )?const ${name[1]}\\s*=\\s*(?:\\([^)]*\\)(?::\\s*\\w+)?\\s*=>\\s*)?["\`]([a-z][a-z0-9-]*:?)`).exec(src);
@@ -61,7 +62,8 @@ test("every key the modules keep in the store is in DATA_KEYS, and every one lis
   const listed = new Set(DATA_KEYS.map((f) => f.key));
   assert.deepEqual([...keys].filter((k) => !listed.has(k)).sort(), [], "a key the code keeps that DATA_KEYS (src/data.ts) does not describe");
   // brief.ts only reads calendar-state (its old place), which calendar.ts writes; the store guard's two keys go through the pass-through.
-  const written = new Set([...keys, "pako-store-id", "pako-store-era"]);
+  // The second mailbox's reader keeps its place under its own key, given by src/app/mail.ts (`assistant-${part}`).
+  const written = new Set([...keys, "pako-store-id", "pako-store-era", "assistant-imap2"]);
   assert.deepEqual([...listed].filter((k) => !written.has(k)).sort(), [], "DATA_KEYS lists a key no module writes any more");
   // The store guard's list of keys a Pako in use keeps is part of it too.
   const signs = /const SIGNS = \[([\s\S]*?)\];/.exec(read("src/store-guard.ts"))![1]!;

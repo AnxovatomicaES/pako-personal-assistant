@@ -355,6 +355,8 @@ export interface RecentMail {
   messageId?: string;
   /** Where the owner's copy lives (Gmail, iCloud, Outlook), when it can be told: the "Open in…" link depends on it. */
   provider?: MailProvider;
+  /** The owner's address it was read from (src/imap.ts): with two mailboxes, the one a reply goes out from. */
+  mailbox?: string;
   /** Moved by the owner (Move to…): a later triage answer does not move it back. */
   moved?: boolean;
   /** For Needs you: the triage's one-line ask and its kind (reply, decide, do); never written by anything but the triage. */
@@ -791,6 +793,8 @@ export interface IntakeDeps {
    * Mail, Pako's own inbox): the topmost counts.
    */
   authServer?: string | undefined;
+  /** The owner's address of the mailbox it came from (src/imap.ts): kept with the email, so a reply says which address to send it from. */
+  mailbox?: string | undefined;
   /** An email a sender rule filed with no run of Claude (src/mail-followups.ts inbox decides whether the follow-ups read it). */
   filed?: ((id: string, category: MailCategory) => Promise<unknown>) | undefined;
 }
@@ -849,7 +853,7 @@ export async function takeMail(
   const toLine = oneLine(headerValues(m, ["to"]).join(", ") || (m.to ?? []).map(String).join(", "), 200);
   const ccLine = oneLine(headerValues(m, ["cc"]).join(", "), 200);
   const where = {
-    ...(messageId ? { messageId } : {}), ...(provider ? { provider } : {}), thread, ...(bulk ? { bulk: true } : {}),
+    ...(messageId ? { messageId } : {}), ...(provider ? { provider } : {}), ...(d.mailbox ? { mailbox: d.mailbox } : {}), thread, ...(bulk ? { bulk: true } : {}),
     ...(toLine ? { to: toLine } : {}), ...(ccLine ? { cc: ccLine } : {}),
   };
   // Decided without a run of Claude (src/mail-categories.ts preClassify): a sender rule the owner taught, mail sent to a list, a known carrier's

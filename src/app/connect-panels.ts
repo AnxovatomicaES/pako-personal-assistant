@@ -15,6 +15,7 @@ import { mountDemoPanel } from "../demo.ts";
 import { createDiscoveryStore, mountDiscoveryPanel } from "../discovery.ts";
 import type { Lang } from "../i18n.ts";
 import { mountLabsPanel } from "../labs.ts";
+import { mountMacHelper } from "../mac-helper.ts";
 import { pakoHome } from "../local.ts";
 import { mountMailConnect } from "../mail-autoconfig.ts";
 import { mountMailOAuth } from "../mail-oauth.ts";
@@ -30,13 +31,13 @@ import type { AfterTelegram } from "./context.ts";
 
 export function wireConnectPanels(ctx: AfterTelegram) {
   const {
-    app, env, local, uiLang, labs, demo, dog, kv, control, timeZone, startName, givenName, mail, imap, imapRef, appleMailRef, box, slackRef, zoomRef, teamsRef, imessageRef,
+    app, env, local, uiLang, labs, demo, dog, kv, control, timeZone, startName, givenName, mail, imap, imap2, imapRef, appleMailRef, box, slackRef, zoomRef, teamsRef, imessageRef,
     reviewRef, macCal, calWrites, cal, calOn, calRef, icsRef, smartCfg, smartRef, followupsCfg, followupsRef, placesRef, tgRef, claudeConnect, door,
     claudeLive, panel,
   } = ctx;
   // What a running reader says is wrong now: the mailbox's refused login, Messages without Full Disk Access.
   const imapProblem = (l: Lang) => ({
-    imap: imapRef.reader?.problem(l) ?? null, applemail: appleMailRef.reader?.problem(l) ?? null, imessage: imessageRef.reader?.problem(l) ?? null,
+    imap: imapRef.reader?.problem(l) ?? null, imap2: imapRef.reader2?.problem(l) ?? null, applemail: appleMailRef.reader?.problem(l) ?? null, imessage: imessageRef.reader?.problem(l) ?? null,
   });
   // A calendar link and a Places key have no live check when saved: "connected" only once they have answered (the calendar's health part
   // read once; a Places search worked).
@@ -65,6 +66,8 @@ export function wireConnectPanels(ctx: AfterTelegram) {
       }
     : null);
   mountCalendarWrites(app, appAuth && calWrites ? { ...appAuth, writes: calWrites } : null);
+  // The Mac helper (Terminal installs without the Mac app): the panel's asks passed on to it, its answers brought back.
+  mountMacHelper(app, appAuth);
   mountLocalCalendarPanel(app, appAuth && macCal && discovery
     ? {
         ...appAuth, calendar: macCal, timeZone, lang: uiLang, control, discovery,
@@ -99,7 +102,7 @@ export function wireConnectPanels(ctx: AfterTelegram) {
       ...(followupsCfg.config ? { loops: () => (followupsRef.engine ? followupsRef.engine.open() : Promise.resolve([])) } : {}),
       people: () => door.people.store.read(true),
       facts: () => door.facts.read(),
-      self: () => [mail.config?.inbox, imap.config?.user].filter((x): x is string => !!x),
+      self: () => [mail.config?.inbox, imap.config?.user, imap2.config?.user].filter((x): x is string => !!x),
     },
     ...(smartCfg.config
       ? {
@@ -108,7 +111,7 @@ export function wireConnectPanels(ctx: AfterTelegram) {
         }
       : {}),
   });
-  mountMailConnect(app, appAuth ? { ...appAuth, lang: uiLang, saver } : null);
+  mountMailConnect(app, appAuth ? { ...appAuth, lang: uiLang, saver, env } : null);
   // Microsoft and Google mail by signing in with the provider (OAuth with PKCE, the browser back to this computer).
   mountMailOAuth(app, appAuth ? { ...appAuth, env, saver } : null);
   // Teams with the same Microsoft app: one button, Teams' permissions added to the Microsoft sign-in (src/teams-connect.ts).
@@ -145,7 +148,8 @@ export function wireConnectPanels(ctx: AfterTelegram) {
     ? {
         ...appAuth, env, lang: uiLang, dir: pakoHome(env), timeZone, saver, ...(local?.icsNet ? { icsNet: local.icsNet } : {}),
         imap: (l) => imapRef.reader?.info(l) ?? null,
-        checkMail: () => (imapRef.reader ? imapRef.reader.poll() : Promise.resolve(null)),
+        imap2: (l) => imapRef.reader2?.info(l) ?? null,
+        checkMail: () => Promise.all([imapRef.reader?.poll(), imapRef.reader2?.poll()]),
         ics: () => icsRef.source?.status() ?? [],
         ...(macCal
           ? { mac: async () => {
@@ -169,7 +173,7 @@ export function wireConnectPanels(ctx: AfterTelegram) {
     : null);
   // Mail on this Mac (src/apple-mail.ts): its card's state, and one look now after Full Disk Access was turned on.
   mountAppleMailPanel(app, appAuth ? {
-    ...appAuth, lang: uiLang, mac: process.platform === "darwin", reader: () => appleMailRef.reader, imapOn: () => !!imapRef.reader,
+    ...appAuth, lang: uiLang, mac: process.platform === "darwin", reader: () => appleMailRef.reader, imapOn: () => !!(imapRef.reader || imapRef.reader2),
   } : null);
   // Messages on this Mac (src/imessage.ts): its card's state, and one look now after Full Disk Access was turned on.
   mountImessagePanel(app, appAuth ? { ...appAuth, lang: uiLang, mac: process.platform === "darwin", reader: () => imessageRef.reader } : null);

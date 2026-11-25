@@ -25,7 +25,7 @@ const logWhatsapp = createLog("whatsapp");
 export function wireDoor(ctx: AfterChat) {
   const {
     app, env, local, uiLang, country, labs, waComputer, demo, dogRef, dog, kv, control, jobs, personal, wa, friends, plain, timeZone, givenName,
-    ownerName, mail, outgoing, imap, box, mailAddress, slack, slackRef, fakeSlack, zoom, zoomRef, reviewCfg, reviewsDoor, macCal, relayClientCfg,
+    ownerName, mail, outgoing, imap, imap2, box, mailAddress, slack, slackRef, fakeSlack, zoom, zoomRef, reviewCfg, reviewsDoor, macCal, relayClientCfg,
     relayRef, calDoorRef, calWrites, cal, calOn, calRef, backfillRef, briefCfg, briefNow, smartCfg, smartRef, followupsCfg, followupsRef, personRef,
     gentleRef, followupsDoor, mailFollowups, connectorsCfg, connectorsRef, proactiveCfg, lifeDoor, lessons, quality, rehearsalRef, judged, panelRef, booking, tgRef, usable, betaRef,
     fromEnv, learn, autonomyConfig, contactEmails, autonomySettings, claudeConnect, claudeKeeper, timeRef,
@@ -230,7 +230,7 @@ export function wireDoor(ctx: AfterChat) {
     loops: () => (followupsRef.engine ? followupsRef.engine.open() : Promise.resolve([])),
     lessons: (q) => lessons.lines(q),
     timeZone, lang: uiLang,
-    self: () => [givenName(), mail.config?.inbox, imap.config?.user].filter((x): x is string => !!x),
+    self: () => [givenName(), mail.config?.inbox, imap.config?.user, imap2.config?.user].filter((x): x is string => !!x),
   });
   if (relayClientCfg.config) {
     relayRef.c = labCode("relay").createRelayClient({ config: relayClientCfg.config, reminders: (until) => door.relayReminders(until) });

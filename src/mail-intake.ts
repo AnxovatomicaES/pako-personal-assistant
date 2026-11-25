@@ -32,6 +32,7 @@ export interface MailIntakeDeps {
   provider?: MailProvider | undefined;
   /** The mailbox's server (its IMAP host): off the big providers, only an Authentication-Results header that names it counts (src/mail-categories.ts authenticated). */
   authServer?: string | undefined;
+  mailbox?: IntakeDeps["mailbox"];
   filed?: IntakeDeps["filed"];
   /** Invitations caught from the mail (src/invites.ts). */
   invites?: InviteStore | undefined;
@@ -127,7 +128,8 @@ export function createMailIntake(d: MailIntakeDeps) {
     };
     const bf = o.catchUp ? d.backfill : undefined;
     const replied = !!o.replied;
-    return takeMail({ box: d.box, enqueue: d.enqueue, control: d.control, lang: d.lang, now: d.now, vip: d.vip, provider: d.provider, authServer: d.authServer, filed: d.filed }, o.id, m, o.account, {
+    const deps = { box: d.box, enqueue: d.enqueue, control: d.control, lang: d.lang, now: d.now, vip: d.vip, provider: d.provider, authServer: d.authServer };
+    return takeMail({ ...deps, mailbox: d.mailbox, filed: d.filed }, o.id, m, o.account, {
       quiet: !!o.quiet, ...(replied ? { replied: true } : {}), ...(bf ? { enqueue: (x: Inbound) => bf.add(x, { from, replied }) } : {}),
     });
   };

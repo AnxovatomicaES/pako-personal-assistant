@@ -213,7 +213,7 @@ export const WORDS = {
   "cal.fromMacHint": "The ones already in the Calendar app (iCloud, Google, Exchange…).",
   "cal.fromLink": "With a private link",
   "cal.fromLinkHint": "For Google, Outlook, iCloud or Zoho, from any computer.",
-  "cal.appCanDo": "From the Pako app for Mac you can pick your calendars in one tap.",
+  "cal.appCanDo": "From the Pako app for Mac, or with its helper (npm run mac-helper on the Mac), you can pick your calendars in one tap.",
   "cal.pickText": "Tick the ones you want Pako to see. You can change it any time.",
   "cal.otherSource": "Others",
   "cal.noneFound": "I didn't find calendars on this Mac. Try a link.",
@@ -436,7 +436,7 @@ export const WORDS = {
   "contacts.done": "Pako now knows {n} people from this Mac",
   "contacts.doneLine": "Now, when you say a name, Pako will know who it is.",
   "contacts.browser": "Pako already knows {n} people from your conversations. You see and correct them in the panel.",
-  "contacts.appCanDo": "From the Pako app for Mac you can import your contacts in one tap.",
+  "contacts.appCanDo": "From the Pako app for Mac, or with its helper (npm run mac-helper on the Mac), you can import your contacts in one tap.",
 
   "phone.title": "The phone line",
   "phone.text": "Pako can call a restaurant or a clinic for you. It needs a phone number and some server settings, so it's set up separately.",

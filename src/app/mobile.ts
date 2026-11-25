@@ -38,6 +38,8 @@ export interface MobileFeedDeps {
   name: () => string;
   gentle: () => Promise<boolean>;
   telegram: () => boolean;
+  /** With two mailboxes: the owner's address an email was read from, by its id (src/mail.ts mailbox), the address its reply goes out from. */
+  mailbox?: (mailId: string) => Promise<string | undefined>;
   now?: () => number;
 }
 
@@ -72,9 +74,12 @@ export function mobileFeed(d: MobileFeedDeps) {
       if (task) written.set(loopId, { status: task.status, text: task.text });
       else drafts.delete(loopId);
     }
-    const withDraft = (l: Loop): MobileLoop => {
+    const withDraft = async (l: Loop): Promise<MobileLoop> => {
       const w = written.get(l.id);
-      return { ...slim(l), ...(w ? { draft: w } : {}) };
+      // A mailto cannot set the sender: the page says which address to reply from, the one the loop's newest email came to.
+      const ref = l.sources.filter((x) => x.kind === "mail" && x.ref).at(-1)?.ref;
+      const from = ref && d.mailbox ? await d.mailbox(ref).catch(() => undefined) : undefined;
+      return { ...slim(l), ...(w ? { draft: w } : {}), ...(from ? { from } : {}) };
     };
     const all = engine ? (await engine.read()).loops : [];
     return {
@@ -83,7 +88,7 @@ export function mobileFeed(d: MobileFeedDeps) {
       name: d.name(),
       gentle: await d.gentle().catch(() => false),
       brief: view ? { doc: view.doc, latest: view.latest, pending: view.pending } : null,
-      loops: engine ? (await engine.open()).slice(0, 60).map(withDraft) : null,
+      loops: engine ? await Promise.all((await engine.open()).slice(0, 60).map(withDraft)) : null,
       parked: all.filter((l) => l.status === "parked").sort((a, b) => (b.parkedAt ?? 0) - (a.parkedAt ?? 0)).slice(0, 30).map(slim),
       closed: all.filter((l) => l.status === "done" && l.closedAt && t - l.closedAt < CLOSED_SHOWN_MS)
         .sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0)).slice(0, 15).map(slim),
@@ -128,7 +133,7 @@ export function mobileFeed(d: MobileFeedDeps) {
 }
 
 export function wireMobile(ctx: AfterTelegram) {
-  const { app, env, local, config, kv, control, timeZone, givenName, gentleSettings, followupsRef, followupsDoor, smartRef, smartCfg, tgRef, door, panel } = ctx;
+  const { app, env, local, config, kv, control, timeZone, givenName, gentleSettings, followupsRef, followupsDoor, smartRef, smartCfg, tgRef, door, panel, imap, imap2, box } = ctx;
   if (!local) return { mobile: null, phoneLink: (): string | null => null };
   const port = phonePort(env, config.port);
   const access = createMobileAccess({ kv });
@@ -142,6 +147,7 @@ export function wireMobile(ctx: AfterTelegram) {
     name: givenName,
     gentle: async () => (await gentleSettings.view()) !== null,
     telegram,
+    ...(imap.config && imap2.config && box ? { mailbox: async (id: string) => (await box.get(id))?.mailbox } : {}),
   });
   const listener = createMobileListener({
     port: () => port,

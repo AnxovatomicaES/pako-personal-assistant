@@ -326,6 +326,21 @@ terminal: `PAKO_HOME=/tmp/pako-test PORT=8799 /Applications/Pako.app/Contents/Ma
 starts. (A run with its own `PAKO_HOME` is allowed next to the everyday one. It keeps its own settings, apart from the everyday app's, in
 the `defaults` domain `io.github.anxovatomicaes.pako.home-<hash>`, keeps no cookie between runs and never asks for notifications.)
 
+## Without the app: the Mac helper
+
+A Pako run from the Terminal (`install-mac.sh`, `npm start`) can have this Mac's calendars, contacts, Mail accounts and Reminders too, with
+a small helper built from the app's own code instead of the whole app. On the Mac where Pako runs:
+
+```bash
+npm run mac-helper
+```
+
+It builds `Pako Helper.app` into `~/.pako/helper` (needs the Command Line Tools: `xcode-select --install`) and starts it at login
+(LaunchAgent `local.pako.helper`, log in `~/.pako/logs/helper.log`). It has no window and no Dock icon. The connections page in a browser then
+offers this Mac's calendars and contacts as the app does: the panel asks Pako (`/panel/api/helper/ask`), Pako passes the ask on to the helper
+(`/panel/api/helper/next`, the bridge token), and the answer comes back. Nothing is read before you press in the panel, and macOS asks you
+first for each (the prompts name *Pako Helper*). A new build asks once more. `npm run mac-helper -- --remove` stops it and removes both.
+
 ## Remove it
 
 1. Turn off *Start with this Mac* (menu-bar item), then **Quit Pako** (Cmd+Q).

@@ -303,6 +303,11 @@ Then you connect one address, read only. How depends on its provider:
   password**. For iCloud: [appleid.apple.com](https://appleid.apple.com) → **Sign-In and Security** → **App-Specific Passwords** → **+**, name it
   "Pako". An Apple ID with iCloud Mail on shows as **Connect iCloud Mail** in the list.
 
+**A second mailbox.** After the first, **Connect another account** in the mail card connects one more address the same way; it is kept
+apart (`IMAP2_*`, its own place in the store and its own line in Health) and never replaces the first. Pako reads both, each email remembers
+the address it came to, and a reply draft on the phone says **Reply from** that address (a mail link cannot choose the sender). Each mailbox
+has its own **Disconnect** in the card; with two connected, a third address is refused until one is disconnected.
+
 ### The project's own apps
 
 Signing in with Microsoft or Google uses the project's own registrations: one public client each, used by every Pako. Pako never borrows

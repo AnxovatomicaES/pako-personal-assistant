@@ -19,6 +19,7 @@ const WORDS = {
   "name.calendar": "Calendar",
   "name.mail": "Pako's inbox",
   "name.imap": "Your mailbox",
+  "name.imap2": "Your second mailbox",
   "name.slack": "Slack",
   "name.slackEvents": "Slack's events",
   "name.zoom": "Zoom",
@@ -43,7 +44,7 @@ const WORDS = {
 
 const ICONS = {
   bridge: "laptop", claude: "sparkles", store: "database", whatsapp: "message-circle", telegram: "send", calendar: "calendar", mail: "inbox",
-  imap: "mail", slack: "hash", slackEvents: "hash", zoom: "video", update: "git-branch",
+  imap: "mail", imap2: "mail", slack: "hash", slackEvents: "hash", zoom: "video", update: "git-branch",
 };
 
 const t = (key, vars = {}) => (WORDS[key] ?? key).replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));

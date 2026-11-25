@@ -15,6 +15,7 @@
     "panel": "node bin/panel.cjs",
     "autostart": "node --disable-warning=ExperimentalWarning src/server.ts --autostart",
     "mac-app": "sh desktop/mac/build.sh",
+    "mac-helper": "sh desktop/mac/helper/build.sh",
     "mac-release": "sh desktop/mac/release.sh",
     "mac-release-check": "sh desktop/mac/release-check.sh",
     "typecheck": "tsc --noEmit -p .",

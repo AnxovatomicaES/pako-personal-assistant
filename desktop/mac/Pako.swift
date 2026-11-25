@@ -257,7 +257,7 @@ final class PakoRunner: @unchecked Sendable {
     }
 
     /// One request, waited for (this runs off the main thread): the answer, or nil and whether the connection was refused.
-    private func send(_ req: URLRequest) -> (answer: (status: Int, body: Data)?, refused: Bool) {
+    func send(_ req: URLRequest) -> (answer: (status: Int, body: Data)?, refused: Bool) {
         let session = URLSession(configuration: .ephemeral)
         defer { session.finishTasksAndInvalidate() }
         let lock = NSLock()
@@ -513,7 +513,7 @@ final class PakoRunner: @unchecked Sendable {
     private var keychainToken: (marker: Data, token: String)?
     private let keychainLock = NSLock()
 
-    private func bridgeToken() -> String? {
+    func bridgeToken() -> String? {
         let secrets = (home as NSString).appendingPathComponent("secrets.json")
         guard let data = FileManager.default.contents(atPath: secrets), let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }

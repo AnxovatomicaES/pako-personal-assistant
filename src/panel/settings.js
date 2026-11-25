@@ -16,7 +16,7 @@ import { mountTwins } from "./figure-twin.js";
 import { WORDS } from "./settings-words.js";
 import {
   ADVANCED, askApp, cardStates, importedCount, checkField, cleanAppPassword, cleanDiscovery, connectedCount, COUNTED, discoveryChips, inApp, isEmail, nextSuggestion,
-  providerOf, resumable, tellApp, accountLine, mailStatus, cleanClients, labHiddenCards,
+  providerOf, resumable, tellApp, accountLine, mailStatus, cleanClients, labHiddenCards, useHelper,
 } from "./settings-model.js";
 import { h, localeOf, fill } from "./dom.js";
 
@@ -118,8 +118,10 @@ async function loadAll() {
     read("/panel/api/discovery"), read("/panel/api/calendar/local"), read("/panel/api/people/imported"), read("/panel/api/connections/details"),
     read("/panel/api/claude/connect"), read("/panel/api/connect/clients"), read("/panel/api/reminders"),
   ]);
-  // The cards of a lab that is off (Settings › Labs, src/labs.ts) are not drawn.
+  // The cards of a lab that is off (Settings › Labs, src/labs.ts) are not drawn. The Mac helper, when it runs, is the app here.
   S.hidden = labHiddenCards(await read("/panel/api/labs"));
+  useHelper(await read("/panel/api/helper"));
+  S.app = inApp(window);
   // Which connections are one button (the project's own apps, src/connect-clients.ts); an older Pako answers nothing: none are.
   S.data = {
     connections, telegram, whatsapp, claude, discovery: cleanDiscovery(discovery), localCalendar, people, details, claudeConnect, clients: cleanClients(clients),
@@ -1997,9 +1999,11 @@ function details(id) {
   const box = (...kids) => h("section", { class: "details", "aria-label": t("d.title") }, kids);
   if (id === "calendar") return box(calendarSources(d.calendar), S.app ? remindersBox() : null);
   if (id === "mail") {
-    const m = d.mail?.imap;
     const parts = [];
-    if (m) {
+    // Both mailboxes, each with its own Disconnect: the second (imap2) is the one "Connect another account" added.
+    for (const id of ["imap", "imap2"]) {
+      const m = d.mail?.[id];
+      if (!m) continue;
       const out = h("p", { class: "muted small", "aria-live": "polite" });
       parts.push(rows(
         row(t("d.address"), m.address), row(t("d.server"), `${m.host}:${m.port}`), row(t("d.folders"), m.folders.join(", ")),
@@ -2009,11 +2013,11 @@ function details(id) {
           e.currentTarget.disabled = true;
           out.textContent = t("d.checking");
           const r = await api("/panel/api/mail/check-now", { method: "POST", body: {} });
-          if (r.ok && r.data.mail && S.data.details?.mail) S.data.details.mail.imap = r.data.mail;
+          if (r.ok && S.data.details?.mail) Object.assign(S.data.details.mail, { imap: r.data.mail ?? null, imap2: r.data.mail2 ?? null });
           drawCard("mail");
         }, "tiny ghost"),
         btn(t("d.edit"), () => go("mail", 1, { path: "imap", address: m.address }), "tiny ghost"),
-        btn(t("d.disconnect"), () => void disconnect("imap", m.address), "tiny danger")), out);
+        btn(t("d.disconnect"), () => void disconnect(id, m.address), "tiny danger")), out);
     }
     if (d.mail?.agentmail) parts.push(rows(row(t("d.inbox"), d.mail.agentmail.inbox)));
     return parts.length ? box(...parts) : null;

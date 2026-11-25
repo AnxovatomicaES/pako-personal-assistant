@@ -76,6 +76,7 @@ const KEY_LIST = [
   { key: "mail-prefs", keep: 5 * 365 * DAY },
   { key: "assistant-mail-codes", keep: 30 * 60, secret: "codes" }, // codes.ts
   { key: "assistant-imap", keep: 60 * DAY }, // imap.ts
+  { key: "assistant-imap2", keep: 60 * DAY },
   { key: "mail-invites", keep: 60 * DAY }, // invites.ts
   { key: "mail-backfill", keep: 30 * DAY }, // backfill.ts
   { key: "slack-alerts", keep: 14 * DAY }, // slack.ts
@@ -182,6 +183,7 @@ const ABOUT = texts<AboutKey | "unknown">(
     "assistant-mail-body:": "The words of one email (one-time codes hidden), for the panel's reader",
     "mail-prefs": "Your mail choices: the sender rules you taught with Move to…, and which categories notify you",
     "assistant-imap": "Your own mailbox (IMAP, read only): the account and, per folder, the last email already looked at (never the password)",
+    "assistant-imap2": "Your second mailbox (IMAP, read only): the same as the first's, for that account",
     "mail-backfill": "A new mailbox's catch-up: the emails of its last days waiting to be read, one a minute, and its progress",
     "mail-invites": "Invitations caught from your mail, shown on the dashboard until your calendar has them (title, time, organizer; never the mail)",
     "slack-alerts": "Slack messages it told you about (the last 100)",

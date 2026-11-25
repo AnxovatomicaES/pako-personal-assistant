@@ -54,7 +54,7 @@ const T = texts(
 
 /** The watchdog's part (or parts) for each connection. */
 const PARTS: Partial<Record<StatusId, PartKey[]>> = {
-  claude: ["claude"], calendar: ["calendar"], macCalendar: ["calendar"], mail: ["mail"], imap: ["imap"], slack: ["slack", "slackEvents"],
+  claude: ["claude"], calendar: ["calendar"], macCalendar: ["calendar"], mail: ["mail"], imap: ["imap"], imap2: ["imap2"], slack: ["slack", "slackEvents"],
   zoom: ["zoom"], teams: ["teams"], telegram: ["telegram"],
 };
 
@@ -94,7 +94,7 @@ export function connectionsStatus(i: StatusInputs): ConnectionStatus[] {
     return bad ? { state: "needsAction", detail: bad.detail } : null;
   };
   const offer = (id: StatusId): string => {
-    if (!found) return id === "claude" || id === "mail" || id === "tables" || id === "resend" ? "" : say("look");
+    if (!found) return id === "claude" || id === "mail" || id === "imap2" || id === "tables" || id === "resend" ? "" : say("look");
     if (id === "calendar" || id === "macCalendar") return found.calendars.length ? say("calendars", { n: found.calendars.length }) : "";
     if (id === "imap") return found.mailAccounts[0] ? say("mail", { address: found.mailAccounts[0].address }) : "";
     if (id === "zoom") return found.zoomRecordings ? say("zoomLocal") : found.apps.zoom ? say("zoomApp") : "";

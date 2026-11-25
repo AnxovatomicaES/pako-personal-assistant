@@ -16,7 +16,7 @@ const logCalendar = createLog("calendar");
 
 export function wireBrief(ctx: AfterCalendar) {
   const {
-    env, uiLang, demo, kv, control, timeZone, givenName, mail, imap, box, slack, slackRef, fakeSlack, zoom, zoomRef, reviewRef, calOn, calRef,
+    env, uiLang, demo, kv, control, timeZone, givenName, mail, imap, imap2, box, slack, slackRef, fakeSlack, zoom, zoomRef, reviewRef, calOn, calRef,
     calChangesRef, icsRef, backfillRef, briefCfg, briefRef, smartCfg, smartRef, followupsCfg, followupsRef, personRef, gentleSettings, gentleRef,
     followupsDoor, lessons, quality, publicUrl, door, claudeLive, phoneLink, timeRef,
   } = ctx;
@@ -176,7 +176,7 @@ export function wireBrief(ctx: AfterCalendar) {
         // What the owner's memory says of its people (src/person-context.ts); the open follow-ups with them come apart, as their own facts.
         about: async (words) =>
           (personRef.c ? await personRef.c.many(words, { loops: false }) : []).map((b) => ({ label: `People · ${b.name}`, text: b.text })),
-        self: () => [mail.config?.inbox, imap.config?.user].filter((x): x is string => !!x),
+        self: () => [mail.config?.inbox, imap.config?.user, imap2.config?.user].filter((x): x is string => !!x),
         prep: (o) => brief.prepMeeting(o),
         clock: (t) => new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(t),
       });

@@ -32,6 +32,7 @@ import express, { type Express, type Request, type Response } from "express";
 import { oauthPage, pkcePair, fromThisComputer, base64url } from "./connect-setup.ts";
 import { emailOf, guard, limit, localOnly, type RouteAuth } from "./connect-routes.ts";
 import type { ConnectionsSaver } from "./connections-panel.ts";
+import { mailSlot, WORDS } from "./connections.ts";
 import { imapflowConnect, type ImapConfig, type ImapConnect } from "./imap.ts";
 import { builtInClients, type BuiltInDefaults } from "./connect-clients.ts";
 import { GOOGLE_CALENDAR_API } from "./google-calendar.ts";
@@ -320,9 +321,9 @@ export function mountMailOAuth(app: Express, d: MailOAuthDeps | null): void {
     }
     if (!d.saver) return fail(say("notKept", { why: "this Pako cannot save connections" }));
     // An earlier app password and port are removed: the provider's server is on 993, and a password no longer used is not kept.
-    const saved = await d.saver.save("imap", {
-      IMAP_HOST: host, IMAP_USER: user, IMAP_OAUTH: provider, IMAP_REFRESH_TOKEN: j.refresh_token, IMAP_PASSWORD: "", IMAP_PORT: "",
-    });
+    const slot = mailSlot(d.env, { IMAP_HOST: host, IMAP_USER: user, IMAP_OAUTH: provider, IMAP_REFRESH_TOKEN: j.refresh_token, IMAP_PASSWORD: "", IMAP_PORT: "" });
+    if (!slot) return fail(WORDS()("twoMailboxes"));
+    const saved = await d.saver.save(slot.id, slot.values);
     if (!saved.ok) return fail(say("notKept", { why: saved.error }));
     last.mail = { ok: true, user, provider };
     oauthPage(res, 200, true, say("done", { user }));

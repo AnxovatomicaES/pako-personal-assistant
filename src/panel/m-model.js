@@ -51,6 +51,7 @@ export function loopItem(l, now, o = {}, where = "open") {
     // A draft can be asked for something the owner owes, while none is written or being written.
     canDraft: where === "open" && o.drafts === true && OWES.has(l.kind) && (!l.draft || l.draft.status === "failed" || l.draft.status === "old"),
     to: l.to ? String(l.to) : "",
+    from: l.from ? String(l.from) : "",
   };
 }
 

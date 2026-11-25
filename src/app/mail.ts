@@ -6,7 +6,7 @@ import { type BackfillChat, createBackfill } from "../backfill.ts";
 import { runsInMacApp } from "../autostart.ts";
 import { appliedAtStart, writeStored } from "../connections.ts";
 import { createContactsStore } from "../contacts.ts";
-import { createImapReader } from "../imap.ts";
+import { createImapReader, type ImapConfig, type ImapReader } from "../imap.ts";
 import { createConnectorIntake } from "../connector-intake.ts";
 import { createImessage, forgetImessage } from "../imessage.ts";
 import { pakoHome } from "../local.ts";
@@ -25,8 +25,8 @@ const logTeams = createLog("teams");
 
 export function wireMail(ctx: AfterProactive) {
   const {
-    app, env, local, uiLang, dog, kv, control, mail, imap, imapRef, appleMailCfg, appleMailRef, box, teamsCfg, teamsRef, imessageCfg, imessageRef, invites, backfillCfg, backfillRef, followupsCfg,
-    connectorsCfg, connectorsRef, slack, followupsRef, followupsDoor, mailFollowups, lessons, door,
+    app, env, local, uiLang, dog, kv, control, mail, imap, imap2, imapRef, appleMailCfg, appleMailRef, box, teamsCfg, teamsRef, imessageCfg, imessageRef, invites,
+    backfillCfg, backfillRef, followupsCfg, connectorsCfg, connectorsRef, slack, followupsRef, followupsDoor, mailFollowups, lessons, door,
   } = ctx;
   if (mail.config && box) {
     mountMail(app, {
@@ -41,43 +41,50 @@ export function wireMail(ctx: AfterProactive) {
   const backfillChat = async (c: BackfillChat): Promise<void> => {
     for (const m of c.msgs) await followupsRef.engine?.observeSlack({ channel: c.channel, ts: m.ts, at: m.at, who: m.who, where: c.where, direct: c.direct, text: m.text });
   };
-  if (imap.config && box) {
-    backfillRef.b = createBackfill({
-      kv, config: backfillCfg.config, enqueue: (m) => door.inbox.add(m), lang: uiLang, notify: (text) => door.notifyOwner(text), chat: backfillChat,
-      ...(followupsCfg.config ? { offer: (o) => (followupsRef.engine ? followupsRef.engine.offer(o) : Promise.resolve(false)) } : {}),
-      ...(mailFollowups ? { sent: (m) => mailFollowups.sent(m) } : {}),
-      keepUnread: (id, note) => box.annotate(id, "guardado", note),
-    });
-    backfillRef.b.start();
+  // The owner's mailboxes, each read by a reader of its own: its own place in the store, its own health part, one catch-up for both.
+  const readImap = (cfg: ImapConfig, part: "imap" | "imap2"): ImapReader => {
+    if (!backfillRef.b) {
+      backfillRef.b = createBackfill({
+        kv, config: backfillCfg.config, enqueue: (m) => door.inbox.add(m), lang: uiLang, notify: (text) => door.notifyOwner(text), chat: backfillChat,
+        ...(followupsCfg.config ? { offer: (o) => (followupsRef.engine ? followupsRef.engine.offer(o) : Promise.resolve(false)) } : {}),
+        ...(mailFollowups ? { sent: (m) => mailFollowups.sent(m) } : {}),
+        keepUnread: (id, note) => box!.annotate(id, "guardado", note),
+      });
+      backfillRef.b.start();
+    }
     const bf = backfillRef.b;
     // Signed in with Microsoft or Google (src/mail-oauth.ts): a fresh access token before each look; a refresh token the provider
     // replaces is kept where the panel keeps it, unless it was set in a file (then it is said, as for Zoom).
-    const o = imap.config.oauth;
+    const o = cfg.oauth;
+    const key = `${part.toUpperCase()}_REFRESH_TOKEN`;
     const tokens = o
       ? createTokenSource({
           provider: o.provider, clientId: o.clientId, ...(o.clientSecret ? { clientSecret: o.clientSecret } : {}), refreshToken: o.refreshToken,
           keep: (t) => {
-            if (!local || ((env.IMAP_REFRESH_TOKEN ?? "").trim() && !appliedAtStart().has("IMAP_REFRESH_TOKEN"))) {
-              logImap.error("the provider gave a new refresh token, but IMAP_REFRESH_TOKEN is set outside the panel: sign in from the panel instead");
+            if (!local || ((env[key] ?? "").trim() && !appliedAtStart().has(key))) {
+              logImap.error(`the provider gave a new refresh token, but ${key} is set outside the panel: sign in from the panel instead`);
               return;
             }
-            if (!writeStored(pakoHome(env), { IMAP_REFRESH_TOKEN: t })) logImap.error("could not keep the new refresh token");
+            if (!writeStored(pakoHome(env), { [key]: t })) logImap.error("could not keep the new refresh token");
           },
         })
       : null;
-    imapRef.reader = createImapReader({
+    const reader = createImapReader({
       backfill: { add: bf.add, addSent: bf.addSent, startLine: bf.startLine, days: backfillCfg.config.days },
-      config: imap.config, kv, box, control, lang: uiLang, enqueue: (m) => door.inbox.add(m), health: dog.reporter("imap"),
+      config: cfg, stateKey: `assistant-${part}`, kv, box: box!, control, lang: uiLang, enqueue: (m) => door.inbox.add(m), health: dog.reporter(part),
       notify: (text) => door.notifyOwner(text),
       ownSent: (o) => lessons.ownSent(o),
       ...(mailFollowups ? { sentMail: (m) => mailFollowups.sent(m), filed: (id, category) => mailFollowups.inbox(id, { category }) } : {}),
       ...(invites ? { invites } : {}),
       ...(tokens ? { tokens: () => tokens.access(), forgetToken: () => tokens.forget() } : {}),
     });
-    dog.watch("imap");
-    imapRef.reader.start();
-    logImap.info(`ON: ${imap.config.host}, read only, ${imap.config.folders.join(", ")}, every ${imap.config.pollMinutes} min`);
-  }
+    dog.watch(part);
+    reader.start();
+    logImap.info(`ON${part === "imap2" ? " (the second mailbox)" : ""}: ${cfg.host}, read only, ${cfg.folders.join(", ")}, every ${cfg.pollMinutes} min`);
+    return reader;
+  };
+  if (imap.config && box) imapRef.reader = readImap(imap.config, "imap");
+  if (imap2.config && box) imapRef.reader2 = readImap(imap2.config, "imap2");
   if (appleMailCfg.config && local && box) {
     // The same intake as IMAP's (src/mail-intake.ts): the mailbox, the triage, the follow-ups, the lessons and the invitations. No catch-up:
     // it starts from the moment it was turned on.
@@ -88,7 +95,7 @@ export function wireMail(ctx: AfterProactive) {
       ...(invites ? { invites } : {}),
     });
     appleMailRef.reader.start();
-    logAppleMail.info(`ON: read only, every ${appleMailCfg.config.pollMinutes} min${imap.config ? " (IMAP is on too: an email read both ways is taken once)" : ""}`);
+    logAppleMail.info(`ON: read only, every ${appleMailCfg.config.pollMinutes} min${imap.config || imap2.config ? " (IMAP is on too: an email read both ways is taken once)" : ""}`);
   } else if (local) {
     void forgetAppleMail(local.kv).catch((err: Error) => logAppleMail.error(`could not forget where it was: ${err.message}`));
   }

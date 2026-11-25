@@ -68,13 +68,14 @@ export interface ImapConfig {
   vip: string[];
 }
 
-/** Off (null) unless IMAP_HOST, IMAP_USER and IMAP_PASSWORD are set; a wrong value is named and keeps it off, without stopping the server. */
-export function loadImapConfig(env: Env): { config: ImapConfig | null; problems: string[] } {
-  const host = (env.IMAP_HOST ?? "").trim().toLowerCase();
-  const user = (env.IMAP_USER ?? "").trim();
-  const password = (env.IMAP_PASSWORD ?? "").trim();
-  const oauthName = (env.IMAP_OAUTH ?? "").trim().toLowerCase();
-  const refreshToken = (env.IMAP_REFRESH_TOKEN ?? "").trim();
+/** Off (null) unless IMAP_HOST, IMAP_USER and IMAP_PASSWORD are set (IMAP2_*, the second mailbox's, with `p`); a wrong value is named and keeps it off. */
+export function loadImapConfig(env: Env, p: "IMAP" | "IMAP2" = "IMAP"): { config: ImapConfig | null; problems: string[] } {
+  const v = (k: string): string => env[`${p}_${k}`] ?? "";
+  const host = v("HOST").trim().toLowerCase();
+  const user = v("USER").trim();
+  const password = v("PASSWORD").trim();
+  const oauthName = v("OAUTH").trim().toLowerCase();
+  const refreshToken = v("REFRESH_TOKEN").trim();
   if (!host && !user && !password && !oauthName && !refreshToken) return { config: null, problems: [] };
   const problems: string[] = [];
   // Signed in with the provider: a refresh token instead of a password, and the project's client for that provider.
@@ -94,26 +95,26 @@ export function loadImapConfig(env: Env): { config: ImapConfig | null; problems:
   if (!oauthName && !refreshToken && (!password || password.length > 500 || /[\u0000-\u001f\u007f]/.test(password))) {
     problems.push("IMAP_PASSWORD must be an app password made for Pako in the account's security settings");
   }
-  const rawPort = (env.IMAP_PORT ?? "").trim();
+  const rawPort = v("PORT").trim();
   const port = rawPort === "" ? 993 : Number(rawPort);
   // 143 is IMAP without TLS (or with STARTTLS, which a man in the middle can strip): Pako never sends a password that way.
   if (!Number.isInteger(port) || port < 1 || port > 65535 || port === 143) {
     problems.push("IMAP_PORT must be the server's port for IMAP over TLS (993 almost always); Pako never connects without TLS");
   }
-  const folders = (env.IMAP_FOLDERS ?? "").split(",").map((f) => f.trim()).filter(Boolean);
+  const folders = v("FOLDERS").split(",").map((f) => f.trim()).filter(Boolean);
   if (!folders.length) folders.push("INBOX");
   // A wildcard would name other folders than the one meant; a control character would break the command line.
   if (folders.length > 10 || folders.some((f) => f.length > 200 || /[\u0000-\u001f\u007f*%]/.test(f))) {
     problems.push("IMAP_FOLDERS must be a comma list of up to 10 folder names, for example INBOX, Work");
   }
-  const rawPoll = (env.IMAP_POLL_MINUTES ?? "").trim();
+  const rawPoll = v("POLL_MINUTES").trim();
   const pollMinutes = rawPoll === "" ? 5 : Number(rawPoll);
   if (!Number.isInteger(pollMinutes) || pollMinutes < 1 || pollMinutes > 1440) problems.push("IMAP_POLL_MINUTES must be a whole number from 1 to 1440");
   // The shared lists are checked (and named when wrong) by Pako's own inbox; a wrong entry here is only left out.
   const filters = loadMailFilters(env);
   const okDomain = (x: string) => /^[a-z0-9.-]+\.[a-z]{2,}$/.test(x);
   const okVip = (x: string) => /^([^\s@,]+)?@[a-z0-9.-]+\.[a-z]{2,}$/.test(x);
-  if (problems.length) return { config: null, problems };
+  if (problems.length) return { config: null, problems: problems.map((x) => x.replaceAll("IMAP_", `${p}_`)) };
   return {
     config: {
       host, port, user, password: oauth ? "" : password, ...(oauth ? { oauth } : {}), folders: [...new Set(folders)], pollMinutes,
@@ -533,6 +534,8 @@ const CATCH_UP_MAX = 300;
 
 export interface ImapDeps {
   config: ImapConfig;
+  /** Where its place is kept ("assistant-imap"): the second mailbox has its own, so two readers never take each other's state. */
+  stateKey?: string;
   kv: Kv | null;
   box: Mailbox;
   /** The owner's assistant inbox (src/whatsapp.ts). */
@@ -621,7 +624,7 @@ export function createImapReader(d: ImapDeps) {
   const load = async (): Promise<ImapState> => {
     const empty: ImapState = { who, folders: {}, greeted: false };
     if (!d.kv) return memory?.who === who ? memory : empty;
-    const raw = await readJsonRecord(d.kv, STATE_KEY);
+    const raw = await readJsonRecord(d.kv, d.stateKey ?? STATE_KEY);
     if (!raw) return empty;
     try {
       const p = raw as Partial<ImapState>;
@@ -639,7 +642,7 @@ export function createImapReader(d: ImapDeps) {
   };
   const save = async (s: ImapState): Promise<void> => {
     memory = s;
-    if (d.kv) await d.kv.set(STATE_KEY, JSON.stringify(s), STATE_TTL_S);
+    if (d.kv) await d.kv.set(d.stateKey ?? STATE_KEY, JSON.stringify(s), STATE_TTL_S);
   };
 
   const accountOf = (p: ParsedMessage): MailAccount => {
@@ -731,7 +734,7 @@ export function createImapReader(d: ImapDeps) {
 
   /** The mail intake both readers of the owner's mailbox share (src/mail-intake.ts): the mailbox, the follow-ups, the lessons, the invitations. */
   const intake = createMailIntake({
-    box: d.box, enqueue: d.enqueue, control: d.control, lang, now, vip: config.vip, provider, authServer: config.host, filed: d.filed, invites: d.invites, ownSent: d.ownSent,
+    box: d.box, enqueue: d.enqueue, control: d.control, lang, now, vip: config.vip, provider, authServer: config.host, mailbox: own, filed: d.filed, invites: d.invites, ownSent: d.ownSent,
     sentMail: d.sentMail, backfill: d.backfill, log,
   });
 

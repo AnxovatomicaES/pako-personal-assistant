@@ -16,7 +16,7 @@
 import express, { type Express, type Request } from "express";
 import { rateLimit } from "express-rate-limit";
 import type { Control } from "./control.ts";
-import { appliedAtStart, connectionStates, findConnection, type ConnectionId, icsLink, readStored, WORDS, writeStored } from "./connections.ts";
+import { appliedAtStart, connectionStates, fieldWord, findConnection, type ConnectionId, icsLink, readStored, WORDS, writeStored } from "./connections.ts";
 import { texts, type Lang } from "./i18n.ts";
 import { checkResendKey } from "./resend.ts";
 import { pakoHome } from "./local.ts";
@@ -187,7 +187,7 @@ export function mountConnectionsPanel(app: Express, d: ConnectionsPanelDeps | nu
     if (c.card) return { ok: false, error: say("elsewhere") };
     if (!values || typeof values !== "object" || Array.isArray(values)) return { ok: false, error: say("bad") };
     const given = values as Record<string, unknown>;
-    const label = (key: string) => words(key as Parameters<typeof words>[0]);
+    const label = (key: string) => words(fieldWord(key));
     const known = new Set(c.fields.map((f) => f.key));
     if (Object.keys(given).some((k) => !known.has(k))) return { ok: false, error: say("unknown") };
     const stored = readStored(dir);
@@ -219,7 +219,7 @@ export function mountConnectionsPanel(app: Express, d: ConnectionsPanelDeps | nu
     const wrong = anything ? (c.check?.(after) ?? []) : [];
     if (wrong.length) {
       const key = wrong[0]!;
-      return { ok: false, error: say("wrong", { label: label(key), hint: words(`${key}.hint` as Parameters<typeof words>[0]) }), field: key };
+      return { ok: false, error: say("wrong", { label: label(key), hint: words(`${fieldWord(key)}.hint` as Parameters<typeof words>[0]) }), field: key };
     }
     // AgentMail answers cheaply whether it knows the inbox under that key: asked when either of them changes, so a typo is caught here and
     // not as a silent inbox after the restart.

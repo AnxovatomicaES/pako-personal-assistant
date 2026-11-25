@@ -63,10 +63,13 @@ export function wireSources(ctx: OwnerCtx) {
   // same mailbox state as the inbox's (MAIL, the brief, the panel, the codes), so either one turns that on.
   const imap = loadImapConfig(env);
   if (imap.problems.length) logImap.error(`off, because: ${imap.problems.join("; ")}`);
+  // A second mailbox of the owner's (IMAP2_*), read alongside the first by a reader of its own (src/app/mail.ts).
+  const imap2 = loadImapConfig(env, "IMAP2");
+  if (imap2.problems.length) logImap.error(`the second mailbox is off, because: ${imap2.problems.join("; ")}`);
   if (imap.config && mail.config) {
     logImap.info("Pako's inbox is on too: if that mailbox is forwarded there, stop forwarding it (an email whose forward changes it could come twice)");
   }
-  const imapRef: { reader: ImapReader | null } = { reader: null };
+  const imapRef: { reader: ImapReader | null; reader2: ImapReader | null } = { reader: null, reader2: null };
   // Mail on this Mac (src/apple-mail.ts): what Apple Mail already downloaded, read only, no password; off unless turned on in its card
   // (APPLE_MAIL=on). Its mail joins the same mailbox as IMAP's, and an email read both ways is taken once.
   const appleMailCfg = local ? loadAppleMailConfig(env) : { config: null, problems: [] as string[] };
@@ -74,11 +77,11 @@ export function wireSources(ctx: OwnerCtx) {
   const appleMailRef: { reader: AppleMailReader | null } = { reader: null };
   // A reply of the owner's found in their Sent mail closes the loops of the mail it answers (the follow-ups are built later: looked up then).
   const repliedRef: { close: (ids: string[]) => void } = { close: () => undefined };
-  const box = mail.config || imap.config || appleMailCfg.config || demo
+  const box = mail.config || imap.config || imap2.config || appleMailCfg.config || demo
     ? createMailbox(kv, { showCodes: loadMailFilters(env).showCodes, lang: uiLang, onReplied: (ids) => repliedRef.close(ids) })
     : null;
   // Both addresses when both are read: the assistant's context and the panel say which mail it is.
-  const mailAddress = demo ? "alex@northwind.example (demo)" : [mail.config?.inbox, imap.config?.user].filter(Boolean).join(", ");
+  const mailAddress = demo ? "alex@northwind.example (demo)" : [mail.config?.inbox, imap.config?.user, imap2.config?.user].filter(Boolean).join(", ");
   // The owner's Slack, read only (src/slack.ts): off unless the app's user token and signing secret are set.
   const slack = loadSlackConfig(env);
   if (slack.problems.length) logSlack.error(`off, because: ${slack.problems.join("; ")}`);
@@ -150,16 +153,16 @@ export function wireSources(ctx: OwnerCtx) {
   // The private links' source, once built: its rows on the connections page and a broken link's line in the brief.
   const icsRef: { source: ReturnType<typeof createIcsSource> | null } = { source: null };
   // The owner's own addresses: their answer to an invitation is read from their attendee line.
-  const myAddresses = (): string[] => [env.IMAP_USER, env.ZOOM_USER, ...(appleMailRef.reader?.addresses() ?? [])]
+  const myAddresses = (): string[] => [env.IMAP_USER, env.IMAP2_USER, env.ZOOM_USER, ...(appleMailRef.reader?.addresses() ?? [])]
     .map((x) => (x ?? "").trim().toLowerCase()).filter((x) => x.includes("@"));
   // Invitations caught from the owner's mail (src/invites.ts): on the dashboard before the calendar has them.
-  const invites = imap.config || appleMailCfg.config ? createInviteStore({ kv, timeZone, me: myAddresses }) : null;
+  const invites = imap.config || imap2.config || appleMailCfg.config ? createInviteStore({ kv, timeZone, me: myAddresses }) : null;
   // A new mailbox's catch-up (src/backfill.ts): its last days, quiet and paced; built with the reader, below.
   const backfillCfg = loadBackfillConfig(env);
   if (backfillCfg.problems.length) logBackfill.error(`${backfillCfg.problems.join("; ")}`);
   const backfillRef: { b: Backfill | null } = { b: null };
   return {
-    friends, plain, timeZone, startName, givenName, ownerName, mail, outgoing, imap, imapRef, appleMailCfg, appleMailRef, repliedRef, box, mailAddress, slack, slackRef,
+    friends, plain, timeZone, startName, givenName, ownerName, mail, outgoing, imap, imap2, imapRef, appleMailCfg, appleMailRef, repliedRef, box, mailAddress, slack, slackRef,
     fakeSlack, zoom, zoomRef, teamsCfg, teamsRef, imessageCfg, imessageRef, reviewCfg, reviewRef, reviewsDoor, timing, macCal, relayClientCfg, relayRef, calDoorRef, calWrites,
     cal, calOn, calLabel, calRef, calChangesRef, icsRef, myAddresses, invites, backfillCfg, backfillRef, connectorsCfg, connectorsRef,
   };

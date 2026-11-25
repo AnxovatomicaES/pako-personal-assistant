@@ -17,6 +17,7 @@ import { resolveMx as dnsMx } from "node:dns/promises";
 import express, { type Express } from "express";
 import { emailOf, guard, isObject, limit, line, localOnly, type RouteAuth, within } from "./connect-routes.ts";
 import type { ConnectionsSaver } from "./connections-panel.ts";
+import { mailSlot, WORDS } from "./connections.ts";
 import { texts, type Lang } from "./i18n.ts";
 import { failKind, type ImapConfig, type ImapConnect, imapflowConnect, type FailKind } from "./imap.ts";
 import { guardedGet, type Resolver } from "./public-fetch.ts";
@@ -331,6 +332,8 @@ export interface MailConnectDeps extends RouteAuth {
   lang: () => Lang;
   /** The connections' save (src/connections-panel.ts); null: nothing is kept. */
   saver: ConnectionsSaver | null;
+  /** The settings Pako started with: which mailboxes are taken. */
+  env?: Record<string, string | undefined>;
   autoconfig?: ReturnType<typeof createAutoconfig>;
   /** The login's connection (the tests give a fake); imapflow without it. */
   connect?: ImapConnect;
@@ -377,9 +380,11 @@ export function mountMailConnect(app: Express, d: MailConnectDeps | null): void 
     }
     if (!d.saver) return void res.json({ ok: true, restarting: false });
     // An earlier sign-in with Microsoft or Google is removed: kept, it would win over this password (src/imap.ts loadImapConfig).
-    const saved = await d.saver.save("imap", {
+    const slot = mailSlot(d.env ?? {}, {
       IMAP_HOST: host, IMAP_USER: user, IMAP_PASSWORD: pass, IMAP_PORT: port === 993 ? "" : String(port), IMAP_OAUTH: "", IMAP_REFRESH_TOKEN: "",
     });
+    if (!slot) return void res.status(409).json({ ok: false, why: "save", error: WORDS()("twoMailboxes") });
+    const saved = await d.saver.save(slot.id, slot.values);
     if (!saved.ok) return void res.status(saved.status ?? 400).json({ ok: false, why: "save", error: saved.error });
     res.json({ ok: true, restarting: d.saver.restartAfter(res) });
   });

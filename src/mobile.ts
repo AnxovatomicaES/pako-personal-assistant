@@ -44,6 +44,8 @@ export interface MobileLoop {
   closedAt?: number;
   /** An email address to answer to, when the loop names one. */
   to?: string;
+  /** With two mailboxes: the owner's address to answer from (a mailto cannot set it). */
+  from?: string;
   /** The draft asked for it: being written, written (its text), or failed. */
   draft?: { status: string; text: string };
 }

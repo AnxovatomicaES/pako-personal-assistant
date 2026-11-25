@@ -59,6 +59,7 @@ export const MOVE_KEYS: Readonly<Record<string, "json" | "text" | "count">> = {
   "calendar-state": "json", // the events already reminded
   "assistant-mail": "json", // the mail already looked at
   "assistant-imap": "json",
+  "assistant-imap2": "json",
   "memory-facts": "json", // the dated facts the owner told, with their history (src/memory-facts.ts)
   "people-identities": "json", // the same-person answers and identities (src/people-graph.ts): not asked again
   // What else is the person's own, each under the key its module writes (src/data.ts lists them all):
@@ -87,7 +88,7 @@ export const MOVE_SETTINGS = [
   "SLACK_QUIET_HOURS", "SLACK_FORWARD", "ZOOM_USER", "ZOOM_POLL_MINUTES", "ZOOM_REVIEW", "ZOOM_REVIEW_WAIT_MIN",
   "FOLLOWUPS", "FOLLOWUP_DELAY_MIN", "FOLLOWUP_MAX_PER_DAY", "FOLLOWUP_QUIET_HOURS", "WATCHDOG", "WATCHDOG_QUIET_HOURS",
   "AGENTMAIL_INBOX", "AGENTMAIL_POLL_MINUTES", "AGENTMAIL_WORK_DOMAINS", "AGENTMAIL_VIP", "RESEND_FROM", "RESEND_REPLY_TO",
-  "IMAP_HOST", "IMAP_USER", "IMAP_PORT", "IMAP_FOLDERS", "IMAP_POLL_MINUTES",
+  "IMAP_HOST", "IMAP_USER", "IMAP_PORT", "IMAP_FOLDERS", "IMAP_POLL_MINUTES", "IMAP2_HOST", "IMAP2_USER", "IMAP2_PORT", "IMAP2_FOLDERS", "IMAP2_POLL_MINUTES",
 ] as const;
 const SECRET_NAME = /TOKEN|SECRET|KEY|PASSWORD|_URL$/;
 

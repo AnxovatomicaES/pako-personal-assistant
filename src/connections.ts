@@ -29,7 +29,7 @@ const log = createLog("connections");
 type Env = Record<string, string | undefined>;
 
 export type ConnectionId =
-  | "claude" | "calendar" | "google" | "mail" | "imap" | "applemail" | "resend" | "slack" | "zoom" | "teams" | "imessage" | "tables" | "telegram"
+  | "claude" | "calendar" | "google" | "mail" | "imap" | "imap2" | "applemail" | "resend" | "slack" | "zoom" | "teams" | "imessage" | "tables" | "telegram"
   | "whatsapp";
 
 interface FieldDef {
@@ -106,6 +106,17 @@ const IMAP: FieldDef[] = [
   { key: "IMAP_FOLDERS", optional: true },
   { key: "IMAP_POLL_MINUTES", optional: true },
 ];
+// A second mailbox of the owner's: the same fields under IMAP2_, read by a reader of its own (src/app/mail.ts), labelled as the first's.
+const IMAP2: FieldDef[] = IMAP.map((f) => ({ ...f, key: f.key.replace("IMAP_", "IMAP2_") }));
+/** The words of a field: the second mailbox's are the first's. */
+export const fieldWord = (key: string): WordKey => key.replace(/^IMAP2_/, "IMAP_") as WordKey;
+
+/** The slot for a mailbox signed in from the mail card: its own address's, else the first free one; null when both hold other addresses. */
+export function mailSlot(env: Env, values: Record<string, string>): { id: "imap" | "imap2"; values: Record<string, string> } | null {
+  const [one, two, u] = [env.IMAP_USER, env.IMAP2_USER, values.IMAP_USER].map((x) => (x ?? "").trim().toLowerCase());
+  const id = one === u ? "imap" : two === u ? "imap2" : !one ? "imap" : !two ? "imap2" : null;
+  return id && { id, values: Object.fromEntries(Object.entries(values).map(([k, v]) => [id === "imap2" ? k.replace("IMAP_", "IMAP2_") : k, v])) };
+}
 // Connecting Slack from the panel (src/connect-setup.ts) keeps the user token and the app's Client ID, and Pako looks for new messages
 // itself. The app-level token (Socket Mode, live) and the signing secret (a server's events address) are optional extras.
 const SLACK: FieldDef[] = [
@@ -169,6 +180,7 @@ export const CATALOGUE: readonly ConnectionDef[] = [
   { id: "google", icon: "calendar", fields: GOOGLE, check: (env) => blame(loadGoogleCalendarConfig(env).problems, GOOGLE) },
   { id: "mail", icon: "mail", fields: MAIL, check: (env) => blame(loadMailConfig(env).problems, MAIL) },
   { id: "imap", icon: "inbox", fields: IMAP, check: (env) => blame(loadImapConfig(env).problems, IMAP) },
+  { id: "imap2", icon: "inbox", fields: IMAP2, check: (env) => blame(loadImapConfig(env, "IMAP2").problems, IMAP2) },
   { id: "applemail", icon: "mail", fields: APPLE_MAIL, check: (env) => blame(loadAppleMailConfig(env).problems, APPLE_MAIL) },
   { id: "resend", icon: "send", fields: RESEND, check: (env) => blame(loadResendConfig(env).problems, RESEND) },
   { id: "slack", icon: "hash", fields: SLACK, check: (env) => blame(loadSlackConfig(env).problems, SLACK) },
@@ -276,6 +288,10 @@ export const WORDS = texts(
       + "and an app password made for Pako in your account's security settings (not your usual password). Senders who always alert you and your "
       + "work's domains are set in the card for Pako's mail. If you forward this mailbox to Pako's inbox, stop forwarding it: otherwise the "
       + "same email may come twice.",
+    "imap2.name": "Your second mailbox (IMAP, read only)",
+    "imap2.how": "Another mailbox of yours, read the same way as the first: connect it from the mail card with Connect another account. Pako "
+      + "reads both and says which address each email came to, so you know which one to reply from.",
+    "twoMailboxes": "Pako already reads two mailboxes: disconnect one in the mail card first.",
     "IMAP_HOST": "IMAP server",
     "IMAP_HOST.hint": "For example imap.gmail.com",
     "IMAP_USER": "User name",
@@ -443,8 +459,8 @@ export function connectionStates(o: {
       const tail = value && !f.password ? tailOf(value) : undefined;
       return {
         key: f.key,
-        label: w(f.key as WordKey),
-        hint: w(`${f.key}.hint` as WordKey),
+        label: w(fieldWord(f.key)),
+        hint: w(`${fieldWord(f.key)}.hint` as WordKey),
         optional: !!f.optional,
         set: !!value && !(f.switch && value.trim().toLowerCase() === "off"),
         ...(tail ? { tail } : {}),

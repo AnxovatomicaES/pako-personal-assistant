@@ -86,9 +86,10 @@ export function cardStates(s = {}) {
   const unchecked = (id) => conn(c, id)?.checked === false;
   // Google Calendar, connected with one button, is the calendar too.
   out.calendar = localCal || st("google") === "on" ? "on" : st("calendar") === "on" ? (unchecked("calendar") ? "saved" : "on") : st("calendar") === "partial" ? "partial" : "off";
-  const imap = conn(c, "imap");
-  const mailOn = st("imap") === "on" || st("mail") === "on";
-  out.mail = hasProblem(imap) ? "problem" : mailOn ? "on" : st("imap") === "partial" || st("mail") === "partial" ? "partial" : "off";
+  // The card is the mail's, both mailboxes and Pako's inbox: a problem in either mailbox is the card's.
+  const mails = ["imap", "imap2", "mail"];
+  out.mail = hasProblem(conn(c, "imap")) || hasProblem(conn(c, "imap2")) ? "problem" : mails.some((id) => st(id) === "on") ? "on"
+    : mails.some((id) => st(id) === "partial") ? "partial" : "off";
   const tg = s.telegram?.state;
   out.telegram = tg === "paired" ? "on" : tg === "unpaired" ? "partial" : "off";
   out.whatsapp = whatsappState(s.whatsapp);
@@ -200,12 +201,36 @@ export function discoveryChips(d, t) {
   return chips;
 }
 
-/** Whether the page runs inside the Mac app (its message handler is there). */
-export const inApp = (win) => typeof win?.webkit?.messageHandlers?.pako?.postMessage === "function";
+const bridge = (win) => typeof win?.webkit?.messageHandlers?.pako?.postMessage === "function";
+/** Pako's Mac helper (desktop/mac/helper, src/mac-helper.ts), for a page in a browser: it answers as the app would, through Pako. */
+let helper = false;
+/** What GET /panel/api/helper said at the page's last load: {here: true} while the helper runs. */
+export const useHelper = (r) => void (helper = r?.here === true);
+
+/** Whether the Mac app answers this page: it runs inside the app (its message handler is there), or the helper does it for it. */
+export const inApp = (win) => bridge(win) || helper;
+
+/** An ask passed on to the helper by Pako: the answer called `want` (null: none in two minutes, or no helper); no `want`: only sent. */
+async function relay(win, message, want) {
+  try {
+    const r = await win.fetch("/panel/api/helper/ask", {
+      method: "POST", credentials: "same-origin", cache: "no-store", headers: { "content-type": "application/json", "x-pako": "1" },
+      body: JSON.stringify(want ? { message, want } : { message }),
+    });
+    return r.ok ? ((await r.json())?.value ?? null) : null;
+  } catch {
+    // Pako did not answer (stopped, restarting): as an app that did not answer
+    return null;
+  }
+}
 
 /** Tells the Mac app something; false when there is no app to tell. */
 export function tellApp(win, message) {
   if (!inApp(win)) return false;
+  if (!bridge(win)) {
+    void relay(win, message);
+    return true;
+  }
   try {
     win.webkit.messageHandlers.pako.postMessage(message);
     return true;
@@ -221,6 +246,7 @@ export function tellApp(win, message) {
  */
 export function askApp(win, message, callback, ms = 60_000, accept = () => true) {
   if (!inApp(win)) return Promise.resolve(null);
+  if (!bridge(win)) return relay(win, message, callback).then((v) => (v !== null && accept(v) ? v : null));
   return new Promise((resolve) => {
     const before = win[callback];
     let done = false;

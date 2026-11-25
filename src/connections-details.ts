@@ -51,7 +51,9 @@ export interface DetailsDeps extends RouteAuth {
   dir: string;
   timeZone: string;
   imap?: (l: Lang) => ImapInfo | null;
-  /** One look at the IMAP mailbox now (Check now). */
+  /** The second mailbox's (IMAP2_*), as the first's. */
+  imap2?: (l: Lang) => ImapInfo | null;
+  /** One look at the IMAP mailboxes now (Check now). */
   checkMail?: () => Promise<unknown>;
   ics?: () => IcsFeedStatus[];
   mac?: () => Promise<{ at: number; calendars: { id: string; title: string }[]; events: number } | null>;
@@ -88,15 +90,17 @@ export async function connectionDetails(d: DetailsDeps): Promise<Record<string, 
     d.telegram ? ok(d.telegram()) : null,
     d.teams && set(env, "TEAMS_REFRESH_TOKEN") ? ok(d.teams()) : null,
   ]);
-  const imap = d.imap?.(l) ?? null;
+  // A mailbox whose reader is not running (wrong values, or no store): what is set, with nothing read yet.
+  const fromEnv = (p: string): ImapInfo | null => set(env, `${p}_USER`) ? {
+    address: plain(env, `${p}_USER`, 320), host: plain(env, `${p}_HOST`, 253), port: Number(plain(env, `${p}_PORT`, 6)) || 993,
+    folders: (plain(env, `${p}_FOLDERS`, 2000) || "INBOX").split(",").map((f) => f.trim()).filter(Boolean),
+    pollMinutes: Number(plain(env, `${p}_POLL_MINUTES`, 6)) || 5, lastCheck: null, readToday: 0, lastError: null,
+  } : null;
   const links = d.ics?.() ?? [];
   return {
     mail: {
-      imap: imap
-        ? { ...imap }
-        : set(env, "IMAP_USER") ? { address: plain(env, "IMAP_USER", 320), host: plain(env, "IMAP_HOST", 253), port: Number(plain(env, "IMAP_PORT", 6)) || 993,
-          folders: (plain(env, "IMAP_FOLDERS", 2000) || "INBOX").split(",").map((f) => f.trim()).filter(Boolean), pollMinutes: Number(plain(env, "IMAP_POLL_MINUTES", 6)) || 5,
-          lastCheck: null, readToday: 0, lastError: null } : null,
+      imap: d.imap?.(l) ?? fromEnv("IMAP"),
+      imap2: d.imap2?.(l) ?? fromEnv("IMAP2"),
       agentmail: set(env, "AGENTMAIL_INBOX") ? { inbox: plain(env, "AGENTMAIL_INBOX", 320) } : null,
     },
     calendar: {
@@ -175,7 +179,7 @@ export function mountConnectionDetails(app: Express, d: DetailsDeps | null): voi
       return;
     }
     await d.checkMail().catch(() => undefined);
-    res.json({ ok: true, mail: d.imap(d.lang()) });
+    res.json({ ok: true, mail: d.imap(d.lang()), mail2: d.imap2?.(d.lang()) ?? null });
   });
 
   app.post(PATHS[2]!, guard(d, true), limit(20), body, async (req, res) => {

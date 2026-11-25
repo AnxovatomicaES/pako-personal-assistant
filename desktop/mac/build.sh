@@ -70,7 +70,7 @@ trap 'rm -rf "$WORK"' EXIT
 # The app's sources only: icon/ is its own small program. Kept as the arguments ("$@"), each one whole: the Pako folder's path may have
 # spaces in it (a list in one variable would be cut there).
 set -- "$HERE/Core.swift" "$HERE/DiscoveryCore.swift" "$HERE/Pako.swift" "$HERE/Claude.swift" "$HERE/Connect.swift" "$HERE/Status.swift" \
-  "$HERE/Texts.swift" "$HERE/Update.swift" "$HERE/Discovery.swift" "$HERE/RemindersCore.swift" "$HERE/Reminders.swift" \
+  "$HERE/Texts.swift" "$HERE/Update.swift" "$HERE/Discovery.swift" "$HERE/RemindersCore.swift" "$HERE/Reminders.swift" "$HERE/Asks.swift" \
   "$HERE/App.swift" "$HERE/main.swift"
 for ARCH in x86_64 arm64; do
   if swiftc -O -swift-version 5 -target "$ARCH-apple-macos13" -module-name Pako -framework AppKit -framework WebKit -framework EventKit -framework Contacts \

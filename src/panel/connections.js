@@ -86,7 +86,7 @@ window.pakoOpenConnection = (id) => {
   if (!data) return false;
   const known = id === "telegram" || id === "whatsapp" || id === "contacts" || data.connections.some((c) => c.id === id);
   if (!known) return false;
-  openSettingsPage(id === "imap" ? "mail" : id);
+  openSettingsPage(id === "imap" || id === "imap2" ? "mail" : id);
   return true;
 };
 

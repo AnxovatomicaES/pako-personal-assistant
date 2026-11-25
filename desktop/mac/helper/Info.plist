@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Pako Helper.app's Info.plist (desktop/mac/helper/build.sh): no Dock icon, no window; macOS shows these texts when it asks the person. -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Pako Helper</string>
+	<key>CFBundleIdentifier</key>
+	<string>io.github.anxovatomicaes.pako.helper</string>
+	<key>CFBundleExecutable</key>
+	<string>pako-helper</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Pako reads the calendars you choose to keep your agenda in view, and adds, moves or removes an event only after your yes. It all stays on this Mac.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Pako reads the calendars you choose to keep your agenda in view, and adds, moves or removes an event only after your yes. It all stays on this Mac.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Pako keeps your follow-ups in its own Reminders lists, so they reach your iPhone, and closes one when you complete it there. It never touches your other lists.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Pako keeps your follow-ups in its own Reminders lists, so they reach your iPhone, and closes one when you complete it there. It never touches your other lists.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Pako imports your contacts' names, emails and phones only when you confirm it. It all stays on this Mac.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Pako asks Mail and Outlook which accounts you have (only their addresses, never your mail) to help you connect one.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Pako looks for Zoom's recordings in Documents/Zoom (only the folder names) to offer you their transcripts.</string>
+</dict>
+</plist>

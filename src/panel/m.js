@@ -35,6 +35,7 @@ const WORDS = {
   draft: "Draft a reply",
   drafting: "Writing a draft…",
   draftFailed: "The draft could not be written.",
+  replyFrom: "Reply from {address}",
   copy: "Copy",
   copied: "Copied",
   copyFailed: "Select the text and copy it",
@@ -240,7 +241,8 @@ function loopCard(item) {
           h("p", { class: "draft-text" }, draft.text),
           h("div", { class: "row" },
             h("button", { type: "button", class: "btn", onclick: (e) => copy(draft.text, e.currentTarget) }, t("copy")),
-            h("a", { class: "btn", href: mailtoFor(item, draft.text) }, t("mail"))))
+            h("a", { class: "btn", href: mailtoFor(item, draft.text) }, t("mail")),
+            item.from ? h("span", { class: "small muted" }, t("replyFrom", { address: item.from })) : null))
       : null,
     h("div", { class: "actions" },
       item.actions.map((a) => h("button", { type: "button", class: `btn${a === "done" || a === "reopen" ? " primary" : ""}`, onclick: () => act(item.id, a) }, t(a))),

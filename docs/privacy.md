@@ -115,6 +115,7 @@ also capped, as said.
 | `assistant-mail-body:<id>` | The words of one email (one-time codes hidden), for the panel's reader | 60 days |
 | `mail-prefs` | Your mail choices: the sender rules you taught with Move to…, and which categories notify you | 5 years |
 | `assistant-imap` | Your own mailbox (IMAP, read only): the account name and server, and per folder the number of the last email already looked at. Never the password | 60 days |
+| `assistant-imap2` | Your second mailbox (IMAP, read only), the same as the first's for that account. Never the password | 60 days |
 | `mail-backfill` | A newly connected mailbox's catch-up: the emails of its last days waiting to be read (one a minute; for one you sent, its newest words, about 4,000 characters at most, its recipients and subject) and its progress | 30 days |
 | `mail-invites` | Invitations caught from your mail (title, time, organizer, place), shown on the dashboard until your calendar has them. Never the mail itself | 60 days |
 | `slack-alerts` | Slack messages it told you about (the last 100) | 14 days |
