@@ -5,6 +5,8 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import express from "express";
 import { createControl } from "../src/control.ts";
+import type { Kv } from "../src/kv.ts";
+import { memoryKv } from "./helpers/connect-rig.ts";
 import { inQuiet, loadSlackConfig, mountSlack, mountSlackCheckOnly, plainSlack, verifySlack, type SlackConfig } from "../src/slack.ts";
 
 const SECRET = "0123456789abcdef0123456789abcdef";
@@ -40,7 +42,7 @@ test("verifySlack, plainSlack and inQuiet", () => {
   assert.equal(inQuiet(null, Date.parse("2026-11-14T23:30:00Z"), "Europe/Madrid"), false);
 });
 
-async function rig(o: { quiet?: SlackConfig["quiet"]; clock?: number; authFailsOnce?: boolean; forward?: boolean } = {}) {
+async function rig(o: { quiet?: SlackConfig["quiet"]; clock?: number; authFailsOnce?: boolean; forward?: boolean; kv?: Kv } = {}) {
   let authFails = o.authFailsOnce === true;
   const told: string[] = [];
   const asked: string[] = [];
@@ -57,7 +59,9 @@ async function rig(o: { quiet?: SlackConfig["quiet"]; clock?: number; authFailsO
     }
     if (method === "auth.test") return json({ ok: true, user_id: "UME" });
     if (method === "users.info") return json({ ok: true, user: { profile: { display_name: url.searchParams.get("user") === "UANA" ? "Ana" : "Luis" } } });
-    if (method === "conversations.info") return json({ ok: true, channel: { name: "proyecto" } });
+    if (method === "conversations.info") {
+      return json({ ok: true, channel: url.searchParams.get("channel") === "D1" ? { user: "UANA" } : { name: "proyecto" } });
+    }
     if (method === "search.messages")
       return json({ ok: true, messages: { matches: [{ ts: "1794686400", text: "va el <@UME>", user: "UANA", channel: { name: "proyecto" } }, { ts: "1794682800", text: "hola", user: "ULUIS", channel: { is_im: true } }] } });
     return json({ ok: false, error: "unknown_method" });
@@ -65,7 +69,7 @@ async function rig(o: { quiet?: SlackConfig["quiet"]; clock?: number; authFailsO
   const app = express();
   const reader = mountSlack(app, {
     config: { token: TOKEN, signingSecret: SECRET, quiet: o.quiet ?? null, forward: o.forward ?? true },
-    kv: null,
+    kv: o.kv ?? null,
     timeZone: "Europe/Madrid",
     control,
     notify: async (t) => void told.push(t),
@@ -107,6 +111,25 @@ test("events: Slack's check is answered; a DM and a mention reach the owner in o
     const recent = await r.reader.recent();
     assert.equal(recent.length, 3);
     assert.ok((await r.control.recent(10)).some((l) => l.text === "Slack from Ana (private)"));
+  } finally {
+    r.close();
+  }
+});
+
+test("the owner's own messages are kept for the brief, any conversation, never as alerts; the brief gets both sides with since when", async () => {
+  const kv = memoryKv();
+  const r = await rig({ forward: false, kv });
+  try {
+    assert.deepEqual(await r.reader.conversations(), { list: [], ownSince: null }, "nothing kept yet");
+    await r.message({ channel: "D1", channel_type: "im", user: "UANA", text: "if the boss is happy on Wednesday we're off" });
+    await r.message({ channel: "D1", channel_type: "im", user: "UME", text: "I'll call him to find out about Thursday and Friday", ts: "1794657700.000100" });
+    await r.message({ channel: "C1", channel_type: "channel", user: "UME", text: "numbers going out today", ts: "1794657800.000100" });
+    await r.settle();
+    const { list, ownSince } = await r.reader.conversations();
+    assert.ok(ownSince !== null && Math.abs(ownSince - 1794657700_000) < 1, "since the first own message");
+    assert.deepEqual(list.map((a) => [a.where, a.mine ?? false]), [["#proyecto", true], ["Ana (private)", true], ["Ana (private)", false]]);
+    assert.equal((await r.reader.recent()).length, 1, "the owner's own are never alerts");
+    assert.equal((await r.reader.alerts()).length, 1);
   } finally {
     r.close();
   }

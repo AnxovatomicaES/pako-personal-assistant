@@ -1,0 +1,97 @@
+{
+  "suite": "brief",
+  "behaviour": "the owner's own promise beside the other person's ambiguous line is read as one story (days off), not tied to the day's webinar",
+  "origin": "owner's reference brief, 2026-11-25 (names changed)",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-25 08:00",
+    "read": [
+      "slack",
+      "zoom",
+      "calendar",
+      "mail"
+    ],
+    "facts": [
+      {
+        "id": "S1",
+        "kind": "slack",
+        "icon": "slack",
+        "label": "Slack · Marta (private), Tue 24/11 08:32",
+        "text": "Tue, 24/11, 08:32 · Marta (private): My guess is if Ines is happy on Wednesday we're off · Pako has seen nothing from you in this conversation since"
+      },
+      {
+        "id": "S2",
+        "kind": "slack",
+        "icon": "slack",
+        "label": "Slack · You → Marta (private), Tue 24/11 08:20",
+        "text": "Tue, 24/11, 08:20 · YOU (the owner) wrote, in Marta (private): I'll call Ines to find out if Thursday and Friday are off"
+      },
+      {
+        "id": "S3",
+        "kind": "slack",
+        "icon": "slack",
+        "label": "Slack · Marta (private), Tue 24/11 08:31",
+        "text": "Tue, 24/11, 08:31 · Marta (private): btw any updates on registrations"
+      },
+      {
+        "id": "Z1",
+        "kind": "meeting",
+        "icon": "zoom",
+        "label": "Zoom · «Monday morning meeting», Mon 23/11 09:00",
+        "text": "meeting “Monday morning meeting” on Mon 23/11 09:00 · summary: Ines called this a short Thanksgiving week and said training would be limited. The Markets in Motion webinar runs on Wednesday."
+      },
+      {
+        "id": "E1",
+        "kind": "event",
+        "icon": "calendar",
+        "label": "today 10:00–11:00 · Markets in Motion webinar",
+        "at": "2026-11-25 10:00",
+        "end": "2026-11-25 11:00",
+        "title": "Markets in Motion webinar",
+        "text": "today 10:00–11:00 · Markets in Motion webinar"
+      },
+      {
+        "id": "E2",
+        "kind": "event",
+        "icon": "calendar",
+        "label": "today 12:00–12:30 · One-on-one with Ines",
+        "at": "2026-11-25 12:00",
+        "end": "2026-11-25 12:30",
+        "title": "One-on-one with Ines",
+        "text": "today 12:00–12:30 · One-on-one with Ines"
+      }
+    ],
+    "recorded": "{\"opening\": \"A webinar morning and a one-on-one with Ines at noon.\", \"focus\": {\"title\": \"Confirm with Ines whether Thursday and Friday are off, and tell Marta\", \"story\": \"Yesterday you told Marta you'd call Ines to find out if Thursday and Friday are off. Marta's guess was that you're off if Ines is happy on Wednesday, which is today, and on Monday's call Ines called this a short Thanksgiving week. Pako has seen nothing from you in that DM since.\", \"offer\": \"I can draft a two-line note for Marta to send once Ines answers.\", \"sources\": [\"S2\", \"S1\", \"Z1\", \"E2\"]}, \"todos\": [{\"title\": \"Confirm the days off with Ines and tell Marta\", \"context\": \"You told Marta yesterday you'd call Ines about Thursday and Friday; Marta thinks you're off if Ines is happy today. Your one-on-one with Ines is the natural moment to ask.\", \"checked\": \"Pako has seen nothing from you in the DM with Marta since, so check whether you already called.\", \"sources\": [\"S2\", \"S1\", \"E2\"]}, {\"title\": \"Answer Marta on registrations\", \"context\": \"Marta asked yesterday for any updates on registrations, the day before the webinar.\", \"checked\": \"\", \"sources\": [\"S3\", \"E1\"]}], \"updates\": [], \"day\": [{\"time\": \"10:00\", \"end\": \"11:00\", \"title\": \"Markets in Motion webinar\", \"confirmed\": true, \"note\": \"\", \"sources\": [\"E1\"]}, {\"time\": \"12:00\", \"end\": \"12:30\", \"title\": \"One-on-one with Ines\", \"confirmed\": true, \"note\": \"ask about Thursday and Friday\", \"prep\": true, \"sources\": [\"E2\"]}]}",
+    "lang": "en"
+  },
+  "expect": {
+    "itemCites": [
+      [
+        "S1",
+        "S2"
+      ]
+    ],
+    "todoHas": [
+      [
+        "Ines",
+        "off"
+      ]
+    ],
+    "saidAny": [
+      [
+        "Thursday",
+        "Friday"
+      ],
+      [
+        "you'd call",
+        "you told Marta",
+        "you said you'd"
+      ]
+    ],
+    "notSaid": [
+      "off for the webinar",
+      "off the webinar"
+    ]
+  },
+  "rubric": "Does the brief say the owner promised to find out from Ines whether Thursday and Friday are off, and make confirming that (and telling Marta) the focus or a to-do? Mentioning the webinar elsewhere is fine. Answer yes or no."
+}

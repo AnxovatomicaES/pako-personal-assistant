@@ -1,0 +1,45 @@
+{
+  "suite": "brief",
+  "behaviour": "an uptime monitor's down email that Pako checked again this morning is told with that check (still failing), not as last night's news only",
+  "origin": "owner's reference brief, 2026-11-25 (names changed)",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-25 08:00",
+    "read": [
+      "mail"
+    ],
+    "facts": [
+      {
+        "id": "M1",
+        "kind": "mail",
+        "icon": "mail",
+        "ref": "mail-77",
+        "label": "Email · UptimeRobot <alert@monitor.example.com>, Tue 24/11 19:03",
+        "text": "Tue, 24/11, 19:03 · from UptimeRobot <alert@monitor.example.com> · “Monitor is DOWN: tablesclub.example.org”: The monitor reports tablesclub.example.org returning 503 Service Unavailable. · an uptime monitor's alert; no recovery email from it since · Pako checked https://tablesclub.example.org/ now (08:00): still failing, HTTP 503"
+      }
+    ],
+    "recorded": "{\"opening\": \"Nothing on the calendar; one thing to look at.\", \"todos\": [], \"updates\": [{\"title\": \"tablesclub.example.org is still returning 503\", \"tag\": \"Platform\", \"text\": \"UptimeRobot flagged the outage yesterday evening. I got the same 503 this morning and no recovery alert has arrived.\", \"sources\": [\"M1\"]}], \"day\": []}",
+    "lang": "en"
+  },
+  "expect": {
+    "saidAny": [
+      [
+        "same 503",
+        "still 503",
+        "still returning",
+        "still failing",
+        "still down"
+      ],
+      [
+        "this morning",
+        "now"
+      ]
+    ],
+    "notSaid": [
+      "is back up",
+      "has recovered",
+      "answers again",
+      "is up again"
+    ]
+  }
+}

@@ -81,6 +81,7 @@ const KEY_LIST = [
   { key: "mail-backfill", keep: 30 * DAY }, // backfill.ts
   { key: "slack-alerts", keep: 14 * DAY }, // slack.ts
   { key: "slack-held", keep: 2 * DAY },
+  { key: "slack-own", keep: 8 * DAY },
   { key: "slack-poll", keep: 60 * DAY }, // slack-poll.ts
   { key: "teams-poll", keep: 60 * DAY }, // teams.ts
   { key: "imessage-poll", keep: 60 * DAY }, // imessage.ts
@@ -188,6 +189,7 @@ const ABOUT = texts<AboutKey | "unknown">(
     "mail-invites": "Invitations caught from your mail, shown on the dashboard until your calendar has them (title, time, organizer; never the mail)",
     "slack-alerts": "Slack messages it told you about (the last 100)",
     "slack-held": "Slack notices kept during quiet hours",
+    "slack-own": "Your own Slack messages of the week (the last 100), so the morning brief reads both sides of a conversation",
     "slack-poll": "Where Pako is in each Slack conversation it looks at (no message text)",
     "teams-poll": "Where Pako is in each Teams chat and channel it looks at, and the last read and error (no message text)",
     "apple-mail-poll": "Mail on this Mac: the last message already looked at (its number in Apple Mail's index), when it was turned on, the numbers "

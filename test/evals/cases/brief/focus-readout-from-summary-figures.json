@@ -1,0 +1,63 @@
+{
+  "suite": "brief",
+  "behaviour": "a meeting summary that holds the figures someone asked for makes a focus that offers the finished draft, says where the figures come from and to check them",
+  "origin": "owner's reference brief, 2026-11-25 (names changed)",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-25 08:00",
+    "read": [
+      "slack",
+      "zoom",
+      "calendar",
+      "mail"
+    ],
+    "facts": [
+      {
+        "id": "Z1",
+        "kind": "meeting",
+        "icon": "zoom",
+        "label": "Zoom · «Monday morning meeting», Mon 23/11 09:00",
+        "text": "meeting “Monday morning meeting” on Mon 23/11 09:00 · summary: Ines asked for everyone who got the investor-lead email, openers and non-openers, as an Excel list. Results so far: Pia's list 578 delivered and 116 opens; Leo's list 563 delivered and 147 opens; 9 bounces, 12 clicks and 3 unsubscribes in all."
+      },
+      {
+        "id": "L1",
+        "kind": "loop",
+        "icon": "zoom",
+        "ref": "d4d4d4d4d4",
+        "label": "Zoom · «Monday morning meeting», 23/11 09:00",
+        "text": "Follow-up (asked of you) · Nothing due · Ines in the Zoom meeting «Monday morning meeting», Mon 09:00: send an Excel list of everyone who got the investor-lead email, openers and non-openers · Pako checked: no message with a list from you in Slack; I can't see the mail you sent"
+      }
+    ],
+    "recorded": "{\"opening\": \"One thing owed from Monday's call.\", \"focus\": {\"title\": \"Draft the email results readout for Ines\", \"story\": \"On Monday's call Ines asked for everyone who got the investor-lead email, openers and non-openers. Zoom's summary has the numbers: 578 delivered and 116 opens on Pia's list, 563 delivered and 147 opens on Leo's, plus 9 bounces, 12 clicks and 3 unsubscribes.\", \"offer\": \"I can turn those into a short cover note to go with your Excel list, with a suggestion for the non-openers. The figures come from Zoom's AI summary, so check them against your send tool.\", \"sources\": [\"Z1\", \"L1\"]}, \"todos\": [{\"title\": \"Send Ines the list of everyone who got the investor email\", \"context\": \"Ines asked on Monday's call for an Excel of all recipients, including those who never opened it.\", \"checked\": \"I couldn't find a list from you in Slack and can't see your sent mail, so check whether it went out.\", \"sources\": [\"L1\", \"Z1\"], \"loopId\": \"L1\"}], \"updates\": [], \"day\": []}",
+    "lang": "en"
+  },
+  "expect": {
+    "focusCites": [
+      "Z1"
+    ],
+    "focusHas": [
+      "Ines"
+    ],
+    "saidAny": [
+      [
+        "578"
+      ],
+      [
+        "Zoom's AI summary",
+        "Zoom's summary",
+        "from Zoom"
+      ],
+      [
+        "check them",
+        "check the figures",
+        "check these",
+        "double-check"
+      ]
+    ],
+    "notSaid": [
+      "wasn't sent",
+      "was not sent"
+    ]
+  },
+  "rubric": "Does the focus offer to prepare something from the summary's figures that the owner can send (a draft, a cover note or a readout), and say the figures come from the meeting's summary and should be checked before they go out? Answer yes or no."
+}

@@ -264,6 +264,12 @@
       "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-holiday-punt.mp4",
       "sha256": "2d7f100ae57853820e0ffd1e61a41555e1a9ca3c70423322a619223d9cc23e3c",
       "bytes": 3308078
+    },
+    {
+      "path": "social/ig/pako-r-holiday-punt-b.mp4",
+      "url": "https://github.com/AnxovatomicaES/pako-personal-assistant/releases/download/media-v3/pako-r-holiday-punt-b.mp4",
+      "sha256": "408e37da84db85f5f530950305e375ee7b0e7fff0148e3573001c8d833eff722",
+      "bytes": 3317367
     }
   ]
 }

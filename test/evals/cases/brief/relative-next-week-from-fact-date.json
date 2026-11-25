@@ -1,0 +1,43 @@
+{
+  "suite": "brief",
+  "behaviour": "'next week' said in a call a week ago is told as this week, counted from the fact's own date",
+  "origin": "owner's reference brief, 2026-11-25 (names changed)",
+  "input": {
+    "timeZone": "Europe/Madrid",
+    "now": "2026-11-25 08:00",
+    "read": [
+      "slack",
+      "zoom",
+      "calendar",
+      "mail"
+    ],
+    "facts": [
+      {
+        "id": "Z1",
+        "kind": "meeting",
+        "icon": "zoom",
+        "label": "Zoom · «Intro call with Nil», Wed 18/11 15:00",
+        "text": "meeting “Intro call with Nil” on Wed 18/11 15:00 · summary: Ines will give Nil access to the research materials. She plans intensive lead-generation training for Leo and Nil next week. An Australia and Asia launch was mentioned for February or March."
+      }
+    ],
+    "recorded": "{\"opening\": \"A quiet start.\", \"todos\": [], \"updates\": [{\"title\": \"Intensive training planned for Leo and Nil\", \"tag\": \"Training\", \"text\": \"From the 18/11 intro call with Nil, Zoom's summary says Ines will give Nil access to the research materials and plans intensive lead-generation training for Leo and Nil 'next week', which is this week. The same call mentioned an Australia and Asia launch in February or March.\", \"sources\": [\"Z1\"]}], \"day\": []}",
+    "lang": "en"
+  },
+  "expect": {
+    "updateCites": [
+      [
+        "Z1"
+      ]
+    ],
+    "saidAny": [
+      [
+        "this week"
+      ]
+    ],
+    "notSaid": [
+      "training next week",
+      "training is next week"
+    ]
+  },
+  "rubric": "The meeting was on 18/11 and today is 25/11. Does the brief say the training planned for 'next week' falls in THIS week (not in the week after today)? Answer yes or no."
+}

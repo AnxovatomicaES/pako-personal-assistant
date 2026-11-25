@@ -9,6 +9,7 @@ import { createLog } from "../log.ts";
 import { addressOf } from "../mail.ts";
 import { createMeetingPrep, loadMeetingPrepConfig } from "../meeting-prep.ts";
 import { briefMeetings } from "../meeting-review.ts";
+import { checkSite } from "../site-check.ts";
 import type { AfterCalendar } from "./context.ts";
 
 const logBrief = createLog("brief");
@@ -94,8 +95,11 @@ export function wireBrief(ctx: AfterCalendar) {
               zoom: () => (zoomRef.reader ? zoomRef.reader.scheduled() : Promise.reject(new Error("Zoom is not ready"))),
             }
           : {}),
-        ...(slack.config ? { slack: () => (slackRef.reader ? slackRef.reader.alerts() : Promise.reject(new Error("Slack is not ready"))) } : {}),
+        // Both sides of each conversation: the messages kept for the owner and the owner's own (src/slack.ts conversations).
+        ...(slack.config ? { slack: () => (slackRef.reader ? slackRef.reader.conversations() : Promise.reject(new Error("Slack is not ready"))) } : {}),
         ...(fakeSlack ? { slack: fakeSlack.alerts } : {}),
+        // An uptime monitor's "down" email: the site checked once, now (src/site-check.ts: https only, public addresses only, status only).
+        checkSite: (url: string) => checkSite(url),
         ...(calOn ? { events: () => (calRef.reader ? calRef.reader.load() : Promise.reject(new Error("the calendar is not ready"))) } : {}),
         tasks: async () => (await door.lists.read(true)).tasks,
         ...(box ? { mail: () => box.items(60) } : {}),

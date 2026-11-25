@@ -3,7 +3,7 @@
 // Brief" the owner liked: its intelligence, not its branding.
 //
 // - Gathered here, with no model: the open follow-ups (src/followups.ts), the meetings of the last week and their summaries (src/zoom.ts), the
-//   Slack messages kept for the owner (src/slack.ts), today's and tomorrow's events and Zoom meetings, the tasks, the mail summaries, the
+//   Slack messages kept for the owner and the owner's own (src/slack.ts conversations: both sides), today's and tomorrow's events and Zoom meetings, the tasks, the mail summaries, the
 //   birthdays and today's reminders. Each becomes a FACT with a short id (L1, Z1, S1, E1, Q1, T1, M1, B1, R1), its text neutralised
 //   (src/quarantine.ts): other people's words are information, never instructions.
 // - Written on the assistant's computer, in ONE isolated run (assistant/bridge.ts handleBrief, BRIEF_PROMPT: no tools, no conversation, no
@@ -45,6 +45,7 @@ import {
 import { groundDraft } from "./draft-grounding.ts";
 import type { CalChange } from "./calendar-changes.ts";
 import { readJsonRecord } from "./json-record.ts";
+import { monitorAlert, type MonitorAlert, type SiteCheck } from "./site-check.ts";
 
 const log = createLog("brief");
 
@@ -138,7 +139,13 @@ export interface GatherDeps {
   loops?: () => Promise<Loop[]>;
   /** Zoom's summaries with the review's structured outcomes (src/meeting-review.ts briefMeetings), when the review is on. */
   meetings?: () => Promise<BriefMeeting[]>;
-  slack?: () => Promise<{ at: number; where: string; text: string }[]>;
+  /**
+   * The Slack messages kept for the owner and, with `mine`, the owner's own (src/slack.ts conversations), newest first; `ownSince`: since when
+   * the owner's own are kept (before it, Pako cannot say "nothing from you since").
+   */
+  slack?: () => Promise<SlackItem[] | { list: SlackItem[]; ownSince: number | null }>;
+  /** One live GET of a site an uptime monitor's email says is down (src/site-check.ts checkSite): the brief says what it answers now. */
+  checkSite?: (url: string) => Promise<SiteCheck>;
   events?: () => Promise<CalEvent[]>;
   zoom?: () => Promise<{ topic: string; at: number }[]>;
   tasks?: () => Promise<Task[]>;
@@ -158,6 +165,8 @@ export interface GatherDeps {
   focusLoop?: () => Promise<string | null>;
 }
 
+export interface SlackItem { at: number; where: string; text: string; mine?: boolean; channel?: string }
+
 export interface Gathered {
   facts: Fact[];
   /** The sources read (slack, zoom, mail, calendar, tasks…), for the footer. */
@@ -173,6 +182,7 @@ const F = texts(
     kinds_other_promise: "promised to you",
     kinds_agreed_meeting: "agreed meeting (on no calendar)",
     kinds_deadline: "deadline",
+    checkFigures: "The figures come from {source}, so check them against their source before they go out.",
     loop: "{kind} · {source}{due} · {title}{who}{detail}{checked}{step}{folded}{focus}",
     weekFocus: " · the owner's focus for this week (they picked it in the weekly reset): put it first",
     // Gentle mode (src/gentle.ts): a stuck follow-up's first tiny step, and one no longer nudged (two reminders went unanswered).
@@ -191,6 +201,17 @@ const F = texts(
     item_promise: "{who} promised: {title}",
     item_meeting: "agreed meeting: {title} (set up by {who})",
     slack: "{when} · {where}: {text}",
+    slackMine: "{when} · YOU (the owner) wrote, in {where}: {text}",
+    slackYou: "You → {where}",
+    slackReplied: " · you wrote in this conversation after it ({when})",
+    slackNoReply: " · Pako has seen nothing from you in this conversation since",
+    alertNoRecovery: " · an uptime monitor's alert; no recovery email from it since",
+    alertChecked: " · Pako checked {url} now ({time}): {result}",
+    siteDown: "still failing, HTTP {status}",
+    siteUp: "it answers again, HTTP {status}",
+    siteOther: "HTTP {status}",
+    siteTimeout: "no answer (timed out)",
+    siteUnreachable: "it could not be reached",
     event: "{day} {time} · {title}{where}{clash}",
     clash: " · ⚠️ {clash}",
     zoom: "{day} {time} · scheduled Zoom meeting “{topic}”",
@@ -317,11 +338,24 @@ export async function gatherFacts(d: GatherDeps): Promise<Gathered> {
       text: fact(say("meeting", { topic: m.topic, when: when(m.at, tz, l), summary: m.summary || "—" }) + outcomes(m), 2400),
     });
   }
-  const slack = (await take(d.slack, "slack")) ?? [];
-  for (const a of slack.filter((x) => x.at > t - 7 * DAY).slice(0, 60)) {
+  const got = await take(d.slack, "slack");
+  const slack = (Array.isArray(got) ? got : got?.list ?? []).filter((x) => x.at > t - 7 * DAY).sort((a, b) => b.at - a.at).slice(0, 60);
+  const ownSince = Array.isArray(got) ? null : got?.ownSince ?? null;
+  // Both sides of a conversation: the owner's own lines are marked as theirs, and the latest message to the owner in each conversation says
+  // whether the owner wrote there after it (or, once Pako keeps the owner's messages, that nothing from them came since).
+  const convo = (a: SlackItem): string => a.channel ?? a.where;
+  const lastIn = new Set<SlackItem>();
+  for (const a of slack) if (!a.mine && ![...lastIn].some((b) => convo(b) === convo(a))) lastIn.add(a);
+  for (const a of slack) {
+    let after = "";
+    if (lastIn.has(a)) {
+      const reply = slack.filter((b) => b.mine && convo(b) === convo(a) && b.at > a.at).sort((x, y) => x.at - y.at)[0];
+      after = reply ? say("slackReplied", { when: when(reply.at, tz, l) }) : ownSince !== null && ownSince <= a.at ? say("slackNoReply") : "";
+    }
     push("S", {
-      kind: "slack", icon: "slack", label: fact(`Slack · ${a.where}, ${when(a.at, tz, l)}`, 120),
-      text: fact(say("slack", { when: when(a.at, tz, l), where: a.where, text: a.text }), 500),
+      kind: "slack", icon: "slack",
+      label: fact(`Slack · ${a.mine ? say("slackYou", { where: a.where }) : a.where}, ${when(a.at, tz, l)}`, 120),
+      text: fact(say(a.mine ? "slackMine" : "slack", { when: when(a.at, tz, l), where: a.where, text: a.text }) + after, 560),
     });
   }
   const events = (await take(d.events, "calendar")) ?? [];
@@ -355,10 +389,31 @@ export async function gatherFacts(d: GatherDeps): Promise<Gathered> {
       text: fact(say("task", { due: k.due ? say("taskDue", { due: k.due }) : "", made, text: k.text }), 300),
     });
   }
-  const mail = (await take(d.mail, "mail")) ?? [];
+  const mail = ((await take(d.mail, "mail")) ?? []).filter((x) => x.at > t - 7 * DAY && !x.handledAt);
+  // Uptime monitors' emails (src/site-check.ts), whatever their category: the latest one of each site in the last two days. A site whose
+  // latest says down is checked now, once, so the brief tells how it is this morning; a site that came back says nothing.
+  const bySite = new Map<string, { m: RecentMail; a: MonitorAlert }>();
+  for (const m of [...mail].sort((x, y) => x.at - y.at)) {
+    const a = m.at > t - 2 * DAY ? monitorAlert(m) : null;
+    if (a) bySite.set(a.host, { m, a });
+  }
+  const monitored = new Set(mail.filter((m) => monitorAlert(m)).map((m) => m.id));
+  const down = [...bySite.values()].filter((x) => x.a.down).slice(-3);
+  const checks = await Promise.all(down.map((x) => (d.checkSite ? d.checkSite(x.a.url).catch(() => null) : Promise.resolve(null))));
+  const result = (c: SiteCheck): string => "status" in c
+    ? say(c.status >= 500 ? "siteDown" : c.status >= 200 && c.status < 400 ? "siteUp" : "siteOther", { status: String(c.status) })
+    : say(c.error === "timeout" ? "siteTimeout" : "siteUnreachable");
+  down.forEach(({ m, a }, i) => {
+    const c = checks[i];
+    const live = c && !("error" in c && c.error === "refused") ? say("alertChecked", { url: a.url, time: ownerClock(t, tz, l), result: result(c) }) : "";
+    push("M", {
+      kind: "mail", icon: "mail", ref: m.id, label: fact(`Email · ${m.from}, ${when(m.at, tz, l)}`, 120),
+      text: fact(say("mail", { when: when(m.at, tz, l), from: m.from, subject: m.subject, summary: m.summary || m.preview }) + say("alertNoRecovery") + live, 800),
+    });
+  });
   // Waiting on others and Important (src/mail-categories.ts) come here and never as a message of their own; Needs you comes as its loop. Each
   // fact cites the email's id, so the brief's sources lead back to it.
-  for (const m of mail.filter((x) => x.at > t - 7 * DAY && x.summary && !x.handledAt && BRIEF_MAIL.has(categoryOf(x))).slice(0, 15)) {
+  for (const m of mail.filter((x) => x.summary && !monitored.has(x.id) && BRIEF_MAIL.has(categoryOf(x))).slice(0, 15)) {
     push("M", {
       kind: "mail", icon: "mail", ref: m.id,
       label: fact(`Email · ${CATEGORY_LABEL[categoryOf(m)]} · ${m.from}, ${when(m.at, tz, l)}`, 120),
@@ -588,6 +643,11 @@ export function validateBrief(raw: unknown, g: Gathered, o: { now: number; timeZ
     const gr = sources ? ground(sources) : null;
     if (sources && gr && title && holds(title, gr)) {
       focus = { title, story: keep(clean(v.focus.story, 900), gr), offer: keep(clean(v.focus.offer, 240), gr), sources };
+      // Figures repeated from a meeting summary or an email go out only after the owner checks them: said in code, not left to the model.
+      const from = sources.map((id) => byId.get(id)!).find((f) => f.kind === "meeting" || f.kind === "mail");
+      if (from && ((focus.story + focus.offer).match(/\d[\d,.]*/g) ?? []).length >= 2 && !/\bcheck/i.test(focus.story + focus.offer)) {
+        focus.story = `${focus.story} ${F(o.lang)("checkFigures", { source: from.kind === "meeting" ? "the meeting's AI summary" : "an email" })}`.trim();
+      }
       sources.forEach((s) => used.add(s));
     }
   }
